@@ -132,6 +132,39 @@ namespace amg
     return move(groups);
   }
 
+  
+  template<class TV>
+  CtrMap<TV> :: CtrMap (shared_ptr<ParallelDofs> _pardofs, shared_ptr<ParallelDofs> _mapped_pardofs,
+			Array<int> && _group, Table<int> && _dof_maps)
+    : BaseDOFMapStep(_pardofs, _mapped_pardofs), group(move(_group)), master(group[0]), dof_maps(move(_dof_maps)) 
+  {
+    auto comm = pardofs->GetCommunicator();
+    is_gm = comm.Rank() == master;
+
+    cout << "make ctrmap with grp "; prow(group); cout << endl;
+    cout << "dof_maps: " << endl << dof_maps << endl;
+
+    if (is_gm) {
+      mpi_types.SetSize(group.Size());
+      Array<int> ones; size_t max_s = 0;
+      for (auto k : Range(group.Size())) max_s = max2(max_s, dof_maps[k].Size());
+      ones.SetSize(max_s); ones = 1;
+      for (auto k : Range(group.Size())) {
+	auto map = dof_maps[k]; auto ms = map.Size();
+	MPI_Type_indexed(ms, &ones[0], &map[0], MyGetMPIType<TV>(), &mpi_types[k]);
+	MPI_Type_commit(&mpi_types[k]);
+      }
+      reqs.SetSize(group.Size()); reqs = MPI_REQUEST_NULL;
+    }    
+  }
+
+  template<class TV>
+  CtrMap<TV> :: ~CtrMap ()
+  {
+    for (auto k:Range(mpi_types.Size()))
+      MPI_Type_free(&mpi_types[k]);
+  }
+      
   INLINE Timer & timer_hack_gcmc () { static Timer t("GridContractMap constructor"); return t; }
   template<class TMESH> GridContractMap<TMESH> :: GridContractMap (Table<int> && _groups, shared_ptr<TMESH> _mesh)
     : GridMapStep<TMESH>(_mesh), eqc_h(_mesh->GetEQCHierarchy()), groups(_groups), node_maps(4), annoy_nodes(4)
@@ -156,9 +189,12 @@ namespace amg
     eqc_h->GetCommunicator().Barrier();
     cout << "BuildNodeMaps done " << endl;
 
-    throw Exception("GridContractMap not yet usable!!!");
+    // throw Exception("GridContractMap not yet usable!!!");
   } // GridContractMap (..)
 
+
+
+  
   /** 
   	There are annoying edges: 
   	   if edge is AC -- CB (with A\cut B=empty)
@@ -200,15 +236,25 @@ namespace amg
       cout << "send mesh to " << my_group[0] << endl;
       comm.Send(btm, my_group[0], MPI_TAG_AMG);
       cout << "send mesh done" << endl;
+      mapped_mesh = nullptr;
+      if constexpr(std::is_same<TMESH, BlockTM>::value == 0) {
+	  cout << "MAP ALG MESH DATA (drops)" << endl;
+	  this->mesh->MapData(*this);
+	  cout << "DONE WITH MAP ALG MESH DATA (drops)" << endl;
+	}
       return;
     }
 
     const auto & c_eqc_h(*this->c_eqc_h);
     cout << "coarse fine eqch: " << endl << c_eqc_h << endl;
     
-    const TMESH & fmesh(*this->mesh);
+    const TMESH & f_mesh(*this->mesh);
     auto p_c_mesh = make_shared<BlockTM>(this->c_eqc_h);
     auto & c_mesh(*p_c_mesh);
+
+    // per definition
+    for (NODE_TYPE NT : {NT_VERTEX, NT_EDGE, NT_FACE, NT_CELL} )
+      c_mesh.nnodes_glob[NT] = f_mesh.nnodes_glob[NT];
 
     int mgs = my_group.Size();
     Array<shared_ptr<BlockTM>> mg_btms(mgs);
@@ -275,6 +321,7 @@ namespace amg
       v_dsp[k+1] += v_dsp[k];
     }
     size_t cnv = v_dsp.Last();
+    mapped_NN[NT_VERTEX] = cnv;
     c_mesh.nnodes[NT_VERTEX] = cnv;
     c_mesh.verts.SetSize(cnv);
     for (auto k : Range(cnv)) c_mesh.verts[k] = k;
@@ -293,9 +340,9 @@ namespace amg
 
     sz.SetSize(my_group.Size());
     for (auto k : Range(my_group.Size())) {
-      sz[k] = 0; for (auto row:Range(mg_btms[k]->GetNEqcs())) sz[k] += mg_btms[k]->GetENodes<NT_VERTEX>(row).Size();
+      sz[k] = 0; for (auto row : Range(mg_btms[k]->GetNEqcs())) sz[k] += mg_btms[k]->GetENodes<NT_VERTEX>(row).Size();
     }
-    node_maps[NT_VERTEX] = Table<size_t>(sz);
+    node_maps[NT_VERTEX] = Table<amg_nts::id_type>(sz);
     auto & vmaps = node_maps[NT_VERTEX];
     vmaps.AsArray() = -1;
     for (auto k : Range(my_group.Size())) {
@@ -308,6 +355,11 @@ namespace amg
     }
     cout << "vmaps: " << endl << vmaps << endl;
 
+    /** 
+	Abandon hope all ye who enter here - this might
+	be the ugliest code I have ever seen.
+    **/
+    
     auto & c_eqc_dps = c_eqc_h.GetDPTable();
     Array<size_t> annoy_have(mneqcs);
     Array<size_t> ci_have(mneqcs);
@@ -315,43 +367,44 @@ namespace amg
     Array<size_t> ci_get(cneqcs);
     Array<size_t> annoy_havec(cneqcs);
     // eq0, v0, eq1, v1
-    Table<INT<4,int>> tannoy_edges;
+    typedef INT<4,int> ANNOYE;
+    Table<ANNOYE> tannoy_edges;
     auto eq_of_v = [&c_mesh](auto v) { return c_mesh.GetEqcOfNode<NT_VERTEX>(v); };
     auto map_cv_to_ceqc = [&c_mesh](auto v) { return c_mesh.MapNodeToEQC<NT_VERTEX>(v); };
     {
-      TableCreator<INT<4,int>> ct(cneqcs);
-      while(!ct.Done()) {
+      TableCreator<ANNOYE> ct(cneqcs);
+      while (!ct.Done()) {
 	annoy_have = 0; ci_get = 0; ci_have = 0; annoy_havec = 0;
-	if(cneqcs) ci_pos.AsArray() = 0;
-	for(auto k:Range(my_group.Size())) {
+	if (cneqcs) ci_pos.AsArray() = 0;
+	for (auto k : Range(my_group.Size())) {
 	  auto eqmap = map_om[k];
 	  auto neq = eqmap.Size();
-	  for(auto eq:Range(neq)) {
+	  for (auto eq : Range(neq)) {
 	    auto meq = map_om[k][eq];
 	    auto ceq = map_oc[k][eq];
-	    if(my_group[k]!=eqc_sender[map_om[k][eq]]) continue;
+	    if (my_group[k]!=eqc_sender[map_om[k][eq]]) continue;
 	    auto es = mg_btms[k]->GetCNodes<NT_EDGE>(eq);
-	    for(auto l:Range(es.Size())) {
+	    for (auto l : Range(es.Size())) {
 	      const auto& v = es[l].v;
 	      auto cv1 = vmaps[k][v[0]];
 	      auto cv2 = vmaps[k][v[1]];
-	      if(cv1>cv2) swap(cv1, cv2);
+	      if (cv1>cv2) swap(cv1, cv2);
 	      auto ceq1 = eq_of_v(cv1);
 	      auto ceq2 = eq_of_v(cv2);
-	      if( (ceq1==ceq2) && (ceq1==ceq) ) { // CI edge
+	      if ( (ceq1==ceq2) && (ceq1==ceq) ) { // CI edge
 		ci_pos[meq][ceq1]++;
 		ci_get[ceq1]++;
 		ci_have[meq]++;
 		continue;
 	      }
 	      auto cutid = c_eqc_h.GetCommonEQC(ceq1, ceq2);
-	      if(ceq==cutid) continue; // CC edge
+	      if (ceq==cutid) continue; // CC edge
 	      auto ceq1_id = c_eqc_h.GetEQCID(ceq1);
 	      auto ceq2_id = c_eqc_h.GetEQCID(ceq2);
 	      auto cdps = c_eqc_h.GetDistantProcs(cutid);
 	      // master of coarse(C) adds the edge
-	      if(c_eqc_h.IsMasterOfEQC(ceq)) {
-		INT<4,int> ce = {ceq1_id, map_cv_to_ceqc(cv1), ceq2_id, map_cv_to_ceqc(cv2)};
+	      if (c_eqc_h.IsMasterOfEQC(ceq)) {
+		ANNOYE ce = {ceq1_id, map_cv_to_ceqc(cv1), ceq2_id, map_cv_to_ceqc(cv2)};
 		ct.Add(cutid, ce);
 	      }
 	      annoy_have[meq]++;
@@ -365,9 +418,9 @@ namespace amg
     }
 
     cout << "tannoy_edges: " << endl << tannoy_edges << endl;
-    auto annoy_edges = ReduceTable<INT<4,int>, INT<4,int>>
+    auto annoy_edges = ReduceTable<ANNOYE, ANNOYE>
       (tannoy_edges, this->c_eqc_h, [](const auto & in) {
-	Array<INT<4,int>> out;
+	Array<ANNOYE> out;
 	if (in.Size() == 0) return out;
 	int ts = 0; for (auto k : Range(in.Size())) ts += in[k].Size();
 	if (ts == 0) return out;
@@ -381,16 +434,280 @@ namespace amg
 	    if (isin[0] && !isin[1]) return true;
 	    if (isin[1] && !isin[0]) return false;
 	    for (int l : {0,2,1,3})
-	      { if (a[l]<b[l]) return true; if(b[l]<a[l]) return false; }
+	      { if (a[l]<b[l]) return true; if (b[l]<a[l]) return false; }
 	    return false;
 	  });
 	cout << "sorted out: " << endl; prow2(out); cout << endl;
 	return out;
       });
-
+    
     cout << "reduced annoy_edges: " << endl << annoy_edges << endl;
 
 
+    Array<INT<2, size_t>> annoy_count(cneqcs);
+    for (auto ceq : Range(cneqcs)) {
+      annoy_count[ceq] = 0;
+      for (auto & edge: annoy_edges[ceq]) {
+	// if (edge.eqc[0] == edge.eqc[1]) annoy_count[ceq][0]++;
+	if (edge[0] == edge[2]) annoy_count[ceq][0]++;
+	else break;
+      }
+      annoy_count[ceq][1] = annoy_edges[ceq].Size() - annoy_count[ceq][0];
+    }
+    /** allocate edge-maps **/
+    Array<size_t> s_emap(my_group.Size());  // size for emap
+    for (auto k : Range(my_group.Size())) {
+      // s_emap[k] = recv_es[k].Size();
+      s_emap[k] = mg_btms[k]->GetNN<NT_EDGE>();
+    }
+    node_maps[NT_EDGE] = Table<amg_nts::id_type>(s_emap);
+    auto & emaps = node_maps[NT_EDGE];
+    emaps.AsArray() = -1; // TODO: remove...
+      
+    /** count edge types in CEQs **/
+    Array<size_t> ii_pos(mneqcs);
+    Array<size_t> cc_pos(mneqcs);
+    Array<INT<5,size_t>> ccounts(cneqcs); // [II,CI,IANNOY,CC,CANNOY]
+    ccounts = INT<5,size_t>(0);
+    BitArray has_set(mneqcs); has_set.Clear();
+    for (auto k : Range(my_group.Size())) {
+      auto eqmap = map_om[k];
+      auto vmap = vmaps[k];
+      auto neq = eqmap.Size();
+      for (auto eq : Range(neq)) {
+	auto meq = map_om[k][eq];
+	auto ceq = map_mc[meq];
+	bool is_sender = (my_group[k]==eqc_sender[meq]);
+	if (!is_sender) continue;
+	has_set.Set(meq);
+	// auto ces = recv_cetab[k][eq];
+	auto ces = mg_btms[k]->GetCNodes<NT_EDGE>(eq);
+	// ii_pos[meq] = recv_etab[k][eq].Size();
+	ii_pos[meq] = ces.Size();
+	// ccounts[ceq][0] += recv_etab[k][eq].Size();
+      	ccounts[ceq][0] += ces.Size();
+      	ccounts[ceq][1] = ci_get[ceq];
+      	ccounts[ceq][2] = annoy_count[ceq][0];
+	cc_pos[meq] = ces.Size() - ci_have[meq] - annoy_have[meq];
+	ccounts[ceq][3] += ces.Size() - ci_have[meq] - annoy_have[meq];
+      	ccounts[ceq][4] = annoy_count[ceq][1];
+      }
+    }
+
+    /** displacements, edge and edge-map allocation**/
+    // Array<size_t> disp_ie(cneqcs+1); disp_ie = 0;
+    auto & disp_ie = c_mesh.disp_eqc[NT_EDGE];
+    // Array<size_t> disp_ce(cneqcs+1); disp_ce = 0;
+    auto & disp_ce = c_mesh.disp_cross[NT_EDGE];
+    size_t cniie, cncie, cnannoyi, cncce, cnannoyc;
+    cniie = cncie = cnannoyi = cncce = cnannoyc = 0;
+    for (auto k : Range(cneqcs)) {
+      cniie += ccounts[k][0];
+      cncie += ccounts[k][1];
+      cnannoyi += ccounts[k][2];
+      disp_ie[k+1] = disp_ie[k] + ccounts[k][0] + ccounts[k][1] + ccounts[k][2];
+      cncce += ccounts[k][3];
+      cnannoyc += ccounts[k][4];
+      disp_ce[k+1] = disp_ce[k] + ccounts[k][3] + ccounts[k][4];
+    }
+    size_t cnie = cniie + cncie + cnannoyi;
+    size_t cnce = cncce + cnannoyc;
+    size_t cne = cnie+cnce;
+
+    mapped_NN[NT_EDGE] = cne;
+    c_mesh.nnodes[NT_EDGE] = cne;
+    c_mesh.edges.SetSize(cne);
+    auto cedges = c_mesh.GetNodes<NT_EDGE>();
+    for (auto & e:cedges) e = {{{-1,-1}}, -1}; // TODO:remove
+    // FlatArray<idedge> ciedges(cnie, &(cedges[0]));
+    // FlatArray<AMG_Node<NT_EDGE>> ciedges (cnie, &(c_mesh.edges[0]));
+    FlatArray<AMG_Node<NT_EDGE>> ciedges = c_mesh.GetENodes<NT_EDGE>(size_t(-1)); // all eqc-edges
+    // FlatArray<idedge> ccedges(cnce, &(cedges[cnie]));
+    // ccedges (cnce, &(c_mesh.edgecnie[0]));
+    FlatArray<AMG_Node<NT_EDGE>> ccedges = c_mesh.GetCNodes<NT_EDGE>(size_t(-1)); // all eqc-edges
+
+    /** Literally no idea what I did here **/
+    if (ccounts.Size()) {
+      ccounts[0][1] += ccounts[0][0];
+      ccounts[0][2] += ccounts[0][1];
+      ccounts[0][4] += ccounts[0][3];
+    }
+    for (int ceq=1;ceq<cneqcs;ceq++) {
+      ccounts[ceq][0] += ccounts[ceq-1][2];
+      ccounts[ceq][1] += ccounts[ceq][0];
+      ccounts[ceq][2] += ccounts[ceq][1];
+      ccounts[ceq][3] += ccounts[ceq-1][4];
+      ccounts[ceq][4] += ccounts[ceq][3];
+    }
+    for (int ceq=cneqcs-1;ceq>0;ceq--) {
+      ccounts[ceq][2] = ccounts[ceq][1];
+      ccounts[ceq][1] = ccounts[ceq][0];
+      ccounts[ceq][0] = ccounts[ceq-1][2];
+      ccounts[ceq][4] = ccounts[ceq][3];
+      ccounts[ceq][3] = ccounts[ceq-1][4];
+    }
+    if (ccounts.Size()) {
+      ccounts[0][2] = ccounts[0][1];
+      ccounts[0][1] = ccounts[0][0];
+      ccounts[0][0] = 0;
+      ccounts[0][4] = ccounts[0][3];
+      ccounts[0][3] = 0;
+    }
+    // cout << endl << "ccounts - pos: " << endl << ccounts << endl;
+    Array<INT<2, size_t>> annoy_pos(cneqcs); // have to search here with Pos
+    for (auto ceq : Range(cneqcs)) {
+      annoy_pos[ceq][0] = ccounts[ceq][2];
+      annoy_pos[ceq][1] = cnie + ccounts[ceq][4];
+    }
+    for (auto meq : Range(mneqcs)) {
+      auto ceq = map_mc[meq];
+      auto cii = ii_pos[meq];
+      ii_pos[meq] = ccounts[ceq][0];
+      ccounts[ceq][0] += cii;
+      auto ccc = cc_pos[meq];
+      cc_pos[meq] = cnie + ccounts[ceq][3];
+      ccounts[ceq][3] += ccc;
+    }
+
+    /** prefix ci_pos **/
+    for (auto meq : Range(mneqcs)) {
+      for (auto ceq : Range(cneqcs)) {
+	ci_pos[meq+1][ceq] += ci_pos[meq][ceq];
+      }
+    }
+    for (auto ceq : Range(cneqcs)) {
+      for (int meq = mneqcs-2; meq>=0;meq--) {
+	ci_pos[meq+1][ceq] = ccounts[ceq][1] + ci_pos[meq][ceq];
+      }
+      ci_pos[0][ceq] = ccounts[ceq][1];
+    }
+
+    // fill all and make maps for edges
+    Array<size_t> cci(cneqcs);
+    for (auto k : Range(my_group.Size())) {
+      auto eqmap = map_om[k];
+      auto vmap = vmaps[k];
+      auto emap = emaps[k];
+      auto neq = eqmap.Size();
+      auto lam = [&emap, &vmap, &cedges](auto id, auto & edge) {
+	AMG_Node<NT_VERTEX> v0 = vmap[edge.v[0]];
+	AMG_Node<NT_VERTEX> v1 = vmap[edge.v[1]];
+	if (v0>v1) swap(v0,v1);
+	cedges[id] = {{{v0,v1}}, id};
+	emap[edge.id] = id;
+      };
+      for (auto eq : Range(neq)) {
+	auto meq = map_om[k][eq];
+	auto ceq = map_mc[meq];
+	// II edges
+	// auto ies = recv_etab[k][eq];
+	auto ies = mg_btms[k]->GetENodes<NT_EDGE>(eq);
+	for (auto l : Range(ies.Size())) {
+	  amg_nts::id_type id = ii_pos[meq] + l;
+	  lam(id, ies[l]);
+	}
+	// CI, CC and ANNOYING EDGES
+	size_t cutid = 0;
+	amg_nts::id_type id = 0;
+	size_t ccc = 0;
+	// auto ces = recv_cetab[k][eq];
+	auto ces = mg_btms[k]->GetCNodes<NT_EDGE>(eq);
+	cci = 0;
+	for (auto l : Range(ces.Size())) {
+	  auto edge = ces[l];
+	  auto cv0 = vmap[edge.v[0]];
+	  auto cv1 = vmap[edge.v[1]];
+	  if (cv0 > cv1) swap(cv0, cv1);
+	  auto ceq0 = eq_of_v(cv0);
+	  auto ceq0_id = c_eqc_h.GetEQCID(ceq0);
+	  auto ceq1 = eq_of_v(cv1);
+	  auto ceq1_id = c_eqc_h.GetEQCID(ceq1);
+	  if (ceq0 == ceq1) {
+	    if (ceq0 == ceq) { // CI
+	      id = ci_pos[meq][ceq0] + cci[ceq0];
+	      // cout << "(CI-edge " << cci[ceq0] << " to ceq " << ceq0 << ") ";
+	      cci[ceq0]++;
+	    }
+	    else { // IANNOY!!
+	      // weighted_cross_edge wce({INT<2>(ceq0_id, ceq1_id),
+	      // 	    bare_edge(map_cv_to_ceqc(cv0), map_cv_to_ceqc(cv1)), 0.0});
+	      INT<4, int> wce = {ceq0_id, map_cv_to_ceqc(cv0), ceq1_id, map_cv_to_ceqc(cv1)};
+	      auto pos = annoy_edges[ceq0].Pos(wce);
+	      id = annoy_pos[ceq0][0] + pos;
+	      // cout << "(Iannoy-edge, pos " << pos << ") , cross edge was "
+	      // 	   << wce << endl;
+	    }
+	  }
+	  else if ( ceq == (cutid = c_eqc_h.GetCommonEQC(ceq0, ceq1)) ) { // CC
+	    id = cc_pos[meq] + ccc;
+	    // cout << "(CC-edge " << ccc << " ) ";
+	    ccc++;
+	  }
+	  else { // CANNOY!!
+	    const auto & count = annoy_count[cutid];
+	    auto aces = FlatArray<ANNOYE>(count[1], &(annoy_edges[cutid][count[0]]));
+	    // clang-6 doesnt like this?? (see also amg_coarsen.cpp!)
+	    // weighted_cross_edge wce({INT<2>(ceq0_id, ceq1_id),
+	    // 	  bare_edge(map_cv_to_ceqc(cv0), map_cv_to_ceqc(cv1)), 0.0});
+	    INT<4, int> wce = {ceq0_id, map_cv_to_ceqc(cv0), ceq1_id, map_cv_to_ceqc(cv1)};
+	    auto pos = aces.Pos(wce);;
+	    // cout << "(Cannoy-edge, pos " << pos << ") , cross edge was "
+	    // 	 << wce << endl;
+	    id = annoy_pos[cutid][1] + pos;
+	  }
+	  // cout << "member " << k << ", eq " << eq << ", meq " << meq
+	  //      << ", ceq " << ceq << ", cedge " << l << " -> id " << id << endl;
+	  lam(id, edge);
+	}
+      }
+    }
+
+    // okay, now finish writing annoy_edges and constrct annoy_nodes:
+    sz.SetSize(cneqcs);
+    for (auto k : Range(cneqcs))
+      sz[k] = annoy_edges[k].Size();
+    annoy_nodes[NT_EDGE] = Table<amg_nts::id_type>(sz);
+    sz = 0;
+    INT<2, size_t> count;
+    for (auto ceq : Range(cneqcs)) {
+      auto as = annoy_edges[ceq];
+      auto pos = annoy_pos[ceq];
+      for (auto l : Range(as.Size())) {
+	auto eq0 = c_eqc_h.GetEQCOfID(as[l][0]);
+	AMG_Node<NT_VERTEX> v0 = ceqc_verts[eq0][as[l][1]];
+	auto eq1 = c_eqc_h.GetEQCOfID(as[l][2]);
+	AMG_Node<NT_VERTEX> v1 = ceqc_verts[eq1][as[l][3]];
+	bool is_in = (l < annoy_count[ceq][0]);
+	amg_nts::id_type id = is_in ? pos[0]+l : pos[1] + (l - annoy_count[ceq][0]);
+	annoy_nodes[NT_EDGE][ceq][sz[ceq]++] = id;
+	// cout << "ANNOY ceq (in? " << is_in << ")" << ceq << " edge " << l << endl;
+	// cout << " pos: " << pos << endl;
+	// cout << " counts: " << annoy_count[ceq] << endl;
+	// cout << "ae: " << as[l] << endl;
+	// cout << "edge " << cedges[id];
+	cedges[id] = {{{v0, v1}}, id};
+	// cout << " -> " << cedges[id] << endl;
+      }
+    }
+
+    for (auto k : Range(cneqcs)) {
+      c_mesh.nnodes_eqc[NT_EDGE][k] = disp_ie[k+1] - disp_ie[k];
+      c_mesh.nnodes_cross[NT_EDGE][k] = disp_ce[k+1] - disp_ce[k];
+    }
+    c_mesh.eqc_edges = FlatTable<AMG_Node<NT_EDGE>> (cneqcs, &c_mesh.disp_eqc[NT_EDGE][0], &c_mesh.edges[0]);
+    c_mesh.cross_edges = FlatTable<AMG_Node<NT_EDGE>> (cneqcs, &c_mesh.disp_cross[NT_EDGE][0], &c_mesh.edges[c_mesh.disp_eqc[NT_EDGE].Last()]);
+    cout << "contr eqc_edges: " << endl << c_mesh.eqc_edges << endl;
+    cout << "contr cross_edges: " << endl << c_mesh.cross_edges << endl;
+    mapped_NN[NT_FACE] = mapped_NN[NT_CELL] = 0;
+
+    if constexpr(std::is_same<TMESH, BlockTM>::value == 1) {
+        mapped_mesh = move(p_c_mesh);
+      }
+    else {
+      cout << "MAKE MAPPED ALGMESH!!" << endl;
+      this->mapped_mesh = make_shared<TMESH> ( move(*p_c_mesh), mesh->MapData(*this) );
+      cout << "MAPPED ALGMESH: " << endl << *mapped_mesh << endl;
+    }
   }
 
   INLINE Timer & timer_hack_beq () { static Timer t("GridContractMap :: BuildCEQCH"); return t; }
@@ -546,11 +863,9 @@ namespace amg
 	map_oc[k][j] = map_mc[map_om[k][j]];
       }
     }
-    
+
   }
 
-  template class GridContractMap<H1Mesh>;
-  
 } // namespace amg
 
-#undef FILE_AMGCTR_CPP
+#include "amg_tcs.hpp"

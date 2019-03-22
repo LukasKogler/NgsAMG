@@ -233,7 +233,7 @@ namespace amg
 		  cross_edges[eqc_num], cross_faces[eqc_num]);
   }
 
-  BlockTM* BlockTM :: Map (const CoarseMap & cmap) const
+  BlockTM* BlockTM :: MapBTM (const BaseCoarseMap & cmap) const
   {
     // cout << "map mesh " << *this << endl;
     auto coarse_mesh = new BlockTM(this->eqc_h);

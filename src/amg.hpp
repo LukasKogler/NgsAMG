@@ -23,4 +23,8 @@ namespace amg {
 #include "amg_precond.hpp"
 #include "amg_h1.hpp"
 
+#define AMG_EXTERN_TEMPLATES
+#include "amg_tcs.hpp"
+#undef AMG_EXTERN_TEMPLATES
+
 #endif

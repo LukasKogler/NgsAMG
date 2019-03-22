@@ -984,8 +984,6 @@ namespace amg {
     
   } // smoothfull
 
-  template class HybridGSS<1>;
-  template class HybridGSS<2>;
-
 } // namespace amg
 
+#include "amg_tcs.hpp"

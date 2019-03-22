@@ -54,7 +54,7 @@ namespace amg
     NgsAMG_Comm glob_comm = (fm_pd==nullptr) ? NgsAMG_Comm() : NgsAMG_Comm(fm_pd->GetCommunicator());
     auto grid_map = make_shared<GridMap>();
     shared_ptr<BaseGridMapStep> grid_step;
-    shared_ptr<CoarseMap> gstep_coarse;
+    shared_ptr<CoarseMap<TMESH>> gstep_coarse;
     shared_ptr<GridContractMap<TMESH>> gstep_contr;
     auto dof_map = make_shared<DOFMap>();
     shared_ptr<BaseDOFMapStep> dof_step;
@@ -66,8 +66,12 @@ namespace amg
       INT<3> level = 0; // coarse, contr, elim
       levels.Append(level);
       while ( level[0] < MAX_NL-1 && fm->template GetNNGlobal<NT_VERTEX>()>MAX_NV) {
+
+	cout << "now level " << level << endl;
+	
 	if ( (grid_step = (gstep_contr = TryContract(level, fm))) != nullptr ) {
-	  // dof_step = BuildDOFMapStep(gstep_contr, fm_pd);
+	  dof_step = BuildDOFMapStep(gstep_contr, fm_pd);
+	  cout << "HAVE CONTR STEP!!" << endl;
 	  level[1]++;
 	}
        	else if ( (grid_step = (gstep_coarse = TryCoarsen(level, fm))) != nullptr ) {
@@ -92,9 +96,13 @@ namespace amg
 	fm_pd = dof_step->GetMappedParDofs();
 	grid_map->AddStep(grid_step);
 	dof_map->AddStep(dof_step);
-	if (fm==nullptr) { break; } // no mesh due to contract
+	if (fm==nullptr) { cout << "dropped out, break loop!" << endl; break; } // no mesh due to contract
       }
     }
+
+    cout << "mesh-loop done, enter barrier!" << endl;
+    glob_comm.Barrier();
+    cout << "mesh-loop done, barrier done!" << endl;
 
     // cout << "finest level mat: " << finest_mat << endl;
     // cout << "type " << typeid(*finest_mat).name() << endl;
@@ -147,10 +155,10 @@ namespace amg
 
   template<class AMG_CLASS, class TMESH, class TMAT>
   shared_ptr<ProlMap<typename VWiseAMG<AMG_CLASS, TMESH, TMAT>::TSPMAT>>
-  VWiseAMG<AMG_CLASS, TMESH, TMAT> :: BuildDOFMapStep (shared_ptr<CoarseMap> _cmap, shared_ptr<ParallelDofs> fpd)
+  VWiseAMG<AMG_CLASS, TMESH, TMAT> :: BuildDOFMapStep (shared_ptr<CoarseMap<TMESH>> _cmap, shared_ptr<ParallelDofs> fpd)
   {
     // coarse ParallelDofs
-    const CoarseMap & cmap(*_cmap);
+    const CoarseMap<TMESH> & cmap(*_cmap);
     const TMESH & fmesh = static_cast<TMESH&>(*cmap.GetMesh());
     const TMESH & cmesh = static_cast<TMESH&>(*cmap.GetMappedMesh());
     const AMG_CLASS& self = static_cast<const AMG_CLASS&>(*this);
@@ -160,7 +168,7 @@ namespace amg
     size_t NCV = cmesh.template GetNN<NT_VERTEX>();
     // cout << "DOF STEP, fmesh " << fmesh << endl;
     // cout << "DOF STEP, cmesh " << cmesh << endl;
-    auto vmap = cmap.GetMap<NT_VERTEX>();
+    auto vmap = cmap.template GetMap<NT_VERTEX>();
     Array<int> perow (NV); perow = 0;
     // -1 .. cant happen, 0 .. locally single, 1..locally merged
     // -> cumulated: 0..single, 1+..merged
@@ -192,25 +200,47 @@ namespace amg
     }
     // cout << "have pw-prol: " << endl << *prol << endl;
     return make_shared<ProlMap<TSPMAT>> (prol, fpd, cpd);
-  }
+  } // VWiseAMG<...> :: BuildDOFMapStep ( CoarseMap )
+
+  template<class AMG_CLASS, class TMESH, class TMAT> shared_ptr<CtrMap<typename VWiseAMG<AMG_CLASS, TMESH, TMAT>::TV>>
+  VWiseAMG<AMG_CLASS, TMESH, TMAT> :: BuildDOFMapStep (shared_ptr<GridContractMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd)
+  {
+    auto fg = cmap->GetGroup();
+    Array<int> group(fg.Size()); group = fg;
+    Table<int> dof_maps;
+    shared_ptr<ParallelDofs> cpd = nullptr;
+    if (cmap->IsMaster()) {
+      // const TMESH& cmesh(*static_cast<const TMESH&>(*grid_step->GetMappedMesh()));
+      shared_ptr<TMESH> cmesh = static_pointer_cast<TMESH>(cmap->GetMappedMesh());
+      cpd = BuildParDofs(cmesh);
+      Array<int> perow (group.Size()); perow = 0;
+      for (auto k : Range(group.Size())) perow[k] = cmap->template GetNodeMap<NT_VERTEX>(k).Size();
+      dof_maps = Table<int>(perow);
+      for (auto k : Range(group.Size())) dof_maps[k] = cmap->template GetNodeMap<NT_VERTEX>(k);
+    }
+    return make_shared<CtrMap<TV>> (fpd, cpd, move(group), move(dof_maps));
+  } // VWiseAMG<...> :: BuildDOFMapStep ( GridContractMap )
+
   
-  template<class AMG_CLASS, class TMESH, class TMAT> shared_ptr<CoarseMap>
+  template<class AMG_CLASS, class TMESH, class TMAT> shared_ptr<CoarseMap<TMESH>>
   VWiseAMG<AMG_CLASS, TMESH, TMAT> :: TryCoarsen  (INT<3> level, shared_ptr<TMESH> mesh)
   {
-    auto coarsen_opts = make_shared<HierarchicVWC::Options>();
+    auto coarsen_opts = make_shared<typename HierarchicVWC<TMESH>::Options>();
     shared_ptr<VWCoarseningData::Options> basos = coarsen_opts;
     // auto coarsen_opts = make_shared<VWCoarseningData::Options>();
     if (level[0]==0) { coarsen_opts->free_verts = options->free_verts; }
     SetCoarseningOptions(basos, level, mesh);
-    // BlockVWC bvwc (coarsen_opts);
+    // BlockVWC<TMESH> bvwc (coarsen_opts);
     // return bvwc.Coarsen(mesh);
-    HierarchicVWC hvwc (coarsen_opts);
+    HierarchicVWC<TMESH> hvwc (coarsen_opts);
     return hvwc.Coarsen(mesh);
   }
 
   template<class AMG_CLASS, class TMESH, class TMAT> shared_ptr<GridContractMap<TMESH>>
   VWiseAMG<AMG_CLASS, TMESH, TMAT> :: TryContract (INT<3> level, shared_ptr<TMESH> mesh)
   {
+    if (level[1]!=0) return nullptr;
+    if (mesh->GetEQCHierarchy()->GetCommunicator().Size()==1) return nullptr;
     Table<int> groups = PartitionProcsMETIS (*mesh, mesh->GetEQCHierarchy()->GetCommunicator().Size()/2);
     return make_shared<GridContractMap<TMESH>>(move(groups), mesh);
   }

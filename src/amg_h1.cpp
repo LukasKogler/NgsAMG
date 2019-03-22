@@ -1,7 +1,6 @@
 #define FILE_AMGH1_CPP
 #include "amg.hpp"
 
-#include "amg_coarsen_impl.hpp"
 #include "amg_precond_impl.hpp"
 
 namespace amg
@@ -10,6 +9,16 @@ namespace amg
   H1AMG :: H1AMG (shared_ptr<H1AMG::TMESH> mesh,  shared_ptr<H1AMG::Options> opts)
     : VWiseAMG<H1AMG, H1AMG::TMESH, double>(mesh, opts)
   { name = "H1AMG"; }
+
+  template<> shared_ptr<EmbedVAMG<H1AMG>::TMESH>
+  EmbedVAMG<H1AMG> :: BuildAlgMesh (shared_ptr<BlockTM> top_mesh)
+  {
+    auto a = new H1VData(Array<double>(top_mesh->GetNN<NT_VERTEX>()), DISTRIBUTED); a->Data() = 0.0;
+    auto b = new H1EData(Array<double>(top_mesh->GetNN<NT_EDGE>()), DISTRIBUTED); b->Data() = 1.0;
+    auto mesh = make_shared<H1AMG::TMESH>(move(*top_mesh), a, b);
+    // cout << "finest mesh: " << endl << *mesh << endl;
+    return mesh;
+  }
 
   void H1AMG :: SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts, INT<3> level, shared_ptr<H1AMG::TMESH> _mesh)
   {
@@ -64,16 +73,6 @@ namespace amg
     // opts->ecw.SetSize(mesh->template GetNN<NT_EDGE>()); opts->ecw = 1.0;
   }
 
-  template<> shared_ptr<EmbedVAMG<H1AMG>::TMESH>
-  EmbedVAMG<H1AMG> :: BuildAlgMesh (shared_ptr<BlockTM> top_mesh)
-  {
-    auto a = new H1VData(Array<double>(top_mesh->GetNN<NT_VERTEX>()), DISTRIBUTED); a->Data() = 0.0;
-    auto b = new H1EData(Array<double>(top_mesh->GetNN<NT_EDGE>()), DISTRIBUTED); b->Data() = 1.0;
-    auto mesh = make_shared<H1AMG::TMESH>(move(*top_mesh), a, b);
-    // cout << "finest mesh: " << endl << *mesh << endl;
-    return mesh;
-  }
-
   template<> shared_ptr<BaseDOFMapStep> EmbedVAMG<H1AMG> :: BuildEmbedding ()
   {
     auto & vsort = node_sort[NT_VERTEX];
@@ -89,6 +88,45 @@ namespace amg
     return make_shared<ProlMap<SparseMatrix<double>>> (embed_mat, fes->GetParallelDofs(), nullptr);
   }
 
-
-  template class EmbedVAMG<H1AMG>;
 } // namespace amg
+
+// #include "amg_tcs.hpp"
+
+#include <python_ngstd.hpp>
+
+namespace amg
+{
+  void ExportH1AMG (py::module & m)
+  {
+    py::class_<EmbedVAMG<H1AMG>, shared_ptr<EmbedVAMG<H1AMG> >, BaseMatrix>
+      (m, "AMG_H1", "Ngs-AMG for scalar H1-problems")
+      .def(py::init<>
+    	   ( [] (shared_ptr<BilinearForm> blf, py::kwargs kwa) {
+    	     auto opts = make_shared<EmbedVAMG<H1AMG>::Options>();
+    	     opts->v_pos = "VERTEX";
+    	     for (auto item : kwa) {
+    	       string name = item.first.cast<string>();
+    	       if (name == "max_levels") { opts->max_n_levels = item.second.cast<int>(); }
+    	       else if (name == "max_cv") { opts->max_n_verts = item.second.cast<int>(); }
+    	       else if (name == "v_dofs") { opts->v_dofs = item.second.cast<string>(); }
+    	       else if (name == "v_pos") { opts->v_pos = item.second.cast<string>(); }
+    	       else if (name == "energy") { opts->energy = item.second.cast<string>(); }
+    	       else if (name == "edges") { opts->edges = item.second.cast<string>(); }
+    	       else { cout << "warning, invalid AMG option: " << name << endl; break; }
+    	     }
+    	     return new EmbedVAMG<H1AMG>(blf, opts);
+    	   }), py::arg("blf") = nullptr)
+      .def ("Test", [](EmbedVAMG<H1AMG> &pre) { pre.MyTest();} )
+      .def("GetNLevels", [](EmbedVAMG<H1AMG> &pre, size_t rank) {
+    	  return pre.GetNLevels(rank);
+    	}, py::arg("rank")=int(0))
+      .def("GetNDof", [](EmbedVAMG<H1AMG> &pre, size_t level, size_t rank) {
+    	  return pre.GetNDof(level, rank);
+    	}, py::arg("level"), py::arg("rank")=int(0))
+      .def("GetBF", [](EmbedVAMG<H1AMG> &pre, shared_ptr<BaseVector> vec,
+    		       size_t level, size_t rank, size_t dof) {
+    	     pre.GetBF(level, rank, dof, *vec);
+    	   });
+  }
+} // namespace amg
+

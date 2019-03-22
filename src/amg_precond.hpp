@@ -70,7 +70,7 @@ namespace amg
 
     virtual void SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts, INT<3> level, shared_ptr<TMESH> mesh) = 0;
 
-    virtual shared_ptr<CoarseMap> TryCoarsen  (INT<3> level, shared_ptr<TMESH> mesh);
+    virtual shared_ptr<CoarseMap<TMESH>> TryCoarsen  (INT<3> level, shared_ptr<TMESH> mesh);
     virtual shared_ptr<GridContractMap<TMESH>> TryContract (INT<3> level, shared_ptr<TMESH> mesh);
     virtual shared_ptr<BaseGridMapStep> TryDiscard  (INT<3> level, shared_ptr<TMESH> mesh) { return nullptr; }
     
@@ -80,7 +80,8 @@ namespace amg
     template<int D> INLINE void SetIdentity (Mat<D,D,double> & x) const { x = 0.0; for (auto i:Range(D)) x(i,i) = 1.0; }
     
     shared_ptr<ParallelDofs> BuildParDofs (shared_ptr<TMESH> amesh);
-    shared_ptr<ProlMap<TSPMAT>> BuildDOFMapStep (shared_ptr<CoarseMap> cmap, shared_ptr<ParallelDofs> fpd);
+    shared_ptr<ProlMap<TSPMAT>> BuildDOFMapStep (shared_ptr<CoarseMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd);
+    shared_ptr<CtrMap<TV>> BuildDOFMapStep (shared_ptr<GridContractMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd);
   };
 
   // /**

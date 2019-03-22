@@ -5,7 +5,7 @@
 namespace amg
 {
 
-  class CoarseMap;
+  class BaseCoarseMap;
   
   // Only topology!
   class TopologicMesh
@@ -74,7 +74,7 @@ namespace amg
     Array<AMG_Node<NT_FACE>> cross_faces;
   };
 
-  
+
   class BlockTM : public TopologicMesh
   {
     template<class TMESH> friend class GridContractMap;
@@ -108,7 +108,7 @@ namespace amg
     const FlatTM GetBlock (size_t eqc_num) const;
     /** Creates new(!!) block-tm! **/
     // BlockTM* Map (CoarseMap & cmap) const;
-    virtual BlockTM* Map (const CoarseMap & cmap) const;
+    BlockTM* MapBTM (const BaseCoarseMap & cmap) const; // TODO: get rid of this
   protected:
     shared_ptr<EQCHierarchy> eqc_h;
     /** eqc-block-views of data **/
@@ -437,6 +437,7 @@ namespace amg
 				       bool build_faces, FlatArray<int> face_sort,
 				       bool build_cells, FlatArray<int> cell_sort);
   
+  template<class TMESH> class GridContractMap;
   
   /** Nodal data that can be attached to a Mesh to form an AlgebraicMesh **/
   template<NODE_TYPE NT, class T, class CRTP>
@@ -452,12 +453,15 @@ namespace amg
     PARALLEL_STATUS GetParallelStatus () const { return stat; }
     FlatArray<T> Data () const { return data; }
     // INLINE void map_data (const CoarseMap & cmap, FlatArray<T> fdata, FlatArray<T> cdata); 
-    CRTP* Map (const CoarseMap & map) const
+    template<class TMESH>
+    INLINE PARALLEL_STATUS map_data (const GridContractMap<TMESH> & map, Array<T> & cdata) const
+    { map.template MapNodeData<NT, T>(data, stat, &cdata); return stat; }
+    template<class TMAP>
+    CRTP* Map (const TMAP & map) const
     {
       Array<T> cdata;
-      auto cstat = static_cast<const CRTP&>(*this).map_data(map, cdata);
-      auto cm_wd = new CRTP(move(cdata), cstat);
-      return cm_wd;
+      PARALLEL_STATUS cstat = static_cast<const CRTP&>(*this).map_data(map, cdata);
+      return new CRTP(move(cdata), cstat);
     };
     virtual void Cumulate() const {
       if (stat == DISTRIBUTED) {
@@ -486,17 +490,24 @@ namespace amg
     }
   };
 
+
+
   /** Mesh topology + various attached nodal data **/
+  template<class TMESH> class GridMapStep;
   template<class... T>
   class BlockAlgMesh : public BlockTM
   {
   public:
-    BlockAlgMesh (BlockTM && _mesh, T*... _data)
-      : BlockTM(move(_mesh)), node_data(_data...)
+    BlockAlgMesh (BlockTM && _mesh, std::tuple<T*...> _data)
+      : BlockTM(move(_mesh)), node_data(_data)
     { std::apply([&](auto& ...x){(..., x->SetMesh(this));}, node_data); }
-    BlockAlgMesh<T...>* MapBALG (const CoarseMap & cmap) const
-    { return std::apply([&](auto&& ...x){ return new BlockAlgMesh<T...>(move(*BlockTM::Map(cmap)), x->Map(cmap)...); }, node_data); };
-    virtual BlockTM* Map (const CoarseMap & cmap) const override { return MapBALG(cmap); }
+    BlockAlgMesh (BlockTM && _mesh, T*... _data)
+      : BlockAlgMesh (move(_mesh), std::tuple<T*...>(_data...))
+    { ; }
+    template<class TMAP,
+	     typename T_ENABLE = typename std::enable_if<std::is_base_of<GridMapStep<BlockAlgMesh<T...>>, TMAP>::value==1>::type>
+    std::tuple<T*...> MapData (const TMAP & map) const
+    { return std::apply([&](auto&& ...x){ return make_tuple<T*...>(x->Map(map)...); }, node_data); };
     const std::tuple<T*...>& Data () const { return node_data; }
     template<typename... T2> friend std::ostream & operator<<(std::ostream &os, BlockAlgMesh<T2...> & m);
     ~BlockAlgMesh () { std::apply([](auto& ...x){ (...,delete x); }, node_data);}

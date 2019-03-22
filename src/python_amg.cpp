@@ -4,45 +4,11 @@ using namespace ngsolve;
 
 #include <python_ngstd.hpp>
 
-#include "amg.hpp"
+namespace amg { void ExportH1AMG (py::module & m); }
 
-using namespace amg;
-
-
-
-PYBIND11_MODULE(ngs_amg, m) {
+PYBIND11_MODULE (ngs_amg, m) {
   m.attr("__name__") = "ngs_amg";
-
-  py::class_<EmbedVAMG<H1AMG>, shared_ptr<EmbedVAMG<H1AMG> >, BaseMatrix>
-    (m, "AMG_H1", "Ngs-AMG for scalar H1-problems")
-    .def("__init__",
-	 [] (EmbedVAMG<H1AMG>* instance, shared_ptr<BilinearForm> blf, py::kwargs kwa) {
-	   auto opts = make_shared<EmbedVAMG<H1AMG>::Options>();
-	   opts->v_pos = "VERTEX";
-	   for (auto item : kwa) {
-	     string name = item.first.cast<string>();
-	     if (name == "max_levels") { opts->max_n_levels = item.second.cast<int>(); }
-	     else if (name == "max_cv") { opts->max_n_verts = item.second.cast<int>(); }
-	     else if (name == "v_dofs") { opts->v_dofs = item.second.cast<string>(); }
-	     else if (name == "v_pos") { opts->v_pos = item.second.cast<string>(); }
-	     else if (name == "energy") { opts->energy = item.second.cast<string>(); }
-	     else if (name == "edges") { opts->edges = item.second.cast<string>(); }
-	     else { cout << "warning, invalid AMG option: " << name << endl; break; }
-	   }
-	   new (instance) EmbedVAMG<H1AMG>(blf, opts);
-	 }, py::arg("blf")=nullptr)
-    .def ("Test", [](EmbedVAMG<H1AMG> &pre) { pre.MyTest();} )
-    .def("GetNLevels", [](EmbedVAMG<H1AMG> &pre, size_t rank) {
-	return pre.GetNLevels(rank);
-      }, py::arg("rank")=int(0))
-    .def("GetNDof", [](EmbedVAMG<H1AMG> &pre, size_t level, size_t rank) {
-	return pre.GetNDof(level, rank);
-      }, py::arg("level"), py::arg("rank")=int(0))
-    .def("GetBF", [](EmbedVAMG<H1AMG> &pre, shared_ptr<BaseVector> vec,
-		     size_t level, size_t rank, size_t dof) {
-	   pre.GetBF(level, rank, dof, *vec);
-	 });
-  
+  amg::ExportH1AMG(m);  
 }
 
 // template<int D>

@@ -188,8 +188,8 @@ namespace amg
     // static Timer t12(pf2 + ", make st");
     // t12.Start();
 
-    cout << "gather_send_total_msg_size: " << endl; prow2(gather_send_total_msg_size); cout << endl;
-    cout << "gather_send_nr_blocks: " << endl; prow2(gather_send_nr_blocks); cout << endl;
+    // cout << "gather_send_total_msg_size: " << endl; prow2(gather_send_total_msg_size); cout << endl;
+    // cout << "gather_send_nr_blocks: " << endl; prow2(gather_send_nr_blocks); cout << endl;
     
     auto make_displs = [] (auto & bs, auto & displs) {
       displs[0] = 0;

@@ -16,6 +16,7 @@ namespace amg
   class H1VData : public AttachedNodeData<NT_VERTEX, double, H1VData>
   {
   public:
+    using AttachedNodeData<NT_VERTEX, double, H1VData>::map_data;
     H1VData (Array<double> && _data, PARALLEL_STATUS _stat) : AttachedNodeData<NT_VERTEX, double, H1VData>(move(_data), _stat) {}
     /** 
 	What we need to implement is how we want to map the data from the fine to the coarse level.
@@ -27,7 +28,7 @@ namespace amg
 
 	(public BC it is called from AND<...>, can I find a way to make this protected??)
      **/
-    INLINE PARALLEL_STATUS map_data (const CoarseMap & cmap, Array<double> & cdata) const
+    INLINE PARALLEL_STATUS map_data (const BaseCoarseMap & cmap, Array<double> & cdata) const
     {
       Distribute();
       cdata.SetSize(cmap.GetMappedNN<NT_VERTEX>()); cdata = 0.0;
@@ -44,8 +45,9 @@ namespace amg
   class H1EData : public AttachedNodeData<NT_EDGE, double, H1EData>
   {
   public:
+    using AttachedNodeData<NT_EDGE, double, H1EData>::map_data;
     H1EData (Array<double> && _data, PARALLEL_STATUS _stat) : AttachedNodeData<NT_EDGE, double, H1EData>(move(_data), _stat) {}
-    INLINE PARALLEL_STATUS map_data (const CoarseMap & cmap, Array<double> & cdata) const
+    INLINE PARALLEL_STATUS map_data (const BaseCoarseMap & cmap, Array<double> & cdata) const
     {
       Distribute();
       cdata.SetSize(cmap.GetMappedNN<NT_EDGE>()); cdata = 0.0;
@@ -65,22 +67,13 @@ namespace amg
     using TMESH = H1Mesh;
     using VWiseAMG<H1AMG, H1Mesh, double>::Options;
     H1AMG (shared_ptr<TMESH> mesh,  shared_ptr<Options> opts);
-    INLINE void CalcPWPBlock (const TMESH & fmesh, const TMESH & cmesh, const CoarseMap & map,
+    INLINE void CalcPWPBlock (const TMESH & fmesh, const TMESH & cmesh, const CoarseMap<TMESH> & map,
 			      AMG_Node<NT_VERTEX> v, AMG_Node<NT_VERTEX> cv, double & mat) const
     { SetIdentity(mat); }
   protected:
     virtual void SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts, INT<3> level, shared_ptr<TMESH> mesh) override;
   };
 
-
-  
-#ifndef FILE_AMGH1_CPP
-  extern template class EmbedVAMG<H1AMG>;
-#endif
-
-#ifndef FILE_AMGCTR_CPP
-  extern template class GridContractMap<H1Mesh>;
-#endif
 
 } // namespace amg
 

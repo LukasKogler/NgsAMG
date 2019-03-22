@@ -105,13 +105,6 @@ namespace amg {
   }; // end class HybridSmoother
 
 
-#ifndef FILE_AMGSM_CPP
-  extern template class HybridGSS<1>;
-  extern template class HybridGSS<2>;
-#endif
-  // template<> class HybridGSS<3>;
-  // template<> class HybridGSS<6>;
-  
 } // end namespace amg
 
 #endif

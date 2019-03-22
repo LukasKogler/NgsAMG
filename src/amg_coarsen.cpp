@@ -1,6 +1,5 @@
-#define FILE_AMGCOARSEN_CPP
+#define FILE_AMGCRS_CPP
 #include "amg.hpp"
-
 
 namespace amg
 {
@@ -21,39 +20,37 @@ namespace amg
     }
   }
 
-  template<class TMESH> VWiseCoarsening<TMESH> :: VWiseCoarsening (shared_ptr<VWiseCoarsening::Options> opts)
+  template<class TMESH>
+  VWiseCoarsening<TMESH> :: VWiseCoarsening (shared_ptr<VWiseCoarsening<TMESH>::Options> opts)
     : VWCoarseningData(opts)
   { ; }
 
-  BlockVWC :: BlockVWC (shared_ptr<BlockVWC::Options> opts)
-    : VWiseCoarsening<BlockTM>(opts)
+  template<class TMESH>
+  BlockVWC<TMESH> :: BlockVWC (shared_ptr<BlockVWC<TMESH>::Options> opts)
+    : VWiseCoarsening<TMESH>(opts)
   { ; }
 
   
-  template<class TMESH> shared_ptr<CoarseMap> VWiseCoarsening<TMESH> :: Coarsen (shared_ptr<TMESH> mesh)
-  {
-    CollapseTracker coll(mesh->template GetNN<NT_VERTEX>(), mesh->template GetNN<NT_EDGE>());
-    Collapse(*mesh, coll);
-    return make_shared<CoarseMap>(mesh, coll);
-  }
-
   /** We should not try to map a flat-mesh !!**/
-  template<> shared_ptr<CoarseMap> VWiseCoarsening<FlatTM> :: Coarsen (shared_ptr<FlatTM> mesh)
+  template<> shared_ptr<CoarseMap<FlatTM>> VWiseCoarsening<FlatTM> :: Coarsen (shared_ptr<FlatTM> mesh)
   { return nullptr; }
 
   
-  template<class TMESH> SeqVWC<TMESH> :: SeqVWC (shared_ptr<SeqVWC<TMESH>::Options> opts)
+  template<class TMESH>
+  SeqVWC<TMESH> :: SeqVWC (shared_ptr<SeqVWC<TMESH>::Options> opts)
     : VWiseCoarsening<TMESH>(opts)
   { ; }
 
 
   INLINE Timer & HierVWCTimerHack (){ static Timer t("Collapse - hierarchic"); return t; }
-  HierarchicVWC :: HierarchicVWC (shared_ptr<HierarchicVWC::Options> opts)
-    : VWiseCoarsening<BlockTM>(nullptr)
+  template<class TMESH>
+  HierarchicVWC<TMESH> :: HierarchicVWC (shared_ptr<HierarchicVWC::Options> opts)
+    : VWiseCoarsening<TMESH>(nullptr)
     { options = (opts == nullptr) ? make_shared<Options>() : opts; }
   
   INLINE Timer & SeqVWCTimerHack (){ static Timer t("Collapse - seq, DAG"); return t; }
-  template<class TMESH> void SeqVWC<TMESH> :: Collapse (const TMESH & mesh, SeqVWC<TMESH>::CollapseTracker & coll)
+  template<class TMESH>
+  void SeqVWC<TMESH> :: Collapse (const TMESH & mesh, SeqVWC<TMESH>::CollapseTracker & coll)
   {
     RegionTimer rt(SeqVWCTimerHack());
     size_t NV = mesh.template GetNN<NT_VERTEX>();
@@ -132,7 +129,8 @@ namespace amg
 
 
   INLINE Timer & BlockVWCTimerHack (){ static Timer t("Collapse - blockwise"); return t; }
-  void BlockVWC :: Collapse (const BlockTM & mesh, BlockVWC::CollapseTracker & coll)
+  template<class TMESH>
+  void BlockVWC<TMESH> :: Collapse (const TMESH & mesh, BlockVWC::CollapseTracker & coll)
   {
     // cout << "collapse blockwise " << endl;
     RegionTimer rt(BlockVWCTimerHack());
@@ -148,23 +146,24 @@ namespace amg
 
 
   INLINE Timer & HierarchicVWCTimerHack (){ static Timer t("Collapse - hierarchic"); return t; }
-  void HierarchicVWC :: Collapse (const BlockTM & mesh, HierarchicVWC::CollapseTracker & coll)
+  template<class TMESH>
+  void HierarchicVWC<TMESH> :: Collapse (const TMESH & mesh, HierarchicVWC::CollapseTracker & coll)
   {
     RegionTimer rt(HierVWCTimerHack());
-    auto block_opts = make_shared<BlockVWC::Options>();
+    auto block_opts = make_shared<typename BlockVWC<TMESH>::Options>();
     block_opts->min_cw = options->min_cw;
     // block_opts->free_verts = nullptr; // I am taking care of that!
     block_opts->vcw = Array<double>(options->vcw.Size(), &(options->vcw[0])); block_opts->vcw.NothingToDelete();
     block_opts->ecw = Array<double>(options->ecw.Size(), &(options->ecw[0])); block_opts->ecw.NothingToDelete();
-    BlockVWC block_crs (block_opts);
+    BlockVWC<TMESH> block_crs (block_opts);
     
     const auto & eqc_h = *mesh.GetEQCHierarchy();
     auto neqcs = eqc_h.GetNEQCS();
     auto comm = eqc_h.GetCommunicator();
     auto rank = comm.Rank();
     auto np = comm.Size();
-    auto NV = mesh.GetNN<NT_VERTEX>();
-    auto NE = mesh.GetNN<NT_EDGE>();
+    auto NV = mesh.template GetNN<NT_VERTEX>();
+    auto NE = mesh.template GetNN<NT_EDGE>();
 
     Array<double> mark_v(NV);
     if (NV) mark_v = 0.0;
@@ -198,16 +197,16 @@ namespace amg
     if (options->pre_coll) {
       block_crs.Collapse(mesh, coll);
       size_t ncol = 0;
-      for (const auto & e : mesh.GetNodes<NT_EDGE>()) { if(coll.IsEdgeCollapsed(e)) ncol++; }
-      double cfr = (mesh.GetNN<NT_VERTEX>()==0) ? 0 : (1.0*ncol)/mesh.GetNN<NT_VERTEX>();
+      for (const auto & e : mesh.template GetNodes<NT_EDGE>()) { if(coll.IsEdgeCollapsed(e)) ncol++; }
+      double cfr = (mesh.template GetNN<NT_VERTEX>()==0) ? 0 : (1.0*ncol)/mesh.template GetNN<NT_VERTEX>();
       // cout << "blockwise ncol: " << ncol << " of " << mesh.GetNN<NT_EDGE>() << ", frac " << cfr << endl;
     }
     
     
     /** mark vertices **/
-    auto all_edges = mesh.GetNodes<NT_EDGE>();
+    auto all_edges = mesh.template GetNodes<NT_EDGE>();
     for (auto eqc : Range(neqcs) ) {
-      auto cross_edges = mesh.GetCNodes<NT_EDGE> (eqc);
+      auto cross_edges = mesh.template GetCNodes<NT_EDGE> (eqc);
       // cout << " eqc " << eqc << ",ce " << cross_edges.Size() << endl;
       for (const auto & edge : cross_edges) {
 	// should not matter - block-coll should have fixed these!
@@ -216,8 +215,8 @@ namespace amg
 	   coll.IsEdgeFixed(edge)) continue;
 	const auto ew = GetECW(edge);
 	if(ew < MIN_CW) continue;
-	auto e0 = mesh.GetEqcOfNode<NT_VERTEX>(edge.v[0]);
-	auto e1 = mesh.GetEqcOfNode<NT_VERTEX>(edge.v[1]);
+	auto e0 = mesh.template GetEqcOfNode<NT_VERTEX>(edge.v[0]);
+	auto e1 = mesh.template GetEqcOfNode<NT_VERTEX>(edge.v[1]);
 	// cout << "eqcs " << e0 << " " << e1 << endl;
 	// cout << "goes to eqc " << eqc_h.GetMergedEQC(e0, e1) << endl;
 	if(!eqc_h.IsMergeValid(e0,e1)) { /* cout << "cant merge " << e0 << " " << e1 << endl; */ continue; }
@@ -252,13 +251,13 @@ namespace amg
 	}
       }
     }
-    int nce = 0; for (auto k : Range(neqcs)) nce += mesh.GetCNN<NT_EDGE>(k);
+    int nce = 0; for (auto k : Range(neqcs)) nce += mesh.template GetCNN<NT_EDGE>(k);
     // cout << "want edge: " << want_edge.NumSet() << " of " << nce << endl;
     // cout << want_edge << endl;
     // cout << "marked vs: " << endl; prow(mark_v); cout << endl;
     
     // overwrite values with index of max. proc!
-    mesh.AllreduceNodalData<NT_VERTEX> (mark_v, [](const auto & tab_in) {
+    mesh.template AllreduceNodalData<NT_VERTEX> (mark_v, [](const auto & tab_in) {
 	Array<double> out;
 	const int nrows = tab_in.Size();
 	if (nrows==0) return out;
@@ -283,7 +282,7 @@ namespace amg
     int until = 0;
     for (auto eqc : Range(neqcs)) {
       int last = until;
-      until += mesh.GetENN<NT_VERTEX>(eqc);
+      until += mesh.template GetENN<NT_VERTEX>(eqc);
       auto dps = eqc_h.GetDistantProcs(eqc);
       auto pos = 0; while( pos<dps.Size() && comm.Rank() < dps[pos]) pos++;
       if (until > last)
@@ -300,17 +299,17 @@ namespace amg
     TableCreator<int> csync(neqcs);
     for (; !csync.Done(); csync++) {
       for (auto eqc : Range(neqcs)) {
-	auto cross_edges = mesh.GetCNodes<NT_EDGE>(eqc);
+	auto cross_edges = mesh.template GetCNodes<NT_EDGE>(eqc);
 	for (auto ke : Range(cross_edges.Size())) {
 	  const auto & e = cross_edges[ke];
 	  if (!want_edge.Test(e.id)) continue;
 	  if ( (mark_v[e.v[0]]==0) || (mark_v[e.v[1]]==0) ) continue;
 	  csync.Add(eqc, 1+ke);
-	  int eq0 = mesh.GetEqcOfNode<NT_VERTEX>(e.v[0]);
-	  int vl0 = mesh.MapNodeToEQC<NT_VERTEX>(e.v[0]);
+	  int eq0 = mesh.template GetEqcOfNode<NT_VERTEX>(e.v[0]);
+	  int vl0 = mesh.template MapNodeToEQC<NT_VERTEX>(e.v[0]);
 	  csync.Add(eq0, -vl0);
-	  int eq1 = mesh.GetEqcOfNode<NT_VERTEX>(e.v[1]);
-	  int vl1 = mesh.MapNodeToEQC<NT_VERTEX>(e.v[1]);
+	  int eq1 = mesh.template GetEqcOfNode<NT_VERTEX>(e.v[1]);
+	  int vl1 = mesh.template MapNodeToEQC<NT_VERTEX>(e.v[1]);
 	  csync.Add(eq1, -vl1);
 	}
       }
@@ -319,7 +318,7 @@ namespace amg
 
     // cout << "sync: " << endl << sync << endl;
 
-    auto syncsync = ReduceTable<int, int>(sync, mesh.GetEQCHierarchy(), [&](auto & in) { // syncsync ... haha
+    auto syncsync = ReduceTable<int, int>(sync, mesh.template GetEQCHierarchy(), [&](auto & in) { // syncsync ... haha
 	Array<int> out;
 	int nrows = in.Size(); if (nrows==0) return out;
 	int tot_entries = 0; for(auto k:Range(nrows)) tot_entries += in[k].Size();
@@ -338,8 +337,8 @@ namespace amg
     // cout << "syncsync: " << endl << syncsync << endl;
     
     for (auto eqc : Range(neqcs)) {
-      auto cross_edges = mesh.GetCNodes<NT_EDGE>(eqc);
-      auto verts = mesh.GetENodes<NT_VERTEX>(eqc);
+      auto cross_edges = mesh.template GetCNodes<NT_EDGE>(eqc);
+      auto verts = mesh.template GetENodes<NT_VERTEX>(eqc);
       auto row = syncsync[eqc];
       for (int val : row) {
 	if (val>0) {
@@ -365,24 +364,25 @@ namespace amg
     }
 
     size_t ncol = 0;
-    for (const auto & e : mesh.GetNodes<NT_EDGE>()) {
+    for (const auto & e : mesh.template GetNodes<NT_EDGE>()) {
       // cout << "ege " << e << " coll? " << coll.IsEdgeCollapsed(e) << endl;
       if(coll.IsEdgeCollapsed(e)) ncol++;
     }
-    double cfr = (mesh.GetNN<NT_VERTEX>()==0) ? 0 : (1.0*ncol)/mesh.GetNN<NT_VERTEX>();
-    cout << "hierarch ncol: " << ncol << " of " << mesh.GetNN<NT_EDGE>() << ", frac " << cfr << endl;
+    double cfr = (mesh.template GetNN<NT_VERTEX>()==0) ? 0 : (1.0*ncol)/mesh.template GetNN<NT_VERTEX>();
+    cout << "hierarch ncol: " << ncol << " of " << mesh.template GetNN<NT_EDGE>() << ", frac " << cfr << endl;
 
     if (options->post_coll) {
       block_crs.Collapse(mesh, coll);
       size_t ncol = 0;
-      for (const auto & e : mesh.GetNodes<NT_EDGE>()) { if(coll.IsEdgeCollapsed(e)) ncol++; }
-      double cfr = (mesh.GetNN<NT_VERTEX>()==0) ? 0 : (1.0*ncol)/mesh.GetNN<NT_VERTEX>();
-      cout << "post hierarch ncol: " << ncol << " of " << mesh.GetNN<NT_EDGE>() << ", frac " << cfr << endl;
+      for (const auto & e : mesh.template GetNodes<NT_EDGE>()) { if(coll.IsEdgeCollapsed(e)) ncol++; }
+      double cfr = (mesh.template GetNN<NT_VERTEX>()==0) ? 0 : (1.0*ncol)/mesh.template GetNN<NT_VERTEX>();
+      cout << "post hierarch ncol: " << ncol << " of " << mesh.template GetNN<NT_EDGE>() << ", frac " << cfr << endl;
     }
   } // HierarchicVWC :: Collapse
 
-  CoarseMap :: CoarseMap (shared_ptr<BlockTM> _mesh, VWCoarseningData::CollapseTracker &coll)
-    : GridMapStep<BlockTM>(_mesh)
+  template<class TMESH>
+  CoarseMap<TMESH> :: CoarseMap (shared_ptr<TMESH> _mesh, VWCoarseningData::CollapseTracker &coll)
+    : BaseCoarseMap(), GridMapStep<TMESH>(_mesh)
   {
     // cout << "coarse map, V" << endl;
     BuildVertexMap(coll);
@@ -391,14 +391,27 @@ namespace amg
     // if (_mesh->template HasNodes<NT_FACE>()) BuildMap<NT_FACE>(coll);
     // if (_mesh->template HasNodes<NT_CELL>()) BuildMap<NT_CELL>(coll);
     // cout << " make mapped mesh " << endl;
-    auto mm = mesh->Map(*this);
     // cout << " mm:  " << mm << endl;
     // cout << " mm id:  " << typeid(*mm).name() << endl;
-    mapped_mesh.reset(mm);
-    // cout << " mapped mesh is:  " << mapped_mesh << endl;
+    auto mapped_btm = mesh->MapBTM(*this);
+    if constexpr(std::is_same<TMESH, BlockTM>::value==1) {
+	mapped_mesh.reset(mapped_btm);
+      }
+    else {
+      // this->mapped_mesh = std::apply( [&mapped_btm](auto& ...x) { return make_shared<TMESH> ( move(*mapped_btm), x...); }, mesh->MapData(*this));
+      this->mapped_mesh = make_shared<TMESH> ( move(*mapped_btm), mesh->MapData(*this) );
+    }
+		  
+    // if constexpr(std::is_base_of<BlockAlgMesh<>, TMESH>::value == 1) {
+    // 	this->mapped_mesh = make_shared<TMESH> ( move(*mapped_btm), mesh->MapData(*this) );
+    //   }
+    // else {
+    //   mapped_mesh = move(mapped_btm);
+    // }
   }
 
-  void CoarseMap :: BuildVertexMap (VWCoarseningData::CollapseTracker& coll)
+  template<class TMESH>
+  void CoarseMap<TMESH> :: BuildVertexMap (VWCoarseningData::CollapseTracker& coll)
   {
     auto is_invalid = [](auto val)->bool {return val==decltype(val)(-1); };
     static Timer t("CoarseMap - BuildMap<NT_VERTEX>");
@@ -543,7 +556,8 @@ namespace amg
     mapped_cross_firsti[NT_VERTEX] = mapped_eqc_firsti[NT_VERTEX].Last();
   } // CoarseMap :: BuildVertexMap
 
-  void CoarseMap :: BuildEdgeMap (VWCoarseningData::CollapseTracker& coll)
+  template<class TMESH>
+  void CoarseMap<TMESH> :: BuildEdgeMap (VWCoarseningData::CollapseTracker& coll)
   {
     /**
        Consistent map for coarse nodes:
@@ -783,6 +797,6 @@ namespace amg
     // cout << endl << "have edge map: " << endl << node_map << endl;
   } // CoarseMap :: BuildEdgeMap
 
-  template class SeqVWC<FlatTM>;
-
 } // namespace amg
+
+#include "amg_tcs.hpp"

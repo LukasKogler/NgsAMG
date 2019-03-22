@@ -4,11 +4,12 @@
 namespace amg
 {
 
-  template<class TMESH>
-  class CoarseningAlgorithm
+  template<class TMESH> class CoarseMap;
+
+  template<class TMESH> class CoarseningAlgorithm
   {
   public:
-    virtual shared_ptr<CoarseMap> Coarsen (shared_ptr<TMESH> mesh) = 0;
+    virtual shared_ptr<CoarseMap<TMESH>> Coarsen (shared_ptr<TMESH> mesh) = 0;
   };
 
   class VWCoarseningData
@@ -96,18 +97,21 @@ namespace amg
       Array<const AMG_Node<NT_EDGE>*> v2e;
     }; // class CollapseTracker
   };
-  
+
   template<class TMESH>
-  class VWiseCoarsening : public CoarseningAlgorithm<TMESH>, public VWCoarseningData
+  class VWiseCoarsening : public VWCoarseningData, public CoarseningAlgorithm<TMESH> 
   {
   public:
-    // using Options = typename VWCoarseningData::Options;
-    using VWCoarseningData::Options;
-    using VWCoarseningData::options;
+    using Options = typename VWCoarseningData::Options;
     using CollapseTracker = typename VWCoarseningData::CollapseTracker;
     VWiseCoarsening (shared_ptr<Options> options = nullptr);
     ~VWiseCoarsening () { ; }
-    virtual shared_ptr<CoarseMap> Coarsen (shared_ptr<TMESH> mesh);
+    virtual shared_ptr<CoarseMap<TMESH>> Coarsen (shared_ptr<TMESH> mesh)
+    {
+      CollapseTracker coll(mesh->template GetNN<NT_VERTEX>(), mesh->template GetNN<NT_EDGE>());
+      Collapse(*mesh, coll);
+      return make_shared<CoarseMap<TMESH>>(mesh, coll);
+    }
     virtual void Collapse (const TMESH & mesh, CollapseTracker & coll) = 0;
   };
 
@@ -117,23 +121,32 @@ namespace amg
   public:
     using Options = typename VWiseCoarsening<TMESH>::Options;
     using VWiseCoarsening<TMESH>::options;
+    virtual shared_ptr<CoarseMap<TMESH>> Coarsen (shared_ptr<TMESH> mesh) override
+    {
+      static_assert(std::is_base_of<BlockTM, TMESH>::value==0, "Can not coarsen a parallel blocked mesh with SeqVWC!");
+      return VWiseCoarsening<TMESH>::Coarsen(mesh);
+    }
     using CollapseTracker = typename VWiseCoarsening<TMESH>::CollapseTracker;
     SeqVWC (shared_ptr<Options> opts);
-    virtual void Collapse (const TMESH & mesh, CollapseTracker & coll);
+    virtual void Collapse (const TMESH & mesh, CollapseTracker & coll) override;
   };
   
-  class BlockVWC : public VWiseCoarsening<BlockTM>
+  template<class TMESH>
+  class BlockVWC : public VWiseCoarsening<TMESH>
   {
+    static_assert(std::is_base_of<BlockTM, TMESH>::value==1, "Can only use BlockVWC for Blocked meshes!");
   public:
-    using Options = typename VWiseCoarsening<BlockTM>::Options;
-    using VWiseCoarsening<BlockTM>::options;
-    using CollapseTracker = typename VWiseCoarsening<BlockTM>::CollapseTracker;
+    using Options = typename VWiseCoarsening<TMESH>::Options;
+    using VWiseCoarsening<TMESH>::options;
+    using CollapseTracker = typename VWiseCoarsening<TMESH>::CollapseTracker;
     BlockVWC (shared_ptr<Options> opts);
-    virtual void Collapse (const BlockTM & mesh, CollapseTracker & coll);
+    virtual void Collapse (const TMESH & mesh, CollapseTracker & coll) override;
   };
 
-  class HierarchicVWC : public VWiseCoarsening<BlockTM>
+  template<class TMESH>
+  class HierarchicVWC : public VWiseCoarsening<TMESH>
   {
+    static_assert(std::is_base_of<BlockTM, TMESH>::value==1, "Can only use BlockVWC for Blocked meshes!");
   public:
     struct Options : public VWiseCoarsening<BlockTM>::Options
     {
@@ -143,20 +156,18 @@ namespace amg
     // using Options = typename VWiseCoarsening<BlockTM>::Options;
     using CollapseTracker = typename VWiseCoarsening<BlockTM>::CollapseTracker;
     HierarchicVWC (shared_ptr<Options> opts);
-    virtual void Collapse (const BlockTM & mesh, CollapseTracker & coll);
+    virtual void Collapse (const TMESH & mesh, CollapseTracker & coll) override;
     shared_ptr<HierarchicVWC::Options> options;
   };
 
-
-
-  class CoarseMap : public GridMapStep<BlockTM>
+  class BaseCoarseMap
   {
   public:
-    CoarseMap (shared_ptr<BlockTM> _mesh, VWCoarseningData::CollapseTracker &coll);
-    virtual ~CoarseMap () {}
+    BaseCoarseMap () {}
+    virtual ~BaseCoarseMap () {}
     template<NODE_TYPE NT> INLINE size_t GetNN () const { return NN[NT]; }
     template<NODE_TYPE NT> INLINE size_t GetMappedNN () const { return mapped_NN[NT]; }
-    template<NODE_TYPE NT> INLINE FlatArray<int> GetMap() const { return node_maps[NT]; }
+    template<NODE_TYPE NT> INLINE FlatArray<int> GetMap () const { return node_maps[NT]; }
     template<NODE_TYPE NT> INLINE size_t CN_in_EQC (size_t eqc) const
     { return mapped_eqc_firsti[NT][eqc+1] -  mapped_eqc_firsti[NT][eqc]; }
     template<NODE_TYPE NT> INLINE size_t EQC_of_CN (size_t node_num) const {
@@ -170,37 +181,32 @@ namespace amg
     { return node_num - mapped_eqc_firsti[NT][EQC_of_CN<NT>(node_num)]; }
     template<NODE_TYPE NT> INLINE int CN_of_EQC (size_t eqc, size_t loc_nr) const
     { return mapped_eqc_firsti[NT][eqc] +  loc_nr; }
-    INLINE FlatArray<decltype(AMG_Node<NT_EDGE>::v)> GetMappedEdges() const { return mapped_E; }
     template<NODE_TYPE NT> FlatArray<size_t> GetMappedEqcFirsti () const { return mapped_eqc_firsti[NT]; }
     template<NODE_TYPE NT> FlatArray<size_t> GetMappedCrossFirsti () const { return mapped_cross_firsti[NT]; }
+    INLINE FlatArray<decltype(AMG_Node<NT_EDGE>::v)> GetMappedEdges () const { return mapped_E; }
   protected:
-    using GridMapStep<BlockTM>::mesh, GridMapStep<BlockTM>::mapped_mesh;
-    void BuildVertexMap (VWCoarseningData::CollapseTracker& coll);
-    void BuildEdgeMap (VWCoarseningData::CollapseTracker& coll);
-    
     Array<Array<int>> node_maps = Array<Array<int>> (4);
     Array<size_t> NN = Array<size_t>(4);
     Array<size_t> mapped_NN  = Array<size_t>(4);
     Array<Array<size_t> > mapped_eqc_firsti = Array<Array<size_t> >(4);
     Array<Array<size_t> > mapped_cross_firsti = Array<Array<size_t> >(4);
-    
     Array<decltype(AMG_Node<NT_EDGE>::v)> mapped_E;
-
-    // Array<decltype(AMG_Node<NT_FACE>::v)> mapped_F;
-    // Array<decltype(AMG_Node<NT_CELL>::v)> mapped_C;
-    // template<NODE_TYPE NT, typename T2 = typename std::enable_if<NT!=NT_VERTEX>::type>
-    // Array<decltype(AMG_Node<NT>::v)> & GetMappedNodes () {
-    //   if constexpr(NT==NT_VERTEX) return mapped_E;
-    //   if constexpr(NT==NT_FACE) return mapped_F;
-    //   if constexpr(NT==NT_CELL) return mapped_C;
-    // };
-    
+  };
+  
+  template<class TMESH>
+  class CoarseMap : public BaseCoarseMap, public GridMapStep<TMESH> 
+  {
+  public:
+    CoarseMap (shared_ptr<TMESH> _mesh, VWCoarseningData::CollapseTracker &coll);
+    ~CoarseMap () {}
+  protected:
+    using BaseCoarseMap::node_maps, BaseCoarseMap::NN, BaseCoarseMap::mapped_NN,
+      BaseCoarseMap::mapped_eqc_firsti, BaseCoarseMap::mapped_cross_firsti, BaseCoarseMap::mapped_E;
+    using GridMapStep<TMESH>::mesh, GridMapStep<TMESH>::mapped_mesh;
+    void BuildVertexMap (VWCoarseningData::CollapseTracker& coll);
+    void BuildEdgeMap (VWCoarseningData::CollapseTracker& coll);
   };
 
-
-#ifndef FILE_AMGCOARSEN_CPP
-  extern template class SeqVWC<FlatTM>;
-#endif
 
 } // namespace amg
 
