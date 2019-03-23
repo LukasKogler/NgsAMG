@@ -30,11 +30,9 @@ namespace amg {
     }
 
     size_t nf = (free_dofs ? free_dofs->NumSet() : H);
-    cout << "make smoother, free " << nf << " of " << H << endl;
+    // cout << "make smoother, free " << nf << " of " << H << endl;
     // if (free_dofs) cout << *free_dofs << endl;
 
-    cout << "mat is: " << endl << A << endl;
-    
     SetUpMat();
     CalcDiag();
   } // HybridGSS

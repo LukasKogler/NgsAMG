@@ -82,7 +82,7 @@ namespace amg
 	    // cout << "concatenate embedding + first ProlStep!!" << endl;
 	    dof_step = embed_step->Concatenate(dof_step);
 	  }
-       	  level[0]++;
+       	  level[0]++; level[1] = level[2] = 0;
        	}
        	else { cout << "warning, no map variant worked!" << endl; break; } // all maps failed
 

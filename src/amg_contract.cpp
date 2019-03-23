@@ -26,13 +26,13 @@ namespace amg
     size_t nv_loc = mesh.GetNN<NT_VERTEX>();
     MyMPI_Gather(nv_loc, all_nvs, comm, root);
     // per dp: dist-PROC, NV_SHARED,NE that would become loc (second not used ATM)
-    Array<INT<3,size_t>> data (eqc_h.GetDistantProcs().Size()); data = 0;
     auto ex_procs = eqc_h.GetDistantProcs();
+    Array<INT<3,size_t>> data (ex_procs.Size()); data = 0;
+    for (auto k : Range(data.Size())) data[k][0] = ex_procs[k];
     for (auto eqc : Range(neqcs)) {
       auto dps = eqc_h.GetDistantProcs(eqc);
       if (dps.Size()==1) {
 	auto pos = ex_procs.Pos(dps[0]);
-	data[pos][0] = dps[0];
 	data[pos][1] = mesh.GetENN<NT_VERTEX>(eqc);
       }
     }
@@ -62,6 +62,9 @@ namespace amg
       for (auto k : Range(comm.Size())) {
 	if (k!=root) comm.Recv(gdata[k], k, MPI_TAG_AMG);
       }
+      for (auto k : Range(comm.Size())) {
+	cout << " data from " << k << ": "; prow2(gdata[k]); cout << endl;
+      }
       // generate metis graph structure
       Array<idx_t> partition (comm.Size()); partition = -1;
       Array<idx_t> v_weights(comm.Size());
@@ -76,15 +79,11 @@ namespace amg
       for (auto k : Range(comm.Size())) {
 	auto & row = gdata[k];
 	for (auto j : Range(row.Size())) {
-	  edge_idx[c] = row[j][0]-1;
+	  edge_idx[c] = row[j][0];
 	  edge_wt[c] = row[j][1];
 	  c++;
 	}
       }
-      // cout << "v_weights: " << endl; prow2(v_weights); cout << endl;
-      // cout << "edge_firsti: " << endl; prow2(edge_firsti); cout << endl;
-      // cout << "edge_idx: " << endl; prow(edge_idx); cout << endl;
-      // cout << "edge_wt: " << endl; prow2(edge_wt); cout << endl;
       idx_t nvts = idx_t(comm.Size());      // nr of vertices
       idx_t ncon = 1;                       // nr of balancing constraints
       idx_t* xadj = &(edge_firsti[0]);      // edge-firstis
@@ -101,6 +100,12 @@ namespace amg
       METIS_SetDefaultOptions(metis_options);
       metis_options[METIS_OPTION_OBJTYPE] = METIS_OBJTYPE_VOL;         // minimize communication volume
       metis_options[METIS_OPTION_NCUTS] = (comm.Size()>1000) ? 1 : 2;  // metis will generate this many partitions and return the best
+      // cout << "nvts: " << nvts << endl;
+      // cout << "nparts: " << nparts << endl;
+      // cout << "v_weights: " << endl; prow2(v_weights); cout << endl;
+      // cout << "edge_firsti: " << endl; prow2(edge_firsti); cout << endl;
+      // cout << "edge_idx: " << endl; prow(edge_idx); cout << endl;
+      // cout << "edge_wt: " << endl; prow2(edge_wt); cout << endl;
       {
 	static Timer t("METIS_PartGraphKway"); RegionTimer rt(t);
 	int metis_code = METIS_PartGraphKway (&nvts, &ncon, xadj, adjncy, vwgt, vsize, adjwgts, &m_nparts, tpwgts,
@@ -115,9 +120,11 @@ namespace amg
 	  throw Exception("METIS did not succeed!!");
 	}
       }
+      cout << "partition is: " << endl; prow2(partition); cout << endl;
       // sort partition by min, rank it has
-      TableCreator<int> cgs(nparts);
-      Array<int> arra(nparts); arra = comm.Size();
+
+      TableCreator<int> cgs; // not (nparts), because in some cases metis gives enpty parts!!
+      Array<int> arra(nparts); arra = comm.Size(); // empty grps will be sorted at the end
       for (auto k : Range(comm.Size())) arra[partition[k]] = min2(arra[partition[k]], k);
       Array<int> arrb(nparts); for (auto k : Range(nparts)) arrb[k] = k;
       QuickSortI(arra, arrb); for (auto k : Range(nparts)) arra[arrb[k]] = k;
