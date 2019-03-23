@@ -629,7 +629,6 @@ namespace amg
       }
       tadd_edges = ct.MoveTable();
     }
-    cout << "tent add_edges: " << endl << tadd_edges << endl;
     auto add_edges = ReduceTable<AMG_CNode<NT_EDGE>,AMG_CNode<NT_EDGE>>(tadd_edges, eqcs, sp_eqc_h, [](const auto & tab) {
     	Array<AMG_CNode<NT_EDGE>> out;
     	if (!tab.Size()) return out;
@@ -641,7 +640,6 @@ namespace amg
     	    out[s++] = row[j]; } }
     	return out;
       });
-    cout << "add_edges: " << endl << add_edges << endl;
     // make hash-tables
     typedef ClosedHashTable<INT<2, int>, int> HT1;
     Array<HT1*> hash_ie(neqcs);
@@ -798,8 +796,8 @@ namespace amg
     // dont need mapped_eqc_nodes ?
     for (auto x : hash_ie) delete x;
     for (auto x : hash_ce) delete x;
-    cout << endl << "have coarse edges: " << endl; prow2(coarse_nodes); cout << endl;
-    cout << endl << "have edge map: " << endl; prow2(node_map); cout << endl;
+    // cout << endl << "have coarse edges: " << endl; prow2(coarse_nodes); cout << endl;
+    // cout << endl << "have edge map: " << endl; prow2(node_map); cout << endl;
   } // CoarseMap :: BuildEdgeMap
 
 } // namespace amg

@@ -15,9 +15,9 @@ namespace amg
     ~CtrMap ();
     
     virtual void TransferF2C(const shared_ptr<const BaseVector> & x_fine,
-			     const shared_ptr<BaseVector> & x_coarse) const override { ; }
+			     const shared_ptr<BaseVector> & x_coarse) const override;
     virtual void TransferC2F(const shared_ptr<BaseVector> & x_fine,
-			     const shared_ptr<const BaseVector> & x_coarse) const override { ; }
+			     const shared_ptr<const BaseVector> & x_coarse) const override;
 
     virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const override
     {
@@ -48,8 +48,7 @@ namespace amg
     Table<int> dof_maps;
     Array<MPI_Request> reqs;
     Array<MPI_Datatype> mpi_types;
-    Table<double> buffers;
-
+    Table<TV> buffers;
   };
 
   INLINE Timer & timer_hack_gccm1 () { static Timer t("GridContractMap::MapNodeData"); return t; }
@@ -111,18 +110,18 @@ namespace amg
     template<NODE_TYPE NT, typename T>
     void MapNodeData (FlatArray<T> data, PARALLEL_STATUS stat, Array<T> * cdata) const
     {
-      cout << "MAPNODEDATA " << endl;
+      // cout << "MAPNODEDATA " << endl;
       RegionTimer rt1(timer_hack_gccm1());
       RegionTimer rt2(timer_hack_gccm2<NT>());
       auto comm = eqc_h->GetCommunicator();
       int master = my_group[0];
       if(!is_gm) {
-	cout << "send " << data.Size() << " times " << typeid(T).name() << " to " << master << endl;
+	// cout << "send " << data.Size() << " times " << typeid(T).name() << " to " << master << endl;
 	comm.Send(data, master, MPI_TAG_AMG);
 	return;
       }
 
-      cout << "send " << data.Size() << " times " << typeid(T).name() << " to myself, LOL" << endl;
+      // cout << "send " << data.Size() << " times " << typeid(T).name() << " to myself, LOL" << endl;
       Array<T> &out(*cdata);
       MPI_Request req = MyMPI_ISend(data, master, MPI_TAG_AMG, comm); // todo: avoid local send please...
       MPI_Request_free(&req);
@@ -134,10 +133,10 @@ namespace amg
       for(auto pn:Range(my_group.Size())) {
 	auto p = my_group[pn];
 	auto map = maps[pn];
-	cout << "get " << buf.Size() << " times " << typeid(T).name() << " from " << p << endl;
+	// cout << "get " << buf.Size() << " times " << typeid(T).name() << " from " << p << endl;
 	comm.Recv(buf, p, MPI_TAG_AMG);
-	cout << "got " << buf.Size() << " times " << typeid(T).name() << " from " << p << endl;
-	cout << "map size is: " << map.Size() << endl;
+	// cout << "got " << buf.Size() << " times " << typeid(T).name() << " from " << p << endl;
+	// cout << "map size is: " << map.Size() << endl;
 	// cout << "map : "; prow2(map); cout << endl;
 	if(stat==CUMULATED)
 	  for(auto k:Range(map.Size()))

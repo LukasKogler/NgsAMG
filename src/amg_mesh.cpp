@@ -248,8 +248,8 @@ namespace amg
     cmesh.verts.SetSize(cmesh.nnodes[NT_VERTEX]);
     auto & cverts = cmesh.verts;
     for (auto k : Range(cmesh.nnodes[NT_VERTEX]) ) cverts[k] = k;
-    cout << "cmesh NV: " << cmesh.nnodes[NT_VERTEX] << endl;
-    cout << "cmesh verts: "; prow(cmesh.verts); cout << endl;
+    // cout << "cmesh NV: " << cmesh.nnodes[NT_VERTEX] << endl;
+    // cout << "cmesh verts: "; prow(cmesh.verts); cout << endl;
     // vertex tables
     auto & disp_veq = cmesh.disp_eqc[NT_VERTEX];
     disp_veq.SetSize(neqcs+1); disp_veq = cmap.GetMappedEqcFirsti<NT_VERTEX>();

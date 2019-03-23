@@ -49,8 +49,6 @@ namespace amg
 	}
       }
     }
-    cout << "send data to " << root << endl;
-    prow2(data); cout << endl;
     if (comm.Rank() != root) {
       /** Send  data to root **/
       comm.Send(data, root, MPI_TAG_AMG);
@@ -149,8 +147,8 @@ namespace amg
     auto comm = pardofs->GetCommunicator();
     is_gm = comm.Rank() == master;
 
-    cout << "make ctrmap with grp "; prow(group); cout << endl;
-    cout << "dof_maps: " << endl << dof_maps << endl;
+    // cout << "make ctrmap with grp "; prow(group); cout << endl;
+    // cout << "dof_maps: " << endl << dof_maps << endl;
 
     if (is_gm) {
       mpi_types.SetSize(group.Size());
@@ -163,7 +161,10 @@ namespace amg
 	MPI_Type_commit(&mpi_types[k]);
       }
       reqs.SetSize(group.Size()); reqs = MPI_REQUEST_NULL;
-    }    
+      Array<int> perow(group.Size()); perow[0] = 0;
+      for (auto k : Range(size_t(1), group.Size())) perow[k] = dof_maps[k].Size();
+      buffers = Table<TV>(perow);
+    }
   }
 
   template<class TV>
@@ -173,6 +174,63 @@ namespace amg
       MPI_Type_free(&mpi_types[k]);
   }
 
+  template<class TV>
+  void CtrMap<TV> :: TransferF2C(const shared_ptr<const BaseVector> & x_fine,
+				 const shared_ptr<BaseVector> & x_coarse) const
+  {
+    /** 
+	We can have DOFs that cannot be mapped "within-group-locally".
+	typically this does not matter, because F2C works with DISTRIBUTED vectors
+	anyways
+     **/
+    x_fine->Distribute();
+    auto fvf = x_fine->FV<TV>();
+    auto& comm(pardofs->GetCommunicator());
+    if (!is_gm)
+      { MPI_Send(x_fine->Memory(), fvf.Size(), MyGetMPIType<TV>(), group[0], MPI_TAG_AMG, comm); return; }
+    auto fvc = x_coarse->FV<TV>();
+    auto loc_map = dof_maps[0];
+    for (int kp = 1; kp < group.Size(); kp++)
+      reqs[kp] = MyMPI_IRecv(buffers[kp], group[kp], MPI_TAG_AMG, comm);
+    for (auto j : Range(loc_map.Size()))
+      fvc(loc_map[j]) = fvf(j);
+    MPI_Request* rrptr = &reqs[1]; int nrr = group.Size()-1;
+    int kp; 
+    for (int nreq = 1; nreq < group.Size(); kp++) {
+      MPI_Waitany(nrr, rrptr, &kp, MPI_STATUS_IGNORE);
+      auto map = dof_maps[kp]; auto buf = buffers[kp];
+      cout << "got data from " << group[kp] << ": " << endl; prow2(buf); cout << endl;
+      for (auto j : Range(map.Size()))
+	fvc(map[j]) += buf[j];
+    }
+    x_coarse->SetParallelStatus(DISTRIBUTED);
+  }
+
+  template<class TV>
+  void CtrMap<TV> :: TransferC2F(const shared_ptr<BaseVector> & x_fine,
+				 const shared_ptr<const BaseVector> & x_coarse) const
+  {
+    /**
+       some values are transfered to multiple ranks 
+       does not matter because coarse grid vectors are typically CUMULATED
+     **/
+    auto& comm(pardofs->GetCommunicator());
+    x_fine->SetParallelStatus(CUMULATED);
+    auto fvf = x_fine->FV<TV>();
+    if (!is_gm)
+      { MPI_Recv(x_fine->Memory(), fvf.Size(), MyGetMPIType<TV>(), group[0], MPI_TAG_AMG, comm, MPI_STATUS_IGNORE); return; }
+    x_coarse->Cumulate();
+    auto fvc = x_coarse->FV<TV>();
+    for (int kp = 1; kp < group.Size(); kp++) {
+      (void) MPI_Isend( x_coarse->Memory(), 1, mpi_types[kp], group[kp], MPI_TAG_AMG, comm, &reqs[kp]);
+    }
+    auto loc_map = dof_maps[0];
+    for (auto j : Range(loc_map.Size()))
+      fvf(j) = fvc(loc_map[j]);
+    reqs[0] = MPI_REQUEST_NULL; MyMPI_WaitAll(reqs);
+  }
+
+  
   INLINE Timer & timer_hack_ctrmat (int nr) {
     switch(nr) {
     case (0): { static Timer t("CtrMap::AssembleMatrix"); return t; }
@@ -191,6 +249,7 @@ namespace amg
 
     if (!is_gm) {
       comm.Send(*mat, group[0], MPI_TAG_AMG);
+      cout << "SPM sent, return nullptr" << endl;
       return nullptr;
     }
 
@@ -198,7 +257,9 @@ namespace amg
     Array<shared_ptr<TSPM> > dist_mats(group.Size());
     dist_mats[0] = mat;
     for(auto k:Range((size_t)1, group.Size())) {
+      cout << " get mat from " << k << " of " << group.Size() << endl;
       comm.Recv(dist_mats[k], group[k], MPI_TAG_AMG);
+      cout << " got mat from " << k << " of " << group.Size() << endl;
     }
     timer_hack_ctrmat(1).Stop();
 
@@ -318,7 +379,7 @@ namespace amg
     }
     timer_hack_ctrmat(3).Stop();
 
-    cout << "contr mat: " << endl << *cmat << endl;
+    // cout << "contr mat: " << endl << *cmat << endl;
 
     return cmat;
   }
@@ -388,13 +449,13 @@ namespace amg
     const auto & f_eqc_h(*this->eqc_h);
     auto comm = f_eqc_h.GetCommunicator();
 
-    cout << "local mesh: " << endl << *this->mesh << endl;
+    // cout << "local mesh: " << endl << *this->mesh << endl;
     
     if (!is_gm) {
       shared_ptr<BlockTM> btm = this->mesh;
-      cout << "send mesh to " << my_group[0] << endl;
+      // cout << "send mesh to " << my_group[0] << endl;
       comm.Send(btm, my_group[0], MPI_TAG_AMG);
-      cout << "send mesh done" << endl;
+      // cout << "send mesh done" << endl;
       mapped_mesh = nullptr;
       if constexpr(std::is_same<TMESH, BlockTM>::value == 0) {
 	  cout << "MAP ALG MESH DATA (drops)" << endl;
@@ -424,7 +485,7 @@ namespace amg
       cout << "get mesh from " << my_group[k] << endl;
       comm.Recv(mg_btms[k], my_group[k], MPI_TAG_AMG);
       cout << "got mesh from " << my_group[k] << endl;
-      cout << *mg_btms[k] << endl;
+      // cout << *mg_btms[k] << endl;
     }
 
     // constexpr int lhs = 1024*1024;
@@ -459,7 +520,7 @@ namespace amg
       eqc_sender[k] = cut_min(mems, my_group);
     }    
 
-    cout << "eqc_sender: " << endl; prow2(eqc_sender); cout << endl;
+    // cout << "eqc_sender: " << endl; prow2(eqc_sender); cout << endl;
     
     /** vertices **/
     auto & v_dsp = c_mesh.disp_eqc[NT_VERTEX];
@@ -487,8 +548,8 @@ namespace amg
     c_mesh.verts.SetSize(cnv);
     for (auto k : Range(cnv)) c_mesh.verts[k] = k;
     c_mesh.eqc_verts = FlatTable<AMG_Node<NT_VERTEX>> (cneqcs, &(v_dsp[0]), &(c_mesh.verts[0]));
-    cout << "v_dsp: " << endl; prow2(v_dsp); cout << endl;
-    cout << "c_mesh.eqc_verts: " << endl << c_mesh.eqc_verts << endl;
+    // cout << "v_dsp: " << endl; prow2(v_dsp); cout << endl;
+    // cout << "c_mesh.eqc_verts: " << endl << c_mesh.eqc_verts << endl;
     auto & ceqc_verts(c_mesh.eqc_verts);
     
     Array<size_t> sz(cneqcs); sz = 0;
@@ -514,7 +575,7 @@ namespace amg
 	}
       }
     }
-    cout << "vmaps: " << endl << vmaps << endl;
+    // cout << "vmaps: " << endl << vmaps << endl;
 
     /** 
 	Abandon hope all ye who enter here - this might
@@ -578,18 +639,16 @@ namespace amg
       tannoy_edges = ct.MoveTable();
     }
 
-    cout << "tannoy_edges: " << endl << tannoy_edges << endl;
+    // cout << "tannoy_edges: " << endl << tannoy_edges << endl;
     auto annoy_edges = ReduceTable<ANNOYE, ANNOYE>
       (tannoy_edges, this->c_eqc_h, [](const auto & in) {
 	Array<ANNOYE> out;
 	if (in.Size() == 0) return out;
 	int ts = 0; for (auto k : Range(in.Size())) ts += in[k].Size();
 	if (ts == 0) return out;
-	cout << "got in: " << endl; print_ft(cout, in); cout << endl;
 	out.SetSize(ts); ts = 0;
 	for (auto k : Range(in.Size()))
 	  { auto row = in[k]; for (auto j : Range(row.Size())) out[ts++] = row[j]; }
-	cout << "out to sort: " << endl; prow2(out); cout << endl;
 	QuickSort(out, [](const auto & a, const auto & b) {
 	    const bool isin[2] = {a[0]==a[2], b[0]==b[2]};
 	    if (isin[0] && !isin[1]) return true;
@@ -598,11 +657,10 @@ namespace amg
 	      { if (a[l]<b[l]) return true; else if (b[l]<a[l]) return false; }
 	    return false;
 	  });
-	cout << "sorted out: " << endl; prow2(out); cout << endl;
 	return out;
       });
     
-    cout << "reduced annoy_edges: " << endl << annoy_edges << endl;
+    // cout << "reduced annoy_edges: " << endl << annoy_edges << endl;
 
 
     Array<INT<2, size_t>> annoy_count(cneqcs);
@@ -656,7 +714,7 @@ namespace amg
       }
     }
 
-    cout << "ccounts: " << endl << ccounts << endl;
+    // cout << "ccounts: " << endl << ccounts << endl;
 
     /** displacements, edge and edge-map allocation**/
     // Array<size_t> disp_ie(cneqcs+1); disp_ie = 0;
@@ -679,11 +737,11 @@ namespace amg
     size_t cne = cnie+cnce;
 
     
-    cout << "CNE CNIE CNCE: " << cne << " " << cnie << " " << cnce << endl;
-    cout << "II CI ANNOYI CC ANNOYC: " << cniie << " " << cncie << " "
-    	 << cnannoyi << " " << cncce << " " << cnannoyc << endl;
-    cout << "disp_ie: " << endl << disp_ie << endl;
-    cout << "disp_ce: " << endl << disp_ce << endl;
+    // cout << "CNE CNIE CNCE: " << cne << " " << cnie << " " << cnce << endl;
+    // cout << "II CI ANNOYI CC ANNOYC: " << cniie << " " << cncie << " "
+    // 	 << cnannoyi << " " << cncce << " " << cnannoyc << endl;
+    // cout << "disp_ie: " << endl << disp_ie << endl;
+    // cout << "disp_ce: " << endl << disp_ce << endl;
 
     
     mapped_NN[NT_EDGE] = cne;
@@ -868,8 +926,8 @@ namespace amg
     }
     c_mesh.eqc_edges = FlatTable<AMG_Node<NT_EDGE>> (cneqcs, &c_mesh.disp_eqc[NT_EDGE][0], &c_mesh.edges[0]);
     c_mesh.cross_edges = FlatTable<AMG_Node<NT_EDGE>> (cneqcs, &c_mesh.disp_cross[NT_EDGE][0], &c_mesh.edges[c_mesh.disp_eqc[NT_EDGE].Last()]);
-    cout << "contr eqc_edges: " << endl << c_mesh.eqc_edges << endl;
-    cout << "contr cross_edges: " << endl << c_mesh.cross_edges << endl;
+    // cout << "contr eqc_edges: " << endl << c_mesh.eqc_edges << endl;
+    // cout << "contr cross_edges: " << endl << c_mesh.cross_edges << endl;
     mapped_NN[NT_FACE] = mapped_NN[NT_CELL] = 0;
 
     if constexpr(std::is_same<TMESH, BlockTM>::value == 1) {
@@ -878,7 +936,8 @@ namespace amg
     else {
       cout << "MAKE MAPPED ALGMESH!!" << endl;
       this->mapped_mesh = make_shared<TMESH> ( move(*p_c_mesh), mesh->MapData(*this) );
-      cout << "MAPPED ALGMESH: " << endl << *mapped_mesh << endl;
+      cout << "MAPPED ALGMESH: " << endl;
+      // cout << *mapped_mesh << endl;
     }
   }
 

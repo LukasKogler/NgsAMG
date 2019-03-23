@@ -757,8 +757,8 @@ namespace amg {
       const int imin = (type==1) ? 0 : pos+1;
       const int imax = (type==1) ? pos : sz;
       for (int l = imin; l < imax; l++) {
-	cout << "tvr( " << ris[l] << "/" << tvr.Size() << ") -= " << rvs[l] << " * " << w << endl;
-	cerr << "tvr( " << ris[l] << "/" << tvr.Size() << ") -= " << rvs[l] << " * " << w << endl;
+	// cout << "tvr( " << ris[l] << "/" << tvr.Size() << ") -= " << rvs[l] << " * " << w << endl;
+	// cerr << "tvr( " << ris[l] << "/" << tvr.Size() << ") -= " << rvs[l] << " * " << w << endl;
 	tvr(ris[l]) -= rvs[l] * w;
       }
       if (update_res) {  // D + L.T update for prev. rows

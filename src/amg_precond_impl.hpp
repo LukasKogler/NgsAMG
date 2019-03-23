@@ -130,11 +130,11 @@ namespace amg
       sms.Append(make_shared<HybridGSS<mat_traits<TV>::HEIGHT>>(mat,pds,(k==0) ? options->finest_free_dofs : nullptr));
     }
     
-    // cout << "make AMG-mat!" << endl;
+    cout << "make AMG-mat!" << endl;
     Array<shared_ptr<const BaseSmoother>> const_sms(sms.Size()); const_sms = sms;
     Array<shared_ptr<const BaseMatrix>> bmats_mats(mats.Size()); bmats_mats = mats;
     amg_mat = make_shared<AMGMatrix> (dof_map, const_sms, bmats_mats);
-    // cout << "have AMG-mat!" << endl;
+    cout << "have AMG-mat!" << endl;
     
     if (mats.Last()!=nullptr) {
       auto max_l = mats.Size();
@@ -150,9 +150,15 @@ namespace amg
 	amg_mat->AddFinalLevel(nullptr);
       }
       else {
-	throw Exception("Here we should do local SP-CHOL!");
+	// throw Exception("Here we should do local SP-CHOL!");
+	amg_mat->AddFinalLevel(nullptr);
       }
     }
+
+    cout << "AMG LOOP DONE, enter barrier" << endl;
+    glob_comm.Barrier();
+    cout << "AMG LOOP DONE" << endl;
+    
   }
 
   template<class AMG_CLASS, class TMESH, class TMAT>
