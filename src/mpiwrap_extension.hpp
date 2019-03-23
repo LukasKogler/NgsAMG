@@ -18,11 +18,19 @@ namespace amg
     NgsAMG_Comm (const NgsMPI_Comm & c) : NgsMPI_Comm(c) { ; }
     NgsAMG_Comm (NgsMPI_Comm && c) : NgsMPI_Comm(c) { ; }
     NgsAMG_Comm (MPI_Comm comm, bool owns)
-      : NgsAMG_Comm(NgsMPI_Comm(NgMPI_Comm(comm, owns))) { ; }
+      : NgsMPI_Comm(NgMPI_Comm(comm, owns)) { ; }
     NgsAMG_Comm () : NgsAMG_Comm(NgsMPI_Comm(NgMPI_Comm())) { ; }
     
     using NgsMPI_Comm :: Send;
     using NgsMPI_Comm :: Recv;
+
+    // using NgMPI_Comm :: refcount;
+    
+    ~NgsAMG_Comm () {
+      cout << "NgsAMG_Comm dies, owns? " << "refcnt " << refcount << " " << flush;
+      if(refcount) cout << ", val " << *refcount << flush;
+      cout << endl;
+    }
     
   private:
     INLINE Timer& thack_send_tab () const { static Timer t("Send Table"); return t; }

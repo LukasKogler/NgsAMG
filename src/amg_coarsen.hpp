@@ -163,8 +163,8 @@ namespace amg
   class BaseCoarseMap
   {
   public:
-    BaseCoarseMap () {}
-    virtual ~BaseCoarseMap () {}
+    BaseCoarseMap () { ; } //{ NN = 0; mapped_NN = 0; }
+    virtual ~BaseCoarseMap () { ; }
     template<NODE_TYPE NT> INLINE size_t GetNN () const { return NN[NT]; }
     template<NODE_TYPE NT> INLINE size_t GetMappedNN () const { return mapped_NN[NT]; }
     template<NODE_TYPE NT> INLINE FlatArray<int> GetMap () const { return node_maps[NT]; }
@@ -186,8 +186,10 @@ namespace amg
     INLINE FlatArray<decltype(AMG_Node<NT_EDGE>::v)> GetMappedEdges () const { return mapped_E; }
   protected:
     Array<Array<int>> node_maps = Array<Array<int>> (4);
-    Array<size_t> NN = Array<size_t>(4);
-    Array<size_t> mapped_NN  = Array<size_t>(4);
+    // Array<size_t> NN = Array<size_t>(4);
+    size_t NN[4] = {0,0,0,0};
+    // Array<size_t> mapped_NN  = Array<size_t>(4);
+    size_t mapped_NN[4] = {0,0,0,0};
     Array<Array<size_t> > mapped_eqc_firsti = Array<Array<size_t> >(4);
     Array<Array<size_t> > mapped_cross_firsti = Array<Array<size_t> >(4);
     Array<decltype(AMG_Node<NT_EDGE>::v)> mapped_E;

@@ -26,6 +26,7 @@ namespace amg
   {
     if(econ != nullptr) return econ;
     auto nv = GetNN<NT_VERTEX>();
+    cout << "ECM NV " << endl << nv << endl;
     Array<int> econ_s(nv);
     econ_s = 0;
     for(auto & edge: GetNodes<NT_EDGE>())
@@ -153,7 +154,7 @@ namespace amg
     }
     Send(ar, dest, tag);
     if (mesh.has_nodes[0]) {
-      Send(mesh.verts, dest, tag);
+      Send(mesh.verts, dest, tag); //TODO: dont need to do this!
       Send(mesh.disp_eqc[0], dest, tag);
     }
     if (mesh.has_nodes[1]) {
@@ -247,12 +248,12 @@ namespace amg
     cmesh.verts.SetSize(cmesh.nnodes[NT_VERTEX]);
     auto & cverts = cmesh.verts;
     for (auto k : Range(cmesh.nnodes[NT_VERTEX]) ) cverts[k] = k;
-    // cout << "cmesh NV: " << cmesh.nnodes[NT_VERTEX] << endl;
-    // cout << "cmesh verts: "; prow(cmesh.verts); cout << endl;
+    cout << "cmesh NV: " << cmesh.nnodes[NT_VERTEX] << endl;
+    cout << "cmesh verts: "; prow(cmesh.verts); cout << endl;
     // vertex tables
     auto & disp_veq = cmesh.disp_eqc[NT_VERTEX];
     disp_veq.SetSize(neqcs+1); disp_veq = cmap.GetMappedEqcFirsti<NT_VERTEX>();
-    // cout << "cmesh v-disp: " << endl; prow(disp_veq); cout << endl;
+    cout << "cmesh v-disp: " << endl; prow(disp_veq); cout << endl;
     cmesh.nnodes_glob[NT_VERTEX] = 0;
     cmesh.nnodes_eqc[NT_VERTEX].SetSize(neqcs);
     for (auto eqc : Range(neqcs)) {
@@ -261,15 +262,16 @@ namespace amg
       cmesh.nnodes_eqc[NT_VERTEX][eqc] = nn;
     }
     cmesh.nnodes_glob[NT_VERTEX] = comm.AllReduce(cmesh.nnodes_glob[NT_VERTEX], MPI_SUM);
-    // cout << "cmesh glob NV: " << cmesh.nnodes_glob[NT_VERTEX] << endl;
+    cout << "cmesh glob NV: " << cmesh.nnodes_glob[NT_VERTEX] << endl;
     cmesh.nnodes_cross[NT_VERTEX].SetSize(0); cmesh.nnodes_cross[NT_VERTEX] = 0;
     cmesh.eqc_verts = FlatTable<AMG_Node<NT_VERTEX>> (neqcs, &cmesh.disp_eqc[NT_VERTEX][0], &cmesh.verts[0]);
     // edges
     cmesh.nnodes[NT_EDGE] = cmap.GetMappedNN<NT_EDGE>();
     auto & cedges = cmesh.edges;
     auto mapped_etup = cmap.GetMappedEdges();
-    // cout << "mehs cmesh NE: " << nnodes[NT_EDGE] << " " << cmesh.nnodes[NT_EDGE] << endl;
-    // cout << "ets" << mapped_etup.Size() << endl;
+    cout << "mehs cmesh NE: " << nnodes[NT_EDGE] << " " << cmesh.nnodes[NT_EDGE] << endl;
+    cout << "ets" << mapped_etup.Size() << endl;
+    cout << "mapped_etup: " << endl; prow2(mapped_etup); cout << endl;
     cedges.SetSize(cmesh.nnodes[NT_EDGE]);
     for (auto k : Range(cmesh.nnodes[NT_EDGE]) ) { auto & e = cedges[k]; e.v = mapped_etup[k]; e.id = k; }
     // edge table - eqc

@@ -16,43 +16,43 @@ namespace amg {
 	setup from paralleldofs;
 	if do_cutunion==true, also constructs all possible cuts/unions of EQCs
      **/
-    EQCHierarchy(const shared_ptr<ParallelDofs> & apd,
-		 bool do_cutunion = false);
+    EQCHierarchy (const shared_ptr<ParallelDofs> & apd,
+		  bool do_cutunion = false);
 
     /** 
 	setup from finished eqc-dps;
 	if do_cutunion==true, also constructs all possible cuts/unions of EQCs
     **/
-    EQCHierarchy(Table<int> && eqcs, NgsAMG_Comm acomm, bool do_cutunion = false);
+    EQCHierarchy (Table<int> && eqcs, NgsAMG_Comm acomm, bool do_cutunion = false);
 
-    ~EQCHierarchy(){}
+    ~EQCHierarchy () { ; }
     
     INLINE size_t GetNEQCS () const { return neqcs; }
     const Table<int> & GetDPTable () const { return dist_procs; }
     const Array<size_t> & GetEqcIds () const { return eqc_ids; }
 
-    INLINE NgsAMG_Comm GetCommunicator() const { return comm; }
+    INLINE NgsAMG_Comm GetCommunicator () const { return comm; }
 
-    INLINE int GetMasterOfEQC(size_t eqc) const {
+    INLINE int GetMasterOfEQC (size_t eqc) const {
       return dist_procs[eqc].Size() ? min2(rank, dist_procs[eqc][0]) : rank;
     }
 
-    INLINE bool IsMasterOfEQC(size_t eqc) const {
+    INLINE bool IsMasterOfEQC (size_t eqc) const {
       return ( (!dist_procs[eqc].Size()) || (rank<dist_procs[eqc][0]) );
     }
     
     /** get (global) ID of eqc **/
-    INLINE int GetEQCID(size_t eqc) const
+    INLINE int GetEQCID (size_t eqc) const
     { return eqc_ids[eqc]; }
 
     /** get (local) eqc that can be used as arguments  methods below**/
-    INLINE size_t GetEQCOfID(int eqc_id) const
+    INLINE size_t GetEQCOfID (int eqc_id) const
     { return idf_2_ind[eqc_id]; }
 
-    FlatArray<int> GetDistantProcs(size_t eqc) const
+    FlatArray<int> GetDistantProcs (size_t eqc) const
     { return dist_procs[eqc]; }
 
-    FlatArray<int> GetDistantProcs() const
+    FlatArray<int> GetDistantProcs () const
     { return all_dist_procs; }
     
     // INLINE size_t HasEQCWithDPs(FlatArray<int> a_dps) const
@@ -64,7 +64,7 @@ namespace amg {
     // }
 
     /** Find eqc that corresponds to a_dps**/
-    INLINE size_t FindEQCWithDPs(FlatArray<int> a_dps) const
+    INLINE size_t FindEQCWithDPs (FlatArray<int> a_dps) const
     {
       for(auto k:Range(neqcs))
 	if( dist_procs[k] == a_dps )
@@ -73,21 +73,21 @@ namespace amg {
     }
 
     /** true if eqc1-procs \union eqc2-procs corresponds to a valid eqc **/
-    bool IsMergeValid(size_t eqc1, size_t eqc2) const
+    bool IsMergeValid (size_t eqc1, size_t eqc2) const
     { return (mat_merge(eqc1, eqc2)==NO_EQC)? false : true; }
 
-    INLINE int GetMergedEQCIfExists(size_t eqc1, size_t eqc2) const
+    INLINE int GetMergedEQCIfExists (size_t eqc1, size_t eqc2) const
     { return mat_merge(eqc1, eqc2); }
 
     /** get eqc correpsonding to eqc1-procs \union eqc2-procs **/
-    INLINE int GetMergedEQC(size_t eqc1, size_t eqc2) const
+    INLINE int GetMergedEQC (size_t eqc1, size_t eqc2) const
     { return mat_merge(eqc1, eqc2); }
 
     /** get eqc correpsonding to eqc1-procs \cap eqc2-procs **/
-    INLINE int GetCommonEQC(size_t eqc1, size_t eqc2) const
+    INLINE int GetCommonEQC (size_t eqc1, size_t eqc2) const
     { return mat_intersect(eqc1, eqc2); }
 
-    INLINE bool IsLEQ(size_t eqc1, size_t eqc2) const
+    INLINE bool IsLEQ (size_t eqc1, size_t eqc2) const
     { return hierarchic_order.Test(eqc1*neqcs + eqc2);}
 
     
@@ -102,7 +102,7 @@ namespace amg {
      which does not need to be constructed!	     
     **/
     template<typename T, typename TF1, typename TF2>
-    Table<T> PartitionData( size_t n_data,  TF1 gesize_t_of_data, TF2 get_data_to_write) const
+    Table<T> PartitionData ( size_t n_data,  TF1 gesize_t_of_data, TF2 get_data_to_write) const
     {
       Array<size_t> d2e(n_data);
       d2e = -1;
@@ -126,8 +126,8 @@ namespace amg {
 
   private:
 
-    void SetupFromInitialDPs(Table<int> && vanilla_dps);
-    void SetupFromDPs(Table<int> && new_dps);
+    void SetupFromInitialDPs (Table<int> && vanilla_dps);
+    void SetupFromDPs (Table<int> && new_dps);
 
     NgsAMG_Comm comm;
     int rank, np;

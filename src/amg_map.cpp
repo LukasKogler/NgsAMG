@@ -15,8 +15,9 @@ namespace amg
       if (step_nr==steps.Size()) { /* cout << "wtf.." << endl; */ break; }
       auto & step = steps[step_nr];
       auto next_mat = step->AssembleMatrix(last_mat);
-      // cout << "ok!!, next mat: " << endl << next_mat << endl;
-      // cout << *next_mat << endl;
+      cout << "ok!!, next mat: " << endl << next_mat << endl;
+      if (next_mat!=nullptr) cout << *next_mat << endl;
+      else cout << "nullptr!!!" << endl;
       mats.Append(next_mat);
       last_mat = next_mat;
     }

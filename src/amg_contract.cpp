@@ -42,10 +42,11 @@ namespace amg
       for (const auto & edge : pad_edges) {
 	AMG_Node<NT_VERTEX> vmax = max(edge.v[0], edge.v[1]);
 	auto eq = mesh.GetEqcOfNode<NT_VERTEX>(vmax);
-	if (eqc_h.GetDistantProcs(eq).Size()!=1) cout << "try eq " << eq << " not s 1!!" << endl;
-	auto dp = eqc_h.GetDistantProcs(eq)[0];
-	auto pos = ex_procs.Pos(dp);
-	data[pos][2]++;
+	if (eqc_h.GetDistantProcs(eq).Size() == 1) {
+	  auto dp = eqc_h.GetDistantProcs(eq)[0];
+	  auto pos = ex_procs.Pos(dp);
+	  data[pos][2]++;
+	}
       }
     }
     cout << "send data to " << root << endl;
@@ -164,7 +165,158 @@ namespace amg
     for (auto k:Range(mpi_types.Size()))
       MPI_Type_free(&mpi_types[k]);
   }
-      
+
+  INLINE Timer & timer_hack_ctrmat (int nr) {
+    switch(nr) {
+    case (0): { static Timer t("CtrMap::AssembleMatrix"); return t; }
+    case (1): { static Timer t("CtrMap::AssembleMatrix - gather mats"); return t; }
+    case (2): { static Timer t("CtrMap::AssembleMatrix - merge graph"); return t; }
+    case (3): { static Timer t("CtrMap::AssembleMatrix - fill"); return t; }
+    default: { break; }
+    }
+    static Timer t("CtrMap::AssembleMatrix - ???"); return t;
+  }
+  template<class TV> shared_ptr<typename CtrMap<TV>::TSPM>
+  CtrMap<TV> :: DoAssembleMatrix (shared_ptr<typename CtrMap<TV>::TSPM> mat) const
+  {
+    RegionTimer rt(timer_hack_ctrmat(0));
+    NgsAMG_Comm comm(pardofs->GetCommunicator());
+
+    if (!is_gm) {
+      comm.Send(*mat, group[0], MPI_TAG_AMG);
+      return nullptr;
+    }
+
+    timer_hack_ctrmat(1).Start();
+    Array<shared_ptr<TSPM> > dist_mats(group.Size());
+    dist_mats[0] = mat;
+    for(auto k:Range((size_t)1, group.Size())) {
+      comm.Recv(dist_mats[k], group[k], MPI_TAG_AMG);
+    }
+    timer_hack_ctrmat(1).Stop();
+
+    size_t ndof = pardofs->GetNDofLocal();
+    size_t cndof = mapped_pardofs->GetNDofLocal();
+
+    // reverse map: maps coarse dof to (k,j) such that disp_mats[k].Row(j) maps to this row!
+    TableCreator<INT<2, size_t>> crm(cndof);
+    for (; !crm.Done(); crm++)
+      for(auto k:Range(dof_maps.Size())) {
+	auto map = dof_maps[k];
+	for(auto j:Range(map.Size()))
+	  crm.Add(map[j],INT<2, size_t>({k,j}));
+      }
+    auto reverse_map = crm.MoveTable();
+    
+    timer_hack_ctrmat(2).Start();
+    Array<int*> merge_ptrs(group.Size()); Array<int> merge_sizes(group.Size());
+    Array<int> perow(cndof);
+    // we already buffer the col-nrs here, so we do not need to merge twice
+    size_t max_nze = 0; for(auto k:Range(dof_maps.Size())) max_nze += dist_mats[k]->NZE();
+    Array<int> colnr_buffer(max_nze); max_nze = 0; int* col_ptr = &(colnr_buffer[0]);
+    Array<int> mc_buffer; // use this for merging with rows of LOCAL mat (which I should not change!!)
+    
+    for (auto rownr : Range(cndof)) {
+      auto rmrow = reverse_map[rownr];
+      int n_merge = rmrow.Size();
+      if (n_merge == 0) { perow[rownr] = 0; continue; } // empty row
+      else if (n_merge == 1) { // row from only one proc
+	int km = rmrow[0][0], jm = rmrow[0][1];
+	auto dmap = dof_maps[km];
+	auto ris = dist_mats[km]->GetRowIndices(jm); auto riss = ris.Size();
+	perow[rownr] = riss;
+	FlatArray<int> cols(riss, col_ptr+max_nze); max_nze += riss;
+	int last = 0; bool needs_sort = false;
+	for (auto l : Range(riss)) {
+	  cols[l] = dmap[ris[l]];
+	  if (cols[l] < last) needs_sort = true;
+	  last = cols[l];
+	}
+	if (needs_sort) QuickSort(cols);
+      }
+      else { // we have to merge rows
+	perow[rownr] = 0;
+	merge_ptrs.SetSize(n_merge); merge_sizes.SetSize(n_merge);
+	for (auto j : Range(n_merge)) {
+	  int km = rmrow[j][0], jm = rmrow[j][1];
+	  auto map = dof_maps[km];
+	  auto ris = dist_mats[km]->GetRowIndices(jm); auto riss = ris.Size();
+	  int last = 0; bool needs_sort = false;
+	  if (km!=0) { // use ris as storage
+	    for (auto l : Range(riss)) {
+	      ris[l] = map[ris[l]]; // re-map to contracted dof-nrs
+	      if (ris[l] < last) needs_sort = true;
+	      last = ris[l];
+	    }
+	    if (needs_sort) QuickSort(ris);
+	    merge_ptrs[j] = &ris[0];
+	  }
+	  else  {
+	    mc_buffer.SetSize(riss);
+	    for (auto l : Range(riss)) {
+	      mc_buffer[l] = map[ris[l]]; // re-map to contracted dof-nrs
+	      if (mc_buffer[l] < last) needs_sort = true;
+	      last = mc_buffer[l];
+	    }
+	    if (needs_sort) QuickSort(mc_buffer);
+	    merge_ptrs[j] = &mc_buffer[0];
+	  }
+	  merge_sizes[j] = riss;
+	}
+	MergeArrays(merge_ptrs, merge_sizes, [&](auto k) { perow[rownr]++; colnr_buffer[max_nze++] = k; });
+      }
+    }
+    timer_hack_ctrmat(2).Stop();
+
+    // cout << "perow: " << endl; prow2(perow); cout << endl;
+    // cout << "colnr-buffer: " << endl; prow(colnr_buffer); cout << endl;
+    
+    timer_hack_ctrmat(3).Start();
+    max_nze = 0;
+    auto cmat = make_shared<TSPM> (perow, cndof);
+    for (auto rownr : Range(cndof)) {
+      auto ris = cmat->GetRowIndices(rownr);
+      auto rvs = cmat->GetRowValues(rownr);
+      for (auto j : Range(ris.Size())) ris[j] = colnr_buffer[max_nze++];
+      // cout << "set ris row " << rownr << endl; prow2(ris); cout << endl;
+      auto rmrow = reverse_map[rownr];
+      if (rmrow.Size()==1) {
+	int km = rmrow[0][0], jm = rmrow[0][1];
+	auto dmap = dof_maps[km];
+	auto dris = dist_mats[km]->GetRowIndices(jm); ;
+	auto drvs = dist_mats[km]->GetRowValues(jm);
+	for (auto j : Range(dris.Size())) {
+	  // cout << "j " << j << " dri " << dris[j] << " maps to " << dmap[dris[j]] << endl;
+	  auto pos = find_in_sorted_array (dmap[dris[j]], ris);
+	  // cout << "find " << "dmap[" << dris[j] << "] = " << dmap[dris[j]] << " at pos " << pos << endl;
+	  rvs[pos] = drvs[j];
+	}
+      }
+      else {
+	rvs = 0;
+	for (auto j : Range(rmrow.Size())) {
+	  int km = rmrow[j][0], jm = rmrow[j][1];
+	  // cout << " row " << rownr << " km/jm " << km << " " << jm << endl;
+	  auto dmap = dof_maps[km];
+	  auto dris = dist_mats[km]->GetRowIndices(jm);
+	  auto drvs = dist_mats[km]->GetRowValues(jm);
+	  for (auto j : Range(dris.Size())) {
+	    auto pos = (km==0) ? find_in_sorted_array (dmap[dris[j]], ris) : //have to re-map ...
+	      find_in_sorted_array (dris[j], ris); // already mapped from merge!
+	    // cout << "find " << "" << dris[j] << " at pos " << pos << endl;
+	    rvs[pos] += drvs[j];
+	  }
+	}
+      }
+    }
+    timer_hack_ctrmat(3).Stop();
+
+    cout << "contr mat: " << endl << *cmat << endl;
+
+    return cmat;
+  }
+  
+  
   INLINE Timer & timer_hack_gcmc () { static Timer t("GridContractMap constructor"); return t; }
   template<class TMESH> GridContractMap<TMESH> :: GridContractMap (Table<int> && _groups, shared_ptr<TMESH> _mesh)
     : GridMapStep<TMESH>(_mesh), eqc_h(_mesh->GetEQCHierarchy()), groups(_groups), node_maps(4), annoy_nodes(4)
@@ -229,7 +381,7 @@ namespace amg
     const auto & f_eqc_h(*this->eqc_h);
     auto comm = f_eqc_h.GetCommunicator();
 
-    cout << "fine eqch: " << endl << f_eqc_h << endl;
+    cout << "local mesh: " << endl << *this->mesh << endl;
     
     if (!is_gm) {
       shared_ptr<BlockTM> btm = this->mesh;
@@ -253,11 +405,13 @@ namespace amg
     auto & c_mesh(*p_c_mesh);
 
     // per definition
-    for (NODE_TYPE NT : {NT_VERTEX, NT_EDGE, NT_FACE, NT_CELL} )
+    for (NODE_TYPE NT : {NT_VERTEX, NT_EDGE, NT_FACE, NT_CELL} ) {
+      c_mesh.has_nodes[NT] = f_mesh.has_nodes[NT];
       c_mesh.nnodes_glob[NT] = f_mesh.nnodes_glob[NT];
-
+    }
+    
     int mgs = my_group.Size();
-    Array<shared_ptr<BlockTM>> mg_btms(mgs);
+    Array<shared_ptr<BlockTM>> mg_btms(mgs); // (BlockTM on purpose)
     mg_btms[0] = this->mesh;
     for (int k = 1; k < my_group.Size(); k++) {
       cout << "get mesh from " << my_group[k] << endl;
@@ -432,9 +586,9 @@ namespace amg
 	QuickSort(out, [](const auto & a, const auto & b) {
 	    const bool isin[2] = {a[0]==a[2], b[0]==b[2]};
 	    if (isin[0] && !isin[1]) return true;
-	    if (isin[1] && !isin[0]) return false;
+	    else if (isin[1] && !isin[0]) return false;
 	    for (int l : {0,2,1,3})
-	      { if (a[l]<b[l]) return true; if (b[l]<a[l]) return false; }
+	      { if (a[l]<b[l]) return true; else if (b[l]<a[l]) return false; }
 	    return false;
 	  });
 	cout << "sorted out: " << endl; prow2(out); cout << endl;
@@ -481,11 +635,12 @@ namespace amg
 	if (!is_sender) continue;
 	has_set.Set(meq);
 	// auto ces = recv_cetab[k][eq];
+	auto eqes = mg_btms[k]->GetENodes<NT_EDGE>(eq);
 	auto ces = mg_btms[k]->GetCNodes<NT_EDGE>(eq);
 	// ii_pos[meq] = recv_etab[k][eq].Size();
-	ii_pos[meq] = ces.Size();
+	ii_pos[meq] = eqes.Size();
 	// ccounts[ceq][0] += recv_etab[k][eq].Size();
-      	ccounts[ceq][0] += ces.Size();
+      	ccounts[ceq][0] += eqes.Size();
       	ccounts[ceq][1] = ci_get[ceq];
       	ccounts[ceq][2] = annoy_count[ceq][0];
 	cc_pos[meq] = ces.Size() - ci_have[meq] - annoy_have[meq];
@@ -493,6 +648,8 @@ namespace amg
       	ccounts[ceq][4] = annoy_count[ceq][1];
       }
     }
+
+    cout << "ccounts: " << endl << ccounts << endl;
 
     /** displacements, edge and edge-map allocation**/
     // Array<size_t> disp_ie(cneqcs+1); disp_ie = 0;
@@ -514,6 +671,14 @@ namespace amg
     size_t cnce = cncce + cnannoyc;
     size_t cne = cnie+cnce;
 
+    
+    cout << "CNE CNIE CNCE: " << cne << " " << cnie << " " << cnce << endl;
+    cout << "II CI ANNOYI CC ANNOYC: " << cniie << " " << cncie << " "
+    	 << cnannoyi << " " << cncce << " " << cnannoyc << endl;
+    cout << "disp_ie: " << endl << disp_ie << endl;
+    cout << "disp_ce: " << endl << disp_ce << endl;
+
+    
     mapped_NN[NT_EDGE] = cne;
     c_mesh.nnodes[NT_EDGE] = cne;
     c_mesh.edges.SetSize(cne);
@@ -842,7 +1007,7 @@ namespace amg
       }
     }
     this->c_eqc_h = make_shared<EQCHierarchy>(std::move(ceqcs_table), c_comm);
-
+    
     // EQCHierarchy re-sorts the DP-table!!
     auto & ctab = c_eqc_h->GetDPTable(); 
     Array<int> remap(ctab.Size());

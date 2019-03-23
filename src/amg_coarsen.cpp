@@ -179,6 +179,7 @@ namespace amg
     const double MIN_CW(options->min_cw);
     auto free = options->free_verts;
 
+    cout << "free ptr: " << free << endl;
     if (free!=nullptr) {
       const auto & fv = *free; for(auto k:Range(NV)) if(!fv.Test(k)) { coll.GroundVertex(k); coll.FixVertex(k); }
     }
@@ -568,6 +569,7 @@ namespace amg
        This gives map to local-per-eqc-and-type enumeration.
        Add offstes to get the final map!
      **/
+    cout << "CoarseMap - map edges" << endl;
     static Timer t("CoarseMap - map edges");
     RegionTimer rt(t);
     const BlockTM & bmesh = *mesh;
@@ -627,6 +629,7 @@ namespace amg
       }
       tadd_edges = ct.MoveTable();
     }
+    cout << "tent add_edges: " << endl << tadd_edges << endl;
     auto add_edges = ReduceTable<AMG_CNode<NT_EDGE>,AMG_CNode<NT_EDGE>>(tadd_edges, eqcs, sp_eqc_h, [](const auto & tab) {
     	Array<AMG_CNode<NT_EDGE>> out;
     	if (!tab.Size()) return out;
@@ -638,6 +641,7 @@ namespace amg
     	    out[s++] = row[j]; } }
     	return out;
       });
+    cout << "add_edges: " << endl << add_edges << endl;
     // make hash-tables
     typedef ClosedHashTable<INT<2, int>, int> HT1;
     Array<HT1*> hash_ie(neqcs);
@@ -794,7 +798,8 @@ namespace amg
     // dont need mapped_eqc_nodes ?
     for (auto x : hash_ie) delete x;
     for (auto x : hash_ce) delete x;
-    // cout << endl << "have edge map: " << endl << node_map << endl;
+    cout << endl << "have coarse edges: " << endl; prow2(coarse_nodes); cout << endl;
+    cout << endl << "have edge map: " << endl; prow2(node_map); cout << endl;
   } // CoarseMap :: BuildEdgeMap
 
 } // namespace amg

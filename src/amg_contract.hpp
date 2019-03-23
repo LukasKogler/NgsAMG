@@ -8,6 +8,8 @@ namespace amg
   class CtrMap : public BaseDOFMapStep
   {
   public:
+    using TM = typename strip_mat<Mat<mat_traits<TV>::HEIGHT, mat_traits<TV>::HEIGHT, typename mat_traits<TV>::TSCAL>>::type;
+    using TSPM = SparseMatrix<TM,TV,TV>;
     CtrMap (shared_ptr<ParallelDofs> pardofs, shared_ptr<ParallelDofs> mapped_pardofs,
 	    Array<int> && group, Table<int> && dof_maps);
     ~CtrMap ();
@@ -18,15 +20,28 @@ namespace amg
 			     const shared_ptr<const BaseVector> & x_coarse) const override { ; }
 
     virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const override
-    { return nullptr; }
+    {
+      // TODO: static cast this??
+      shared_ptr<TSPM> spm = dynamic_pointer_cast<TSPM>(mat);
+      if (spm == nullptr) {
+	throw Exception("CtrMap cast did not work!!");
+      }
+      return DoAssembleMatrix(spm);
+    }
+    
     
     virtual shared_ptr<BaseDOFMapStep> Concatenate (shared_ptr<BaseDOFMapStep> other) override
     { return nullptr; }
     
     INLINE bool IsMaster () const { return is_gm; }
 
+    // TODO: bad hack because NgsAMG_Comm -> MPI_Comm -> NgsMPI_Comm in pardofs constructor (ownership lost!)
+    NgsAMG_Comm _comm_keepalive_hack;
+
   protected:
+    shared_ptr<TSPM> DoAssembleMatrix (shared_ptr<TSPM> mat) const;
     using BaseDOFMapStep::pardofs, BaseDOFMapStep::mapped_pardofs;
+
     Array<int> group;
     int master;
     bool is_gm;
@@ -34,6 +49,7 @@ namespace amg
     Array<MPI_Request> reqs;
     Array<MPI_Datatype> mpi_types;
     Table<double> buffers;
+
   };
 
   INLINE Timer & timer_hack_gccm1 () { static Timer t("GridContractMap::MapNodeData"); return t; }
@@ -60,7 +76,10 @@ namespace amg
     INLINE bool IsMaster () const { return is_gm; }
     INLINE FlatArray<int> GetGroup () const { return my_group; }
     template<NODE_TYPE NT> INLINE FlatArray<amg_nts::id_type> GetNodeMap (int member) const { return node_maps[NT][member]; }
-      
+
+    INLINE shared_ptr<EQCHierarchy> GetEQCHierarchy () const { return eqc_h; }
+    INLINE shared_ptr<EQCHierarchy> GetMappedEQCHierarchy () const { return c_eqc_h; }
+    
   protected:
     using GridMapStep<TMESH>::mesh, GridMapStep<TMESH>::mapped_mesh;
     

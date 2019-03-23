@@ -138,6 +138,8 @@ namespace amg
     // ugly stuff
     template<NODE_TYPE NT, class T, class TRED>
     void AllreduceNodalData (Array<T> & avdata, TRED red, bool apply_loc = false) const {
+      // cout << "alred. nodal data, NT=" << NT << ", NN " << GetNN<NT>() << " ndata " << avdata.Size() << " appl loc " << apply_loc << endl;
+      // cout << "data in: " << endl; prow2(avdata); cout << endl;
       int neqcs = eqc_h->GetNEQCS();
       if (neqcs == 0) return; // nothing to do!
       if (neqcs == 1 && !apply_loc) return; // nothing to do!
@@ -155,14 +157,14 @@ namespace amg
       };
       loop_eqcs([&](auto nodes, auto row)
 		{ if constexpr(NT==NT_VERTEX) for (auto l:Range(nodes.Size())) row[C++] = avdata[nodes[l]];
-		  else for (auto l:Range(nodes.Size())) row[C++] = avdata[nodes[l].id];
-		},
+		  else for (auto l:Range(nodes.Size())) row[C++] = avdata[nodes[l].id]; },
 		data);
       Table<T> reduced_data = ReduceTable<T,T,TRED>(data, eqc_h, red);
       loop_eqcs([&](auto nodes, auto row)
 		{ if constexpr(NT==NT_VERTEX) for (auto l:Range(nodes.Size())) avdata[nodes[l]] = row[C++];
 		  else for (auto l:Range(nodes.Size())) avdata[nodes[l].id] = row[C++]; },
 		reduced_data);
+      // cout << "data out: " << endl; prow2(avdata); cout << endl;
     } // CumulateNodalData
     template<class TGET, class TSET>
     INLINE void SetVs  (size_t annodes, TGET get_dps, TSET set_sort)
@@ -463,14 +465,14 @@ namespace amg
       PARALLEL_STATUS cstat = static_cast<const CRTP&>(*this).map_data(map, cdata);
       return new CRTP(move(cdata), cstat);
     };
-    virtual void Cumulate() const {
+    virtual void Cumulate () const {
       if (stat == DISTRIBUTED) {
 	AttachedNodeData<NT,T,CRTP>& nc_ref(const_cast<AttachedNodeData<NT,T,CRTP>&>(*this));
 	mesh->AllreduceNodalData<NT, double> (nc_ref.data, [](auto & tab){return move(sum_table(tab)); });
 	nc_ref.stat = CUMULATED;
       }
     }
-    virtual void Distribute() const {
+    virtual void Distribute () const {
       AttachedNodeData<NT,T,CRTP>& nc_ref(const_cast<AttachedNodeData<NT,T,CRTP>&>(*this));
       if (stat == CUMULATED) {
 	const auto eqc_h = *mesh->GetEQCHierarchy();
@@ -518,9 +520,9 @@ namespace amg
   template<NODE_TYPE NT, class T, class CRTP>
   std::ostream & operator<<(std::ostream &os, AttachedNodeData<NT,T, CRTP>& nd)
     {
-      os << endl << "Data for NT : " << NT << endl;
-      os << endl << "Status: " << nd.GetParallelStatus() << endl;
-      os << endl << "Data: "; prow(nd.Data()); os << endl;
+      os << "Data for NT=" << NT;;
+      os << ", status: " << nd.GetParallelStatus();
+      os << ", data:" << endl; prow2(nd.Data()); os << endl;
       return os;
     }
 

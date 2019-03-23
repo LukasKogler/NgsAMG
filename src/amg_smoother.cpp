@@ -30,8 +30,10 @@ namespace amg {
     }
 
     size_t nf = (free_dofs ? free_dofs->NumSet() : H);
-    // cout << "make smoother, free " << nf << " of " << H << endl;
+    cout << "make smoother, free " << nf << " of " << H << endl;
     // if (free_dofs) cout << *free_dofs << endl;
+
+    cout << "mat is: " << endl << A << endl;
     
     SetUpMat();
     CalcDiag();
@@ -757,6 +759,8 @@ namespace amg {
       const int imin = (type==1) ? 0 : pos+1;
       const int imax = (type==1) ? pos : sz;
       for (int l = imin; l < imax; l++) {
+	cout << "tvr( " << ris[l] << "/" << tvr.Size() << ") -= " << rvs[l] << " * " << w << endl;
+	cerr << "tvr( " << ris[l] << "/" << tvr.Size() << ") -= " << rvs[l] << " * " << w << endl;
 	tvr(ris[l]) -= rvs[l] * w;
       }
       if (update_res) {  // D + L.T update for prev. rows

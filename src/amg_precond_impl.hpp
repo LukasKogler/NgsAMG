@@ -86,17 +86,19 @@ namespace amg
        	}
        	else { cout << "warning, no map variant worked!" << endl; break; } // all maps failed
 
+	grid_map->AddStep(grid_step);
+	dof_map->AddStep(dof_step);
+
 	auto NV = fm->template GetNNGlobal<NT_VERTEX>();
 	fm = dynamic_pointer_cast<TMESH>(grid_step->GetMappedMesh());
+	if (fm==nullptr) { cout << "dropped out, break loop!" << endl; break; } // no mesh due to contract
+
 	auto CNV = fm->template GetNNGlobal<NT_VERTEX>();
 	if (fm->GetEQCHierarchy()->GetCommunicator().Rank()==0) {
 	  double fac = (NV==0) ? 0 : (1.0*CNV)/NV;
-	  // cout << "map NV " << NV << " -> " << CNV << ", factor " <<  fac << endl;
+	  cout << "map NV " << NV << " -> " << CNV << ", factor " <<  fac << endl;
 	}
 	fm_pd = dof_step->GetMappedParDofs();
-	grid_map->AddStep(grid_step);
-	dof_map->AddStep(dof_step);
-	if (fm==nullptr) { cout << "dropped out, break loop!" << endl; break; } // no mesh due to contract
       }
     }
 
@@ -121,7 +123,7 @@ namespace amg
     }
 
     Array<shared_ptr<BaseSmoother>> sms;
-    for (auto k : Range(mats.Size())) {
+    for (auto k : Range(mats.Size()-1)) {
       // cout << "make smoother!!" << endl;
       auto pds = dof_map->GetParDofs(k);
       shared_ptr<const TSPMAT> mat = dynamic_pointer_cast<TSPMAT>(mats[k]);
@@ -218,7 +220,11 @@ namespace amg
       dof_maps = Table<int>(perow);
       for (auto k : Range(group.Size())) dof_maps[k] = cmap->template GetNodeMap<NT_VERTEX>(k);
     }
-    return make_shared<CtrMap<TV>> (fpd, cpd, move(group), move(dof_maps));
+    auto ctr_map = make_shared<CtrMap<TV>> (fpd, cpd, move(group), move(dof_maps));
+    if (cmap->IsMaster()) {
+      ctr_map->_comm_keepalive_hack = cmap->GetMappedEQCHierarchy()->GetCommunicator();
+    }
+    return move(ctr_map);
   } // VWiseAMG<...> :: BuildDOFMapStep ( GridContractMap )
 
   
@@ -226,6 +232,7 @@ namespace amg
   VWiseAMG<AMG_CLASS, TMESH, TMAT> :: TryCoarsen  (INT<3> level, shared_ptr<TMESH> mesh)
   {
     auto coarsen_opts = make_shared<typename HierarchicVWC<TMESH>::Options>();
+    cout << "init free verts: " << coarsen_opts->free_verts << endl;
     shared_ptr<VWCoarseningData::Options> basos = coarsen_opts;
     // auto coarsen_opts = make_shared<VWCoarseningData::Options>();
     if (level[0]==0) { coarsen_opts->free_verts = options->free_verts; }
@@ -239,7 +246,8 @@ namespace amg
   template<class AMG_CLASS, class TMESH, class TMAT> shared_ptr<GridContractMap<TMESH>>
   VWiseAMG<AMG_CLASS, TMESH, TMAT> :: TryContract (INT<3> level, shared_ptr<TMESH> mesh)
   {
-    if (level[1]!=0) return nullptr;
+    if (level[0] == 0) return nullptr; // TODO: if I remove this, take care of contracting free vertices!
+    if (level[1] != 0) return nullptr;
     if (mesh->GetEQCHierarchy()->GetCommunicator().Size()==1) return nullptr;
     Table<int> groups = PartitionProcsMETIS (*mesh, mesh->GetEQCHierarchy()->GetCommunicator().Size()/2);
     return make_shared<GridContractMap<TMESH>>(move(groups), mesh);
