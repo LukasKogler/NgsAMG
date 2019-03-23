@@ -10,12 +10,12 @@ namespace amg
   {
     size_t first(0), last(a.Size());
     while (last > first+5) {
-      size_t mid = (last-first)/2;
+      size_t mid = (last+first)/2;
       if (a[mid] > elem) last = mid;
-      else { if (a[mid] == elem) { return mid; } first = mid; }
+      else { if (a[mid] == elem) { return mid; } first = mid+1; }
     }
     for (size_t i = first; i < last; i++)
-      if (a[i] == elem) return i;
+      if (a[i] == elem) { return i; }
     return numeric_limits<typename remove_reference<decltype(a[0])>::type>::max();
   };
   
