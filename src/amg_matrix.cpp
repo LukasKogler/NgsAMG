@@ -80,7 +80,7 @@ namespace amg
 	x_level[level]->SetParallelStatus(CUMULATED);	
 	res_level[level]->FVDouble() = rhs_level[level]->FVDouble();
 	res_level[level]->SetParallelStatus(rhs_level[level]->GetParallelStatus());
-	cout << "smooth level " << level << endl;
+	// cout << "smooth level " << level << endl;
 	// double ts0 = -MPI_Wtime();
 	// cout << "rhs " << level << *rhs_level[level] << endl;
 	// cout << "res " << level << *res_level[level] << endl;
@@ -161,7 +161,7 @@ namespace amg
 	if(x_level[level+1]!=nullptr) t3.Stop();
 	else t5.Stop();
 	t1.Start();
-	cout << "smooth level back" << level << endl;
+	// cout << "smooth level back" << level << endl;
 	// cout << x_level[level]->FVDouble().Size() << " " << rhs_level[level]->FVDouble().Size() << " " << res_level[level]->FVDouble().Size() << " " << endl;
 	// double ts0 = -MPI_Wtime();
 	// if(level!=0)

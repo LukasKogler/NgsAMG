@@ -4,6 +4,8 @@
 namespace amg
 {
 
+  Table<int> PartitionProcsMETIS (BlockTM & mesh, int nparts, bool sep_p0 = true);
+
   template<class TV>
   class CtrMap : public BaseDOFMapStep
   {
@@ -59,7 +61,6 @@ namespace amg
     if constexpr(NT==NT_CELL)   { static Timer t("GridContractMap::MapNodeData, C"); return t; }
   }
 
-  Table<int> PartitionProcsMETIS (BlockTM & mesh, int nparts);
   
 
   template<class TMESH>

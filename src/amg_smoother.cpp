@@ -15,8 +15,6 @@ namespace amg {
       comm(par_dofs->GetCommunicator()), spmat(amat), A(*spmat)
   {
     
-    // if(H) A.AsVector().FVDouble() = 1;
-
     name =  string("HybridGSS<") + to_string(BS) + string(">");
     auto & pds = *parallel_dofs;
     this->H = spmat->Height();
@@ -33,6 +31,8 @@ namespace amg {
     // cout << "make smoother, free " << nf << " of " << H << endl;
     // if (free_dofs) cout << *free_dofs << endl;
 
+    // cout << "mat is: " << endl << A << endl;
+    
     SetUpMat();
     CalcDiag();
   } // HybridGSS

@@ -8,17 +8,18 @@ typedef idx_t idxtype;
 namespace amg
 {
 
-  Table<int> PartitionProcsMETIS (BlockTM & mesh, int nparts)
+  Table<int> PartitionProcsMETIS (BlockTM & mesh, int nparts, bool sep_p0)
   {
     static Timer t("PartitionProcsMETIS"); RegionTimer rt(t);
     const auto & eqc_h(*mesh.GetEQCHierarchy());
     auto comm = eqc_h.GetCommunicator();
     auto neqcs = eqc_h.GetNEQCS();
     Table<int> groups;
-    if (nparts==1) {
-      Array<int> perow(1); perow[0] = comm.Size();
-      groups = Table<int>(perow);
-      for (auto k : Range(comm.Size())) groups[0][k] = k;
+    if ( (nparts==1) || (sep_p0 && nparts==2)) {
+      Array<int> perow(nparts); perow = 0; perow[0]++; perow.Last() += comm.Size()-1;
+      groups = Table<int>(perow); perow = 0;
+      groups[0][perow[0]++] = 0;
+      for (auto k : Range(comm.Size()-1)) groups[nparts-1][perow[nparts-1]++] = k+1;
       return move(groups);
     }
     int root = 0;
@@ -89,7 +90,7 @@ namespace amg
       idx_t* vwgt = &(v_weights[0]);        // "computation cost"
       idx_t* vsize = NULL;                  // "comm. cost"
       idx_t* adjwgts = &(edge_wt[0]);       // edge-weights
-      idx_t  m_nparts = nparts;             // nr of parts
+      idx_t  m_nparts = sep_p0 ? nparts-1 : nparts; // nr of parts
       real_t* tpwgts = NULL;                // weights for each part (equal if NULL)
       real_t* ubvec = NULL;                 // tolerance
       idx_t metis_options[METIS_NOPTIONS];  // metis-options
@@ -120,15 +121,25 @@ namespace amg
       }
       cout << "partition is: " << endl; prow2(partition); cout << endl;
       // sort partition by min, rank it has
-
+      
       TableCreator<int> cgs; // not (nparts), because in some cases metis gives enpty parts!!
       Array<int> arra(nparts); arra = comm.Size(); // empty grps will be sorted at the end
       for (auto k : Range(comm.Size())) arra[partition[k]] = min2(arra[partition[k]], k);
       Array<int> arrb(nparts); for (auto k : Range(nparts)) arrb[k] = k;
       QuickSortI(arra, arrb); for (auto k : Range(nparts)) arra[arrb[k]] = k;
-      for (; !cgs.Done(); cgs++) {
-	for (auto p : Range(comm.Size())) {
-	  cgs.Add(arra[partition[p]],p);
+      if (sep_p0) {
+	for (; !cgs.Done(); cgs++) {
+	  cgs.Add(0,0);
+	  for (auto p : Range(1, comm.Size())) {
+	    cgs.Add(arra[partition[p]]+1,p);
+	  }
+	}
+      }
+      else {
+	for (; !cgs.Done(); cgs++) {
+	  for (auto p : Range(comm.Size())) {
+	    cgs.Add(arra[partition[p]],p);
+	  }
 	}
       }
       groups = cgs.MoveTable();
@@ -186,24 +197,34 @@ namespace amg
     x_fine->Distribute();
     auto fvf = x_fine->FV<TV>();
     auto& comm(pardofs->GetCommunicator());
-    if (!is_gm)
-      { MPI_Send(x_fine->Memory(), fvf.Size(), MyGetMPIType<TV>(), group[0], MPI_TAG_AMG, comm); return; }
+    if ( (!is_gm) && (fvf.Size()>0) )
+      {
+	// cout << "F2C, send data to " << group[0] << ": " << endl;
+	// cout << fvf << endl;
+	MPI_Send(x_fine->Memory(), fvf.Size(), MyGetMPIType<TV>(), group[0], MPI_TAG_AMG, comm);
+	return;
+      }
     auto fvc = x_coarse->FV<TV>();
     auto loc_map = dof_maps[0];
+    int nreq_tot = 0;
     for (int kp = 1; kp < group.Size(); kp++)
-      reqs[kp] = MyMPI_IRecv(buffers[kp], group[kp], MPI_TAG_AMG, comm);
+      if (dof_maps[kp].Size()>0) { nreq_tot++; reqs[kp] = MyMPI_IRecv(buffers[kp], group[kp], MPI_TAG_AMG, comm); }
+      else reqs[kp] = MPI_REQUEST_NULL;
+    fvc = 0;
     for (auto j : Range(loc_map.Size()))
       fvc(loc_map[j]) = fvf(j);
-    MPI_Request* rrptr = &reqs[1]; int nrr = group.Size()-1;
-    int kp; 
-    for (int nreq = 1; nreq < group.Size(); kp++) {
+    MPI_Request* rrptr = &reqs[0]; int nrr = group.Size();
+    int kp; reqs[0] = MPI_REQUEST_NULL;
+    for (int nreq = 0; nreq < nreq_tot; nreq++) {
       MPI_Waitany(nrr, rrptr, &kp, MPI_STATUS_IGNORE);
+      // cout << " message nr " << kp << " arrived " << endl;
       auto map = dof_maps[kp]; auto buf = buffers[kp];
-      cout << "got data from " << group[kp] << ": " << endl; prow2(buf); cout << endl;
+      // cout << "F2C, got data from " << group[kp] << ": " << endl; prow2(buf); cout << endl;
       for (auto j : Range(map.Size()))
 	fvc(map[j]) += buf[j];
     }
     x_coarse->SetParallelStatus(DISTRIBUTED);
+    // cout << " x coarse is: " << endl << fvc << endl;
   }
 
   template<class TV>
@@ -218,11 +239,18 @@ namespace amg
     x_fine->SetParallelStatus(CUMULATED);
     auto fvf = x_fine->FV<TV>();
     if (!is_gm)
-      { MPI_Recv(x_fine->Memory(), fvf.Size(), MyGetMPIType<TV>(), group[0], MPI_TAG_AMG, comm, MPI_STATUS_IGNORE); return; }
+      {
+	if (fvf.Size()>0) MPI_Recv(x_fine->Memory(), fvf.Size(), MyGetMPIType<TV>(), group[0], MPI_TAG_AMG, comm, MPI_STATUS_IGNORE);
+	// cout << "C2F, got data from " << group[0] << ": " << endl << fvf << endl;
+	return;
+      }
     x_coarse->Cumulate();
+    // cout << "dof_maps: " << endl << dof_maps << endl;
     auto fvc = x_coarse->FV<TV>();
+    // cout << "send x coarse: " << endl << fvc << endl;
     for (int kp = 1; kp < group.Size(); kp++) {
-      (void) MPI_Isend( x_coarse->Memory(), 1, mpi_types[kp], group[kp], MPI_TAG_AMG, comm, &reqs[kp]);
+      if (dof_maps[kp].Size()>0) MPI_Isend( x_coarse->Memory(), 1, mpi_types[kp], group[kp], MPI_TAG_AMG, comm, &reqs[kp]);
+      else reqs[kp] = MPI_REQUEST_NULL;
     }
     auto loc_map = dof_maps[0];
     for (auto j : Range(loc_map.Size()))
@@ -249,7 +277,6 @@ namespace amg
 
     if (!is_gm) {
       comm.Send(*mat, group[0], MPI_TAG_AMG);
-      cout << "SPM sent, return nullptr" << endl;
       return nullptr;
     }
 
@@ -257,9 +284,10 @@ namespace amg
     Array<shared_ptr<TSPM> > dist_mats(group.Size());
     dist_mats[0] = mat;
     for(auto k:Range((size_t)1, group.Size())) {
-      cout << " get mat from " << k << " of " << group.Size() << endl;
+      // cout << " get mat from " << k << " of " << group.Size() << endl;
       comm.Recv(dist_mats[k], group[k], MPI_TAG_AMG);
-      cout << " got mat from " << k << " of " << group.Size() << endl;
+      // cout << " got mat from " << k << " of " << group.Size() << ", rank " << group[k] << endl;
+      // cout << *dist_mats[k] << endl;
     }
     timer_hack_ctrmat(1).Stop();
 
@@ -283,7 +311,23 @@ namespace amg
     size_t max_nze = 0; for(auto k:Range(dof_maps.Size())) max_nze += dist_mats[k]->NZE();
     Array<int> colnr_buffer(max_nze); max_nze = 0; int* col_ptr = &(colnr_buffer[0]);
     Array<int> mc_buffer; // use this for merging with rows of LOCAL mat (which I should not change!!)
-    
+    Array<int> inds;
+    auto QS_COL_VAL = [&inds](auto & cols, auto & vals) {
+      auto S = cols.Size(); inds.SetSize(S); for (auto i:Range(S)) inds[i] = i;
+      QuickSortI(cols, inds);
+      for (auto i:Range(S)) { // in-place permute
+	// swap through one circle; use target as buffer as buffer
+	if (inds[i] == -1) continue;
+	int check = i; int from_here;
+	while ( ( from_here = inds[check]) != i ) { // stop when we are back
+	  swap(cols[check], cols[from_here]);
+	  swap(vals[check], vals[from_here]);
+	  inds[check] = -1; // have right ntry for pos. check
+	  check = from_here; // check that position next
+	}
+	inds[check] = -1;
+      }
+    };
     for (auto rownr : Range(cndof)) {
       auto rmrow = reverse_map[rownr];
       int n_merge = rmrow.Size();
@@ -309,6 +353,7 @@ namespace amg
 	  int km = rmrow[j][0], jm = rmrow[j][1];
 	  auto map = dof_maps[km];
 	  auto ris = dist_mats[km]->GetRowIndices(jm); auto riss = ris.Size();
+	  auto rvs = dist_mats[km]->GetRowValues(jm);
 	  int last = 0; bool needs_sort = false;
 	  if (km!=0) { // use ris as storage
 	    for (auto l : Range(riss)) {
@@ -316,7 +361,7 @@ namespace amg
 	      if (ris[l] < last) needs_sort = true;
 	      last = ris[l];
 	    }
-	    if (needs_sort) QuickSort(ris);
+	    if (needs_sort) QS_COL_VAL(ris, rvs);
 	    merge_ptrs[j] = &ris[0];
 	  }
 	  else  {
@@ -364,14 +409,13 @@ namespace amg
 	rvs = 0;
 	for (auto j : Range(rmrow.Size())) {
 	  int km = rmrow[j][0], jm = rmrow[j][1];
-	  // cout << " row " << rownr << " km/jm " << km << " " << jm << endl;
 	  auto dmap = dof_maps[km];
 	  auto dris = dist_mats[km]->GetRowIndices(jm);
 	  auto drvs = dist_mats[km]->GetRowValues(jm);
 	  for (auto j : Range(dris.Size())) {
+	    auto to_find = (km==0) ? dmap[dris[j]] : dris[j];
 	    auto pos = (km==0) ? find_in_sorted_array (dmap[dris[j]], ris) : //have to re-map ...
 	      find_in_sorted_array (dris[j], ris); // already mapped from merge!
-	    // cout << "find " << "" << dris[j] << " at pos " << pos << endl;
 	    rvs[pos] += drvs[j];
 	  }
 	}

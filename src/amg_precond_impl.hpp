@@ -255,7 +255,10 @@ namespace amg
     if (level[0] == 0) return nullptr; // TODO: if I remove this, take care of contracting free vertices!
     if (level[1] != 0) return nullptr;
     if (mesh->GetEQCHierarchy()->GetCommunicator().Size()==1) return nullptr;
-    Table<int> groups = PartitionProcsMETIS (*mesh, mesh->GetEQCHierarchy()->GetCommunicator().Size()/2);
+    if (mesh->GetEQCHierarchy()->GetCommunicator().Size()==2) return nullptr; // TODO: as long as 0 is extra!!
+    int n_groups = 1 + (mesh->GetEQCHierarchy()->GetCommunicator().Size()-1)/3; // 0 is extra
+    n_groups = max2(2, n_groups); // dont send everything from 1 to 0 for no reason
+    Table<int> groups = PartitionProcsMETIS (*mesh, n_groups);
     return make_shared<GridContractMap<TMESH>>(move(groups), mesh);
   }
 
