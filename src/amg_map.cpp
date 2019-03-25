@@ -11,10 +11,10 @@ namespace amg
     mats.Append(last_mat);
     // cout << "SS IS : " << steps.Size() << endl;
     for (auto step_nr : Range(steps.Size())) {
-      // cout << "do step " << step_nr << " of " << steps.Size() << endl;
+      cout << "do step " << step_nr << " of " << steps.Size() << endl;
       auto & step = steps[step_nr];
       auto next_mat = step->AssembleMatrix(last_mat);
-      // cout << "ok!!, next mat: " << endl << next_mat << endl;
+      cout << "ok!!, next mat: " << endl << next_mat << endl;
       // if (next_mat!=nullptr) cout << *next_mat << endl;
       // else cout << "nullptr!!!" << endl;
       mats.Append(next_mat);

@@ -40,7 +40,7 @@ namespace amg
     Array<AMG_Node<NT_EDGE>> edges;
     Array<AMG_Node<NT_FACE>> faces;
     Array<AMG_Node<NT_CELL>> cells;
-    shared_ptr<SparseMatrix<double>> econ = nullptr;
+    mutable shared_ptr<SparseMatrix<double>> econ = nullptr;
   }; // class TopologicMesh
 
   
@@ -135,6 +135,26 @@ namespace amg
 						bool build_faces, FlatArray<int> face_sort,
 						bool build_cells, FlatArray<int> cell_sort);
   public:
+    // Apply a lambda-function to each node
+    template<NODE_TYPE NT, class TLAM>
+    INLINE void Apply (TLAM lam, bool master_only = false) const {
+      if (master_only)
+	for (auto eqc : Range(GetNEqcs()))
+	  if ( eqc_h->IsMasterOfEQC(eqc) ) {
+	    for (const auto& node : GetENodes<NT>(eqc)) lam(node);
+	    if constexpr(NT!=NT_VERTEX) for (const auto& node : GetCNodes<NT>(eqc)) lam(node);
+	  }
+      else { for (const auto & node : GetNodes<NT>()) lam(node); }
+    }
+    // Apply a lambda-function to each eqc/node - pair
+    template<NODE_TYPE NT, class TLAM>
+    INLINE void ApplyEQ (TLAM lam, bool master_only = false) const {
+      for (auto eqc : Range(GetNEqcs()))
+	if ( !master_only || eqc_h->IsMasterOfEQC(eqc) ) {
+	  for (const auto& node : GetENodes<NT>(eqc)) lam(eqc, node);
+	  if constexpr(NT!=NT_VERTEX) for (const auto& node : GetCNodes<NT>(eqc)) lam(eqc, node);
+	}
+    }
     // ugly stuff
     template<NODE_TYPE NT, class T, class TRED>
     void AllreduceNodalData (Array<T> & avdata, TRED red, bool apply_loc = false) const {
@@ -285,14 +305,18 @@ namespace amg
 	bool isina = a.eqc[0]==a.eqc[1];
 	bool isinb = b.eqc[0]==b.eqc[1];
 	if (isina && !isinb) return true;
-	else if (isinb && !isina) return false;
+	else if (!isina && isinb) return false;
 	else if (isina && isinb) return a.v<b.v;
-	else return a.eqc<b.eqc;
+	else if (a.eqc[0]<b.eqc[0]) return true; else if (a.eqc[0]>b.eqc[0]) return false;
+	else if (a.eqc[1]<b.eqc[1]) return true; else if (a.eqc[1]>b.eqc[1]) return false;
+	else return a.v<b.v;
       };
       for (auto k:Range(size_t(1), neqcs))
 	QuickSort(tent_ex_nodes[k], smaller);
+      // cout << "tent_ex_nodes : " << endl << tent_ex_nodes << endl;
       auto merge_it = [&](auto & input) { return merge_arrays(input, smaller); };
       auto ex_nodes = ReduceTable<AMG_CNode<NT>,AMG_CNode<NT>> (tent_ex_nodes, this->eqc_h, merge_it);
+      // cout << "ex_nodes : " << endl << ex_nodes << endl;
       size_t tot_nnodes, tot_nnodes_eqc, tot_nnodes_cross;
       tot_nnodes_eqc = node_disp_eqc[1];
       tot_nnodes_cross = node_disp_cross[1];
@@ -506,6 +530,8 @@ namespace amg
     BlockAlgMesh (BlockTM && _mesh, T*... _data)
       : BlockAlgMesh (move(_mesh), std::tuple<T*...>(_data...))
     { ; }
+    INLINE void Cumulate () const { std::apply([&](auto&& ...x){ (x->Cumulate(),...); }, node_data); }
+    INLINE void Distribute () const { std::apply([&](auto&& ...x){ (x->Distribute(),...); }, node_data); }
     template<class TMAP,
 	     typename T_ENABLE = typename std::enable_if<std::is_base_of<GridMapStep<BlockAlgMesh<T...>>, TMAP>::value==1>::type>
     std::tuple<T*...> MapData (const TMAP & map) const

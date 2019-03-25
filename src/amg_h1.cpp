@@ -33,6 +33,7 @@ namespace amg
 
     Array<double> vcw(NV); vcw = 0;
     auto econ = mesh.GetEdgeCM();
+    cout << "SetCoarseningOptions, econ " << econ << " for mesh at " << _mesh << endl;
     auto & eqc_h = *mesh.GetEQCHierarchy();
     auto neqcs = eqc_h.GetNEQCS();
     for (auto eqc : Range(neqcs)) {
@@ -112,6 +113,8 @@ namespace amg
     	       else if (name == "v_pos") { opts->v_pos = item.second.cast<string>(); }
     	       else if (name == "energy") { opts->energy = item.second.cast<string>(); }
     	       else if (name == "edges") { opts->edges = item.second.cast<string>(); }
+    	       else if (name == "clev") { opts->clev_type = item.second.cast<string>(); }
+    	       else if (name == "clev_inv") { opts->clev_type = item.second.cast<string>(); }
     	       else { cout << "warning, invalid AMG option: " << name << endl; break; }
     	     }
     	     return new EmbedVAMG<H1AMG>(blf, opts);

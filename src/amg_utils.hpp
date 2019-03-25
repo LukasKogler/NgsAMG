@@ -51,6 +51,19 @@ namespace amg
     else if (a[1]<b[1]) return true; else if (a[1]>b[1]) return false;
     else return a[2]<b[2];
   }
+  template<typename T> bool operator < (const INT<4,T> & a, const INT<3,T> & b) {
+    if (a[0]<b[0]) return true; else if (a[0]>b[0]) return false;
+    else if (a[1]<b[1]) return true; else if (a[1]>b[1]) return false;
+    else if (a[2]<b[2]) return true; else if (a[2]>b[2]) return false;
+    else return a[3]<b[3];
+  }
+  template<typename T> bool operator < (const INT<5,T> & a, const INT<5,T> & b) {
+    if (a[0]<b[0]) return true; else if (a[0]>b[0]) return false;
+    else if (a[1]<b[1]) return true; else if (a[1]>b[1]) return false;
+    else if (a[2]<b[2]) return true; else if (a[2]>b[2]) return false;
+    else if (a[3]<b[3]) return true; else if (a[2]>b[2]) return false;
+    else return a[4]<b[4];
+  }
 
   auto hack_eval_tab = [](const auto &x) { return x[0][0]; };
   template<class T> struct tab_scal_trait {

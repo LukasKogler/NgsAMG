@@ -39,7 +39,7 @@ namespace amg
 	econ_i[edge.v[l]][econ_s[edge.v[l]]++] = INT<2>(edge.v[1-l], edge.id);
     for(auto row:econ_i)
       QuickSort(row, [](auto & a, auto & b) { return a[0]<b[0]; });
-    auto econ = make_shared<SparseMatrix<double>>(econ_s, nv);
+    econ = make_shared<SparseMatrix<double>>(econ_s, nv);
     for(auto k:Range(nv)) {
       auto rinds = econ->GetRowIndices(k);
       auto rvals = econ->GetRowValues(k);

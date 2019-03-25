@@ -30,14 +30,12 @@ namespace amg
      **/
     INLINE PARALLEL_STATUS map_data (const BaseCoarseMap & cmap, Array<double> & cdata) const
     {
-      Distribute();
       cdata.SetSize(cmap.GetMappedNN<NT_VERTEX>()); cdata = 0.0;
       auto map = cmap.GetMap<NT_VERTEX>();
-      // cout << "V map: " << endl; prow(map); cout << endl;
-      // cout << "orig V data: "; prow(data); cout << endl;
-      for (auto k : Range(map.Size()))
-	{ auto cid = map[k]; if ( cid != decltype(cid)(-1)) cdata[cid] += data[k]; }
-      // cout << "mapped V data: "; prow(cdata); cout << endl;
+      auto lam_v = [&](const AMG_Node<NT_VERTEX> & v)
+	{ auto cv = map[v]; if (cv != -1) cdata[cv] += data[v]; };
+      bool master_only = (GetParallelStatus()==CUMULATED);
+      mesh->Apply<NT_VERTEX>(lam_v, master_only);
       return DISTRIBUTED;
     }
   };
@@ -49,14 +47,12 @@ namespace amg
     H1EData (Array<double> && _data, PARALLEL_STATUS _stat) : AttachedNodeData<NT_EDGE, double, H1EData>(move(_data), _stat) {}
     INLINE PARALLEL_STATUS map_data (const BaseCoarseMap & cmap, Array<double> & cdata) const
     {
-      Distribute();
       cdata.SetSize(cmap.GetMappedNN<NT_EDGE>()); cdata = 0.0;
       auto map = cmap.GetMap<NT_EDGE>();
-      // cout << "E map: " << endl; prow(map); cout << endl;
-      // cout << "orig E data: "; prow(data); cout << endl;
-      for (auto k : Range(map.Size()))
-	{ auto cid = map[k]; if ( cid != decltype(cid)(-1)) cdata[cid] += data[k]; }
-      // cout << "mapped E data: "; prow(cdata); cout << endl;
+      auto lam_e = [&](const AMG_Node<NT_EDGE>& e)
+	{ auto cid = map[e.id]; if ( cid != decltype(cid)(-1)) cdata[cid] += data[e.id]; };
+      bool master_only = (GetParallelStatus()==CUMULATED);
+      mesh->Apply<NT_EDGE>(lam_e, master_only);
       return DISTRIBUTED;
     }
   };
@@ -70,6 +66,21 @@ namespace amg
     INLINE void CalcPWPBlock (const TMESH & fmesh, const TMESH & cmesh, const CoarseMap<TMESH> & map,
 			      AMG_Node<NT_VERTEX> v, AMG_Node<NT_VERTEX> cv, double & mat) const
     { SetIdentity(mat); }
+    // CRTP FOR THIS // get weight for edge (used for s-prol)
+    INLINE double EdgeWeight (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge) const
+    {
+      // cerr << "wt for edge " << edge << flush;
+      // cerr << " of " << fmesh.template GetNN<NT_EDGE>() << flush;
+      auto w = get<1>(fmesh.Data())->Data()[edge.id];
+      // cerr << "wt is " << w << endl;
+      // cout << "wt for edge " << edge << ": " << w << endl;
+      return w; }
+    // CRTP FOR THIS // calculate an edge-contribution to the replacement matrix
+    INLINE void CalcRMBlock (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge, FlatMatrix<double> mat) const
+    {
+      auto w = EdgeWeight(fmesh, edge);
+      mat(0,1) = mat(1,0) = - (mat(0,0) = mat(1,1) = w);
+    }
   protected:
     virtual void SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts, INT<3> level, shared_ptr<TMESH> mesh) override;
   };

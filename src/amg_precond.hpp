@@ -27,6 +27,7 @@ namespace amg
   template<class AMG_CLASS, class ATMESH, class TMAT>
   class VWiseAMG : public BaseMatrix
   {
+    // TODO: do I need ATMESH? could take that from AMG_CLASS
   public:
     struct Options
     {
@@ -35,13 +36,20 @@ namespace amg
       /** Dirichlet conditions for finest level **/
       shared_ptr<BitArray> free_verts = nullptr;
       shared_ptr<BitArray> finest_free_dofs = nullptr;
+      /** Used for Prolongation smoothing **/
+      // double min_prol_wt = 0.05; // absolute min. wt to include an edge
+      double min_prol_frac = 0.1; // relative min. wt to include an edge
+      int max_per_row = 3; // maximum entries per row (>=1!)
+      double sp_omega = 0.5;
+      /** Coarsest level opts **/
+      string clev_type = "inv";
+      string clev_inv_type = "masterinverse";
     };
 
     using TMESH = ATMESH;
     using TV = typename mat_traits<TMAT>::TV_ROW;
     using TSCAL = typename mat_traits<TMAT>::TSCAL;
     using TSPMAT = SparseMatrix<TMAT, TV, TV>;
-    // typedef SparseMatrix<TMAT, TV, TV> TSPMAT;
 
     VWiseAMG (shared_ptr<TMESH> finest_mesh, shared_ptr<Options> opts) : options(opts), mesh(finest_mesh) { ;  };
     /** the first prolongation is concatenated with embed_step (it should be provided by EmbedAMGPC) **/
@@ -49,9 +57,13 @@ namespace amg
 
     INLINE void Mult (const BaseVector & b, BaseVector & x) const { amg_mat->Mult(b,x); }
 
-    // CRTP FOR THIS!!
+    // CRTP FOR THIS //
     // INLINE void CalcPWPBlock (const TMESH & fmesh, const TMESH & cmesh, const CoarseMap & map,
     // 			      AMG_Node<NT_VERTEX> v, AMG_Node<NT_VERTEX> cv, TMAT & mat);
+    // CRTP FOR THIS // calculate an edge-contribution to the replacement matrix
+    // INLINE void CalcRMBlock (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge, FlatMatrix<double> mat) const { mat = -1; }
+    // CRTP FOR THIS // get weight for edge (used for s-prol)
+    // INLINE double EdgeWeight (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge) const { return 0.1; }
 
     size_t GetNLevels(int rank) const
     {return this->amg_mat->GetNLevels(rank); }
@@ -76,12 +88,15 @@ namespace amg
     
     void Setup ();
 
-    INLINE void SetIdentity (double & x) const { x = 1.0; }
-    template<int D> INLINE void SetIdentity (Mat<D,D,double> & x) const { x = 0.0; for (auto i:Range(D)) x(i,i) = 1.0; }
+    virtual void SmoothProlongation (shared_ptr<ProlMap<TSPMAT>> pmap, shared_ptr<TMESH> mesh) const;
+
     
     shared_ptr<ParallelDofs> BuildParDofs (shared_ptr<TMESH> amesh);
     shared_ptr<ProlMap<TSPMAT>> BuildDOFMapStep (shared_ptr<CoarseMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd);
     shared_ptr<CtrMap<TV>> BuildDOFMapStep (shared_ptr<GridContractMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd);
+
+    INLINE void SetIdentity (double & x) const { x = 1.0; }
+    template<int D> INLINE void SetIdentity (Mat<D,D,double> & x) const { x = 0.0; for (auto i:Range(D)) x(i,i) = 1.0; }
   };
 
   // /**

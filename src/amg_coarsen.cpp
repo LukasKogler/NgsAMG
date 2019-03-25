@@ -181,6 +181,7 @@ namespace amg
 
     cout << "free ptr: " << free << endl;
     if (free!=nullptr) {
+      cout << free->NumSet() << " of " << free->Size() << " are free!" << endl;
       const auto & fv = *free; for(auto k:Range(NV)) if(!fv.Test(k)) { coll.GroundVertex(k); coll.FixVertex(k); }
     }
 
@@ -555,6 +556,7 @@ namespace amg
     mapped_cross_firsti[NT_VERTEX].SetSize(eqcs.Size()+1);
     // no cross-vertices per definition
     mapped_cross_firsti[NT_VERTEX] = mapped_eqc_firsti[NT_VERTEX].Last();
+    // cout << endl << "have vertex map: " << endl; prow2(vmap); cout << endl;
   } // CoarseMap :: BuildVertexMap
 
   template<class TMESH>
@@ -587,7 +589,11 @@ namespace amg
     size_t neqcs = eqc_h.GetNEQCS();
     Array<size_t> eqcs(neqcs);
     for(auto k:Range(neqcs)) eqcs[k] = k;
-    // eqc-changing coarse edges 
+    // eqc-changing coarse edges
+    // cout << "check coll " << endl;
+    // for (const auto & e : bmesh.template GetNodes<NT_EDGE>())
+    //   cout << "edge " << e << " , coll ? " << coll.IsEdgeCollapsed(e) << endl;
+    // cout << endl;
     Table<AMG_CNode<NT_EDGE>> tadd_edges;
     {
       TableCreator<AMG_CNode<NT_EDGE>> ct(neqcs);
@@ -640,6 +646,7 @@ namespace amg
     	    out[s++] = row[j]; } }
     	return out;
       });
+    cout << "add_edges: " << endl << add_edges << endl;
     // make hash-tables
     typedef ClosedHashTable<INT<2, int>, int> HT1;
     Array<HT1*> hash_ie(neqcs);

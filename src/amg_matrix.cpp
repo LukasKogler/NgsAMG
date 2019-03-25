@@ -114,8 +114,10 @@ namespace amg
 	t4.Start();
 	// cout << "crs inv " << endl;
 	// cout << "crs rhs " << endl << *rhs_level[n_levels-1] << endl;
-	// crs_inv->Mult(*rhs_level[n_levels-1], *x_level[n_levels-1]);
-	x_level[n_levels-1]->FVDouble() = 0;
+	if (crs_inv==nullptr)
+	  x_level[n_levels-1]->FVDouble() = 0;
+	else
+	  crs_inv->Mult(*rhs_level[n_levels-1], *x_level[n_levels-1]);
 	// cout << "crs sol " << endl;
 	// for(auto k:Range(x_level[n_levels-1]->FVDouble().Size()))
 	//   cout << k << ": " << x_level[n_levels-1]->FVDouble()[k] << endl;

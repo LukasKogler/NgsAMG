@@ -171,6 +171,10 @@ namespace amg {
     }
     shared_ptr<TCMAT> DoAssembleMatrix (shared_ptr<TFMAT> mat) const
     { return RestrictMatrix<TFMAT, TMAT> (*mat, *prol); }
+
+    shared_ptr<TMAT> GetProl () { return prol; }
+    void SetProl (shared_ptr<TMAT> aprol) { prol = aprol; }
+    
   private:
     shared_ptr<TMAT> prol;
   };
