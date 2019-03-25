@@ -16,7 +16,8 @@ namespace amg
     }
     for (size_t i = first; i < last; i++)
       if (a[i] == elem) { return i; }
-    return numeric_limits<typename remove_reference<decltype(a[0])>::type>::max();
+    // return numeric_limits<typename remove_reference<decltype(a[0])>::type>::max();
+    return (typename remove_reference<decltype(a[0])>::type)(-1);
   };
   
   auto prow = [](const auto & ar, std::ostream &os = cout){ for(auto v:ar) os << v << " "; };
@@ -42,12 +43,12 @@ namespace amg
   INLINE double TVNorm (double v) { return abs(v); }
   
   template<typename T> bool operator < (const INT<2,T> & a, const INT<2,T> & b) {
-    if(a[0]<b[0]) return true;
+    if (a[0]<b[0]) return true; else if (a[0]>b[0]) return false;
     else return a[1]<b[1];
   }
   template<typename T> bool operator < (const INT<3,T> & a, const INT<3,T> & b) {
-    if(a[0]<b[0]) return true;
-    else if(a[1]<b[1]) return true;
+    if (a[0]<b[0]) return true; else if (a[0]>b[0]) return false;
+    else if (a[1]<b[1]) return true; else if (a[1]>b[1]) return false;
     else return a[2]<b[2];
   }
 
