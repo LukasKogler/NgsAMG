@@ -401,11 +401,11 @@ namespace amg
     os << " BlockTM, NNODES eqc:   " << endl; for(auto l:Range(4)) { os << "NT " << l << ": "; prow2(p.nnodes_eqc[l], os); os << endl; }
     os << " BlockTM, NNODES cross: " << endl; for(auto l:Range(4)) { os << "NT " << l << ": "; prow2(p.nnodes_cross[l], os); os << endl; }
     os << " BlockTM is on ";
-    if(p.eqc_h!=nullptr) cout << *p.eqc_h;
+    if(p.eqc_h!=nullptr) { cout << *p.eqc_h; cout << endl; }
     else cout << " NO EQCH !!" << endl;
-    os << "eqc_verts: " << p.eqc_verts;
-    os << "eqc_edges: " << p.eqc_edges;
-    os << "cross_edges: " << p.cross_edges;
+    os << "eqc_verts: " << p.eqc_verts; cout << endl;
+    os << "eqc_edges: " << p.eqc_edges; cout << endl;
+    os << "cross_edges: " << p.cross_edges; cout << endl;
     os << "------" << endl << endl;
     return os;
   }

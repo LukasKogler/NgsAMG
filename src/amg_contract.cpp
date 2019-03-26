@@ -526,7 +526,7 @@ namespace amg
       cout << "get mesh from " << my_group[k] << endl;
       comm.Recv(mg_btms[k], my_group[k], MPI_TAG_AMG);
       cout << "got mesh from " << my_group[k] << endl;
-      // cout << *mg_btms[k] << endl;
+      cout << *mg_btms[k] << endl;
     }
 
     // constexpr int lhs = 1024*1024;

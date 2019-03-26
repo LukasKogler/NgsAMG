@@ -180,9 +180,9 @@ namespace amg
 		{ if constexpr(NT==NT_VERTEX) for (auto l:Range(nodes.Size())) row[C++] = avdata[nodes[l]];
 		  else for (auto l:Range(nodes.Size())) row[C++] = avdata[nodes[l].id]; },
 		data);
-      cout << "ARND data: " << endl << data << endl;
+      // cout << "ARND data: " << endl << data << endl;
       Table<T> reduced_data = ReduceTable<T,T,TRED>(data, eqc_h, red);
-      cout << "ARND reduced data: " << endl << reduced_data << endl;
+      // cout << "ARND reduced data: " << endl << reduced_data << endl;
       loop_eqcs([&](auto nodes, auto row)
 		{ if constexpr(NT==NT_VERTEX) for (auto l:Range(nodes.Size())) avdata[nodes[l]] = row[C++];
 		  else for (auto l:Range(nodes.Size())) avdata[nodes[l].id] = row[C++]; },
@@ -241,7 +241,6 @@ namespace amg
 	if (eqc_h.IsMasterOfEQC(eqc))
 	  nv_master += eqc_verts[eqc].Size();
       nnodes_glob[NT_VERTEX] = eqc_h.GetCommunicator().AllReduce(nv_master, MPI_SUM);
-      cout << "nnodes loc, master, glob: " << nnodes[NT_VERTEX] << " " << nv_master << " " << nnodes_glob[NT_VERTEX] << endl;
     } // SetVs
     INLINE void SetVs (size_t nnodes, Table<int> dist_procs, FlatArray<int> node_sort)
     { SetVs(nnodes, [&dist_procs](auto i){ return dist_procs[i]; }, [&node_sort](auto i, auto j){ node_sort[i] = j; }); }
@@ -495,9 +494,9 @@ namespace amg
     virtual void Cumulate () const {
       if (stat == DISTRIBUTED) {
 	AttachedNodeData<NT,T,CRTP>& nc_ref(const_cast<AttachedNodeData<NT,T,CRTP>&>(*this));
-	cout << "NT = " << NT << " dis data " << endl; prow2(data); cout << endl;
+	// cout << "NT = " << NT << " dis data " << endl; prow2(data); cout << endl;
 	mesh->AllreduceNodalData<NT, double> (nc_ref.data, [](auto & tab){return move(sum_table(tab)); }, false);
-	cout << "NT = " << NT << " cumul. data " << endl; prow2(data); cout << endl;
+	// cout << "NT = " << NT << " cumul. data " << endl; prow2(data); cout << endl;
 	nc_ref.stat = CUMULATED;
       }
     }

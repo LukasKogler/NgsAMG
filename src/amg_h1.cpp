@@ -16,7 +16,7 @@ namespace amg
     auto a = new H1VData(Array<double>(top_mesh->GetNN<NT_VERTEX>()), DISTRIBUTED); a->Data() = 0.0;
     auto b = new H1EData(Array<double>(top_mesh->GetNN<NT_EDGE>()), DISTRIBUTED); b->Data() = 1.0;
     auto mesh = make_shared<H1AMG::TMESH>(move(*top_mesh), a, b);
-    cout << "finest mesh: " << endl << *mesh << endl;
+    // cout << "finest mesh: " << endl << *mesh << endl;
     return mesh;
   }
 
@@ -33,7 +33,6 @@ namespace amg
 
     Array<double> vcw(NV); vcw = 0;
     auto econ = mesh.GetEdgeCM();
-    cout << "SetCoarseningOptions, econ " << econ << " for mesh at " << _mesh << endl;
     auto & eqc_h = *mesh.GetEQCHierarchy();
     auto neqcs = eqc_h.GetNEQCS();
     for (auto eqc : Range(neqcs)) {

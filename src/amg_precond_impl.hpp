@@ -104,8 +104,6 @@ namespace amg
 	
 	if (fm==nullptr) { cout << "dropped out, break loop!" << endl; break; } // no mesh due to contract
 
-	cout << "mesh for level " << level << endl << *fm << endl;
-
 	auto CNV = fm->template GetNNGlobal<NT_VERTEX>();
 	if (fm->GetEQCHierarchy()->GetCommunicator().Rank()==0) {
 	  double fac = (NV==0) ? 0 : (1.0*CNV)/NV;

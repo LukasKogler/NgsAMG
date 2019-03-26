@@ -72,16 +72,13 @@ namespace amg
       for(auto k:Range(min_v, min_v+int(NV)))
 	if(!free_verts->Test(k))
 	  { coll.GroundVertex(k); coll.FixVertex(k); }
-    cout << "min_v: " << min_v << ", NV : " << NV << endl;
+    // cout << "min_v: " << min_v << ", NV : " << NV << endl;
     // cout << "edges: "; prow(edges); cout << endl;
     TableCreator<int> v2ec(NV);
     for ( ; !v2ec.Done(); v2ec++)
       for(auto k:Range(edges.Size())) {
 	const auto & edge = edges[k];
-	cout << "add edge " << edge << endl;
-	cout << k << " to " << edge.v[0]-min_v << endl;
 	v2ec.Add(edge.v[0]-min_v, k);
-	cout << k << " to " << edge.v[1]-min_v << endl;
     	v2ec.Add(edge.v[1]-min_v, k);
       }
     Table<int> v2e = v2ec.MoveTable(); // TODO: can we just use "econ" here?
@@ -182,7 +179,6 @@ namespace amg
     const double MIN_CW(options->min_cw);
     auto free = options->free_verts;
 
-    cout << "free ptr: " << free << endl;
     if (free!=nullptr) {
       cout << free->NumSet() << " of " << free->Size() << " are free!" << endl;
       const auto & fv = *free; for(auto k:Range(NV)) if(!fv.Test(k)) { coll.GroundVertex(k); coll.FixVertex(k); }
@@ -282,21 +278,19 @@ namespace amg
 	return out;
       }, false); // do nothing for local values
 
-    // cout << "reduced vs: " << endl; prow(mark_v); cout << endl;
-
     int until = 0;
     for (auto eqc : Range(neqcs)) {
       int last = until;
       until += mesh.template GetENN<NT_VERTEX>(eqc);
       auto dps = eqc_h.GetDistantProcs(eqc);
-      auto pos = 0; while( pos<dps.Size() && comm.Rank() < dps[pos]) pos++;
+      auto pos = 0; while( pos<dps.Size() && comm.Rank() > dps[pos]) pos++;
       if (until > last)
 	for (auto l : Range(last, until)) {
 	  mark_v[l] = ( (eqc==0) || (mark_v[l]==pos)) ? 1 : 0;
 	}
     }
 
-    // cout << "valid vs: " << endl; prow(mark_v); cout << endl;
+    // cout << "assigned vs: " << endl; prow2(mark_v); cout << endl;
 
     // also, edge always comes BEFORE its vertices
     // entry >0: cross-edge entry-1 in coll
@@ -404,7 +398,7 @@ namespace amg
       }
     else {
       // this->mapped_mesh = std::apply( [&mapped_btm](auto& ...x) { return make_shared<TMESH> ( move(*mapped_btm), x...); }, mesh->MapData(*this));
-      cout << "make coarse alg-mesh, mesh now is " << endl << *mesh << endl;
+      // cout << "make coarse alg-mesh, mesh now is " << endl << *mesh << endl;
       this->mapped_mesh = make_shared<TMESH> ( move(*mapped_btm), mesh->MapData(*this) );
     }
 		  
@@ -434,6 +428,17 @@ namespace amg
     size_t neqcs = eqc_h.GetNEQCS();
     Array<size_t> eqcs(neqcs);
     for(auto k:Range(neqcs)) eqcs[k] = k;
+
+    // {
+    //   cout << endl;
+    //   cout << " check coll status: " << endl;
+    //   auto alles = bmesh.GetNodes<NT_EDGE>();
+    //   for (auto k : Range(bmesh.GetNN<NT_EDGE>())) {
+    // 	cout << "edge " << k << "/" <<  bmesh.GetNN<NT_EDGE>() << " coll " << coll.IsEdgeCollapsed(alles[k]) << " , edge: " << alles[k] << endl;
+    //   }
+    //   cout << endl;
+    // }
+      
     /**
        collapsed cross edges
        eq,vnr;eq,vnr
@@ -467,12 +472,15 @@ namespace amg
 	      INT<2, int> V2({e2id,v2l});
 	      const bool smaller = (V1<V2);
 	      auto meq = eqc_h.GetMergedEQC(e1, e2);
+	      // cout << "edge was " << edge << ", ";
 	      if (smaller) {
 		tcce E({V1[0], V1[1], V2[0], V2[1]});
+		// cout << " add E " << E << " (v1) " << endl;
 		ccce.Add(meq, E);
 	      }
 	      else {
 		tcce E({V2[0], V2[1], V1[0], V1[1]});
+		// cout << " add E " << E << " (v2) " << endl;
 		ccce.Add(meq, E);
 	      }
 	    }
@@ -483,8 +491,10 @@ namespace amg
     }
     for(auto k:Range(cce.Size()))
       QuickSort(cce[k], less_cce);
+    // cout << endl << "cce: " << endl << cce << endl;
     auto rcce = ReduceTable<tcce,tcce> (cce, eqcs, sp_eqc_h,
 					[&](const auto & tab) { return merge_arrays(tab, less_cce); });
+    // cout << endl << "rcce: " << endl << rcce << endl;
     vmap.SetSize(NV);
     if(NV) vmap = -1;
     Array<size_t> v_cnt(eqcs.Size());
@@ -529,7 +539,7 @@ namespace amg
       auto edges = block.template GetNodes<NT_EDGE>();
       for(const auto & edge : edges) {
 	if(coll.IsEdgeCollapsed(edge)) {
-	  // for(auto l:Range(2)) { cout << "set vmap3 " << edge.v[l] << " -> " << displ << endl; }
+	  // for(auto l:Range(2)) { cout << "set vmap3-" << l << " " << edge.v[l] << " -> " << displ << endl; }
 	  for(auto l:Range(2)) { vmap[edge.v[l]] = displ; }
 	  displ++;
 	}
@@ -537,20 +547,21 @@ namespace amg
       /** modify vmap for collapsed (cross-)edges **/
       for(auto j:Range(row.Size())) {
 	bool has_one = false;
+	// cout << " eqc/j " << eqc << " " << j << " rcce entry: " << row[j] << endl;
 	for(int l:{0,2}) {
 	  auto v_eqc = eqc_h.GetEQCOfID(row[j][l+0]);
 	  auto v_locnum = row[j][l+1];
 	  /** We have to have the coarse vertex, so we have to have at least one of the vertices! **/
 	  if(is_invalid(v_eqc)) continue;
 	  vmap[bmesh.MapENodeFromEQC<NT_VERTEX>(v_locnum, v_eqc)] = displ;
-	  // cout << "set vmap " << bmesh.MapENodeFromEQC<NT_VERTEX>(v_locnum, v_eqc) << " -> " << displ << endl;
+	  // cout << "set vmap1-" << l << " " << bmesh.MapENodeFromEQC<NT_VERTEX>(v_locnum, v_eqc) << " -> " << displ << endl;
 	}
 	displ++;
       }
       v_cnt[eqc] = displ - last_displ;
       last_displ = displ;
     }
-    cout << "have vert map: " << endl; prow2(vmap); cout << endl;
+    // cout << "have vert map: " << endl; prow2(vmap); cout << endl;
     /** TODO: weave this in earlier, but for now do not touch **/
     mapped_eqc_firsti[NT_VERTEX].SetSize(eqcs.Size()+1);
     mapped_eqc_firsti[NT_VERTEX][0] = 0;
@@ -561,7 +572,29 @@ namespace amg
     // no cross-vertices per definition
     mapped_cross_firsti[NT_VERTEX] = mapped_eqc_firsti[NT_VERTEX].Last();
     // cout << endl << "have vertex map: " << endl; prow2(vmap); cout << endl;
-  } // CoarseMap :: BuildVertexMap
+
+    // Array<int> ones(eqcs.Size()); ones = 1;
+    // Table<int> cnt(ones);
+    // for (auto k : Range(eqcs.Size()))
+    //   { cnt[k][0] = mapped_eqc_firsti[NT_VERTEX][k+1] - mapped_eqc_firsti[NT_VERTEX][k]; }
+    // int cntcs = 0;
+    // auto dontcare = ReduceTable<int, int> (cnt, eqcs, sp_eqc_h,
+    // 					   [&](auto & tab) {
+    // 					     int nrows = tab.Size();
+    // 					     Array<int> out(nrows);
+    // 					     cntcs++;
+    // 					     if(!nrows) return out;
+    // 					     if (nrows==1) { out[0] = tab[0][0]; return out; }
+    // 					     for (auto k : Range(size_t(1), tab.Size()))
+    // 					       if (tab[k][0] != tab[0][0]) {
+    // 						 cout << "NOT OK CHECK EQC S nr : " << cntcs-1 << endl;
+    // 						 print_ft(cout, tab);
+    // 						 cout << endl;
+    // 						 throw Exception("INVALID V SIZES");
+    // 					       }
+    // 					   });
+    
+   } // CoarseMap :: BuildVertexMap
 
   template<class TMESH>
   void CoarseMap<TMESH> :: BuildEdgeMap (VWCoarseningData::CollapseTracker& coll)
@@ -639,6 +672,7 @@ namespace amg
       }
       tadd_edges = ct.MoveTable();
     }
+    // cout << "tadd_edges: " << endl << tadd_edges << endl;
     auto add_edges = ReduceTable<AMG_CNode<NT_EDGE>,AMG_CNode<NT_EDGE>>(tadd_edges, eqcs, sp_eqc_h, [](const auto & tab) {
     	Array<AMG_CNode<NT_EDGE>> out;
     	if (!tab.Size()) return out;
@@ -650,7 +684,7 @@ namespace amg
     	    out[s++] = row[j]; } }
     	return out;
       });
-    cout << "add_edges: " << endl << add_edges << endl;
+    // cout << "add_edges: " << endl << add_edges << endl;
     // make hash-tables
     typedef ClosedHashTable<INT<2, int>, int> HT1;
     Array<HT1*> hash_ie(neqcs);
@@ -772,6 +806,7 @@ namespace amg
       if(cv0>cv1) swap(cv0,cv1);
       node_map[k] = (t[0]==1 ? disp_ie[t[1]] : NECI+disp_ce[t[1]] ) + t[2];
       coarse_nodes[node_map[k]] = {cv0, cv1};
+      // cout << " loc edge " << node << " became c-ndode " << node_map[k] << " " << cv0 << " " << cv1 << endl;
     }
     // ok, now add_edges
     for(auto eqc:Range(neqcs)) {
@@ -786,14 +821,19 @@ namespace amg
     	auto eq1 = eqc_h.GetEQCOfID(eq1id);
     	int vc0 = CN_of_EQC<NT_VERTEX>(eq0, vc0_loc);
     	int vc1 = CN_of_EQC<NT_VERTEX>(eq1, vc1_loc);
+	bool swapped = (vc0>vc1);
+    	// if(vc0>vc1) { swap(vc0,vc1); swap(eq0id,eq1id); }
     	if(vc0>vc1) swap(vc0,vc1);
     	bool isin = eq0==eq1;
+	// cout << "add edge " << eqc << " " << j << " (swap " << swapped << ") : ";
     	if(isin) {
     	  auto & hash =  *hash_ie[eqc];
     	  INT<2, int> ecl(vc0_loc, vc1_loc);
     	  auto ct = hash[ecl];
     	  auto cid = disp_ie[eqc]+ct;
     	  coarse_nodes[cid] = {vc0, vc1};
+	  // cout << " add edge " << e << " became eqc-node " << cid << " " << vc0 << " " << vc1 << endl;
+	  // cout << "locs " << vc0_loc << " " << vc1_loc << endl;
     	}
     	else {
     	  auto & hash =  *hash_ce[eqc];
@@ -801,14 +841,17 @@ namespace amg
     	  auto ct = hash[ecl];
     	  auto cid = NECI + disp_ce[eqc]+ct;
     	  coarse_nodes[cid] = {vc0, vc1};
+	  // cout << " add edge " << e << " became cross-node " << eqc << " " << cid << " " << vc0 << " " << vc1 << endl;
+	  // cout << "eqs " << eq0 << " " << eq1 << endl;
+	  // cout << "locs " << vc0_loc << " " << vc1_loc << endl;
     	}
       }
     }
     // dont need mapped_eqc_nodes ?
     for (auto x : hash_ie) delete x;
     for (auto x : hash_ce) delete x;
-    cout << endl << "have coarse edges: " << endl; prow2(coarse_nodes); cout << endl;
-    cout << endl << "have edge map: " << endl; prow2(node_map); cout << endl;
+    // cout << endl << "have coarse edges: " << endl; prow2(coarse_nodes); cout << endl;
+    // cout << endl << "have edge map: " << endl; prow2(node_map); cout << endl;
   } // CoarseMap :: BuildEdgeMap
 
 } // namespace amg
