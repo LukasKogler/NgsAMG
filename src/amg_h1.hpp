@@ -47,12 +47,21 @@ namespace amg
     H1EData (Array<double> && _data, PARALLEL_STATUS _stat) : AttachedNodeData<NT_EDGE, double, H1EData>(move(_data), _stat) {}
     INLINE PARALLEL_STATUS map_data (const BaseCoarseMap & cmap, Array<double> & cdata) const
     {
+      cout << endl << "map edge data " << endl;
       cdata.SetSize(cmap.GetMappedNN<NT_EDGE>()); cdata = 0.0;
       auto map = cmap.GetMap<NT_EDGE>();
       auto lam_e = [&](const AMG_Node<NT_EDGE>& e)
-	{ auto cid = map[e.id]; if ( cid != decltype(cid)(-1)) cdata[cid] += data[e.id]; };
+	{
+	  auto cid = map[e.id];
+	  if ( cid != decltype(cid)(-1)) {
+	    cout << " add data " << e.id << " " << data[e.id] << " to " << cid << " " << cdata[cid];
+	    cdata[cid] += data[e.id];
+	    cout << " -> " << cdata[cid] << endl;
+	    }
+	};
       bool master_only = (GetParallelStatus()==CUMULATED);
       mesh->Apply<NT_EDGE>(lam_e, master_only);
+      cout << endl << "done map edge data " << endl;
       return DISTRIBUTED;
     }
   };

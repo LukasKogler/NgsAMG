@@ -72,13 +72,16 @@ namespace amg
       for(auto k:Range(min_v, min_v+int(NV)))
 	if(!free_verts->Test(k))
 	  { coll.GroundVertex(k); coll.FixVertex(k); }
-    // cout << "min_v: " << min_v << endl;
+    cout << "min_v: " << min_v << ", NV : " << NV << endl;
     // cout << "edges: "; prow(edges); cout << endl;
     TableCreator<int> v2ec(NV);
     for ( ; !v2ec.Done(); v2ec++)
       for(auto k:Range(edges.Size())) {
-    	const auto & edge = edges[k];
+	const auto & edge = edges[k];
+	cout << "add edge " << edge << endl;
+	cout << k << " to " << edge.v[0]-min_v << endl;
 	v2ec.Add(edge.v[0]-min_v, k);
+	cout << k << " to " << edge.v[1]-min_v << endl;
     	v2ec.Add(edge.v[1]-min_v, k);
       }
     Table<int> v2e = v2ec.MoveTable(); // TODO: can we just use "econ" here?
@@ -401,6 +404,7 @@ namespace amg
       }
     else {
       // this->mapped_mesh = std::apply( [&mapped_btm](auto& ...x) { return make_shared<TMESH> ( move(*mapped_btm), x...); }, mesh->MapData(*this));
+      cout << "make coarse alg-mesh, mesh now is " << endl << *mesh << endl;
       this->mapped_mesh = make_shared<TMESH> ( move(*mapped_btm), mesh->MapData(*this) );
     }
 		  
@@ -546,7 +550,7 @@ namespace amg
       v_cnt[eqc] = displ - last_displ;
       last_displ = displ;
     }
-    // cout << "have vert map: " << endl; prow2(vmap); cout << endl;
+    cout << "have vert map: " << endl; prow2(vmap); cout << endl;
     /** TODO: weave this in earlier, but for now do not touch **/
     mapped_eqc_firsti[NT_VERTEX].SetSize(eqcs.Size()+1);
     mapped_eqc_firsti[NT_VERTEX][0] = 0;
@@ -803,8 +807,8 @@ namespace amg
     // dont need mapped_eqc_nodes ?
     for (auto x : hash_ie) delete x;
     for (auto x : hash_ce) delete x;
-    // cout << endl << "have coarse edges: " << endl; prow2(coarse_nodes); cout << endl;
-    // cout << endl << "have edge map: " << endl; prow2(node_map); cout << endl;
+    cout << endl << "have coarse edges: " << endl; prow2(coarse_nodes); cout << endl;
+    cout << endl << "have edge map: " << endl; prow2(node_map); cout << endl;
   } // CoarseMap :: BuildEdgeMap
 
 } // namespace amg

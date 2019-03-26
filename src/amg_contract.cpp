@@ -61,9 +61,6 @@ namespace amg
       for (auto k : Range(comm.Size())) {
 	if (k!=root) comm.Recv(gdata[k], k, MPI_TAG_AMG);
       }
-      for (auto k : Range(comm.Size())) {
-	cout << " data from " << k << ": "; prow2(gdata[k]); cout << endl;
-      }
       // generate metis graph structure
       Array<idx_t> partition (comm.Size()); partition = -1;
       Array<idx_t> v_weights(comm.Size());
@@ -619,7 +616,13 @@ namespace amg
 	}
       }
     }
-    // cout << "vmaps: " << endl << vmaps << endl;
+
+    cout << "contr emap: " << endl;
+    for (auto k : Range(my_group.Size())) {
+      cout << "map for " << k << ", rank " << my_group[k] << ":  ";
+      prow2(vmaps[k]); cout << endl;
+    }
+    cout << endl;
 
     /** 
 	Abandon hope all ye who enter here - this might
@@ -683,7 +686,7 @@ namespace amg
       tannoy_edges = ct.MoveTable();
     }
 
-    // cout << "tannoy_edges: " << endl << tannoy_edges << endl;
+    cout << "tannoy_edges: " << endl << tannoy_edges << endl;
     auto annoy_edges = ReduceTable<ANNOYE, ANNOYE>
       (tannoy_edges, this->c_eqc_h, [](const auto & in) {
 	Array<ANNOYE> out;
@@ -704,7 +707,7 @@ namespace amg
 	return out;
       });
     
-    // cout << "reduced annoy_edges: " << endl << annoy_edges << endl;
+    cout << "reduced annoy_edges: " << endl << annoy_edges << endl;
 
 
     Array<INT<2, size_t>> annoy_count(cneqcs);
@@ -758,7 +761,7 @@ namespace amg
       }
     }
 
-    // cout << "ccounts: " << endl << ccounts << endl;
+    cout << "ccounts: " << endl << ccounts << endl;
 
     /** displacements, edge and edge-map allocation**/
     // Array<size_t> disp_ie(cneqcs+1); disp_ie = 0;
@@ -781,11 +784,11 @@ namespace amg
     size_t cne = cnie+cnce;
 
     
-    // cout << "CNE CNIE CNCE: " << cne << " " << cnie << " " << cnce << endl;
-    // cout << "II CI ANNOYI CC ANNOYC: " << cniie << " " << cncie << " "
-    // 	 << cnannoyi << " " << cncce << " " << cnannoyc << endl;
-    // cout << "disp_ie: " << endl << disp_ie << endl;
-    // cout << "disp_ce: " << endl << disp_ce << endl;
+    cout << "CNE CNIE CNCE: " << cne << " " << cnie << " " << cnce << endl;
+    cout << "II CI ANNOYI CC ANNOYC: " << cniie << " " << cncie << " "
+    	 << cnannoyi << " " << cncce << " " << cnannoyc << endl;
+    cout << "disp_ie: " << endl << disp_ie << endl;
+    cout << "disp_ce: " << endl << disp_ce << endl;
 
     
     mapped_NN[NT_EDGE] = cne;
@@ -964,6 +967,13 @@ namespace amg
       }
     }
 
+    cout << "contr emap: " << endl;
+    for (auto k : Range(my_group.Size())) {
+      cout << "map for " << k << ", rank " << my_group[k] << ":  ";
+      prow2(emaps[k]); cout << endl;
+    }
+    cout << endl;
+    
     for (auto k : Range(cneqcs)) {
       c_mesh.nnodes_eqc[NT_EDGE][k] = disp_ie[k+1] - disp_ie[k];
       c_mesh.nnodes_cross[NT_EDGE][k] = disp_ce[k+1] - disp_ce[k];

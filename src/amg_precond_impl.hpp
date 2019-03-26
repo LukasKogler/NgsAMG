@@ -61,7 +61,14 @@ namespace amg
     Array<INT<3>> levels;
     auto MAX_NL = options->max_n_levels;
     auto MAX_NV = options->max_n_verts;
-
+    bool contr_locked = true, disc_locked = true;
+    int cnt_lc = 0;
+    Array<size_t> nvs;
+    nvs.Append(fm->template GetNNGlobal<NT_VERTEX>());
+    double frac_coarse = 0.0;
+    const double contr_after_frac = options->contr_after_frac;
+    size_t nv_lc = nvs[0];
+    
     { // coarsen mesh!
       INT<3> level = 0; // coarse, contr, elim
       levels.Append(level);
@@ -69,12 +76,14 @@ namespace amg
 
 	cout << "now level " << level << endl;
 	
-	if ( (grid_step = (gstep_contr = TryContract(level, fm))) != nullptr ) {
+	if ( (!contr_locked) && (grid_step = (gstep_contr = TryContract(level, fm))) != nullptr ) {
+	  contr_locked = true;
 	  dof_step = BuildDOFMapStep(gstep_contr, fm_pd);
 	  cout << "HAVE CONTR STEP!!" << endl;
 	  level[1]++;
 	}
        	else if ( (grid_step = (gstep_coarse = TryCoarsen(level, fm))) != nullptr ) {
+	  cnt_lc++;
 	  dof_step = BuildDOFMapStep(gstep_coarse, fm_pd);
 	  if (level[0]==0 && embed_step!=nullptr) {
 	    // cout << "embst: " << embed_step << endl;
@@ -91,7 +100,11 @@ namespace amg
 
 	auto NV = fm->template GetNNGlobal<NT_VERTEX>();
 	fm = dynamic_pointer_cast<TMESH>(grid_step->GetMappedMesh());
+
+	
 	if (fm==nullptr) { cout << "dropped out, break loop!" << endl; break; } // no mesh due to contract
+
+	cout << "mesh for level " << level << endl << *fm << endl;
 
 	auto CNV = fm->template GetNNGlobal<NT_VERTEX>();
 	if (fm->GetEQCHierarchy()->GetCommunicator().Rank()==0) {
@@ -99,6 +112,21 @@ namespace amg
 	  cout << "map NV " << NV << " -> " << CNV << ", factor " <<  fac << endl;
 	}
 	fm_pd = dof_step->GetMappedParDofs();
+
+	nvs.Append((fm!=nullptr ? fm->template GetNNGlobal<NT_VERTEX>() : 0));
+	if (level[1]==0 && level[2]==0) frac_coarse = (1.0*nvs.Last())/(1.0*nvs[nvs.Size()-2]);
+	if(level[1]!=0) nv_lc = nvs.Last();
+	
+	if(cnt_lc>3) // we have not contracted for a long time
+	  contr_locked = false;
+	else if(frac_coarse>0.75 && level[0]>2 && cnt_lc>1) // coarsening is slowing down
+	  contr_locked = false;
+	// else if(nvs.Last()/fpd->GetCommunicator().Size()<MIN_V_PP && cnt_lc>1) // too few verts per proc
+	//   contr_locked = false;
+	else if((1.0*nvs.Last())/nv_lc < contr_after_frac && cnt_lc>1) // if NV reduces by a good factor
+	  contr_locked = false;
+	// if(level[0]<5) contr_locked = true;
+	
       }
     }
 

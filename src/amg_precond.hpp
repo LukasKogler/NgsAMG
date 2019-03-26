@@ -42,6 +42,8 @@ namespace amg
       int max_per_row = 3; // maximum entries per row (>=1!)
       double sp_omega = 0.5;
       /** Coarsest level opts **/
+      double contr_after_frac = 0.025; // re-distribute after we have reduced the NV by this factor
+      /** Coarsest level opts **/
       string clev_type = "inv";
       string clev_inv_type = "masterinverse";
     };

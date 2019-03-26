@@ -151,13 +151,15 @@ namespace amg
     if (nrows == 0) return out;
     auto row_s = tab[0].Size();
     if (row_s == 0) return out;
-    out = tab[0];
+    out.SetSize(row_s); out = tab[0];
     if (nrows == 1) { return out; }
+    cout << "sum up tabe" << endl; print_ft(cout, tab); cout << endl;
     bool ok = true;
     for (int k = 1; k < tab.Size(); k++) {
       auto row = tab[k];
       for (auto l : Range(row_s)) out[l] += row[l];
     }
+    cout << "result: " << endl; prow2(out); cout << endl;
     return out;
   }
 

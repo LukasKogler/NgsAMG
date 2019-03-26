@@ -138,12 +138,13 @@ namespace amg
     // Apply a lambda-function to each node
     template<NODE_TYPE NT, class TLAM>
     INLINE void Apply (TLAM lam, bool master_only = false) const {
-      if (master_only)
+      if (master_only) {
 	for (auto eqc : Range(GetNEqcs()))
 	  if ( eqc_h->IsMasterOfEQC(eqc) ) {
 	    for (const auto& node : GetENodes<NT>(eqc)) lam(node);
 	    if constexpr(NT!=NT_VERTEX) for (const auto& node : GetCNodes<NT>(eqc)) lam(node);
 	  }
+      }
       else { for (const auto & node : GetNodes<NT>()) lam(node); }
     }
     // Apply a lambda-function to each eqc/node - pair
@@ -179,7 +180,9 @@ namespace amg
 		{ if constexpr(NT==NT_VERTEX) for (auto l:Range(nodes.Size())) row[C++] = avdata[nodes[l]];
 		  else for (auto l:Range(nodes.Size())) row[C++] = avdata[nodes[l].id]; },
 		data);
+      cout << "ARND data: " << endl << data << endl;
       Table<T> reduced_data = ReduceTable<T,T,TRED>(data, eqc_h, red);
+      cout << "ARND reduced data: " << endl << reduced_data << endl;
       loop_eqcs([&](auto nodes, auto row)
 		{ if constexpr(NT==NT_VERTEX) for (auto l:Range(nodes.Size())) avdata[nodes[l]] = row[C++];
 		  else for (auto l:Range(nodes.Size())) avdata[nodes[l].id] = row[C++]; },
@@ -492,7 +495,9 @@ namespace amg
     virtual void Cumulate () const {
       if (stat == DISTRIBUTED) {
 	AttachedNodeData<NT,T,CRTP>& nc_ref(const_cast<AttachedNodeData<NT,T,CRTP>&>(*this));
-	mesh->AllreduceNodalData<NT, double> (nc_ref.data, [](auto & tab){return move(sum_table(tab)); });
+	cout << "NT = " << NT << " dis data " << endl; prow2(data); cout << endl;
+	mesh->AllreduceNodalData<NT, double> (nc_ref.data, [](auto & tab){return move(sum_table(tab)); }, false);
+	cout << "NT = " << NT << " cumul. data " << endl; prow2(data); cout << endl;
 	nc_ref.stat = CUMULATED;
       }
     }

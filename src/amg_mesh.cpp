@@ -355,6 +355,7 @@ namespace amg
 				 // cout << " -> have " << endl;
 				 constexpr int NODE_SIZE = sizeof(AMG_Node<NT_EDGE>::v)/sizeof(AMG_Node<NT_VERTEX>);
 				 for (int k = 0; k < NODE_SIZE; k++) node[k] = vert_sort[node[k]];
+				 if (node[0] > node[1]) Swap(node[1], node[0]);
 				 return move(node);},
 			       [edge_sort](auto i, auto j) { edge_sort[i] = j; } );
     }
@@ -365,6 +366,7 @@ namespace amg
 				 auto node = amg_nts::MAToAMG_Node<NT_FACE>(mar, node_num);
 				 constexpr int NODE_SIZE = sizeof(AMG_Node<NT_FACE>::v)/sizeof(AMG_Node<NT_VERTEX>);
 				 for (int k = 0; k < NODE_SIZE; k++) node[k] = vert_sort[node[k]];
+				 node.Sort();
 				 return move(node);},
 			       [face_sort](auto i, auto j) { face_sort[i] = j; } );
     }
