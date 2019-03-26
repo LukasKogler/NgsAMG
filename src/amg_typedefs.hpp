@@ -59,10 +59,10 @@ namespace amg
 
   template<class TSPMAT>
   struct amg_spm_traits {
-    typedef SparseMatrix<Mat<mat_traits<typename TSPMAT::TV_COL>::HEIGHT, mat_traits<typename TSPMAT::TV_COL>::HEIGHT, typename TSPMAT::TSCAL>,
-			 typename TSPMAT::TV_COL, typename TSPMAT::TV_COL> T_LEFT; 
-    typedef SparseMatrix<Mat<mat_traits<typename TSPMAT::TV_COL>::WIDTH, mat_traits<typename TSPMAT::TV_COL>::WIDTH, typename TSPMAT::TSCAL>,
-			 typename TSPMAT::TV_ROW, typename TSPMAT::TV_ROW> T_RIGHT; 
+    typedef SparseMatrix<Mat<mat_traits<typename TSPMAT::TVY>::HEIGHT, mat_traits<typename TSPMAT::TVY>::HEIGHT, typename TSPMAT::TSCAL>,
+			 typename TSPMAT::TVY, typename TSPMAT::TVY> T_LEFT; 
+    typedef SparseMatrix<Mat<mat_traits<typename TSPMAT::TVX>::HEIGHT, mat_traits<typename TSPMAT::TVX>::HEIGHT, typename TSPMAT::TSCAL>,
+			 typename TSPMAT::TVX, typename TSPMAT::TVX> T_RIGHT; 
   };
   template<> struct amg_spm_traits<SparseMatrix<double>> {
     typedef SparseMatrix<double> T_LEFT;

@@ -495,7 +495,7 @@ namespace amg
       if (stat == DISTRIBUTED) {
 	AttachedNodeData<NT,T,CRTP>& nc_ref(const_cast<AttachedNodeData<NT,T,CRTP>&>(*this));
 	// cout << "NT = " << NT << " dis data " << endl; prow2(data); cout << endl;
-	mesh->AllreduceNodalData<NT, double> (nc_ref.data, [](auto & tab){return move(sum_table(tab)); }, false);
+	mesh->AllreduceNodalData<NT, T> (nc_ref.data, [](auto & tab){return move(sum_table(tab)); }, false);
 	// cout << "NT = " << NT << " cumul. data " << endl; prow2(data); cout << endl;
 	nc_ref.stat = CUMULATED;
       }

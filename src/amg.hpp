@@ -22,6 +22,7 @@ namespace amg {
 #include "amg_matrix.hpp"
 #include "amg_precond.hpp"
 #include "amg_h1.hpp"
+#include "amg_elast.hpp"
 
 #define AMG_EXTERN_TEMPLATES
 #include "amg_tcs.hpp"

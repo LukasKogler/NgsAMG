@@ -33,19 +33,25 @@ namespace amg
 				 typename TMA::TVX,
 				 typename TMA::TVY>::type type;
   };
+  // Get TM/TVX/TVY back from SparseMatrix<....>
+  template<class TM> struct TM_OF_SPM { typedef typename std::remove_reference<typename std::result_of<TM(int, int)>::type >::type type; };
+  template<> struct TM_OF_SPM<SparseMatrix<double>> { typedef double type; };
+
+  // template<class TM> struct TVX_OF_SPM { typedef typename TM::TVX type; };
+  // template<> struct TVX_OF_SPM<SparseMatrix<double>> { typedef double type; };
+  // template<class TM> struct TVY_OF_SPM { typedef typename TM::TVY type; };
+  // template<> struct TVY_OF_SPM<SparseMatrix<double>> { typedef double type; };
+
   
-  // A * B
+  // A.T
   template <typename TMA> shared_ptr<typename trans_spm<TMA>::type> TransposeSPM (const TMA & mat);
-  template<> shared_ptr<SparseMatrix<double>> TransposeSPM<SparseMatrix<double>> (const SparseMatrix<double> & mat);
+  // template<> shared_ptr<SparseMatrix<double>> TransposeSPM<SparseMatrix<double>> (const SparseMatrix<double> & mat);
   
   // A * B
-  template <typename TMA, typename TMB,
-	    typename TSIZE_MATCH = typename std::enable_if<mat_traits<typename TMA::TVX>::HEIGHT==mat_traits<typename TMB::TVY>::HEIGHT>::type >
+  // typename TSIZE_MATCH = typename std::enable_if<mat_traits<typename TMA::TVX>::HEIGHT==mat_traits<typename TMB::TVY>::HEIGHT>::type >
+  template <typename TMA, typename TMB>
   shared_ptr<typename mult_spm<TMA,TMB>::type>
   MatMultAB (const TMA & mata, const TMB & matb);
-
-  template<> shared_ptr<SparseMatrix<double>>
-  MatMultAB<SparseMatrix<double>,SparseMatrix<double>> (const SparseMatrix<double> & mata, const SparseMatrix<double> & matb);
 
   // B.T * A * B
   template <typename TMA, typename TMB,

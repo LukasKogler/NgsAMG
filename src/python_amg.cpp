@@ -4,11 +4,60 @@ using namespace ngsolve;
 
 #include <python_ngstd.hpp>
 
-namespace amg { void ExportH1AMG (py::module & m); }
+#include "amg.hpp"
+
+namespace amg {
+  template <class TOPTS>
+  void opts_from_kwa (shared_ptr<TOPTS> opts, py::kwargs & kwa)
+  {
+    for (auto item : kwa) {
+      string name = item.first.cast<string>();
+      if (name == "max_levels") { opts->max_n_levels = item.second.cast<int>(); }
+      else if (name == "max_cv") { opts->max_n_verts = item.second.cast<int>(); }
+      else if (name == "v_dofs") { opts->v_dofs = item.second.cast<string>(); }
+      else if (name == "v_pos") { opts->v_pos = item.second.cast<string>(); }
+      else if (name == "energy") { opts->energy = item.second.cast<string>(); }
+      else if (name == "edges") { opts->edges = item.second.cast<string>(); }
+      else if (name == "clev") { opts->clev_type = item.second.cast<string>(); }
+      else if (name == "clev_inv") { opts->clev_type = item.second.cast<string>(); }
+      else { cout << "warning, invalid AMG option: " << name << endl; break; }
+    }
+  }
+
+  template<class AMG_CLASS>
+  void ExportEmbedVAMG (py::module & m, string name, string description)
+  {
+    py::class_<EmbedVAMG<AMG_CLASS>, shared_ptr<EmbedVAMG<AMG_CLASS> >, BaseMatrix>
+      (m, name.c_str(), description.c_str())
+      .def(py::init<>
+	   ( [] (shared_ptr<BilinearForm> blf, py::kwargs kwa) {
+	     auto opts = make_shared<typename EmbedVAMG<AMG_CLASS>::Options>();
+	     opts->v_pos = "VERTEX";
+	     opts_from_kwa(opts, kwa);
+	     return new EmbedVAMG<AMG_CLASS>(blf, opts);
+	   }), py::arg("blf") = nullptr)
+    .def ("Test", [](EmbedVAMG<AMG_CLASS> &pre) { pre.MyTest();} )
+       .def("GetNLevels", [](EmbedVAMG<AMG_CLASS> &pre, size_t rank) {
+	   return pre.GetNLevels(rank);
+	 }, py::arg("rank")=int(0))
+       .def("GetNDof", [](EmbedVAMG<AMG_CLASS> &pre, size_t level, size_t rank) {
+	   return pre.GetNDof(level, rank);
+	 }, py::arg("level"), py::arg("rank")=int(0))
+       .def("GetBF", [](EmbedVAMG<AMG_CLASS> &pre, shared_ptr<BaseVector> vec,
+			size_t level, size_t rank, size_t dof) {
+	      pre.GetBF(level, rank, dof, *vec);
+	    });
+  }
+  
+} // namespace amg
 
 PYBIND11_MODULE (ngs_amg, m) {
   m.attr("__name__") = "ngs_amg";
-  amg::ExportH1AMG(m);  
+
+  amg::ExportEmbedVAMG<amg::H1AMG>(m, "AMG_H1", "Ngs-AMG for scalar H1-problems");
+  amg::ExportEmbedVAMG<amg::ElasticityAMG<2>>(m, "AMG_EL2", "Ngs-AMG for 2d elasticity");
+  amg::ExportEmbedVAMG<amg::ElasticityAMG<3>>(m, "AMG_EL3", "Ngs-AMG for 3d elasticity");
+  
 }
 
 // template<int D>

@@ -506,7 +506,7 @@ namespace amg
 
 	TMAT diag = mat(0, posV);
 	CalcInverse(diag); // TODO: can this be singular (with embedding?)
-	FlatMatrix<double> row (1, unv, lh);
+	FlatMatrix<TMAT> row (1, unv, lh);
 	row = - omega * diag * mat;
 	// cout << " repl-row without diag adj: " << endl << row << endl;
 	row(0, posV) = (1-omega) * id;
