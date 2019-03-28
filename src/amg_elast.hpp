@@ -127,14 +127,19 @@ namespace amg
 	if constexpr(D==3) for (auto j : Range(rotpv(D))) mat(k,disppv(D)+j) = tang(k)*tang(j);
       }
       if constexpr(D==2) {
-	  mat(0,2) = -tang(1);
-	  mat(1,2) = tang(0);
+	  mat(0,2) = tang(1);
+	  mat(1,2) = -tang(0);
 	}
       for (auto k : Range(disppv(D), disppv(D)+rotpv(D)))
 	mat(k,k) = 1.0;
     }
     INLINE void CalcRMBlock (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge, FlatMatrix<TMAT> mat) const
     {
+      // [r]
+      for (int i = 0; i < rotpv(D); i++) {
+	
+      }
+      
       SetIdentity(mat(0,0));
       mat(0,1) = -mat(0,0);
       mat(1,0) = -mat(0,0);

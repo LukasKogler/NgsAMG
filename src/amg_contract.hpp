@@ -21,6 +21,11 @@ namespace amg
     virtual void TransferC2F(const shared_ptr<BaseVector> & x_fine,
 			     const shared_ptr<const BaseVector> & x_coarse) const override;
 
+    virtual shared_ptr<BaseVector> CreateVector() const override
+    { return make_shared<ParallelVVector<TV>>(pardofs->GetNDofLocal(), pardofs, CUMULATED); }
+    virtual shared_ptr<BaseVector> CreateMappedVector() const override
+    { return (mapped_pardofs!=nullptr) ? make_shared<ParallelVVector<TV>>(mapped_pardofs->GetNDofLocal(), mapped_pardofs, CUMULATED) : nullptr; }
+
     virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const override
     {
       // TODO: static cast this??

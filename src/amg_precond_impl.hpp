@@ -245,9 +245,9 @@ namespace amg
 
     auto pmap = make_shared<ProlMap<TSPMAT>> (prol, fpd, cpd);
 
-    // cout << "smooth prol..." << endl;
-    // SmoothProlongation(pmap, static_pointer_cast<TMESH>(cmap.GetMesh()));
-    // cout << "smooth prol done!" << endl;
+    cout << "smooth prol..." << endl;
+    SmoothProlongation(pmap, static_pointer_cast<TMESH>(cmap.GetMesh()));
+    cout << "smooth prol done!" << endl;
     
     return pmap;
   } // VWiseAMG<...> :: BuildDOFMapStep ( CoarseMap )

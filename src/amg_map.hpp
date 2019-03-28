@@ -119,9 +119,9 @@ namespace amg {
     using TFMAT = typename amg_spm_traits<TMAT>::T_RIGHT;
     using TCMAT = typename amg_spm_traits<TMAT>::T_LEFT;
 
-    virtual shared_ptr<BaseVector> CreateVector() const
+    virtual shared_ptr<BaseVector> CreateVector() const override
     { return make_shared<ParallelVVector<typename TMAT::TVY>>(pardofs->GetNDofLocal(), pardofs, CUMULATED); }
-    virtual shared_ptr<BaseVector> CreateMappedVector() const
+    virtual shared_ptr<BaseVector> CreateMappedVector() const override
     { return (mapped_pardofs!=nullptr) ? make_shared<ParallelVVector<typename TMAT::TVX>>(mapped_pardofs->GetNDofLocal(), mapped_pardofs, CUMULATED) : nullptr; }
 
     // me left -- other right

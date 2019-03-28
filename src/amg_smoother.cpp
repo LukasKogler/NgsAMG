@@ -262,7 +262,7 @@ namespace amg {
 	  auto cdj = perow[dj];
 	  if (!exd.Contains(dj)) {
 	    CLD->GetRowIndices(dj)[cdj] = ccol;
-	    CLD->GetRowValues(dj)[cdj] = rvs[j];
+	    CLD->GetRowValues(dj)[cdj] = Trans(rvs[j]);
 	    perow[dj]++;
 	  }
 	}

@@ -8,9 +8,9 @@ namespace amg
 {
   
   // A = B.T
-  template<int N, int M> INLINE void TM_Set_A_BT (Mat<N,M,double> & a, const Mat<M,N,double> & b)
-  { for (auto i : Range(N)) for (auto j : Range(M)) a(i,j) = b(j,i); }
-  INLINE void TM_Set_A_BT (double & a, const double & b) { a = b; }
+  // template<int N, int M> INLINE void TM_Set_A_BT (Mat<N,M,double> & a, const Mat<M,N,double> & b)
+  // { for (auto i : Range(N)) for (auto j : Range(M)) a(i,j) = b(j,i); }
+  // INLINE void TM_Set_A_BT (double & a, const double & b) { a = b; }
   
   template <typename TMA> shared_ptr<typename trans_spm<TMA>::type> TransposeSPM (const TMA & mat)
   {
@@ -30,7 +30,7 @@ namespace amg
 	int c = mat.GetRowIndices(i)[ci];
 	int pos = cnt[c]++;
 	trans -> GetRowIndices(c)[pos] = i;
-	TM_Set_A_BT(trans -> GetRowValues(c)[pos],mat.GetRowValues(i)[ci]);
+	trans -> GetRowValues(c)[pos] = Trans(mat.GetRowValues(i)[ci]);
       }
     }
     for (int r : Range(trans->Height())) {
