@@ -22,6 +22,7 @@ namespace amg {
       else if (name == "clev_inv") { opts->clev_type = item.second.cast<string>(); }
       else { cout << "warning, invalid AMG option: " << name << endl; break; }
     }
+    // opts->v_pos = "VERTEX";
   }
 
   template<class AMG_CLASS>

@@ -9,21 +9,29 @@ namespace amg
   template class ElasticityAMG<3>;
 
   template<int D> shared_ptr<ElasticityMesh<D>>
-  Hack_BuildAlgMesh (const EmbedVAMG<ElasticityAMG<D>>* amg, shared_ptr<BlockTM> top_mesh)
-  { return nullptr; }
+  Hack_BuildAlgMesh (Array<Vec<3,double>> && vp, shared_ptr<BlockTM> top_mesh)
+  {
+    // Array<Vec<3,double>> vp = move(amg->node_pos[NT_VERTEX]); // dont keep this
+    cout << "v-pos: " << vp.Size() << " " << top_mesh->GetNN<NT_VERTEX>() << endl << vp << endl;
+    Array<PosWV> pwv(top_mesh->GetNN<NT_VERTEX>());
+    for (auto k : Range(pwv.Size())) {
+      pwv[k].wt = 1.0;
+      pwv[k].pos = vp[k];
+    }
+    auto a = new ElVData(move(pwv), CUMULATED);
+    Array<ElEW<D>> we(top_mesh->GetNN<NT_EDGE>()); we = 1.0;
+    auto b = new ElEData<D>(move(we), CUMULATED);
+    auto mesh = make_shared<ElasticityMesh<D>>(move(*top_mesh), a, b);
+    return mesh;
+  }
 
   template<> shared_ptr<ElasticityMesh<2>>
   EmbedVAMG<ElasticityAMG<2>> :: BuildAlgMesh (shared_ptr<BlockTM> top_mesh)
-  { return Hack_BuildAlgMesh(this, top_mesh); }
+  { return Hack_BuildAlgMesh<2>(move(node_pos[NT_VERTEX]), top_mesh); }
 
   template<> shared_ptr<ElasticityMesh<3>>
   EmbedVAMG<ElasticityAMG<3>> :: BuildAlgMesh (shared_ptr<BlockTM> top_mesh)
-  { return Hack_BuildAlgMesh(this, top_mesh); }
-
-  template<int D>
-  void ElasticityAMG<D> :: SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts,
-						 INT<3> level, shared_ptr<ElasticityMesh<D>> mesh)
-  { ; }
+  { return Hack_BuildAlgMesh<3>(move(node_pos[NT_VERTEX]), top_mesh); }
 
   template<> shared_ptr<BaseDOFMapStep>
   EmbedVAMG<ElasticityAMG<2>> :: BuildEmbedding ()

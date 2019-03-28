@@ -7,7 +7,8 @@ namespace amg
 {
   template<class AMG_CLASS>
   EmbedVAMG<AMG_CLASS> :: EmbedVAMG (shared_ptr<BilinearForm> blf, shared_ptr<EmbedVAMG<AMG_CLASS>::Options> opts)
-    : Preconditioner(blf, Flags({"not_register_for_auto_update"})), options(opts), bfa(blf), fes(blf->GetFESpace())
+    : Preconditioner(blf, Flags({"not_register_for_auto_update"})), options(opts), bfa(blf), fes(blf->GetFESpace()),
+      node_sort(4), node_pos(4)
   {
     Setup();
   }
@@ -274,6 +275,34 @@ namespace amg
   } // VWiseAMG<...> :: BuildDOFMapStep ( GridContractMap )
 
   
+  template<class AMG_CLASS, class TMESH, class TMAT> void 
+  VWiseAMG<AMG_CLASS, TMESH, TMAT> :: SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts,
+							    INT<3> level, shared_ptr<TMESH> _mesh)
+  {
+    const TMESH & mesh(*_mesh);
+    const AMG_CLASS & self = static_cast<const AMG_CLASS&>(*this);
+    auto NV = mesh.template GetNN<NT_VERTEX>();
+    auto NE = mesh.template GetNN<NT_EDGE>();
+    mesh.CumulateData();
+    Array<double> vcw(NV); vcw = 0;
+    mesh.template ApplyEQ<NT_EDGE>([&](auto eqc, const auto & edge) {
+	auto ew = self.template GetWeight<NT_EDGE>(mesh, edge);
+	vcw[edge.v[0]] += ew;
+	vcw[edge.v[1]] += ew;
+      }, true);
+    mesh.template AllreduceNodalData<NT_VERTEX>(vcw, [](auto & in) { return sum_table(in); }, false);
+    mesh.template Apply<NT_VERTEX>([&](auto v) { vcw[v] += self.template GetWeight<NT_VERTEX>(mesh, v); });
+    Array<double> ecw(NE);
+    mesh.template Apply<NT_EDGE>([&](const auto & edge) {
+	double vw = min(vcw[edge.v[0]], vcw[edge.v[1]]);
+	ecw[edge.id] = self.template GetWeight<NT_EDGE>(mesh, edge) / vw;
+      }, false);
+    for (auto v : Range(NV))
+      vcw[v] = self.template GetWeight<NT_VERTEX>(mesh, v)/vcw[v];
+    opts->vcw = move(vcw);
+    opts->ecw = move(ecw);
+  }
+
   template<class AMG_CLASS, class TMESH, class TMAT> shared_ptr<CoarseMap<TMESH>>
   VWiseAMG<AMG_CLASS, TMESH, TMAT> :: TryCoarsen  (INT<3> level, shared_ptr<TMESH> mesh)
   {
@@ -352,7 +381,7 @@ namespace amg
 	      ((cv[1]=vmap[edge.v[1]]) != -1 ) &&
 	      (cv[0]==cv[1]) ) {
 	    // auto com_wt = max2(get_wt(edge.id, edge.v[0]),get_wt(edge.id, edge.v[1]));
-	    auto com_wt = self.EdgeWeight(fmesh, edge);
+	    auto com_wt = self.template GetWeight<NT_EDGE>(fmesh, edge);
 	    vw[edge.v[0]] += com_wt;
 	    vw[edge.v[1]] += com_wt;
 	  }
@@ -402,7 +431,7 @@ namespace amg
 	  auto oeq = fmesh.template GetEqcOfNode<NT_VERTEX>(ov);
 	  if(eqc_h.IsLEQ(EQ, oeq)) {
 	    // auto wt = get_wt(eis[j], V);
-	    auto wt = self.EdgeWeight(fmesh, all_fedges[eis[j]]);
+	    auto wt = self.template GetWeight<NT_EDGE>(fmesh, all_fedges[eis[j]]);
 	    if( (pos = tcv.Pos(cov)) == -1) {
 	      trow.Append(INT<2,double>(cov, wt));
 	      tcv.Append(cov);
@@ -541,7 +570,6 @@ namespace amg
   EmbedVAMG<AMG_CLASS> :: BuildTopMesh ()
   {
     // Array<Array<int>> node_sort(4);
-    node_sort.SetSize(4);
     if (options->v_pos == "VERTEX") {
       auto pds = fes->GetParallelDofs();
       auto eqc_h = make_shared<EQCHierarchy>(pds, true);
@@ -552,14 +580,20 @@ namespace amg
 				       false, node_sort[2], false, node_sort[3]);
       auto & vsort = node_sort[0];
       cout << "v-sort: "; prow2(vsort); cout << endl;
+      /** Convert FreeDofs **/
       auto fes_fds = fes->GetFreeDofs();
-      // cout << "fes fds: " << endl << *fes_fds << endl;
       auto fvs = make_shared<BitArray>(ma->GetNV());
       fvs->Clear();
       for (auto k : Range(ma->GetNV())) if (fes_fds->Test(k)) { fvs->Set(vsort[k]); }
       options->free_verts = fvs;
       options->finest_free_dofs = fes_fds;
       cout << "init free vertices: " << fvs->NumSet() << " of " << fvs->Size() << endl;
+      /** Vertex positions **/
+      if (options->keep_vp) {
+	auto & vpos(node_pos[NT_VERTEX]); vpos.SetSize(top_mesh->GetNN<NT_VERTEX>());
+	for (auto k : Range(vpos.Size()))
+	  ma->GetPoint(k,vpos[vsort[k]]);
+      }
       return top_mesh;
     }
     return nullptr;
@@ -583,8 +617,7 @@ namespace amg
     auto embed_step = BuildEmbedding();
     amg_pc->Finalize(fmat, embed_step);
   }
-
-
+  
 } // namespace amg
 
 #endif

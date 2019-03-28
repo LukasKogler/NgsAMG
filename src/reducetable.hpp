@@ -595,297 +595,120 @@ namespace amg
     return ReduceTable<T, TR>(table_in, eqcs, eqc_h, lambda);
   }
 
-  
-  // // this class does ReduceTable in steps (so we can work on multiple table-reduces at the same time)
-  // template<class T, class TR, class LAM>
-  // class TableReducer
-  // {
-  // protected:
-  //   LAM & lambda;
-  //   /**
-  //      stages:  
-  //       0 .. linearize, send gather-meta+data
-  // 	1 .. wait gather meta, alloc gather data
-  // 	2 .. wait gather data, reduce, send scatter-meta+data
-  // 	3 .. wait scatter meta, alloc scatter data
-  // 	4 .. wait scatter data, alloc&fill reduced table
-  //   **/
-  //   size_t stage = 0;
 
-  //   const Table<T> & table_in;
-  //   const shared_ptr<const EQCHierarchy> eqc_h;
-  //   FlatArray<size_t> eqcs;
-  //   MPI_Comm comm;
-  //   int rank, np, unp;
-
-  //   // [tot_size | block-sizes .. ]
-  //   Array<int> p2row;
-  //   Table<int> master_of_rows; //row p: master-rows of p 
-  //   Table<int> slave_of_rows;  //row p: my master-rows which p is slave of
-  //   Array<int> used_procs;
-  //   Array<MPI_Request> active_reqs;
-  //   Array<Array<size_t>> send_meta, recv_meta;
-  //   Array<Array<T>> send_data, recv_data;
-
-  //   Array<Array<TR> > reduced_data;
-  //   Table<TR> * reduced_table;
-    
-    
-  // public:
-  //   TableReducer(const Table<T> & _table_in, FlatArray<size_t> _eqcs,
-  // 		 const shared_ptr<const EQCHierarchy> & _eqc_h, LAM _lambda)
-  //     : table_in(_table_in), eqcs(_eqcs), eqc_h(_eqc_h), lambda(_lambda)
-  //   {
-  //     comm = eqc_h->GetCommunicator();
-  //     rank = MyMPI_GetId(comm);
-  //     np = MyMPI_GetNTasks(comm);
-
-  //     unp = eqc_h->GetDistantProcs().Size();
-  //     used_procs.SetSize(unp);
-  //     used_procs = eqc_h->GetDistantProcs().Size();
-  //     used_procs.Append(rank);
-  //     QuickSort(used_procs);
-  //     p2row.SetSize(np);
-  //     p2row = -1;
-  //     for (auto [k, p] : Enumerate(used_procs))
-  // 	p2row[p] = k;
+  /**
+     Input: eqc-wise table, whith one row per eqc. master has all data for eqch eqc 
+     Output: table where everyone has all rows.
+     if has_mem==true, does not allocate a new table for output
       
-  //     stage = 0;
-  //     DoStage0();
-  //   }
-
-  //   Table<TR> && MoveTable () { return move(reduced_table); }
+     TODO: give option not to copy local data
+  **/
+  template<class T> Table<T> ScatterEqcData (Table<T> && table_in, const EQCHierarchy & eqc_h, bool has_mem = false)
+  {
+    auto table = move(table_in);
+    auto comm = eqc_h.GetCommunicator();
+    auto neqcs = eqc_h.GetNEQCS();
+    auto ex_procs = eqc_h.GetDistantProcs();
+    int n_smaller = 0; for (auto p : ex_procs) if(comm.Rank()>p) n_smaller++;
+    int n_larger = ex_procs.Size() - n_smaller;
+    // block_sizes, block_data
+    Array<int> perow(ex_procs.Size()); perow = 0;
+    Array<int> nblocks(ex_procs.Size()); nblocks = 0;
+    for ( auto eqc : Range(neqcs)) {
+      if (eqc_h.IsMasterOfEQC(eqc)) {
+	auto eq_dps = eqc_h.GetDistantProcs(eqc);
+	// eq_dps[pos:] > comm.Rank() -> need to send
+	auto row = table[eqc];
+	for ( int kp = 0; kp < eq_dps.Size(); kp++) {
+	  auto posk = find_in_sorted_array(eq_dps[kp], ex_procs);
+	  perow[posk] += row.Size() + 1;
+	  nblocks[posk]++;
+	}
+      }
+    }
+    Table<T> send_buffers(perow); perow = 0;
+    Array<int> count_blocks(ex_procs.Size()); count_blocks = 0;
+    for ( auto eqc : Range(neqcs)) {
+      if (eqc_h.IsMasterOfEQC(eqc)) {
+	auto eq_dps = eqc_h.GetDistantProcs(eqc);
+	auto row = table[eqc];
+	for ( int kp = 0; kp < eq_dps.Size(); kp++) {
+	  auto posk = find_in_sorted_array(eq_dps[kp], ex_procs);
+	  send_buffers[posk][count_blocks[posk]++] = row.Size();
+	  for (auto l : Range(row.Size()))
+	    send_buffers[posk][nblocks[posk] + perow[posk]++] = row[l];
+	}
+      }
+    }
     
-  //   bool Done () { return stage!=4; }
+    cout << " send data: " << endl;
+    for (auto kp : Range(ex_procs.Size())) {
+      cout << " to " << kp << " rk " << ex_procs[kp] << ": ";
+      prow2(send_buffers[kp]); cout << endl;
+    }
+    cout << endl;
 
-  //   void operator++ ()
-  //   {
-  //     switch(stage) {
-  //     case(0):
-  // 	DoStage1();
-  // 	break;
-  //     case(1):
-  // 	DoStage2();
-  // 	break;
-  //     case(2):
-  // 	DoStage3();
-  // 	break;
-  //     case(3):
-  // 	DoStage4();
-  // 	break;
-  //     default:
-  // 	throw Exception("unknown stage in TableReduce!!");
-  //     }
-  //     stage++;
-  //   }
+    // TODO: this sends a couple of empty messages from ranks that are not master of anything
+    for (int kp = n_smaller; kp < ex_procs.Size(); kp++) {
+      auto req = MyMPI_ISend(send_buffers[kp], ex_procs[kp], MPI_TAG_AMG, comm);
+      MPI_Request_free(&req);
+    }
 
+    // TODO: build buffer->row maps, then waitiany if this is critical
+    Array<Array<T>> recv_buffers(ex_procs.Size());
+    for (int kp = 0; kp < n_smaller; kp++) {
+      Array<T> & rb = recv_buffers[kp];
+      comm.Recv(rb, ex_procs[kp], MPI_TAG_AMG);
+      // comm.Recv(recv_buffers[kp], ex_procs[kp], MPI_TAG_AMG);
+    }
+
+    cout << " got data: " << endl;
+    for (auto kp : Range(ex_procs.Size())) {
+      cout << " from " << kp << " rk " << ex_procs[kp] << ": ";
+      prow2(recv_buffers[kp]); cout << endl;
+    }
+    cout << endl;
     
-  // protected:
+    Table<T> table_out;
     
-  //   // 0 ..  linearize -> send/recv size 
-  //   void DoStage0()
-  //   {
-  //     /** Generate proc-tables - TODO: move this into eqc_h?? **/    
-  //     {
-  // 	//master_of_row.Clear();
-  // 	auto nrows = table_in.Size();
-  // 	TableCreator<int> cmof(unp);
-  // 	TableCreator<int> csof(unp);
-  // 	while (!cmof.Done()) {
-  // 	  for (auto row:Range(nrows)) {
-  // 	    auto dps = eqc_h->GetDistantProcs(eqcs[row]);
-  // 	    if (!dps.Size()) {
-  // 	      cmof.Add(p2row[rank], row);
-  // 	      continue;
-  // 	    }
-  // 	    if (rank<dps[0]) { //i am master of this; others are my slaves
-  // 	      cmof.Add(p2row[rank],   row);
-  // 	      for (auto k:Range(dps.Size()))
-  // 		csof.Add(p2row[dps[k]], row);
-  // 	    } else { //p is master of this row
-  // 	      cmof.Add(p2row[dps[0]], row);
-  // 	    }
-  // 	  }
-  // 	  cmof++; csof++;
-  // 	}
-  // 	master_of_rows = cmof.MoveTable();
-  // 	slave_of_rows = csof.MoveTable();
-  //     }
-  //     // alloc S/R-meta, fill&send S-meta
-  //     for (auto [k,p]:Enumerate(used_procs)) {
-  // 	if (p==rank) continue;
-  // 	auto rows = master_of_rows[k];
-  // 	auto & meta_data = (p<rank) ? send_meta[k] : recv_meta[k];
-  // 	auto S = 1 + rows.Size();
-  // 	meta_data.SetSize(S);
-  // 	if (p<rank) {
-  // 	  meta_data[0] = 0;
-  // 	  for (auto [j,rnr]:Enumerate(rows))
-  // 	  meta_data[0] += (meta_data[j+1] = meta_data[rnr].Size());
-  // 	}
-  //     }
-  //     SendMeta();
-  //     RecvMeta();
-  //     // alloc,fill and send data
-  //     for (auto [k,p]:Enumerate(used_procs)) {
-  // 	if (p==rank) break; // only over smaller procs
-  // 	send_data[k].SetSize(send_meta[k][0]);
-  // 	auto os = 0;
-  // 	for (auto rnr : master_of_rows[k]) {
-  // 	  auto row = table_in[rnr];
-  // 	  auto rs = row.Size();
-  // 	  send_data.Part(os, rs) = row;
-  // 	  os += rs;
-  // 	}
-  //     }
-  //     SendData();
-  //   }
+    if ( has_mem == false ) { // alloc memory for output
+      perow.SetSize(neqcs); perow = 0; count_blocks = 0;
+      for ( auto eqc : Range(neqcs)) {
+	if (eqc_h.IsMasterOfEQC(eqc)) {
+	  perow[eqc] = table[eqc].Size();
+	}
+	else {
+	  auto eq_dps = eqc_h.GetDistantProcs(eqc);
+	  int posk = find_in_sorted_array(eq_dps[0], ex_procs);
+	  perow[eqc] += recv_buffers[posk][count_blocks[posk]++];
+	}
+      }
+      table_out = Table<T>(perow);
+    }
+    else {
+      table_out = move(table);
+    }
 
-  //   // 1 .. wait for meta, alloc recv_data
-  //   void DoStage1()
-  //   {
-  //     Wait(); // wait for meta data
-  //     // alloc recv data
-  //     for (auto [k,p] : Enumerate(used_procs)) {
-  // 	if (p<=rank) continue;
-  // 	recv_data[k].SetSize(recv_meta[k][0]);
-  //     }
-  //     RecvData();
-  //   }
-    
-  //   // 2 .. wait for data, reduce, alloc,fill&send meta+data
-  //   void DoStage2()
-  //   {
-  //     Wait(); // wait for meta data
-  //     Array<FlatArray<T> > unred_data (used_procs.Size());
-  //     // Array<Array<TR> > reduced_data(table_in.Size());
-  //     reduced_data.SetSize(table_in.Size());
-  //     Array<int> displ(used_procs.Size());
-  //     displ = 0;
-  //     Array<int> meta_cnt(used_procs.Size());
-  //     meta_cnt = 1;
-  //     for (auto [eqc,rnr] : Enumerate(eqcs)) {
-  // 	auto dps = eqc_h->GetDistantProcs(eqc);
-  // 	unred_data.SetSize(dps.Size()+1);
-  // 	unred_data[0].Assign(table_in[rnr]);
-  // 	for (auto [k,p]:Enumerate(dps)) {
-  // 	  auto rp = used_procs.Pos(p);
-  // 	  auto bs = recv_meta[rp][meta_cnt[rp]++];
-  // 	  auto & disp = displ[rp];
-  // 	  FlatArray<T>rd(bs, &recv_data[rp][disp]);
-  // 	  unred_data[k+1].Assign(rd);
-  // 	  disp+=bs;
-  // 	}
-  // 	reduced_data[rnr] = std::move(lambda(unred_data));
-  //     }
-  //     // alloc, fill & scatter meta-data and data
-  //     for (auto [p, rows, meta_row, data_row] :
-  // 	     Zip(used_procs, slave_of_rows, send_meta, send_data)) {
-  // 	if (p<=rank) continue;
-  // 	meta_row.SetSize(rows.Size()+1);
-  // 	for (auto [k,rnr] : Enumerate(rows))
-  // 	  meta_row[0] += (meta_row[k+1] = reduced_data[rnr].Size());
-  // 	data_row.SetSize(meta_row[0]);
-  // 	for (auto [k,rnr] : Enumerate(rows))
-  // 	  data_row[k] = reduced_data[rnr].Size();
-  //     }
-  //     SendMeta();
-  //     SendData();
-  //     RecvMeta();
-  //   }
+    nblocks = count_blocks; perow = 0; count_blocks = 0;
+    for ( auto eqc : Range(neqcs)) {
+      if (eqc_h.IsMasterOfEQC(eqc) && (has_mem == false) ) {
+	table_out[eqc] = table[eqc]; // data copy
+      }
+      else {
+	auto eq_dps = eqc_h.GetDistantProcs(eqc);
+	int posk = find_in_sorted_array(eq_dps[0], ex_procs);
+	auto & buffer = recv_buffers[posk];
+	auto outrow = table_out[eqc];
+	auto bsize = buffer[count_blocks[posk]++];
+	if (bsize != outrow.Size()) cout << " MISFIT " << eqc << " " << posk << " " << bsize << " " << outrow.Size() << endl;
+	int offset = nblocks[posk];
+	for ( auto l : Range(bsize) )
+	  outrow[l] = buffer[offset + perow[posk]++];
+      }
+    }
 
-  //   // 3 .. wait for size, alloc buffer -> send/recv msg
-  //   void DoStage3()
-  //   {
-  //     Wait(); // wait for meta data
-  //     for (auto [p, meta_row, data_row] : Zip(used_procs, recv_meta, recv_data)) {
-  // 	if (p==rank) break;
-  // 	data_row.SetSize(meta_row[0]);
-  //     }
-  //     RecvData();
-  //   }
-
-  //   // 4 .. wait for data, de-linearize and fill reduced table
-  //   void DoStage4()
-  //   {
-  //     Wait(); // wait for data
-  //     // non-master rows
-  //     Array<size_t> rts(table_in.Size());
-  //     for (auto [p, rows, meta_row] : Zip(used_procs, master_of_rows, recv_meta)) {
-  // 	if (p==rank) break;
-  // 	for (auto [k, row] : Enumerate(rows))
-  // 	  rts[row] = meta_row[k+1];
-  //     }
-  //     for (auto row : master_of_rows[p2row[rank]])
-  // 	rts[row] = reduced_data[row].Size();
-  //     reduced_table = new Table<TR>(rts);
-  //     for (auto row : master_of_rows[p2row[rank]])
-  // 	reduced_table[row] = reduced_data[row];
-  //     for (auto [p, rows, meta_row, data_row] : Zip(used_procs, master_of_rows, recv_meta, recv_data)) {
-  // 	if (p==rank) break;
-  // 	size_t os = 0;
-  // 	for (auto [k, row] : Enumerate(rows)) {
-  // 	  auto bs = meta_row[k+1];
-  // 	  reduced_table[row] = FlatArray<TR>(bs, &data_row[os]);
-  // 	  os += bs;
-  // 	}
-  //     }
-  //   }
-
-  //   INLINE void SendMeta (int round) {
-  //     MPI_Request req;
-  //     for (auto [p,row] : Zip(used_procs, send_meta)) {
-  // 	if (round==0 && p==rank) break;    // gather: large->small
-  // 	if (round==1 && p<=rank) continue; // scatter: small->large
-  // 	req = MPI_ISend(row, p, MPI_TAG_AMG, comm);
-  // 	MPI_Request_free(&req);
-  //     }
-  //   }
-  //   INLINE void RecvMeta (int round) {
-  //     active_reqs.SetSize(0);
-  //     for (auto [p,row] : Zip(used_procs, recv_meta)) {
-  // 	if (round==1 && p==rank) break;    // scatter: small->large
-  // 	if (round==0 && p<=rank) continue; // gather: large->small
-  // 	active_reqs.Append(MPI_IRecv(row, p, MPI_TAG_AMG, comm));
-  //     }
-  //   }
-  //   INLINE void SendData (int round) {
-  //     MPI_Request req;
-  //     for (auto [p,row] : Zip(used_procs, send_data)) {
-  // 	if (round==0 && p==rank) break;    // gather: large->small
-  // 	if (round==1 && p<=rank) continue; // scatter: small->large
-  // 	req = MPI_ISend(row, p, MPI_TAG_AMG, comm);
-  // 	MPI_Request_free(&req);
-  //     }
-  //   }
-  //   INLINE void RecvData (int round) {
-  //     active_reqs.SetSize(0);
-  //     for (auto [p,row] : Zip(used_procs, recv_data)) {
-  // 	if (round==1 && p==rank) break;    // scatter: small->large
-  // 	if (round==0 && p<=rank) continue; // gather: large->small
-  // 	active_reqs.Append(MPI_IRecv(row, p, MPI_TAG_AMG, comm));
-  //     }
-  //   }
-  //   INLINE void Wait() {
-  //     if (!active_reqs.Size()) return;
-  //     MyMPI_WaitAll(active_reqs);
-  //     active_reqs.SetSize(0);
-  //   }
-    
-    
-    
-  // };
-
-  // template<typename T, typename TR, typename LAM>
-  // Table<TR> ReduceTable2 (const Table<T> & table_in, FlatArray<size_t> eqcs,
-  // 			  const shared_ptr<const EQCHierarchy> & eqc_h, LAM lambda)
-  // {
-  //   TableReducer<T,TR,LAM>TRed(table_in, eqcs, eqc_h, LAM);
-  //   while (TRed.Done()) TRed++;
-  //   return TRed.MoveTable();
-  // }
-
-
+    return move(table_out);
+  }
 
 
 } // end namsepace asc_amg_h1par

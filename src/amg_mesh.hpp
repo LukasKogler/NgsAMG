@@ -86,25 +86,35 @@ namespace amg
     ~BlockTM () { ; }
     shared_ptr<EQCHierarchy> GetEQCHierarchy () const { return eqc_h; }
     INLINE size_t GetNEqcs () const { return eqc_verts.Size(); }
-    template<NODE_TYPE NT> INLINE size_t GetENN (size_t eqc_num) const
-    { return (eqc_num==size_t(-1)) ? disp_eqc[NT].Last() : nnodes_eqc[NT][eqc_num]; }
+    template<NODE_TYPE NT> INLINE size_t GetENN () const { return disp_eqc[NT].Last(); }
+    template<NODE_TYPE NT> INLINE size_t GetENN (size_t eqc_num) const { return nnodes_eqc[NT][eqc_num]; }
+    template<NODE_TYPE NT> INLINE size_t GetCNN () const { return disp_cross[NT].Last(); }
+    template<NODE_TYPE NT> INLINE size_t GetCNN (size_t eqc_num) const { return nnodes_cross[NT][eqc_num]; }
     template<NODE_TYPE NT> INLINE FlatArray<AMG_Node<NT>> GetENodes (size_t eqc_num) const;
-    template<NODE_TYPE NT> INLINE size_t GetCNN (size_t eqc_num) const
-    { return (eqc_num==size_t(-1)) ? disp_cross[NT].Last()-disp_eqc[NT].Last() : nnodes_cross[NT][eqc_num]; }
     template<NODE_TYPE NT> INLINE FlatArray<AMG_Node<NT>> GetCNodes (size_t eqc_num) const;
     template<NODE_TYPE NT> INLINE size_t GetEqcOfNode (size_t node_num) const {
-      size_t eq = 0; // TODO: binary search??
-      if (node_num < disp_eqc[NT].Last()) while(disp_eqc[NT][eq+1] <= node_num ) eq++;
-      else while(disp_cross[NT][eq+1] <= node_num ) eq++;
-      return eq;
+      // array[pos-1] <= elem < array[pos]
+      return merge_pos_in_sorted_array(node_num, disp_eqc[NT]) - 1;
+      // size_t eq = 0; // TODO: binary search??
+      // if (node_num < disp_eqc[NT].Last()) while(disp_eqc[NT][eq+1] <= node_num ) eq++;
+      // else while(disp_cross[NT][eq+1] <= node_num ) eq++;
+      // return eq;
     }
+    template<NODE_TYPE NT> INLINE int MapENodeToEQC (size_t node_num) const 
+    { auto eq = GetEqcOfNode<NT>(node_num); return node_num - disp_eqc[NT][eq]; }
+    template<NODE_TYPE NT> INLINE int MapCNodeToEQC (size_t node_num) const 
+    { auto eq = GetEqcOfNode<NT>(node_num); return node_num - disp_cross[NT][eq]; }
     template<NODE_TYPE NT> INLINE int MapNodeToEQC (size_t node_num) const 
-    { auto eq = GetEqcOfNode<NT>(node_num); return node_num - ( (node_num < disp_eqc[NT].Last()) ? disp_eqc[NT][eq] : disp_cross[NT][eq] ); }
+    { return (node_num < GetENN<NT>()) ? MapENodeToEQC<NT>(node_num) : MapCNodeToEQC<NT>(node_num); } 
+    // template<NODE_TYPE NT> INLINE int MapNodeToEQC (size_t node_num) const 
+    // { auto eq = GetEqcOfNode<NT>(node_num); return node_num - ( (node_num < disp_eqc[NT].Last()) ? disp_eqc[NT][eq] : disp_cross[NT][eq] ); }
     template<NODE_TYPE NT> INLINE int MapENodeFromEQC (size_t node_num, size_t eqc_num) const 
     { return node_num + disp_eqc[NT][eqc_num]; }
     template<NODE_TYPE NT, typename T2 = typename std::enable_if<NT!=NT_VERTEX>::type>
     INLINE int MapCNodeFromEQC (size_t node_num, size_t eqc_num) const 
     { return node_num + disp_cross[NT][eqc_num]; }
+    template<NODE_TYPE NT> INLINE int MapNodeFromEQC (size_t node_num, size_t eqc_num) const 
+    { return (node_num < GetENN<NT>(eqc_num)) ? MapENodeFromEQC<NT>(node_num, eqc_num) : MapCNodeFromEQC<NT>(node_num, eqc_num); }
     const FlatTM GetBlock (size_t eqc_num) const;
     /** Creates new(!!) block-tm! **/
     // BlockTM* Map (CoarseMap & cmap) const;
@@ -534,8 +544,8 @@ namespace amg
     BlockAlgMesh (BlockTM && _mesh, T*... _data)
       : BlockAlgMesh (move(_mesh), std::tuple<T*...>(_data...))
     { ; }
-    INLINE void Cumulate () const { std::apply([&](auto&& ...x){ (x->Cumulate(),...); }, node_data); }
-    INLINE void Distribute () const { std::apply([&](auto&& ...x){ (x->Distribute(),...); }, node_data); }
+    INLINE void CumulateData () const { std::apply([&](auto&& ...x){ (x->Cumulate(),...); }, node_data); }
+    INLINE void DistributeData () const { std::apply([&](auto&& ...x){ (x->Distribute(),...); }, node_data); }
     template<class TMAP,
 	     typename T_ENABLE = typename std::enable_if<std::is_base_of<GridMapStep<BlockAlgMesh<T...>>, TMAP>::value==1>::type>
     std::tuple<T*...> MapData (const TMAP & map) const

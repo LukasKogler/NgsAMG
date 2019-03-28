@@ -63,26 +63,20 @@ namespace amg
     using TMESH = H1Mesh;
     using VWiseAMG<H1AMG, H1Mesh, double>::Options;
     H1AMG (shared_ptr<TMESH> mesh,  shared_ptr<Options> opts);
+    template<NODE_TYPE NT> INLINE double GetWeight (const TMESH & mesh, const AMG_Node<NT> & node) const
+    { // TODO: should this be in BlockAlgMesh instead???
+      if constexpr(NT==NT_VERTEX) { return get<0>(mesh.Data())->Data()[node]; }
+      else if constexpr(NT==NT_EDGE) { return get<1>(mesh.Data())->Data()[node.id]; }
+      else return 0;
+    }
     INLINE void CalcPWPBlock (const TMESH & fmesh, const TMESH & cmesh, const CoarseMap<TMESH> & map,
 			      AMG_Node<NT_VERTEX> v, AMG_Node<NT_VERTEX> cv, double & mat) const
     { SetIdentity(mat); }
-    // CRTP FOR THIS // get weight for edge (used for s-prol)
-    INLINE double EdgeWeight (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge) const
-    {
-      // cerr << "wt for edge " << edge << flush;
-      // cerr << " of " << fmesh.template GetNN<NT_EDGE>() << flush;
-      auto w = get<1>(fmesh.Data())->Data()[edge.id];
-      // cerr << "wt is " << w << endl;
-      // cout << "wt for edge " << edge << ": " << w << endl;
-      return w; }
-    // CRTP FOR THIS // calculate an edge-contribution to the replacement matrix
     INLINE void CalcRMBlock (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge, FlatMatrix<double> mat) const
     {
-      auto w = EdgeWeight(fmesh, edge);
+      auto w = GetWeight<NT_EDGE>(fmesh, edge); cout << "wt is " << w << endl;
       mat(0,1) = mat(1,0) = - (mat(0,0) = mat(1,1) = w);
     }
-  protected:
-    virtual void SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts, INT<3> level, shared_ptr<TMESH> mesh) override;
   };
 
 

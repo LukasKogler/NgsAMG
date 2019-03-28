@@ -68,6 +68,7 @@ namespace amg
     INLINE void operator += (const ElEW<D> & other)
     { for (auto l : Range(disppv(D)*disppv(D)+rotpv(D)*rotpv(D))) wt_data[l] += other.wt_data[l]; }; // for Cumulate
     INLINE bool operator == (const ElEW<D> & other) { return wt_data == other.wt_data; }
+    INLINE double get_wt () const { return wt_data[0]; }
   };
   template struct ElEW<2>;
   template struct ElEW<3>;
@@ -105,13 +106,16 @@ namespace amg
     using Options = typename BASE::Options;
     ElasticityAMG (shared_ptr<ElasticityMesh<D>> mesh, shared_ptr<Options> opts)
       : VWiseAMG<ElasticityAMG<D>, ElasticityMesh<D>, Mat<dofpv(D), dofpv(D), double>>(mesh, opts) { ; }
+    template<NODE_TYPE NT> INLINE double GetWeight (const TMESH & mesh, const AMG_Node<NT> & node) const
+    { // TODO: should this be in BlockAlgMesh instead???
+      if constexpr(NT==NT_VERTEX) { return get<0>(mesh.Data())->Data()[node].wt; }
+      else if constexpr(NT==NT_EDGE) { return get<1>(mesh.Data())->Data()[node.id].get_wt(); }
+      else return 0;
+    }
     INLINE void CalcPWPBlock (const TMESH & fmesh, const TMESH & cmesh, const CoarseMap<TMESH> & map,
 			      AMG_Node<NT_VERTEX> v, AMG_Node<NT_VERTEX> cv, TMAT & mat) const
     { BASE::SetIdentity(mat); }
-    INLINE double EdgeWeight (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge) const { return 1.0; }
     INLINE void CalcRMBlock (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge, FlatMatrix<TMAT> mat) const { mat = 0; }
-  protected:
-    virtual void SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts, INT<3> level, shared_ptr<TMESH> mesh) override;
   };
 
 } // namespace amg

@@ -142,14 +142,14 @@ namespace amg {
       // cout << "concatenated prol: " << endl << *pp << endl;
       return make_shared<ProlMap<typename mult_spm<TMATO, TMAT>::type>> (pp, other.GetParDofs(), this->GetMappedParDofs());
     }
-    virtual void TransferF2C(const shared_ptr<const BaseVector> & x_fine,
-			     const shared_ptr<BaseVector> & x_coarse) const override
+    virtual void TransferF2C (const shared_ptr<const BaseVector> & x_fine,
+			      const shared_ptr<BaseVector> & x_coarse) const override
     {
       x_coarse->FVDouble() = 0.0;
       prol->MultTransAdd(1.0, *x_fine, *x_coarse);
       x_coarse->SetParallelStatus(DISTRIBUTED);
     }
-    virtual void TransferC2F(const shared_ptr<BaseVector> & x_fine,
+    virtual void TransferC2F (const shared_ptr<BaseVector> & x_fine,
 			     const shared_ptr<const BaseVector> & x_coarse) const override
     {
       x_coarse->Cumulate();

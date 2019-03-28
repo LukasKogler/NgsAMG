@@ -3,6 +3,11 @@
 
 namespace amg
 {
+  
+  auto prow = [](const auto & ar, std::ostream &os = cout){ for(auto v:ar) os << v << " "; };
+  auto prow2 = [](const auto & ar, std::ostream &os = cout) {
+    for(auto k : Range(ar.Size())) os << "(" << k << "::" << ar[k] << ") ";
+  };
 
   // like GetPositionTest of ngsovle-SparseMatrix
   template<typename T>
@@ -19,10 +24,28 @@ namespace amg
     // return numeric_limits<typename remove_reference<decltype(a[0])>::type>::max();
     return (typename remove_reference<decltype(a[0])>::type)(-1);
   };
-  
-  auto prow = [](const auto & ar, std::ostream &os = cout){ for(auto v:ar) os << v << " "; };
-  auto prow2 = [](const auto & ar, std::ostream &os = cout) {
-    for(auto k : Range(ar.Size())) os << "(" << k << "::" << ar[k] << ") ";
+
+  // find position such thata a[0..pos) <= elem < a[pos,a.Size())
+  template<typename T>
+  INLINE size_t merge_pos_in_sorted_array (const T & elem, FlatArray<T> a)
+  {
+    cout << " look for " << elem << " in " << endl; prow2(a); cout << endl;
+    size_t first(0), last(a.Size());
+    if (last==0) return 0; // handle special cases so we still get -1 if garbage
+    else if (elem<a[0]) return 0;
+    else if (elem>a.Last()) return last; 
+    while (last > first+5) {
+      size_t mid = (last+first)/2; // mid>0!
+      cout << first << " " << mid << " " << last << " " << endl;
+      if ( a[mid] <= elem ) { first = mid; } // search right
+      else if ( a[mid-1] > elem ) { last = mid; } // search left
+      else { return mid; } // a[mid-1] <= elem < a[mid]!!
+    }
+    cout << first << " " << last << " " << endl;
+    for (size_t i = first; i < last; i++)
+      if (a[i] > elem) { cout << " ret " << i << endl; return i; }
+    // return numeric_limits<typename remove_reference<decltype(a[0])>::type>::max();
+    return (typename remove_reference<decltype(a[0])>::type)(-1);
   };
 
   template<class T>

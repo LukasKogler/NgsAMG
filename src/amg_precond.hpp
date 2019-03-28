@@ -65,7 +65,7 @@ namespace amg
     // CRTP FOR THIS // calculate an edge-contribution to the replacement matrix
     // INLINE void CalcRMBlock (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge, FlatMatrix<double> mat) const { mat = -1; }
     // CRTP FOR THIS // get weight for edge (used for s-prol)
-    // INLINE double EdgeWeight (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge) const { return 0.1; }
+    // template<NODE_TYPE NT> INLINE double GetWeight (const TMESH & mesh, const AMG_Node<NT> * edge) const
 
     size_t GetNLevels(int rank) const
     {return this->amg_mat->GetNLevels(rank); }
@@ -82,8 +82,7 @@ namespace amg
     shared_ptr<BaseMatrix> finest_mat;
     shared_ptr<BaseDOFMapStep> embed_step;
 
-    virtual void SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts, INT<3> level, shared_ptr<TMESH> mesh) = 0;
-
+    virtual void SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts, INT<3> level, shared_ptr<TMESH> mesh);
     virtual shared_ptr<CoarseMap<TMESH>> TryCoarsen  (INT<3> level, shared_ptr<TMESH> mesh);
     virtual shared_ptr<GridContractMap<TMESH>> TryContract (INT<3> level, shared_ptr<TMESH> mesh);
     virtual shared_ptr<BaseGridMapStep> TryDiscard  (INT<3> level, shared_ptr<TMESH> mesh) { return nullptr; }
@@ -166,6 +165,7 @@ namespace amg
 	    "VERTEX", "FACE" -> use node pos
 	    "GIVEN" -> positions in v_pos_array **/
       string v_pos = "VERTEX"; FlatArray<Vec<3>> v_pos_array;
+      bool keep_vp = false; // save vertex position
       /** energy: 
 	    "ELMAT" -> calc from elmats, use ext_blf if given, else blf
 	    "ALGEB" -> determine algebraically (not implemented properly)
@@ -244,6 +244,7 @@ namespace amg
     // shared_ptr<BaseMatrix> embed_mat;
 
     Array<Array<int>> node_sort;
+    Array<Array<Vec<3,double>>> node_pos;
     
     // implemented once for all AMG_CLASS
     virtual shared_ptr<BlockTM> BuildTopMesh ();

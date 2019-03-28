@@ -28,7 +28,7 @@ namespace amg
     {
     public:
       CollapseTracker (size_t nv, size_t ne);
-      ~CollapseTracker() { }
+      ~CollapseTracker () { }
       INLINE bool IsVertexGrounded (AMG_Node<NT_VERTEX> v) { return vertex_ground.Test(v); }
       INLINE bool IsVertexCollapsed (AMG_Node<NT_VERTEX> v) { return vertex_collapse.Test(v); }
       INLINE bool IsEdgeCollapsed (const AMG_Node<NT_EDGE> & e) { return edge_collapse.Test(e.id); }
@@ -39,7 +39,22 @@ namespace amg
       INLINE void FixEdge (const AMG_Node<NT_EDGE> & e) { edge_fixed.Set(e.id); }
       INLINE bool IsEdgeFixed (const AMG_Node<NT_EDGE> & e) { return edge_fixed.Test(e.id); }
       INLINE void FixVertex (const AMG_Node<NT_VERTEX> v) { vertex_fixed.Set(v); }
-      INLINE bool IsVertexFixed(const AMG_Node<NT_VERTEX> v) { return vertex_fixed.Test(v); }
+      INLINE bool IsVertexFixed (const AMG_Node<NT_VERTEX> v) { return vertex_fixed.Test(v); }
+      template<NODE_TYPE NT> INLINE void ClearNode (const AMG_Node<NT> & node) {
+	if constexpr(NT==NT_VERTEX) {
+	    if (IsVertexCollapsed(node))
+	      { UncollapseEdge(CollapsedEdge(node)); }
+	    else { UngroundVertex(node); }
+	  }
+	else if constexpr(NT==NT_EDGE) {
+	    if (IsEdgeCollapsed(node))
+	      { UncollapseEdge(node); }
+	    else if (IsVertexCollapsed(node.v[0]))
+	      { UncollapseEdge(CollapsedEdge(node.v[0])); }
+	    else if (IsVertexCollapsed(node.v[1]))
+	      { UncollapseEdge(CollapsedEdge(node.v[1])); }
+	  }
+      }
       void CheckCollapseConsistency ();
       void PrintCollapse ()
       {
