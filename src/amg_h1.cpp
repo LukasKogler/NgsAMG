@@ -60,16 +60,8 @@ namespace amg
   template<> shared_ptr<BaseDOFMapStep> EmbedVAMG<H1AMG> :: BuildEmbedding ()
   {
     auto & vsort = node_sort[NT_VERTEX];
-    size_t NV = vsort.Size();
-    Array<int> epr(NV); epr = 1.0;
-    auto embed_mat = make_shared<SparseMatrix<double>>(epr, NV);
-    const auto & em = *embed_mat;
-    for (auto k : Range(NV)) {
-      em.GetRowIndices(k)[0] = vsort[k];
-      em.GetRowValues(k)[0] = 1.0;
-    }
-    // cout << "embedding mat: " << endl << *embed_mat << endl;
-    return make_shared<ProlMap<SparseMatrix<double>>> (embed_mat, fes->GetParallelDofs(), nullptr);
+    auto permat = BuildPermutationMatrix<double>(vsort);
+    return make_shared<ProlMap<SparseMatrix<double>>>(permat, fes->GetParallelDofs(), nullptr);
   }
 
 } // namespace amg

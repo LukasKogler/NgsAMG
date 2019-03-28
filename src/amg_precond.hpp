@@ -53,7 +53,7 @@ namespace amg
     using TSCAL = typename mat_traits<TMAT>::TSCAL;
     using TSPMAT = SparseMatrix<TMAT, TV, TV>;
 
-    VWiseAMG (shared_ptr<TMESH> finest_mesh, shared_ptr<Options> opts) : options(opts), mesh(finest_mesh) { ;  };
+    VWiseAMG (shared_ptr<TMESH> finest_mesh, shared_ptr<Options> opts) : options(opts), mesh(finest_mesh) { ; };
     /** the first prolongation is concatenated with embed_step (it should be provided by EmbedAMGPC) **/
     void Finalize (shared_ptr<BaseMatrix> fine_mat, shared_ptr<BaseDOFMapStep> embed_step = nullptr);
 
@@ -96,8 +96,6 @@ namespace amg
     shared_ptr<ProlMap<TSPMAT>> BuildDOFMapStep (shared_ptr<CoarseMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd);
     shared_ptr<CtrMap<TV>> BuildDOFMapStep (shared_ptr<GridContractMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd);
 
-    INLINE void SetIdentity (double & x) const { x = 1.0; }
-    template<int D> INLINE void SetIdentity (Mat<D,D,double> & x) const { x = 0.0; for (auto i:Range(D)) x(i,i) = 1.0; }
   };
 
   // /**

@@ -15,7 +15,7 @@ namespace amg
     cout << "v-pos: " << vp.Size() << " " << top_mesh->GetNN<NT_VERTEX>() << endl << vp << endl;
     Array<PosWV> pwv(top_mesh->GetNN<NT_VERTEX>());
     for (auto k : Range(pwv.Size())) {
-      pwv[k].wt = 1.0;
+      pwv[k].wt = 0.0;
       pwv[k].pos = vp[k];
     }
     auto a = new ElVData(move(pwv), CUMULATED);
@@ -35,11 +35,19 @@ namespace amg
 
   template<> shared_ptr<BaseDOFMapStep>
   EmbedVAMG<ElasticityAMG<2>> :: BuildEmbedding ()
-  { return nullptr; }
+  {
+    auto & vsort = node_sort[NT_VERTEX];
+    auto permat = BuildPermutationMatrix<Mat<3,3,double>>(vsort);
+    return make_shared<ProlMap<SparseMatrix<Mat<3,3,double>>>>(permat, fes->GetParallelDofs(), nullptr);
+  }
 
   template<> shared_ptr<BaseDOFMapStep>
   EmbedVAMG<ElasticityAMG<3>> :: BuildEmbedding ()
-  { return nullptr; }
+  {
+    auto & vsort = node_sort[NT_VERTEX];
+    auto permat = BuildPermutationMatrix<Mat<6,6,double>>(vsort);
+    return make_shared<ProlMap<SparseMatrix<Mat<6,6,double>>>>(permat, fes->GetParallelDofs(), nullptr);
+  }
 
 
 

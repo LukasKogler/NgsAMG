@@ -24,7 +24,7 @@ namespace amg
     PosWV (PosWV & other) = default;
     INLINE void operator = (double x) { wt = x; pos = x; }; // for Cumulate
     INLINE void operator = (const PosWV & other) { wt = other.wt; pos = other.pos; }; // for Cumulate
-    INLINE void operator += (const PosWV & other) { wt += other.wt; }; // for Cumulate
+    INLINE void operator += (const PosWV & other) { pos += other.pos; wt += other.wt; }; // for Cumulate
     INLINE bool operator == (const PosWV & other) {
       return wt==other.wt && pos(0)==other.pos(0) && pos(1)==other.pos(1) && pos(2)==other.pos(2); } 
   };
@@ -36,6 +36,7 @@ namespace amg
     ElVData (Array<PosWV> && _data, PARALLEL_STATUS _stat) : AttachedNodeData<NT_VERTEX, PosWV, ElVData>(move(_data), _stat) {}
     INLINE PARALLEL_STATUS map_data (const BaseCoarseMap & cmap, Array<PosWV> & cdata) const
     {
+      Cumulate();
       cdata.SetSize(cmap.GetMappedNN<NT_VERTEX>()); cdata = 0.0;
       auto map = cmap.GetMap<NT_VERTEX>();
       Array<int> touched(map.Size()); touched = 0;
@@ -45,14 +46,14 @@ namespace amg
 	  touched[e.v[0]] = touched[e.v[1]] = 1;
 	  cdata[CV].pos = 0.5 * (data[e.v[0]].pos + data[e.v[1]].pos);
 	  cdata[CV].wt = data[e.v[0]].wt + data[e.v[1]].wt;
-	}, stat==CUMULATED); // if stat is CUMULATED, only master of collapsed edge needs to set wt 
+	}, true); // if stat is CUMULATED, only master of collapsed edge needs to set wt 
       mesh->AllreduceNodalData<NT_VERTEX>(touched, [](auto & in) { return move(sum_table(in)); } , false);
       mesh->Apply<NT_VERTEX>([&](auto v) { // set coarse data for all "single" vertices
 	  auto CV = map[v];
 	  if ( (CV != -1) && (touched[v] == 0) )
 	    { cdata[CV] = data[v]; }
-	}, stat==CUMULATED);
-      return stat;
+	}, true);
+      return DISTRIBUTED;
     }
   };
 
@@ -112,10 +113,33 @@ namespace amg
       else if constexpr(NT==NT_EDGE) { return get<1>(mesh.Data())->Data()[node.id].get_wt(); }
       else return 0;
     }
+    // INLINE void CalcPWPBlock (const TMESH & fmesh, const TMESH & cmesh, const CoarseMap<TMESH> & map,
+    // 			      AMG_Node<NT_VERTEX> v, AMG_Node<NT_VERTEX> cv, TMAT & mat) const
+    // { BASE::SetIdentity(mat); }
     INLINE void CalcPWPBlock (const TMESH & fmesh, const TMESH & cmesh, const CoarseMap<TMESH> & map,
 			      AMG_Node<NT_VERTEX> v, AMG_Node<NT_VERTEX> cv, TMAT & mat) const
-    { BASE::SetIdentity(mat); }
-    INLINE void CalcRMBlock (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge, FlatMatrix<TMAT> mat) const { mat = 0; }
+    {
+      Vec<3,double> tang = get<0>(cmesh.Data())->Data()[cv].pos;
+      tang -= get<0>(fmesh.Data())->Data()[v].pos;
+      mat = 0;
+      for (auto k : Range(disppv(D))) {
+	mat(k,k) = 1.0;
+	if constexpr(D==3) for (auto j : Range(rotpv(D))) mat(k,disppv(D)+j) = tang(k)*tang(j);
+      }
+      if constexpr(D==2) {
+	  mat(0,2) = -tang(1);
+	  mat(1,2) = tang(0);
+	}
+      for (auto k : Range(disppv(D), disppv(D)+rotpv(D)))
+	mat(k,k) = 1.0;
+    }
+    INLINE void CalcRMBlock (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge, FlatMatrix<TMAT> mat) const
+    {
+      SetIdentity(mat(0,0));
+      mat(0,1) = -mat(0,0);
+      mat(1,0) = -mat(0,0);
+      SetIdentity(mat(1,1));
+    }
   };
 
 } // namespace amg

@@ -362,12 +362,12 @@ namespace amg {
       const auto & pve = pvec(k);
       set_v2m(diag_etr, pve);
     }
-    // cout << "final diags: " << endl << diag << endl;
+    cout << "final diags: " << endl << diag << endl;
     for (auto k : Range(H)) {
       if (!free_dofs || free_dofs->Test(k))
 	CalcInverse(diag[k]);
     }
-    // cout << "final inved diags: " << endl << diag << endl;
+    cout << "final inved diags: " << endl << diag << endl;
   } // CalcDiag
 
 
@@ -561,10 +561,10 @@ namespace amg {
 
     // if(free_dofs) cout << "fds: " << endl << *free_dofs << endl;
     
-    auto savex = res.CreateVector();
-    FlatVector<TV> tvsx = savex.FV<TV>();
-    tvsx = tvx;
-    savex.SetParallelStatus(x.GetParallelStatus());
+    // auto savex = res.CreateVector();
+    // FlatVector<TV> tvsx = savex.FV<TV>();
+    // tvsx = tvx;
+    // savex.SetParallelStatus(x.GetParallelStatus());
     
     // auto print_vec = [&](const auto &vec) {
     //   for (auto k : Range(H)) {
@@ -759,14 +759,14 @@ namespace amg {
       for (int l = imin; l < imax; l++) {
 	// cout << "tvr( " << ris[l] << "/" << tvr.Size() << ") -= " << rvs[l] << " * " << w << endl;
 	// cerr << "tvr( " << ris[l] << "/" << tvr.Size() << ") -= " << rvs[l] << " * " << w << endl;
-	tvr(ris[l]) -= rvs[l] * w;
+	tvr(ris[l]) -= Trans(rvs[l]) * w;
       }
       if (update_res) {  // D + L.T update for prev. rows
 	// [0..pos] or [pos..sz)
 	const int imin = (type==0) ? 0 : pos;
 	const int imax = (type==0) ? pos+1 : sz;
 	for (int l = imin; l < imax; l++) {
-	  tvr(ris[l]) -= rvs[l] * w;
+	  tvr(ris[l]) -= Trans(rvs[l]) * w;
 	}
       }
       if (mf_exd.Test(rownr)) {
@@ -790,13 +790,13 @@ namespace amg {
 	const int imin = (type==1) ? 0 : pos+1;
 	const int imax = (type==1) ? pos : sz;
       	for (int l = imin; l < imax; l++) {
-	  tvr(ris[l]) -= rvs[l] * w;
+	  tvr(ris[l]) -= Trans(rvs[l]) * w;
 	}
 	if (update_res) {  // L.T update for prev. rows
 	  const int imin = (type==0) ? 0 : pos;
 	  const int imax = (type==0) ? pos+1 : sz;
 	  for (int l = imin; l < imax; l++) {
-	    tvr(ris[l]) -= rvs[l] * w;
+	    tvr(ris[l]) -= Trans(rvs[l]) * w;
 	  }
 	}
       }
@@ -871,13 +871,13 @@ namespace amg {
 	auto xval = tvx(rownr);
       	const int imin = (type==0) ? 0 : pos;
 	const int imax = (type==0) ? pos+1 : sz;
-	for (int l = imin; l < imax; l++) tvr(ris[l]) -= rvs[l] * xval;
+	for (int l = imin; l < imax; l++) tvr(ris[l]) -= Trans(rvs[l]) * xval;
 	if (exrow) {
 	  auto ris = addA->GetRowIndices(rownr);
 	  auto rvs = addA->GetRowValues(rownr);
 	  const int imin = (type==0) ? 0 : pos_add;
 	  const int imax = (type==0) ? pos_add+1 : sz_add;
-	  for (int l = imin; l < imax; l++) tvr(ris[l]) -= rvs[l] * xval;
+	  for (int l = imin; l < imax; l++) tvr(ris[l]) -= Trans(rvs[l]) * xval;
 	}
       }
     };

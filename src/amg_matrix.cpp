@@ -72,10 +72,22 @@ namespace amg
     // static double tf = 0;
     // static double tb = 0;
     /** pre-smooth **/
+
+    auto check_vec = [](auto & vecp) {
+      if(vecp==nullptr) { cout << " VEC IS NULLPTR" << endl; return; }
+      if(vecp->Size()==0) { cout << " VEC IS LEN 0 " << endl; return; }
+      cout << "check vec, len " << vecp->Size() << " FVD s " << vecp->FVDouble().Size() << endl;
+      cout << "factor: " << vecp->FVDouble().Size()/(1.0*vecp->Size()) << endl;
+      cout << "vec: " << endl << *vecp << endl;
+    };
+    
     for(auto level:Range(n_levels-1))
       {
 	RegionTimer rtl(*lev_timers[min2(level,size_t(6))]);
 	t1.Start();
+	// cout << " x  level " << level << ": "; check_vec(x_level[level]); cout << endl;
+	// cout << "rhs level " << level << ": "; check_vec(rhs_level[level]); cout << endl;
+	// cout << "res level " << level << ": "; check_vec(res_level[level]); cout << endl;
        	x_level[level]->FVDouble() = 0.0;
 	x_level[level]->SetParallelStatus(CUMULATED);	
 	res_level[level]->FVDouble() = rhs_level[level]->FVDouble();
@@ -293,7 +305,7 @@ namespace amg
       cout << "rank " << rank << "does not have that many levels!!" << endl;
     else if( (rank==arank) && (rank!=0) && (dof>x_level[level]->FVDouble().Size()))
       cout << "rank " << rank << "only has " << x_level[level]->FVDouble().Size() << " dofs on level " << level << " (wanted dof " << dof << ")" << endl;
-    else if( (rank==arank) && (rank==0) && (dof>map->GetParDofs(level)->GetNDofGlobal()))
+    else if( (rank==arank) && (rank==0) && (dof>map->GetParDofs(level)->GetNDofGlobal()*map->GetParDofs(level)->GetEntrySize()))
       cout << "global ndof on level " << level << "is " << map->GetParDofs(level)->GetNDofGlobal() << " (wanted dof " << dof << ")" << endl;
     else
       input_notok = 0;
@@ -318,17 +330,19 @@ namespace amg
     else if ( (arank==0) && (my_max_level==level) ){
       // auto pd = mats[level]->GetParallelDofs();
       auto pd = map->GetParDofs(level);
+      auto BS = pd->GetEntrySize();
       auto n = pd->GetNDofLocal();
       auto all = make_shared<BitArray>(n);
       all->Set();
       Array<int> gdn;
       int gn;
       pd->EnumerateGlobally(all, gdn, gn);
+      size_t bdof = dof/BS;
       for(auto k:Range(n))
-	if(size_t(gdn[k])==dof && pd->IsMasterDof(k)) {
-	  cout << "SET x_level[" << level << "] [" << k << "] to 1.0!! (is global nr " << dof << ") " << endl;
+	if(size_t(gdn[k])==bdof && pd->IsMasterDof(k)) {
+	  cout << "SET x_level[" << level << "] [" << BS*k+(dof%BS) << "] to 1.0!! (is global nr " << dof << ") " << endl;
 	  x_level[level]->FVDouble() = 0.0;
-	  x_level[level]->FVDouble()[k] = 1.0;
+	  x_level[level]->FVDouble()[BS*k+(dof%BS)] = 1.0;
 	}
       x_level[level]->SetParallelStatus(DISTRIBUTED);
       x_level[level]->Cumulate();
@@ -371,8 +385,8 @@ namespace amg
     }
     input_notok = comm.AllReduce(input_notok, MPI_MAX);
     if (input_notok) return -1;
-    if (arank==0) return map->GetParDofs(level)->GetNDofGlobal();
-    else return comm.AllReduce((rank==arank) ? mats[level]->Height() : 0, MPI_SUM);
+    if (arank==0) return map->GetParDofs(level)->GetNDofGlobal() * map->GetParDofs(level)->GetEntrySize();
+    else return comm.AllReduce((rank==arank) ? x_level[level]->FVDouble().Size() : 0, MPI_SUM);
   }
 
 } // namespace amg

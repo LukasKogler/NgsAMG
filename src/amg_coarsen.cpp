@@ -276,7 +276,7 @@ namespace amg
       size_t ncol = 0;
       for (const auto & e : mesh.template GetNodes<NT_EDGE>()) { if (coll.IsEdgeCollapsed(e)) ncol++; }
       double cfr = (mesh.template GetNN<NT_VERTEX>()==0) ? 0 : (1.0*ncol)/mesh.template GetNN<NT_VERTEX>();
-      // cout << "blockwise ncol: " << ncol << " of " << mesh.GetNN<NT_EDGE>() << ", frac " << cfr << endl;
+      cout << "(pre-coll) blockwise ncol: " << ncol << " of " << mesh.template GetNN<NT_EDGE>() << ", frac " << cfr << endl;
     }
     
     
@@ -443,15 +443,25 @@ namespace amg
       // cout << "ege " << e << " coll? " << coll.IsEdgeCollapsed(e) << endl;
       if (coll.IsEdgeCollapsed(e)) ncol++;
     }
-    double cfr = (mesh.template GetNN<NT_VERTEX>()==0) ? 0 : (1.0*ncol)/mesh.template GetNN<NT_VERTEX>();
+    double cfr = (mesh.template GetNN<NT_VERTEX>()==0) ? 0 : 1.0 - (1.0*ncol)/mesh.template GetNN<NT_VERTEX>();
     cout << "hierarch ncol: " << ncol << " of " << mesh.template GetNN<NT_EDGE>() << ", frac " << cfr << endl;
-
+    ncol = 0;
+    for (auto v : mesh.template GetNodes<NT_VERTEX>())
+      if (coll.IsVertexGrounded(v)) ncol++;
+    cfr = (mesh.template GetNN<NT_VERTEX>()==0) ? 0 : 1.0 - (1.0*ncol)/mesh.template GetNN<NT_VERTEX>();
+    cout << "hierarch ngrd: " << ncol << " of " << mesh.template GetNN<NT_VERTEX>() << ", frac " << cfr << endl;
+    
     if (options->post_coll) {
       block_crs.Collapse(mesh, coll);
       size_t ncol = 0;
       for (const auto & e : mesh.template GetNodes<NT_EDGE>()) { if (coll.IsEdgeCollapsed(e)) ncol++; }
       double cfr = (mesh.template GetNN<NT_VERTEX>()==0) ? 0 : (1.0*ncol)/mesh.template GetNN<NT_VERTEX>();
       cout << "post hierarch ncol: " << ncol << " of " << mesh.template GetNN<NT_EDGE>() << ", frac " << cfr << endl;
+      ncol = 0;
+      for (auto v : mesh.template GetNodes<NT_VERTEX>())
+	if (coll.IsVertexGrounded(v)) ncol++;
+      cfr = (mesh.template GetNN<NT_VERTEX>()==0) ? 0 : 1.0 - (1.0*ncol)/mesh.template GetNN<NT_VERTEX>();
+      cout << "post hierarch ngrd: " << ncol << " of " << mesh.template GetNN<NT_VERTEX>() << ", frac " << cfr << endl;
     }
   } // HierarchicVWC :: Collapse
 

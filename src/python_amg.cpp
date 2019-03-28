@@ -25,16 +25,17 @@ namespace amg {
     // opts->v_pos = "VERTEX";
   }
 
-  template<class AMG_CLASS>
-  void ExportEmbedVAMG (py::module & m, string name, string description)
+  template<class AMG_CLASS, class TLAM>
+  void ExportEmbedVAMG (py::module & m, string name, string description, TLAM lam_opts)
   {
     py::class_<EmbedVAMG<AMG_CLASS>, shared_ptr<EmbedVAMG<AMG_CLASS> >, BaseMatrix>
       (m, name.c_str(), description.c_str())
       .def(py::init<>
-	   ( [] (shared_ptr<BilinearForm> blf, py::kwargs kwa) {
+	   ( [&] (shared_ptr<BilinearForm> blf, py::kwargs kwa) {
 	     auto opts = make_shared<typename EmbedVAMG<AMG_CLASS>::Options>();
 	     opts->v_pos = "VERTEX";
 	     opts_from_kwa(opts, kwa);
+	     lam_opts(opts);
 	     return new EmbedVAMG<AMG_CLASS>(blf, opts);
 	   }), py::arg("blf") = nullptr)
     .def ("Test", [](EmbedVAMG<AMG_CLASS> &pre) { pre.MyTest();} )
@@ -55,9 +56,9 @@ namespace amg {
 PYBIND11_MODULE (ngs_amg, m) {
   m.attr("__name__") = "ngs_amg";
 
-  amg::ExportEmbedVAMG<amg::H1AMG>(m, "AMG_H1", "Ngs-AMG for scalar H1-problems");
-  amg::ExportEmbedVAMG<amg::ElasticityAMG<2>>(m, "AMG_EL2", "Ngs-AMG for 2d elasticity");
-  amg::ExportEmbedVAMG<amg::ElasticityAMG<3>>(m, "AMG_EL3", "Ngs-AMG for 3d elasticity");
+  amg::ExportEmbedVAMG<amg::H1AMG>(m, "AMG_H1", "Ngs-AMG for scalar H1-problems", [](auto & o) {});
+  amg::ExportEmbedVAMG<amg::ElasticityAMG<2>>(m, "AMG_EL2", "Ngs-AMG for 2d elasticity", [](auto & o) { o->keep_vp = true; });
+  amg::ExportEmbedVAMG<amg::ElasticityAMG<3>>(m, "AMG_EL3", "Ngs-AMG for 3d elasticity", [](auto & o) { o->keep_vp = true; });
   
 }
 

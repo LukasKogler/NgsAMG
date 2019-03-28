@@ -51,9 +51,9 @@ namespace amg {
 			     const shared_ptr<BaseVector> & x_coarse) const = 0;
     virtual void TransferC2F(const shared_ptr<BaseVector> & x_fine,
 			     const shared_ptr<const BaseVector> & x_coarse) const = 0;
-    shared_ptr<BaseVector> CreateVector() const
+    virtual shared_ptr<BaseVector> CreateVector() const
     { return make_shared<ParallelVVector<double>>(pardofs->GetNDofLocal(), pardofs, CUMULATED); }
-    shared_ptr<BaseVector> CreateMappedVector() const
+    virtual shared_ptr<BaseVector> CreateMappedVector() const
     { return (mapped_pardofs!=nullptr) ? make_shared<ParallelVVector<double>>(mapped_pardofs->GetNDofLocal(), mapped_pardofs, CUMULATED) : nullptr; }
     virtual shared_ptr<BaseDOFMapStep> Concatenate (shared_ptr<BaseDOFMapStep> other) { return nullptr; }
     shared_ptr<ParallelDofs> GetParDofs() const { return pardofs; }
@@ -118,6 +118,12 @@ namespace amg {
 
     using TFMAT = typename amg_spm_traits<TMAT>::T_RIGHT;
     using TCMAT = typename amg_spm_traits<TMAT>::T_LEFT;
+
+    virtual shared_ptr<BaseVector> CreateVector() const
+    { return make_shared<ParallelVVector<typename TMAT::TVY>>(pardofs->GetNDofLocal(), pardofs, CUMULATED); }
+    virtual shared_ptr<BaseVector> CreateMappedVector() const
+    { return (mapped_pardofs!=nullptr) ? make_shared<ParallelVVector<typename TMAT::TVX>>(mapped_pardofs->GetNDofLocal(), mapped_pardofs, CUMULATED) : nullptr; }
+
     // me left -- other right
     virtual shared_ptr<BaseDOFMapStep> Concatenate (shared_ptr<BaseDOFMapStep> other) override
     {

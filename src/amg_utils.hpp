@@ -190,6 +190,61 @@ namespace amg
     return os;
   }
 
+
+  template<class T>
+  INLINE void print_tm (ostream &os, const T & mat) {
+    constexpr int H = mat_traits<T>::HEIGHT;
+    constexpr int W = mat_traits<T>::WIDTH;
+    for (int kH : Range(H)) {
+      for (int jW : Range(W)) { os << mat(kH,jW) << " "; }
+      os << endl;
+    }
+  }
+  template<> INLINE void print_tm (ostream &os, const double & mat) { os << mat << endl; }
+  template<class T>
+  INLINE void print_tm_mat (ostream &os, const T & mat) {
+    constexpr int H = mat_traits<typename std::remove_reference<typename std::result_of<T(int, int)>::type>::type>::HEIGHT;
+    constexpr int W = mat_traits<typename std::remove_reference<typename std::result_of<T(int, int)>::type>::type>::WIDTH;
+    for (auto k : Range(mat.Height())) {
+      for (int kH : Range(H)) {
+	for (auto j : Range(mat.Width())) {
+	  auto& etr = mat(k,j);
+	  for (int jW : Range(W)) { os << etr(kH,jW) << " "; }
+	  os << " | ";
+	}
+	os << endl;
+      }
+      os << "----" << endl;
+    }
+  }
+  template<> INLINE void print_tm_mat (ostream &os, const Matrix<double> & mat) { os << mat << endl; }
+  template<> INLINE void print_tm_mat (ostream &os, const FlatMatrix<double> & mat) { os << mat << endl; }
+  template<class T>
+  INLINE void print_tm_spmat (ostream &os, const T & mat) {
+    constexpr int H = mat_traits<typename std::remove_reference<typename std::result_of<T(int, int)>::type>::type>::HEIGHT;
+    constexpr int W = mat_traits<typename std::remove_reference<typename std::result_of<T(int, int)>::type>::type>::WIDTH;
+    for (auto k : Range(mat.Height())) {
+      auto ri = mat.GetRowIndices(k);
+      auto rv = mat.GetRowValues(k);
+      if (ri.Size()) {
+	for (int kH : Range(H)) {
+	  if (kH==0) os << "Row " << setw(6) << k  << ": ";
+	  else os << "          : ";
+      	  for (auto j : Range(ri.Size())) {
+	  if (kH==0) os << setw(4) << ri[j] << ": ";
+	  else os << "    : ";
+	    auto& etr = rv[j];
+	    for (int jW : Range(W)) { os << setw(4) << etr(kH,jW) << " "; }
+	    os << " | ";
+	  }
+	  os << endl;
+	}
+      }
+      else { os << "Row " << setw(6) << k << ": (empty)" << endl; }
+    }
+  }
+  template<> INLINE void print_tm_spmat (ostream &os, const SparseMatrix<double> & mat) { os << mat << endl; }
+  
   // copied from ngsolve/comp/h1amg.cpp
   // and removed all shm-parallelization.
   // (the function is not in any ngsolve-header)
@@ -393,6 +448,21 @@ namespace amg
       }
   } // MergeArrays
 
+  INLINE void SetIdentity (double & x) { x = 1.0; }
+  template<int D> INLINE void SetIdentity (Mat<D,D,double> & x) { x = 0.0; for (auto i:Range(D)) x(i,i) = 1.0; }
+
+  template<class TM>
+  shared_ptr<SparseMatrix<TM>> BuildPermutationMatrix (FlatArray<int> sort) {
+    size_t N = sort.Size();
+    Array<int> epr(N); epr = 1.0;
+    auto embed_mat = make_shared<SparseMatrix<TM>>(epr, N);
+    const auto & em = *embed_mat;
+    for (auto k : Range(N)) {
+      em.GetRowIndices(k)[0] = sort[k];
+      SetIdentity(em.GetRowValues(k)[0]);
+    }
+    return embed_mat;
+  }
   
 } // namespace amg
 

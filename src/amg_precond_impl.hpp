@@ -201,8 +201,8 @@ namespace amg
   {
     // coarse ParallelDofs
     const CoarseMap<TMESH> & cmap(*_cmap);
-    const TMESH & fmesh = static_cast<TMESH&>(*cmap.GetMesh());
-    const TMESH & cmesh = static_cast<TMESH&>(*cmap.GetMappedMesh());
+    const TMESH & fmesh = static_cast<TMESH&>(*cmap.GetMesh()); fmesh.CumulateData();
+    const TMESH & cmesh = static_cast<TMESH&>(*cmap.GetMappedMesh()); cmesh.CumulateData();
     const AMG_CLASS& self = static_cast<const AMG_CLASS&>(*this);
     auto cpd = BuildParDofs(static_pointer_cast<TMESH>(cmap.GetMappedMesh()));
     // prolongation Matrix
@@ -240,13 +240,14 @@ namespace amg
 	}
       }
     }
-    // cout << "have pw-prol: " << endl << *prol << endl;
+    cout << "have pw-prol: " << endl;
+    print_tm_spmat(cout, *prol); cout << endl;
 
     auto pmap = make_shared<ProlMap<TSPMAT>> (prol, fpd, cpd);
 
-    cout << "smooth prol..." << endl;
-    SmoothProlongation(pmap, static_pointer_cast<TMESH>(cmap.GetMesh()));
-    cout << "smooth prol done!" << endl;
+    // cout << "smooth prol..." << endl;
+    // SmoothProlongation(pmap, static_pointer_cast<TMESH>(cmap.GetMesh()));
+    // cout << "smooth prol done!" << endl;
     
     return pmap;
   } // VWiseAMG<...> :: BuildDOFMapStep ( CoarseMap )
@@ -299,6 +300,7 @@ namespace amg
       }, false);
     for (auto v : Range(NV))
       vcw[v] = self.template GetWeight<NT_VERTEX>(mesh, v)/vcw[v];
+    cout << "VCW: "; prow2(vcw); cout << endl;
     opts->vcw = move(vcw);
     opts->ecw = move(ecw);
   }
@@ -511,10 +513,10 @@ namespace amg
 	for(auto k:Range(uve.Size()))
 	  { used_verts[k] = uve[k][0]; used_edges[k] = uve[k][1]; }
 	
-	// cout << "sprol row " << V << endl;
-	// cout << "graph: "; prow2(graph_row); cout << endl;
-	// cout << "used_verts: "; prow2(used_verts); cout << endl;
-	// cout << "used_edges: "; prow2(used_edges); cout << endl;
+	cout << "sprol row " << V << endl;
+	cout << "graph: "; prow2(graph_row); cout << endl;
+	cout << "used_verts: "; prow2(used_verts); cout << endl;
+	cout << "used_edges: "; prow2(used_edges); cout << endl;
 
 	// auto posV = used_verts.Pos(V);
 	auto posV = find_in_sorted_array(int(V), used_verts);
@@ -525,9 +527,9 @@ namespace amg
 	for(auto l:Range(unv)) {
 	  if(l==posV) continue;
 	  // get_repl(edges[used_edges[l]], block);
-	  // cout << "block " << l << " with edge " << used_edges[l] << " " << all_fedges[used_edges[l]] << endl;
+	  cout << "block " << l << " with edge " << used_edges[l] << " " << all_fedges[used_edges[l]] << endl;
 	  self.CalcRMBlock (fmesh, all_fedges[used_edges[l]], block);
-	  // cout << "block " << l << endl << block << endl;
+	  cout << "block " << l << endl << block << endl;
 	  int brow = (V < used_verts[l]) ? 0 : 1;
 	  mat(0,l) = block(brow,1-brow); // off-diag entry
 	  mat(0,posV) += block(brow,brow); // diag-entry
@@ -537,12 +539,13 @@ namespace amg
 	CalcInverse(diag); // TODO: can this be singular (with embedding?)
 	FlatMatrix<TMAT> row (1, unv, lh);
 	row = - omega * diag * mat;
-	// cout << " repl-row without diag adj: " << endl << row << endl;
+	cerr << " repl-row without diag adj: " << endl; print_tm_mat(cerr, row); cout << endl;
+	cout << " repl-row without diag adj: " << endl; print_tm_mat(cout, row); cout << endl;
 	row(0, posV) = (1-omega) * id;
 
-	// cout << "mat: " << endl << mat << endl;
-	// cout << "inv: " << endl << diag << endl;
-	// cout << " repl-row: " << endl << row << endl;
+	cout << "mat: " << endl; print_tm_mat(cout, mat); cout << endl;
+	cout << "inv: " << endl; print_tm(cout, diag); cout << endl;
+	cout << " repl-row: " << endl; print_tm_mat(cout, row); cout << endl;
 	
 	auto sp_ri = sprol->GetRowIndices(V); sp_ri = graph_row;
 	auto sp_rv = sprol->GetRowValues(V); sp_rv = 0;
@@ -550,16 +553,17 @@ namespace amg
 	  int vl = used_verts[l];
 	  auto pw_rv = pwprol.GetRowValues(vl);
 	  int cvl = vmap[vl];
-	  // cout << "v " << l << ", " << vl << " maps to " << cvl << endl;
-	  // cout << "pw-row for vl: " << endl; prow(pw_rv); cout << endl;
+	  cout << "v " << l << ", " << vl << " maps to " << cvl << endl;
+	  cout << "pw-row for vl: " << endl; prow(pw_rv); cout << endl;
 	  auto pos = find_in_sorted_array(cvl, sp_ri);
-	  // cout << "pos is " << pos << endl;
+	  cout << "pos is " << pos << endl;
 	  sp_rv[pos] += row(0,l) * pw_rv[0];
 	}
       }
     }
 
-    // cout << "smoothed: " << endl << *sprol << endl;
+    cout << "smoothed: " << endl;
+    print_tm_spmat(cout, *sprol); cout << endl;
 
     pmap->SetProl(sprol);
     
@@ -588,6 +592,12 @@ namespace amg
       options->free_verts = fvs;
       options->finest_free_dofs = fes_fds;
       cout << "init free vertices: " << fvs->NumSet() << " of " << fvs->Size() << endl;
+      cout << " diri verts: "; 
+      for (auto k : Range(ma->GetNV())) if (!fes_fds->Test(k)) { cout << k << " "; }
+      cout << endl;
+      cout << " map to: "; 
+      for (auto k : Range(ma->GetNV())) if (!fvs->Test(k)) { cout << k << " "; }
+      cout << endl;
       /** Vertex positions **/
       if (options->keep_vp) {
 	auto & vpos(node_pos[NT_VERTEX]); vpos.SetSize(top_mesh->GetNN<NT_VERTEX>());
