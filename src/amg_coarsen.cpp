@@ -64,7 +64,7 @@ namespace amg
     const double* vcw(&options->vcw[0]);
     auto GetECW = [ecw](const auto & x) { return ecw[x.id]; };
     auto GetVCW = [vcw](const auto & x) { return vcw[x]; };
-    cout << "collapse seq, NV NE " << NV << " " << NE << endl;
+    // cout << "collapse seq, NV NE " << NV << " " << NE << endl;
     // vertices are now always OS..OS+NV-1!!
     // cout << "verts: "; prow(verts); cout << endl;
     const int min_v = (verts.Size()>0) ? verts[0] : 0;
@@ -72,15 +72,12 @@ namespace amg
       for (auto k:Range(min_v, min_v+int(NV)))
 	if (!free_verts->Test(k))
 	  { coll.GroundVertex(k); coll.FixVertex(k); }
-    cout << "min_v: " << min_v << ", NV : " << NV << endl;
-    cout << "edges: "; prow(edges); cout << endl;
+    // cout << "min_v: " << min_v << ", NV : " << NV << endl;
+    // cout << "edges: "; prow(edges); cout << endl;
     TableCreator<int> v2ec(NV);
     for ( ; !v2ec.Done(); v2ec++)
       for (auto k:Range(edges.Size())) {
 	const auto & edge = edges[k];
-	cerr << "NV " << NV << ",  min_nv " << min_v << ", add edge " << edge << endl;
-	cerr << " add " << edge.v[0]-min_v << endl;
-	cerr << " add " << edge.v[1]-min_v << endl;
 	v2ec.Add(edge.v[0]-min_v, k);
     	v2ec.Add(edge.v[1]-min_v, k);
       }
@@ -183,35 +180,34 @@ namespace amg
 	for (const auto & e : mesh_block.GetNodes<NT_EDGE>())
 	  if (coll.IsEdgeCollapsed(e)) {
 	    sync[eqc_num][perow[eqc_num]++] = 1+mesh.template MapNodeToEQC<NT_EDGE>(e.id);
-	    cout << e << " is coll -> " << eqc_num << " " << mesh.template MapNodeToEQC<NT_EDGE>(e.id) << endl;
+	    // cout << e << " is coll -> " << eqc_num << " " << mesh.template MapNodeToEQC<NT_EDGE>(e.id) << endl;
 	  }
 	for (auto v : mesh_block.GetNodes<NT_VERTEX>())
 	  if (coll.IsVertexGrounded(v)) {
-	    cout << v << " is grnd -> " << eqc_num << " " << mesh.template MapNodeToEQC<NT_VERTEX>(v) << endl;
+	    // cout << v << " is grnd -> " << eqc_num << " " << mesh.template MapNodeToEQC<NT_VERTEX>(v) << endl;
 	    sync[eqc_num][perow[eqc_num]++] = -mesh.template MapNodeToEQC<NT_VERTEX>(v);
 	  }
       }
     }
-    cout << "sync: " << endl << sync << endl;
+    // cout << "sync: " << endl << sync << endl;
     Table<int> syncsync = ScatterEqcData(move(sync), eqc_h);
-    cout << "syncsync: " << endl << syncsync << endl;
+    // cout << "syncsync: " << endl << syncsync << endl;
     for (size_t eqc_num = 1; eqc_num < neqcs; eqc_num++) {
       if (!eqc_h.IsMasterOfEQC(eqc_num)) {
 	auto srow = syncsync[eqc_num]; auto ss = srow.Size();
-	cout << " for eqc " << eqc_num << endl;
 	auto c = 0;
 	for (auto l : Range(srow.Size())) {
 	  auto val = srow[l];
 	  if ( val <= 0 ) { // ground vertex
 	    auto vnr = mesh.template MapENodeFromEQC<NT_VERTEX>(-val, eqc_num);
-	    cout << "ground vertex " << -val << " -> " << vnr << endl;
+	    // cout << "ground vertex " << -val << " -> " << vnr << endl;
 	    if (!coll.IsVertexGrounded(vnr)) { coll.template ClearNode<NT_VERTEX>(vnr); coll.GroundVertex(vnr); }
 	  }
 	  else {
 	    int enr = val-1;
 	    auto eqc_es = mesh.template GetENodes<NT_EDGE>(eqc_num);
 	    const AMG_Node<NT_EDGE> & edge = eqc_es[enr];
-	    cout << "collapse edge " << enr << " -> " << edge << endl;
+	    // cout << "collapse edge " << enr << " -> " << edge << endl;
 	    if (!coll.IsEdgeCollapsed(edge)) { coll.template ClearNode<NT_EDGE>(edge); coll.CollapseEdge(edge); }
 	  }
 	}
@@ -258,7 +254,7 @@ namespace amg
     auto free = options->free_verts;
 
     if (free!=nullptr) {
-      cout << free->NumSet() << " of " << free->Size() << " are free!" << endl;
+      // cout << free->NumSet() << " of " << free->Size() << " are free!" << endl;
       const auto & fv = *free; for (auto k:Range(NV)) if (!fv.Test(k)) { cout << " g+f vertex " << k << endl; coll.GroundVertex(k); coll.FixVertex(k); }
     }
 
@@ -331,9 +327,9 @@ namespace amg
       }
     }
     int nce = 0; for (auto k : Range(neqcs)) nce += mesh.template GetCNN<NT_EDGE>(k);
-    cout << "want edge: " << want_edge.NumSet() << " of " << nce << endl;
+    // cout << "want edge: " << want_edge.NumSet() << " of " << nce << endl;
     // cout << want_edge << endl;
-    cout << "marked vs: " << endl; prow(mark_v); cout << endl;
+    // cout << "marked vs: " << endl; prow(mark_v); cout << endl;
     
     // overwrite values with index of max. proc!
     mesh.template AllreduceNodalData<NT_VERTEX> (mark_v, [](const auto & tab_in) {
@@ -368,7 +364,7 @@ namespace amg
 	}
     }
 
-    cout << "assigned vs: " << endl; prow2(mark_v); cout << endl;
+    // cout << "assigned vs: " << endl; prow2(mark_v); cout << endl;
 
     // also, edge always comes BEFORE its vertices
     // entry >0: cross-edge entry-1 in coll
@@ -393,7 +389,7 @@ namespace amg
     }
     auto sync = csync.MoveTable();
 
-    cout << "sync: " << endl << sync << endl;
+    // cout << "sync: " << endl << sync << endl;
 
     auto syncsync = ReduceTable<int, int>(sync, mesh.template GetEQCHierarchy(), [&](auto & in) { // syncsync ... haha
 	Array<int> out;
@@ -411,7 +407,7 @@ namespace amg
 	return out;
       });
 
-    cout << "syncsync: " << endl << syncsync << endl;
+    // cout << "syncsync: " << endl << syncsync << endl;
     
     for (auto eqc : Range(neqcs)) {
       auto cross_edges = mesh.template GetCNodes<NT_EDGE>(eqc);
@@ -507,15 +503,15 @@ namespace amg
     Array<size_t> eqcs(neqcs);
     for (auto k:Range(neqcs)) eqcs[k] = k;
 
-    {
-      cout << endl;
-      cout << " check coll status: " << endl;
-      auto alles = bmesh.GetNodes<NT_EDGE>();
-      for (auto k : Range(bmesh.GetNN<NT_EDGE>())) {
-    	cout << "edge " << k << "/" <<  bmesh.GetNN<NT_EDGE>() << " coll " << coll.IsEdgeCollapsed(alles[k]) << " , edge: " << alles[k] << endl;
-      }
-      cout << endl;
-    }
+    // {
+    //   cout << endl;
+    //   cout << " check coll status: " << endl;
+    //   auto alles = bmesh.GetNodes<NT_EDGE>();
+    //   for (auto k : Range(bmesh.GetNN<NT_EDGE>())) {
+    // 	cout << "edge " << k << "/" <<  bmesh.GetNN<NT_EDGE>() << " coll " << coll.IsEdgeCollapsed(alles[k]) << " , edge: " << alles[k] << endl;
+    //   }
+    //   cout << endl;
+    // }
       
     /**
        collapsed cross edges
@@ -550,15 +546,15 @@ namespace amg
 	      INT<2, int> V2({e2id,v2l});
 	      const bool smaller = (V1<V2);
 	      auto meq = eqc_h.GetMergedEQC(e1, e2);
-	      cout << "edge was " << edge << ", ";
+	      // cout << "edge was " << edge << ", ";
 	      if (smaller) {
 		tcce E({V1[0], V1[1], V2[0], V2[1]});
-		cout << " add E " << E << " (v1) " << endl;
+		// cout << " add E " << E << " (v1) " << endl;
 		ccce.Add(meq, E);
 	      }
 	      else {
 		tcce E({V2[0], V2[1], V1[0], V1[1]});
-		cout << " add E " << E << " (v2) " << endl;
+		// cout << " add E " << E << " (v2) " << endl;
 		ccce.Add(meq, E);
 	      }
 	    }
@@ -569,10 +565,10 @@ namespace amg
     }
     for (auto k:Range(cce.Size()))
       QuickSort(cce[k], less_cce);
-    cout << endl << "cce: " << endl << cce << endl;
+    // cout << endl << "cce: " << endl << cce << endl;
     auto rcce = ReduceTable<tcce,tcce> (cce, eqcs, sp_eqc_h,
 					[&](const auto & tab) { return merge_arrays(tab, less_cce); });
-    cout << endl << "rcce: " << endl << rcce << endl;
+    // cout << endl << "rcce: " << endl << rcce << endl;
     vmap.SetSize(NV);
     if (NV) vmap = -1;
     Array<size_t> v_cnt(eqcs.Size());
@@ -610,41 +606,41 @@ namespace amg
       auto lld = last_displ;
       for (auto v : verts)
 	if ( (is_invalid(vmap[v])) && (!coll.IsVertexCollapsed(v)) && (!coll.IsVertexGrounded(v)) ) {
-	  cout << "set vmap2 " << v << " -> " << displ << endl;
+	  // cout << "set vmap2 " << v << " -> " << displ << endl;
 	  vmap[v] = displ++;
 	}
-	else if (coll.IsVertexCollapsed(v)) cout << v << " is coll!" << endl;
-	else if (coll.IsVertexGrounded(v)) cout << v << " is grounded!" << endl;
-	else cout << v << " is already mapped????" << endl;
-      cout << " eqc " << eqc << " has " << displ-lld << " type1" << endl;
+      // 	else if (coll.IsVertexCollapsed(v)) cout << v << " is coll!" << endl;
+      // 	else if (coll.IsVertexGrounded(v)) cout << v << " is grounded!" << endl;
+      // 	else cout << v << " is already mapped????" << endl;
+      // cout << " eqc " << eqc << " has " << displ-lld << " type1" << endl;
       lld = displ;
       auto row = rcce[eqc];
       /** vmap for collapsed (eqc-)edges **/
       auto edges = block.template GetNodes<NT_EDGE>();
       for (const auto & edge : edges) {
 	if (coll.IsEdgeCollapsed(edge)) {
-	  for (auto l:Range(2)) { cout << "set vmap3-" << l << " " << edge.v[l] << " -> " << displ << endl; }
+	  // for (auto l:Range(2)) { cout << "set vmap3-" << l << " " << edge.v[l] << " -> " << displ << endl; }
 	  for (auto l:Range(2)) { vmap[edge.v[l]] = displ; }
 	  displ++;
 	}
       }
-      cout << " eqc " << eqc << " has " << displ-lld << " type2" << endl;
+      // cout << " eqc " << eqc << " has " << displ-lld << " type2" << endl;
       lld = displ;
       /** modify vmap for collapsed (cross-)edges **/
       for (auto j:Range(row.Size())) {
 	bool has_one = false;
-	cout << " eqc/j " << eqc << " " << j << " rcce entry: " << row[j] << endl;
+	// cout << " eqc/j " << eqc << " " << j << " rcce entry: " << row[j] << endl;
 	for (int l:{0,2}) {
 	  auto v_eqc = eqc_h.GetEQCOfID(row[j][l+0]);
 	  auto v_locnum = row[j][l+1];
 	  /** We have to have the coarse vertex, so we have to have at least one of the vertices! **/
 	  if (is_invalid(v_eqc)) continue;
 	  vmap[bmesh.MapENodeFromEQC<NT_VERTEX>(v_locnum, v_eqc)] = displ;
-	  cout << "set vmap1-" << l << " " << bmesh.MapENodeFromEQC<NT_VERTEX>(v_locnum, v_eqc) << " -> " << displ << endl;
+	  // cout << "set vmap1-" << l << " " << bmesh.MapENodeFromEQC<NT_VERTEX>(v_locnum, v_eqc) << " -> " << displ << endl;
 	}
 	displ++;
       }
-      cout << " eqc " << eqc << " has " << displ-lld << " type3" << endl;
+      // cout << " eqc " << eqc << " has " << displ-lld << " type3" << endl;
       lld = displ;
       v_cnt[eqc] = displ - last_displ;
       last_displ = displ;
@@ -660,34 +656,34 @@ namespace amg
     // no cross-vertices per definition
     mapped_cross_firsti[NT_VERTEX] = mapped_eqc_firsti[NT_VERTEX].Last();
 
-    cout << "mapped eqc_v_firsti : " << endl << mapped_eqc_firsti[NT_VERTEX] << endl;
+    // cout << "mapped eqc_v_firsti : " << endl << mapped_eqc_firsti[NT_VERTEX] << endl;
 
-    cout << endl << "have vertex map: " << endl; prow2(vmap); cout << endl;
+    // cout << endl << "have vertex map: " << endl; prow2(vmap); cout << endl;
 
-    Array<int> ones(eqcs.Size()); ones = 1;
-    Table<int> cnt(ones);
-    for (auto k : Range(eqcs.Size()))
-      { cnt[k][0] = mapped_eqc_firsti[NT_VERTEX][k+1] - mapped_eqc_firsti[NT_VERTEX][k]; }
-    int cntcs = 0;
-    bool isok = true;
-    auto dontcare = ReduceTable<int, int> (cnt, eqcs, sp_eqc_h,
-    					   [&](auto & tab) {
-    					     int nrows = tab.Size();
-    					     Array<int> out(nrows);
-    					     cntcs++;
-    					     if (!nrows) return out;
-    					     if (nrows==1) { out[0] = tab[0][0]; return out; }
-					     bool this_isok = true;
-					     for (auto k : Range(size_t(1), tab.Size()))
-					       if (tab[k][0] != tab[0][0]) { this_isok = false; }
-					     if (!this_isok) {
-					       isok = this_isok;
-					       cout << "NOT OK CHECK EQC S nr : " << cntcs-1 << endl;
-					       print_ft(cout, tab); cout << endl;
-					     }
-					     return out;
-    					   });
-    if (!isok) throw Exception("INVALID V SIZES");
+    // Array<int> ones(eqcs.Size()); ones = 1;
+    // Table<int> cnt(ones);
+    // for (auto k : Range(eqcs.Size()))
+    //   { cnt[k][0] = mapped_eqc_firsti[NT_VERTEX][k+1] - mapped_eqc_firsti[NT_VERTEX][k]; }
+    // int cntcs = 0;
+    // bool isok = true;
+    // auto dontcare = ReduceTable<int, int> (cnt, eqcs, sp_eqc_h,
+    // 					   [&](auto & tab) {
+    // 					     int nrows = tab.Size();
+    // 					     Array<int> out(nrows);
+    // 					     cntcs++;
+    // 					     if (!nrows) return out;
+    // 					     if (nrows==1) { out[0] = tab[0][0]; return out; }
+    // 					     bool this_isok = true;
+    // 					     for (auto k : Range(size_t(1), tab.Size()))
+    // 					       if (tab[k][0] != tab[0][0]) { this_isok = false; }
+    // 					     if (!this_isok) {
+    // 					       isok = this_isok;
+    // 					       cout << "NOT OK CHECK EQC S nr : " << cntcs-1 << endl;
+    // 					       print_ft(cout, tab); cout << endl;
+    // 					     }
+    // 					     return out;
+    // 					   });
+    // if (!isok) throw Exception("INVALID V SIZES");
   } // CoarseMap :: BuildVertexMap
 
   template<class TMESH>
@@ -702,7 +698,7 @@ namespace amg
        This gives map to local-per-eqc-and-type enumeration.
        Add offstes to get the final map!
      **/
-    cout << "CoarseMap - map edges" << endl;
+    // cout << "CoarseMap - map edges" << endl;
     static Timer t("CoarseMap - map edges");
     RegionTimer rt(t);
     const BlockTM & bmesh = *mesh;
@@ -721,10 +717,10 @@ namespace amg
     Array<size_t> eqcs(neqcs);
     for (auto k:Range(neqcs)) eqcs[k] = k;
     // eqc-changing coarse edges
-    cout << "check coll " << endl;
-    for (const auto & e : bmesh.template GetNodes<NT_EDGE>())
-      cout << "edge " << e << " , coll ? " << coll.IsEdgeCollapsed(e) << endl;
-    cout << endl;
+    // cout << "check coll " << endl;
+    // for (const auto & e : bmesh.template GetNodes<NT_EDGE>())
+    //   cout << "edge " << e << " , coll ? " << coll.IsEdgeCollapsed(e) << endl;
+    // cout << endl;
     Table<AMG_CNode<NT_EDGE>> tadd_edges;
     {
       TableCreator<AMG_CNode<NT_EDGE>> ct(neqcs);
@@ -926,8 +922,8 @@ namespace amg
     	  auto ct = hash[ecl];
     	  auto cid = disp_ie[eqc]+ct;
     	  coarse_nodes[cid] = {vc0, vc1};
-	  cout << " add edge " << e << " became eqc-node " << cid << " " << vc0 << " " << vc1 << endl;
-	  cout << "locs " << vc0_loc << " " << vc1_loc << endl;
+	  // cout << " add edge " << e << " became eqc-node " << cid << " " << vc0 << " " << vc1 << endl;
+	  // cout << "locs " << vc0_loc << " " << vc1_loc << endl;
     	}
     	else {
     	  auto & hash =  *hash_ce[eqc];
@@ -935,17 +931,17 @@ namespace amg
     	  auto ct = hash[ecl];
     	  auto cid = NECI + disp_ce[eqc]+ct;
     	  coarse_nodes[cid] = {vc0, vc1};
-	  cout << " add edge " << e << " became cross-node " << eqc << " " << cid << " " << vc0 << " " << vc1 << endl;
-	  cout << "eqs " << eq0 << " " << eq1 << endl;
-	  cout << "locs " << vc0_loc << " " << vc1_loc << endl;
+	  // cout << " add edge " << e << " became cross-node " << eqc << " " << cid << " " << vc0 << " " << vc1 << endl;
+	  // cout << "eqs " << eq0 << " " << eq1 << endl;
+	  // cout << "locs " << vc0_loc << " " << vc1_loc << endl;
     	}
       }
     }
     // dont need mapped_eqc_nodes ?
     for (auto x : hash_ie) delete x;
     for (auto x : hash_ce) delete x;
-    cout << endl << "have coarse edges: " << endl; prow2(coarse_nodes); cout << endl;
-    cout << endl << "have edge map: " << endl; prow2(node_map); cout << endl;
+    // cout << endl << "have coarse edges: " << endl; prow2(coarse_nodes); cout << endl;
+    // cout << endl << "have edge map: " << endl; prow2(node_map); cout << endl;
   } // CoarseMap :: BuildEdgeMap
 
 } // namespace amg
