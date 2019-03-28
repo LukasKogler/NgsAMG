@@ -163,14 +163,16 @@ namespace amg
     // entry>0: collapse edge (entry-1) // entry<=0: ground vertex (-entry)
     auto neqcs = eqc_h.GetNEQCS();
     Array<int> perow(neqcs); perow = 0;
-    for (size_t eqc_num = 1; eqc_num < neqcs; eqc_num++) {
+    for (size_t eqc_num = 0; eqc_num < neqcs; eqc_num++) {
       if (eqc_h.IsMasterOfEQC(eqc_num)) {
 	FlatTM mesh_block = mesh.GetBlock(eqc_num);
 	block_crs.Collapse(mesh_block, coll);
-	for (const auto & e : mesh_block.GetNodes<NT_EDGE>())
-	  if (coll.IsEdgeCollapsed(e)) perow[eqc_num]++;
-	for (auto v : mesh_block.GetNodes<NT_VERTEX>())
-	  if (coll.IsVertexGrounded(v)) perow[eqc_num]++;
+	if (eqc_num!=0) {
+	  for (const auto & e : mesh_block.GetNodes<NT_EDGE>())
+	    if (coll.IsEdgeCollapsed(e)) perow[eqc_num]++;
+	  for (auto v : mesh_block.GetNodes<NT_VERTEX>())
+	    if (coll.IsVertexGrounded(v)) perow[eqc_num]++;
+	}
       }
     }
     Table<int> sync(perow); perow = 0;
