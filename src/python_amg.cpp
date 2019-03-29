@@ -20,6 +20,7 @@ namespace amg {
       else if (name == "edges") { opts->edges = item.second.cast<string>(); }
       else if (name == "clev") { opts->clev_type = item.second.cast<string>(); }
       else if (name == "clev_inv") { opts->clev_type = item.second.cast<string>(); }
+      else if (name == "smooth") { opts->do_smooth = item.second.cast<bool>(); }
       else { cout << "warning, invalid AMG option: " << name << endl; break; }
     }
     // opts->v_pos = "VERTEX";

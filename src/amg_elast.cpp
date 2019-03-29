@@ -19,7 +19,8 @@ namespace amg
       pwv[k].pos = vp[k];
     }
     auto a = new ElVData(move(pwv), CUMULATED);
-    Array<ElEW<D>> we(top_mesh->GetNN<NT_EDGE>()); we = 1.0;
+    Array<ElEW<D>> we(top_mesh->GetNN<NT_EDGE>());
+    for (auto & x : we) { SetIdentity(x.bend_mat()); SetIdentity(x.wigg_mat()); }
     auto b = new ElEData<D>(move(we), CUMULATED);
     auto mesh = make_shared<ElasticityMesh<D>>(move(*top_mesh), a, b);
     return mesh;

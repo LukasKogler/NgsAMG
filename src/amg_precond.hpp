@@ -46,6 +46,7 @@ namespace amg
       /** Coarsest level opts **/
       string clev_type = "inv";
       string clev_inv_type = "masterinverse";
+      bool do_smooth = false; // TODO: TEMPORARY!!
     };
 
     using TMESH = ATMESH;

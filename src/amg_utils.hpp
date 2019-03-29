@@ -450,7 +450,11 @@ namespace amg
 
   INLINE void SetIdentity (double & x) { x = 1.0; }
   template<int D> INLINE void SetIdentity (Mat<D,D,double> & x) { x = 0.0; for (auto i:Range(D)) x(i,i) = 1.0; }
-
+  template<class TM> INLINE void SetIdentity (FlatMatrix<TM> mat)
+  { for (auto k : Range(mat.Height())) SetIdentity(mat(k,k)); }
+  template<int D, class TM> INLINE void SetIdentity (FlatMatrixFixWidth<D, TM> mat)
+  { mat = 0; for (auto k : Range(D)) SetIdentity(mat(k,k)); }
+  
   template<class TM>
   shared_ptr<SparseMatrix<TM>> BuildPermutationMatrix (FlatArray<int> sort) {
     size_t N = sort.Size();
@@ -462,6 +466,23 @@ namespace amg
       SetIdentity(em.GetRowValues(k)[0]);
     }
     return embed_mat;
+  }
+
+  template<class T>
+  INLINE void prow_tm (ostream &os, const T & ar) {
+    constexpr int H = mat_traits<typename std::remove_reference<typename std::result_of<T(int)>::type>::type>::HEIGHT;
+    constexpr int W = mat_traits<typename std::remove_reference<typename std::result_of<T(int)>::type>::type>::WIDTH;
+    for (int kH : Range(H)) {
+      for (auto k : Range(ar.Size())) {
+	if (kH==0) os << "" << setw(4) << k << "::";
+      	else os << "      ";
+	auto& etr = ar(k);
+	if constexpr(H==W) os << etr;
+	else for (int jW : Range(W)) { os << etr(kH,jW) << " "; }
+	os << " | ";
+      }
+      os << endl;
+    }
   }
   
 } // namespace amg

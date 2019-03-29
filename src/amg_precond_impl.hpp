@@ -114,17 +114,17 @@ namespace amg
 
 	nvs.Append((fm!=nullptr ? fm->template GetNNGlobal<NT_VERTEX>() : 0));
 	if (level[1]==0 && level[2]==0) frac_coarse = (1.0*nvs.Last())/(1.0*nvs[nvs.Size()-2]);
-	if(level[1]!=0) nv_lc = nvs.Last();
+	if (level[1]!=0) nv_lc = nvs.Last();
 	
-	if(cnt_lc>3) // we have not contracted for a long time
+	if (cnt_lc>3) // we have not contracted for a long time
 	  contr_locked = false;
-	else if(frac_coarse>0.75 && level[0]>2 && cnt_lc>1) // coarsening is slowing down
+	else if (frac_coarse>0.75 && level[0]>2 && cnt_lc>1) // coarsening is slowing down
 	  contr_locked = false;
-	// else if(nvs.Last()/fpd->GetCommunicator().Size()<MIN_V_PP && cnt_lc>1) // too few verts per proc
+	// else if (nvs.Last()/fpd->GetCommunicator().Size()<MIN_V_PP && cnt_lc>1) // too few verts per proc
 	//   contr_locked = false;
-	else if((1.0*nvs.Last())/nv_lc < contr_after_frac && cnt_lc>1) // if NV reduces by a good factor
+	else if ((1.0*nvs.Last())/nv_lc < contr_after_frac && cnt_lc>1) // if NV reduces by a good factor
 	  contr_locked = false;
-	// if(level[0]<5) contr_locked = true;
+	// if (level[0]<5) contr_locked = true;
 	
       }
     }
@@ -246,7 +246,8 @@ namespace amg
     auto pmap = make_shared<ProlMap<TSPMAT>> (prol, fpd, cpd);
 
     cout << "smooth prol..." << endl;
-    SmoothProlongation(pmap, static_pointer_cast<TMESH>(cmap.GetMesh()));
+    if (options->do_smooth==true)
+      SmoothProlongation(pmap, static_pointer_cast<TMESH>(cmap.GetMesh()));
     cout << "smooth prol done!" << endl;
     
     return pmap;
@@ -378,8 +379,8 @@ namespace amg
     {
       INT<2, int> cv;
       auto doit = [&](auto the_edges) {
-	for(const auto & edge : the_edges) {
-	  if( ((cv[0]=vmap[edge.v[0]]) != -1 ) &&
+	for (const auto & edge : the_edges) {
+	  if ( ((cv[0]=vmap[edge.v[0]]) != -1 ) &&
 	      ((cv[1]=vmap[edge.v[1]]) != -1 ) &&
 	      (cv[0]==cv[1]) ) {
 	    // auto com_wt = max2(get_wt(edge.id, edge.v[0]),get_wt(edge.id, edge.v[1]));
@@ -407,8 +408,8 @@ namespace amg
       Array<INT<2,double>> trow;
       Array<INT<2,double>> tcv;
       Array<size_t> fin_row;
-      for(auto V:Range(NFV)) {
-	// if(freedofs && !freedofs->Test(V)) continue;
+      for (auto V:Range(NFV)) {
+	// if (freedofs && !freedofs->Test(V)) continue;
 	auto CV = vmap[V];
 	if (CV == -1) continue; // grounded -> TODO: do sth. here if we are free?
 	if (vw[V] == 0.0) { // MUST be single
@@ -426,15 +427,15 @@ namespace amg
 	auto eis = fecon.GetRowValues(V);
 	// cout << "eis: "; prow2(eis); cout << endl;
 	size_t pos;
-	for(auto j:Range(ovs.Size())) {
+	for (auto j:Range(ovs.Size())) {
 	  auto ov = ovs[j];
 	  auto cov = vmap[ov];
-	  if(cov==-1 || cov==CV) continue;
+	  if (cov==-1 || cov==CV) continue;
 	  auto oeq = fmesh.template GetEqcOfNode<NT_VERTEX>(ov);
-	  if(eqc_h.IsLEQ(EQ, oeq)) {
+	  if (eqc_h.IsLEQ(EQ, oeq)) {
 	    // auto wt = get_wt(eis[j], V);
 	    auto wt = self.template GetWeight<NT_EDGE>(fmesh, all_fedges[eis[j]]);
-	    if( (pos = tcv.Pos(cov)) == -1) {
+	    if ( (pos = tcv.Pos(cov)) == -1) {
 	      trow.Append(INT<2,double>(cov, wt));
 	      tcv.Append(cov);
 	    }
@@ -445,30 +446,30 @@ namespace amg
 	}
 	// cout << "tent row for V " << V << endl; prow2(trow); cout << endl;
 	QuickSort(trow, [](const auto & a, const auto & b) {
-	    if(a[0]==b[0]) return false;
+	    if (a[0]==b[0]) return false;
 	    return a[1]>b[1];
 	  });
 	// cout << "sorted tent row for V " << V << endl; prow2(trow); cout << endl;
 	double cw_sum = (CV!=-1) ? vw[V] : 0.0;
 	fin_row.SetSize(0);
-	if(CV != -1) fin_row.Append(CV); //collapsed vertex
+	if (CV != -1) fin_row.Append(CV); //collapsed vertex
 	size_t max_adds = (CV!=-1) ? min2(MAX_PER_ROW-1, int(trow.Size())) : trow.Size();
-	for(auto j:Range(max_adds)) {
+	for (auto j:Range(max_adds)) {
 	  cw_sum += trow[j][1];
-	  if(CV!=-1) {
+	  if (CV!=-1) {
 	    // I don't think I actually need this: Vertex is collapsed to some non-weak (not necessarily "strong") edge
 	    // therefore the relative weight comparison should eliminate all really weak connections
-	    // if(fin_row.Size() && (trow[j][1] < MIN_PROL_WT)) break; 
-	    if(trow[j][1] < MIN_PROL_FRAC*cw_sum) break;
+	    // if (fin_row.Size() && (trow[j][1] < MIN_PROL_WT)) break; 
+	    if (trow[j][1] < MIN_PROL_FRAC*cw_sum) break;
 	  }
 	  fin_row.Append(trow[j][0]);
 	}
 	QuickSort(fin_row);
 	// cout << "fin row for V " << V << endl; prow2(fin_row); cout << endl;
 	perow[V] = fin_row.Size();
-	for(auto j:Range(fin_row.Size()))
+	for (auto j:Range(fin_row.Size()))
 	  graph[V][j] = fin_row[j];
-	// if(fin_row.Size()==1 && CV==-1) {
+	// if (fin_row.Size()==1 && CV==-1) {
 	//   cout << "whoops for dof " << V << endl;
 	// }
       }
@@ -482,12 +483,12 @@ namespace amg
     Array<INT<2,size_t>> uve(30); uve.SetSize(0);
     Array<int> used_verts(20), used_edges(20);
     TMAT id; SetIdentity(id);
-    for(int V:Range(NFV)) {
+    for (int V:Range(NFV)) {
       auto CV = vmap[V];
       if (CV == -1) continue; // grounded -> TODO: do sth. here if we are free?
       if (perow[V] == 1) { // SINGLE or no good connections avail.
 	sprol->GetRowIndices(V)[0] = CV;
-	SetIdentity(sprol->GetRowValues(V)[0]);
+	sprol->GetRowValues(V)[0] = pwprol.GetRowValues(V)[0];
       }
       else { // SMOOTH
 	HeapReset hr(lh);
@@ -497,20 +498,20 @@ namespace amg
 	auto all_ov = fecon.GetRowIndices(V);
 	auto all_oe = fecon.GetRowValues(V);
 	uve.SetSize(0);
-	for(auto j:Range(all_ov.Size())) {
+	for (auto j:Range(all_ov.Size())) {
 	  auto ov = all_ov[j];
 	  auto cov = vmap[ov];
-	  if(cov != -1) {
-	    if(graph_row.Contains(cov)) {
+	  if (cov != -1) {
+	    if (graph_row.Contains(cov)) {
 	      auto eq = fmesh.template GetEqcOfNode<NT_VERTEX>(ov);
-	      if(eqc_h.IsLEQ(EQ, eq)) {
+	      if (eqc_h.IsLEQ(EQ, eq)) {
 		// cout << " valid: " << V << " " << EQ << " // " << ov << " " << eq << endl;
 		uve.Append(INT<2>(ov,all_oe[j]));
 	      } } } }
 	uve.Append(INT<2>(V,-1));
 	QuickSort(uve, [](const auto & a, const auto & b){return a[0]<b[0];}); // WHY??
 	used_verts.SetSize(uve.Size()); used_edges.SetSize(uve.Size());
-	for(auto k:Range(uve.Size()))
+	for (auto k:Range(uve.Size()))
 	  { used_verts[k] = uve[k][0]; used_edges[k] = uve[k][1]; }
 	
 	cout << "sprol row " << V << endl;
@@ -524,28 +525,35 @@ namespace amg
       	size_t unv = used_verts.Size(); // # of vertices used
 	FlatMatrix<TMAT> mat (1,unv,lh); mat(0, posV) = 0;
 	FlatMatrix<TMAT> block (2,2,lh);
-	for(auto l:Range(unv)) {
-	  if(l==posV) continue;
+	for (auto l:Range(unv)) {
+	  if (l==posV) continue;
 	  // get_repl(edges[used_edges[l]], block);
-	  cout << "block " << l << " with edge " << used_edges[l] << " " << all_fedges[used_edges[l]] << endl;
 	  self.CalcRMBlock (fmesh, all_fedges[used_edges[l]], block);
-	  cout << "block " << l << endl << block << endl;
 	  int brow = (V < used_verts[l]) ? 0 : 1;
+	  // int brow = (V == all_fedges[used_edges[l]].v[0]) ? 0 : 1;
 	  mat(0,l) = block(brow,1-brow); // off-diag entry
 	  mat(0,posV) += block(brow,brow); // diag-entry
 	}
 
 	TMAT diag = mat(0, posV);
+	cout << "diag: " << endl; print_tm(cout, diag); cout << endl;
 	CalcInverse(diag); // TODO: can this be singular (with embedding?)
-	FlatMatrix<TMAT> row (1, unv, lh);
-	row = - omega * diag * mat;
-	cerr << " repl-row without diag adj: " << endl; print_tm_mat(cerr, row); cout << endl;
-	cout << " repl-row without diag adj: " << endl; print_tm_mat(cout, row); cout << endl;
-	row(0, posV) = (1-omega) * id;
+	for ( auto l : Range(unv)) {
+	  TMAT diag2 = mat(0, l);
+	  TMAT diag3 = diag * diag2;
+	  cout << "diag * block " << l << ": " << endl; print_tm(cout, diag3); cout << endl;
+	}
+	// FlatMatrix<TMAT> row (1, unv, lh);
+	// // Matrix<TMAT> row (1, unv);
+	// row = diag * mat;
+	// cout << " diag * row : " << endl; print_tm_mat(cout, row); cout << endl;
+	// row = - omega * diag * mat;
+	// cout << " - omega * diag * row : " << endl; print_tm_mat(cout, row); cout << endl;
+	// row(0, posV) = (1.0-omega) * id;
 
 	cout << "mat: " << endl; print_tm_mat(cout, mat); cout << endl;
 	cout << "inv: " << endl; print_tm(cout, diag); cout << endl;
-	cout << " repl-row: " << endl; print_tm_mat(cout, row); cout << endl;
+	// cout << " repl-row: " << endl; print_tm_mat(cout, row); cout << endl;
 	
 	auto sp_ri = sprol->GetRowIndices(V); sp_ri = graph_row;
 	auto sp_rv = sprol->GetRowValues(V); sp_rv = 0;
@@ -554,10 +562,21 @@ namespace amg
 	  auto pw_rv = pwprol.GetRowValues(vl);
 	  int cvl = vmap[vl];
 	  cout << "v " << l << ", " << vl << " maps to " << cvl << endl;
-	  cout << "pw-row for vl: " << endl; prow(pw_rv); cout << endl;
+	  cout << "pw-row for vl: " << endl; prow_tm(cout, pw_rv); cout << endl;
 	  auto pos = find_in_sorted_array(cvl, sp_ri);
 	  cout << "pos is " << pos << endl;
-	  sp_rv[pos] += row(0,l) * pw_rv[0];
+	  // sp_rv[pos] += row(0,l) * pw_rv[0];
+	  cout << " before "; print_tm(cout, sp_rv[pos]); cout << endl;
+	  if (l==posV) {
+	    sp_rv[pos] += pw_rv[0];
+	    cout << " mid "; print_tm(cout, sp_rv[pos]); cout << endl;
+	  }
+	  TMAT m1 = mat(0,l);
+	  TMAT m2 = diag * m1;
+	  TMAT m3 = m2 * pw_rv[0];
+	  cout << " should add " << omega << " * "; print_tm(cout, m3); cout << endl;
+	  sp_rv[pos] += - omega * diag * mat(0,l) * pw_rv[0];
+	  cout << " after "; print_tm(cout, sp_rv[pos]); cout << endl;
 	}
       }
     }

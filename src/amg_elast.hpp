@@ -53,12 +53,16 @@ namespace amg
 	  if ( (CV != -1) && (touched[v] == 0) )
 	    { cdata[CV] = data[v]; }
 	}, true);
+      cout << "(distr) c-pos: " << endl;
+      for (auto CV : Range(cmap.GetMappedNN<NT_VERTEX>())) cout << cdata[CV].pos << endl;
+      cout << endl;
       return DISTRIBUTED;
     }
   };
 
   template<int D>
   struct ElEW { // edge + weight
+    constexpr static int OFFSET = rotpv(D)*rotpv(D);
     INT<disppv(D)*disppv(D)+rotpv(D)*rotpv(D),double> wt_data;
     ElEW (double val) { wt_data = val; }
     ElEW () : ElEW<D>(0.0) { ; }
@@ -70,6 +74,10 @@ namespace amg
     { for (auto l : Range(disppv(D)*disppv(D)+rotpv(D)*rotpv(D))) wt_data[l] += other.wt_data[l]; }; // for Cumulate
     INLINE bool operator == (const ElEW<D> & other) { return wt_data == other.wt_data; }
     INLINE double get_wt () const { return wt_data[0]; }
+    INLINE FlatMatrixFixWidth<rotpv(D), double> bend_mat ()
+    { return FlatMatrixFixWidth<rotpv(D), double>(rotpv(D), &wt_data[0]); }
+    INLINE FlatMatrixFixWidth<disppv(D), double> wigg_mat ()
+    { return FlatMatrixFixWidth<disppv(D), double>(disppv(D), &wt_data[OFFSET]); }
   };
   template struct ElEW<2>;
   template struct ElEW<3>;
@@ -135,15 +143,92 @@ namespace amg
     }
     INLINE void CalcRMBlock (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge, FlatMatrix<TMAT> mat) const
     {
+      mat = -42; // TODO: do I need this?
+      auto & edata = get<1>(fmesh.Data())->Data()[edge.id];
       // [r]
-      for (int i = 0; i < rotpv(D); i++) {
-	
+      auto bend_mat = edata.bend_mat();
+      mat(0,0).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) =   bend_mat;
+      mat(1,0).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) = - bend_mat;
+      mat(0,1).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) = - bend_mat;
+      mat(1,1).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) =   bend_mat;
+      cout << "bending energy block: " << endl; print_tm_mat(cout, mat); cout << endl;
+      // S x == t \cross {r}
+      Vec<3,double> tang = get<0>(fmesh.Data())->Data()[edge.v[1]].pos;
+      tang -= get<0>(fmesh.Data())->Data()[edge.v[0]].pos;
+      cout << "tang: " << tang << endl;
+      Mat<disppv(D), rotpv(D), double> S;
+      if constexpr(D==2) {
+	  S(0,0) = 0.5 * tang(1);
+	  S(1,0) = -0.5 * tang(0);
+	}
+      else {
+	S(0,0) = S(1,1) = S(2,2) = 0;
+	S(0,1) = - (S(1,0) = - 0.5 * tang(2));
+	S(0,2) = - (S(2,0) =   0.5 * tang(1));
+	S(1,2) = - (S(2,1) = - 0.5 * tang(0));
       }
+      // cout << "S: " << endl; print_tm(cout, S); cout << endl;
+      // [u] - t \cross {r}
+      auto M = edata.wigg_mat();
+      // cout << "M: " << endl; print_tm(cout, M); cout << endl;
+      // Mat<disppv(D), rotpv(D), double> MS = M * S;
+      Matrix<double> MS(disppv(D), rotpv(D)); MS = M * S;
+      // cout << "MS: " << endl; print_tm(cout, MS); cout << endl;
+      // Mat<rotpv(D), rotpv(D), double> StMS = Trans(S) * MS;
+      Matrix<double> StMS(rotpv(D), rotpv(D)); StMS = Trans(S) * MS;
+      // cout << "StMS: " << endl; print_tm(cout, StMS); cout << endl;
+      //   M  -MS
+      // -STM STMS
+      mat(0,0).Rows(0, disppv(D)).Cols(0, disppv(D))                =   M;
+      mat(0,0).Rows(0, disppv(D)).Cols(disppv(D), dofpv(D))         = - MS;
+      mat(0,0).Rows(disppv(D), dofpv(D)).Cols(0, disppv(D))         = - Trans(MS);
+      mat(0,0).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) +=   StMS;
+      // cout << "step 1 RM block: " << endl; print_tm_mat(cout, mat); cout << endl;
+      //   M  -MS
+      // -STM STMS
+      mat(1,1).Rows(0, disppv(D)).Cols(0, disppv(D))                =   M;
+      mat(1,1).Rows(0, disppv(D)).Cols(disppv(D), dofpv(D))         =   MS;
+      mat(1,1).Rows(disppv(D), dofpv(D)).Cols(0, disppv(D))         =   Trans(MS);
+      mat(1,1).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) +=   StMS;
+      // cout << "step 2 RM block: " << endl; print_tm_mat(cout, mat); cout << endl;
+      // -M  -MS
+      // STM STMS
+      mat(0,1).Rows(0, disppv(D)).Cols(0, disppv(D))                = - M;
+      mat(0,1).Rows(0, disppv(D)).Cols(disppv(D), dofpv(D))         = - MS;
+      mat(0,1).Rows(disppv(D), dofpv(D)).Cols(0, disppv(D))         =   Trans(MS);
+      mat(0,1).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) +=   StMS;
+      // cout << "step 3 RM block: " << endl; print_tm_mat(cout, mat); cout << endl;
+      // -M    MS
+      // -STM STMS
+      mat(1,0).Rows(0, disppv(D)).Cols(0, disppv(D))                = - M;
+      mat(1,0).Rows(0, disppv(D)).Cols(disppv(D), dofpv(D))         =   MS;
+      mat(1,0).Rows(disppv(D), dofpv(D)).Cols(0, disppv(D))         = - Trans(MS);
+      mat(1,0).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) +=   StMS;
+      cout << "fin RM block: " << endl; print_tm_mat(cout, mat); cout << endl;
+
+      if constexpr(D==2) {
+	  cout << "test RM block: " << endl;
+	  Vector<Vec<3,double>> v(2);
+	  Vector<Vec<3,double>> v2(2);
+	  cout << "disp x ";
+	  v2 = 0; v2(0)[0] = 1; v2(1)[0] = 1;
+	  v = mat * v2;
+	  cout << L2Norm(v) << " : " << endl << v << endl;
+	  cout << "disp y ";
+	  v2 = 0; v2(0)[1] = 1; v2(1)[1] = 1;
+	  v = mat * v2;
+	  cout << L2Norm(v) << " : " << endl << v << endl;
+	  cout << "rot x ";
+	  v2 = 0;
+	  v2(0)[0] = 0.5*tang(1); v2(0)[1] = -0.5*tang(0);
+	  v2(1) = -v2(0);
+	  v2(0)[2] = 1; v2(1)[2] = 1;
+	  v = mat * v2;
+	  cout << L2Norm(v) << " : " << endl << v << endl;
+	}
       
-      SetIdentity(mat(0,0));
-      mat(0,1) = -mat(0,0);
-      mat(1,0) = -mat(0,0);
-      SetIdentity(mat(1,1));
+      
+      
     }
   };
 
