@@ -338,7 +338,7 @@ namespace amg
       for (auto i : Range(ne)) {
 	ElementId ei(VOL, i);
 	auto eledges = ma->GetElEdges (ei);		
-	for(int j=0;j<eledges.Size();j++) fine_edge.Set(eledges[j]);
+	for(size_t j=0;j<eledges.Size();j++) fine_edge.Set(eledges[j]);
       }
       // do I need sth. like that??
       // ma->AllReduceNodalData (NT_EDGE, fine_edge, MPI_LOR);

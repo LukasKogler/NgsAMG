@@ -204,7 +204,7 @@ namespace amg
     auto fvc = x_coarse->FV<TV>();
     auto loc_map = dof_maps[0];
     int nreq_tot = 0;
-    for (int kp = 1; kp < group.Size(); kp++)
+    for (size_t kp = 1; kp < group.Size(); kp++)
       if (dof_maps[kp].Size()>0) { nreq_tot++; reqs[kp] = MyMPI_IRecv(buffers[kp], group[kp], MPI_TAG_AMG, comm); }
       else reqs[kp] = MPI_REQUEST_NULL;
     fvc = 0;
@@ -245,7 +245,7 @@ namespace amg
     // cout << "dof_maps: " << endl << dof_maps << endl;
     auto fvc = x_coarse->FV<TV>();
     // cout << "send x coarse: " << endl << fvc << endl;
-    for (int kp = 1; kp < group.Size(); kp++) {
+    for (size_t kp = 1; kp < group.Size(); kp++) {
       if (dof_maps[kp].Size()>0) MPI_Isend( x_coarse->Memory(), 1, mpi_types[kp], group[kp], MPI_TAG_AMG, comm, &reqs[kp]);
       else reqs[kp] = MPI_REQUEST_NULL;
     }
@@ -311,7 +311,7 @@ namespace amg
     auto QS_COL_VAL = [&inds](auto & cols, auto & vals) {
       auto S = cols.Size(); inds.SetSize(S); for (auto i:Range(S)) inds[i] = i;
       QuickSortI(cols, inds);
-      for (auto i:Range(S)) { // in-place permute
+      for (int i:Range(S)) { // in-place permute
 	// swap through one circle; use target as buffer as buffer
 	if (inds[i] == -1) continue;
 	int check = i; int from_here;
@@ -520,7 +520,7 @@ namespace amg
     int mgs = my_group.Size();
     Array<shared_ptr<BlockTM>> mg_btms(mgs); // (BlockTM on purpose)
     mg_btms[0] = this->mesh;
-    for (int k = 1; k < my_group.Size(); k++) {
+    for (size_t k = 1; k < my_group.Size(); k++) {
       cout << "get mesh from " << my_group[k] << endl;
       comm.Recv(mg_btms[k], my_group[k], MPI_TAG_AMG);
       cout << "got mesh from " << my_group[k] << endl;
@@ -647,7 +647,7 @@ namespace amg
 	  auto neq = eqmap.Size();
 	  for (auto eq : Range(neq)) {
 	    auto meq = map_om[k][eq];
-	    auto ceq = map_oc[k][eq];
+	    int ceq = map_oc[k][eq];
 	    if (my_group[k]!=eqc_sender[map_om[k][eq]]) continue;
 	    auto es = mg_btms[k]->template GetCNodes<NT_EDGE>(eq);
 	    for (auto l : Range(es.Size())) {
@@ -655,8 +655,8 @@ namespace amg
 	      auto cv1 = vmaps[k][v[0]];
 	      auto cv2 = vmaps[k][v[1]];
 	      if (cv1>cv2) swap(cv1, cv2);
-	      auto ceq1 = eq_of_v(cv1);
-	      auto ceq2 = eq_of_v(cv2);
+	      int ceq1 = eq_of_v(cv1);
+	      int ceq2 = eq_of_v(cv2);
 	      if ( (ceq1==ceq2) && (ceq1==ceq) ) { // CI edge
 		ci_pos[meq][ceq1]++;
 		ci_get[ceq1]++;
@@ -798,14 +798,14 @@ namespace amg
       ccounts[0][2] += ccounts[0][1];
       ccounts[0][4] += ccounts[0][3];
     }
-    for (int ceq=1;ceq<cneqcs;ceq++) {
+    for (size_t ceq = 1; ceq < cneqcs; ceq++) {
       ccounts[ceq][0] += ccounts[ceq-1][2];
       ccounts[ceq][1] += ccounts[ceq][0];
       ccounts[ceq][2] += ccounts[ceq][1];
       ccounts[ceq][3] += ccounts[ceq-1][4];
       ccounts[ceq][4] += ccounts[ceq][3];
     }
-    for (int ceq=cneqcs-1;ceq>0;ceq--) {
+    for (int ceq = int(cneqcs)-1; ceq > 0; ceq--) {
       ccounts[ceq][2] = ccounts[ceq][1];
       ccounts[ceq][1] = ccounts[ceq][0];
       ccounts[ceq][0] = ccounts[ceq-1][2];
@@ -864,7 +864,7 @@ namespace amg
       };
       for (auto eq : Range(neq)) {
 	auto meq = map_om[k][eq];
-	auto ceq = map_mc[meq];
+	size_t ceq = map_mc[meq];
 	// II edges
 	// auto ies = recv_etab[k][eq];
 	auto ies = mg_btms[k]->template GetENodes<NT_EDGE>(eq);
@@ -1096,8 +1096,8 @@ namespace amg
     for (auto j : Range(mmems.Size())) {
       auto cdps = crs_dps(mmems[j]);
       bool is_new = true;
-      int l;
-      for (l=0; l<ceqcs.Size()&&is_new; l++)
+      int l; int ceqss = ceqcs.Size();
+      for (l=0; l<ceqss&&is_new; l++)
 	if (ceqcs[l]==cdps) {
 	  is_new = false;
 	}

@@ -356,7 +356,8 @@ namespace amg
       int last = until;
       until += mesh.template GetENN<NT_VERTEX>(eqc);
       auto dps = eqc_h.GetDistantProcs(eqc);
-      auto pos = 0; while ( pos<dps.Size() && comm.Rank() > dps[pos]) pos++;
+      // TODO: find_in_array here?
+      size_t pos = 0; while ( pos<dps.Size() && comm.Rank() > dps[pos]) pos++;
       if (until > last)
 	for (auto l : Range(last, until)) {
 	  mark_v[l] = ( (eqc==0) || (mark_v[l]==pos)) ? 1 : 0;

@@ -619,7 +619,7 @@ namespace amg
 	auto eq_dps = eqc_h.GetDistantProcs(eqc);
 	// eq_dps[pos:] > comm.Rank() -> need to send
 	auto row = table[eqc];
-	for ( int kp = 0; kp < eq_dps.Size(); kp++) {
+	for ( size_t kp = 0; kp < eq_dps.Size(); kp++) {
 	  auto posk = find_in_sorted_array(eq_dps[kp], ex_procs);
 	  perow[posk] += row.Size() + 1;
 	  nblocks[posk]++;
@@ -632,7 +632,7 @@ namespace amg
       if (eqc_h.IsMasterOfEQC(eqc)) {
 	auto eq_dps = eqc_h.GetDistantProcs(eqc);
 	auto row = table[eqc];
-	for ( int kp = 0; kp < eq_dps.Size(); kp++) {
+	for ( size_t kp = 0; kp < eq_dps.Size(); kp++) {
 	  auto posk = find_in_sorted_array(eq_dps[kp], ex_procs);
 	  send_buffers[posk][count_blocks[posk]++] = row.Size();
 	  for (auto l : Range(row.Size()))
@@ -649,7 +649,7 @@ namespace amg
     cout << endl;
 
     // TODO: this sends a couple of empty messages from ranks that are not master of anything
-    for (int kp = n_smaller; kp < ex_procs.Size(); kp++) {
+    for (size_t kp = n_smaller; kp < ex_procs.Size(); kp++) {
       auto req = MyMPI_ISend(send_buffers[kp], ex_procs[kp], MPI_TAG_AMG, comm);
       MPI_Request_free(&req);
     }
@@ -700,7 +700,7 @@ namespace amg
 	auto & buffer = recv_buffers[posk];
 	auto outrow = table_out[eqc];
 	auto bsize = buffer[count_blocks[posk]++];
-	if (bsize != outrow.Size()) cout << " MISFIT " << eqc << " " << posk << " " << bsize << " " << outrow.Size() << endl;
+	// if (bsize != outrow.Size()) cout << " MISFIT " << eqc << " " << posk << " " << bsize << " " << outrow.Size() << endl;
 	int offset = nblocks[posk];
 	for ( auto l : Range(bsize) )
 	  outrow[l] = buffer[offset + perow[posk]++];

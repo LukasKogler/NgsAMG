@@ -368,7 +368,7 @@ namespace amg
       }
     }
     // cout << "vmap" << endl; prow2(vmap); cout << endl;
-    
+
     // For each fine vertex, sum up weights of edges that connect to the same CV
     //  (can be more than one edge, if the pw-prol is concatenated)
     // TODO: for many concatenated pws, does this dominate edges to other agglomerates??
@@ -401,7 +401,9 @@ namespace amg
 
     
     /** Find Graph for Prolongation **/
-    Table<int> graph(NFV, MAX_PER_ROW); graph.AsArray() = -1;
+    auto is_invalid = [](auto val)->bool {return val==decltype(val)(-1); };
+    auto is_valid = [](auto val)->bool {return val!=decltype(val)(-1); };
+    Table<int> graph(NFV, MAX_PER_ROW); graph.AsArray() = -1; // has to stay
     Array<int> perow(NFV); perow = 0; // 
     {
       Array<INT<2,double>> trow;
@@ -410,7 +412,7 @@ namespace amg
       for (auto V:Range(NFV)) {
 	// if (freedofs && !freedofs->Test(V)) continue;
 	auto CV = vmap[V];
-	if (CV == -1) continue; // grounded -> TODO: do sth. here if we are free?
+	if ( is_invalid(CV) ) continue; // grounded -> TODO: do sth. here if we are free?
 	if (vw[V] == 0.0) { // MUST be single
 	  // cout << "row " << V << "SINGLE " << endl;
 	  perow[V] = 1;
@@ -429,12 +431,12 @@ namespace amg
 	for (auto j:Range(ovs.Size())) {
 	  auto ov = ovs[j];
 	  auto cov = vmap[ov];
-	  if (cov==-1 || cov==CV) continue;
+	  if (is_invalid(cov) || cov==CV) continue;
 	  auto oeq = fmesh.template GetEqcOfNode<NT_VERTEX>(ov);
 	  if (eqc_h.IsLEQ(EQ, oeq)) {
 	    // auto wt = get_wt(eis[j], V);
 	    auto wt = self.template GetWeight<NT_EDGE>(fmesh, all_fedges[eis[j]]);
-	    if ( (pos = tcv.Pos(cov)) == -1) {
+	    if ( (pos = tcv.Pos(cov)) == size_t(-1)) {
 	      trow.Append(INT<2,double>(cov, wt));
 	      tcv.Append(cov);
 	    }
@@ -449,13 +451,13 @@ namespace amg
 	    return a[1]>b[1];
 	  });
 	// cout << "sorted tent row for V " << V << endl; prow2(trow); cout << endl;
-	double cw_sum = (CV!=-1) ? vw[V] : 0.0;
+	double cw_sum = (is_valid(CV)) ? vw[V] : 0.0;
 	fin_row.SetSize(0);
-	if (CV != -1) fin_row.Append(CV); //collapsed vertex
-	size_t max_adds = (CV!=-1) ? min2(MAX_PER_ROW-1, int(trow.Size())) : trow.Size();
+	if (is_valid(CV)) fin_row.Append(CV); //collapsed vertex
+	size_t max_adds = (is_valid(CV)) ? min2(MAX_PER_ROW-1, int(trow.Size())) : trow.Size();
 	for (auto j:Range(max_adds)) {
 	  cw_sum += trow[j][1];
-	  if (CV!=-1) {
+	  if (is_valid(CV)) {
 	    // I don't think I actually need this: Vertex is collapsed to some non-weak (not necessarily "strong") edge
 	    // therefore the relative weight comparison should eliminate all really weak connections
 	    // if (fin_row.Size() && (trow[j][1] < MIN_PROL_WT)) break; 
@@ -484,7 +486,7 @@ namespace amg
     TMAT id; SetIdentity(id);
     for (int V:Range(NFV)) {
       auto CV = vmap[V];
-      if (CV == -1) continue; // grounded -> TODO: do sth. here if we are free?
+      if (is_invalid(CV)) continue; // grounded -> TODO: do sth. here if we are free?
       if (perow[V] == 1) { // SINGLE or no good connections avail.
 	sprol->GetRowIndices(V)[0] = CV;
 	sprol->GetRowValues(V)[0] = pwprol.GetRowValues(V)[0];
@@ -500,7 +502,7 @@ namespace amg
 	for (auto j:Range(all_ov.Size())) {
 	  auto ov = all_ov[j];
 	  auto cov = vmap[ov];
-	  if (cov != -1) {
+	  if (is_valid(cov)) {
 	    if (graph_row.Contains(cov)) {
 	      auto eq = fmesh.template GetEqcOfNode<NT_VERTEX>(ov);
 	      if (eqc_h.IsLEQ(EQ, eq)) {

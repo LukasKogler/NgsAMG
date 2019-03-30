@@ -132,7 +132,8 @@ namespace amg
              auto mata_ci = mata.GetRowIndices(i);
              auto matc_ci = prod->GetRowIndices(i);
              auto matc_vals = prod->GetRowValues(i);
-             for (int k = 0; k < matc_ci.Size(); k++)
+	     const int mccis = matc_ci.Size();
+             for (int k = 0; k < mccis; k++)
                {
                  size_t hashval = size_t(matc_ci[k]) & nhashm1; // % nhash;
                  hash[hashval].pos = k;
@@ -144,7 +145,8 @@ namespace amg
                  int rowb = mata.GetRowIndices(i)[j];
                  auto matb_ci = matb.GetRowIndices(rowb);
                  auto matb_vals = matb.GetRowValues(rowb);
-                 for (int k = 0; k < matb_ci.Size(); k++)
+		 const int mbcs = matb_ci.Size();
+                 for (int k = 0; k < mbcs; k++)
                    {
                      auto colb = matb_ci[k];
                      unsigned hashval = unsigned(colb) & nhashm1; // % nhash;

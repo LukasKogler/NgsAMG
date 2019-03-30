@@ -172,7 +172,7 @@ namespace amg
     if (row_s == 0) return out;
     out.SetSize(row_s); out = tab[0];
     if (nrows == 1) { return out; }
-    for (int k = 1; k < tab.Size(); k++) {
+    for (size_t k = 1; k < tab.Size(); k++) {
       auto row = tab[k];
       for (auto l : Range(row_s)) out[l] += row[l];
     }
@@ -322,7 +322,7 @@ namespace amg
     while (nactive)
       {
         int minval = minvals[0];
-        for (int i = 1; i < sizes.Size(); i++)
+        for (size_t i = 1; i < sizes.Size(); i++)
           minval = min2(minval, minvals[i]);
         f(minval);
         for (int i : sizes.Range())
