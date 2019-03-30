@@ -196,8 +196,7 @@ namespace amg
     // cout << "syncsync: " << endl << syncsync << endl;
     for (size_t eqc_num = 1; eqc_num < neqcs; eqc_num++) {
       if (!eqc_h.IsMasterOfEQC(eqc_num)) {
-	auto srow = syncsync[eqc_num]; auto ss = srow.Size();
-	auto c = 0;
+	auto srow = syncsync[eqc_num];
 	for (auto l : Range(srow.Size())) {
 	  auto val = srow[l];
 	  if ( val <= 0 ) { // ground vertex
@@ -236,8 +235,6 @@ namespace amg
     const auto & eqc_h = *mesh.GetEQCHierarchy();
     auto neqcs = eqc_h.GetNEQCS();
     auto comm = eqc_h.GetCommunicator();
-    auto rank = comm.Rank();
-    auto np = comm.Size();
     auto NV = mesh.template GetNN<NT_VERTEX>();
     auto NE = mesh.template GetNN<NT_EDGE>();
 
@@ -596,7 +593,6 @@ namespace amg
       v_cnt[eqc] = row.Size();
       FlatTM block = bmesh.GetBlock(eqc);
       for (auto j:Range(row.Size())) {
-	bool has_one = false;
 	for (int l:{0,2}) {
 	  auto v_eqc = eqc_h.GetEQCOfID(row[j][l+0]);
 	  auto v_locnum = row[j][l+1];
@@ -640,7 +636,6 @@ namespace amg
       lld = displ;
       /** modify vmap for collapsed (cross-)edges **/
       for (auto j:Range(row.Size())) {
-	bool has_one = false;
 	// cout << " eqc/j " << eqc << " " << j << " rcce entry: " << row[j] << endl;
 	for (int l:{0,2}) {
 	  auto v_eqc = eqc_h.GetEQCOfID(row[j][l+0]);
@@ -923,8 +918,6 @@ namespace amg
     	auto eq1 = eqc_h.GetEQCOfID(eq1id);
     	int vc0 = CN_of_EQC<NT_VERTEX>(eq0, vc0_loc);
     	int vc1 = CN_of_EQC<NT_VERTEX>(eq1, vc1_loc);
-	bool swapped = (vc0>vc1);
-    	// if (vc0>vc1) { swap(vc0,vc1); swap(eq0id,eq1id); }
     	if (vc0>vc1) swap(vc0,vc1);
     	bool isin = eq0==eq1;
 	// cout << "add edge " << eqc << " " << j << " (swap " << swapped << ") : ";

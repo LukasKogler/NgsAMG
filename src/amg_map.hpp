@@ -6,6 +6,7 @@ namespace amg {
   class BaseGridMapStep
   {
   public:
+    virtual ~BaseGridMapStep () { ; }
     virtual shared_ptr<TopologicMesh> GetMesh () const = 0;
     virtual shared_ptr<TopologicMesh> GetMappedMesh () const = 0;
   };
@@ -47,6 +48,7 @@ namespace amg {
   public:
     BaseDOFMapStep (shared_ptr<ParallelDofs> _pardofs, shared_ptr<ParallelDofs> _mapped_pardofs)
       : pardofs(_pardofs), mapped_pardofs(_mapped_pardofs) {}
+    virtual ~BaseDOFMapStep () { ; }
     virtual void TransferF2C(const shared_ptr<const BaseVector> & x_fine,
 			     const shared_ptr<BaseVector> & x_coarse) const = 0;
     virtual void TransferC2F(const shared_ptr<BaseVector> & x_fine,
@@ -61,7 +63,6 @@ namespace amg {
     virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const = 0;
   };
 
-  class BaseDOFMapStep;
   /**
      This maps DOFS between levels. We can add DOF-map-steps of various kind.
      Each step has to start where the last one left off.
@@ -129,8 +130,6 @@ namespace amg {
     {
       cout << " me1 @" << this << endl;
       cout << " other1 @" << other << endl;
-      constexpr int W = mat_traits<typename TMAT::TVY>::HEIGHT;
-      // using TMR = SparseMatrix<Mat<W,W,double>, Vec<W,double>, Vec<W,double>>;
       auto pmother = dynamic_pointer_cast<ProlMap<TCMAT>>(other);
       if (pmother==nullptr) {
 	cout << " cannot concatenate!!" << endl;

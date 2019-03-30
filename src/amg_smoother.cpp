@@ -27,7 +27,7 @@ namespace amg {
       }
     }
 
-    size_t nf = (free_dofs ? free_dofs->NumSet() : H);
+    // size_t nf = (free_dofs ? free_dofs->NumSet() : H);
     // cout << "make smoother, free " << nf << " of " << H << endl;
     // if (free_dofs) cout << *free_dofs << endl;
 
@@ -421,7 +421,7 @@ namespace amg {
       for (auto d:exdofs) {
 	if (free_dofs && !free_dofs->Test(d)) continue;
 	if (!pds.IsMasterDof(d)) continue;
-	TV old = tvec(d);
+	// TV old = tvec(d);
 	tvec(d) += p_buffer[c++];
 	// cout << "tvec(" << d << ") += " << p_buffer[c-1] << ": "
 	//      << old << " -> " << tvec(d) << endl;
@@ -447,7 +447,6 @@ namespace amg {
     }
     if (nexp_smaller==0) return;
     for (int kp : Range(nexp_smaller)) {
-      auto p = ex_procs[kp];
       int sz = buf_os[kp+1] - buf_os[kp];
       // cout << "scatter, recv " << sz << " from " << p << ", kp " << kp << endl;
       FlatArray<TV> p_buffer (sz, &(buffer[buf_os[kp]]));
@@ -690,7 +689,6 @@ namespace amg {
 	for (auto kp : Range(nexp_smaller)) {
 	  auto p = ex_procs[kp];
 	  auto ds = pds.GetExchangeDofs(p);
-	  int c = 0;
 	  int sz = buf_os[kp+1] - buf_os[kp];
 	  FlatArray<TV> p_buffer (sz, &(buffer[buf_os[kp]]));
 	  for (auto j : Range(ds.Size())) { // stash diag-vals

@@ -172,7 +172,6 @@ namespace amg
     if (row_s == 0) return out;
     out.SetSize(row_s); out = tab[0];
     if (nrows == 1) { return out; }
-    bool ok = true;
     for (int k = 1; k < tab.Size(); k++) {
       auto row = tab[k];
       for (auto l : Range(row_s)) out[l] += row[l];

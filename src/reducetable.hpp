@@ -610,7 +610,7 @@ namespace amg
     auto neqcs = eqc_h.GetNEQCS();
     auto ex_procs = eqc_h.GetDistantProcs();
     int n_smaller = 0; for (auto p : ex_procs) if(comm.Rank()>p) n_smaller++;
-    int n_larger = ex_procs.Size() - n_smaller;
+    // int n_larger = ex_procs.Size() - n_smaller;
     // block_sizes, block_data
     Array<int> perow(ex_procs.Size()); perow = 0;
     Array<int> nblocks(ex_procs.Size()); nblocks = 0;

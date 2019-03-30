@@ -172,7 +172,7 @@ namespace amg
 	  out.SetSize(t[0].Size());
 	  out = t[0];
 	  if(t.Size()==1) return out;
-	  T zero(0);
+	  // T zero(0);
 	  for(auto k:Range((size_t)1, t.Size())) {
 	    for(auto j:Range(t[k].Size())) {
 	      // if( (stat==DISTRIBUTED) || (t[k][j]==zero) ) { // TODO: why??

@@ -20,7 +20,7 @@ namespace amg
       groups = Table<int>(perow); perow = 0;
       groups[0][perow[0]++] = 0;
       for (auto k : Range(comm.Size()-1)) groups[nparts-1][perow[nparts-1]++] = k+1;
-      return move(groups);
+      return groups;
     }
     int root = 0;
     Array<size_t> all_nvs ( (comm.Rank()==root) ? comm.Size() : 0);
@@ -143,7 +143,7 @@ namespace amg
     }
     comm.Bcast(groups, root);
     cout << "groups: " << endl << groups << endl;
-    return move(groups);
+    return groups;
   }
 
   
@@ -288,7 +288,6 @@ namespace amg
     }
     timer_hack_ctrmat(1).Stop();
 
-    size_t ndof = pardofs->GetNDofLocal();
     size_t cndof = mapped_pardofs->GetNDofLocal();
 
     // reverse map: maps coarse dof to (k,j) such that disp_mats[k].Row(j) maps to this row!
@@ -410,7 +409,6 @@ namespace amg
 	  auto dris = dist_mats[km]->GetRowIndices(jm);
 	  auto drvs = dist_mats[km]->GetRowValues(jm);
 	  for (auto j : Range(dris.Size())) {
-	    auto to_find = (km==0) ? dmap[dris[j]] : dris[j];
 	    auto pos = (km==0) ? find_in_sorted_array (dmap[dris[j]], ris) : //have to re-map ...
 	      find_in_sorted_array (dris[j], ris); // already mapped from merge!
 	    rvs[pos] += drvs[j];
@@ -629,7 +627,6 @@ namespace amg
 	be the ugliest code I have ever seen.
     **/
     
-    auto & c_eqc_dps = c_eqc_h.GetDPTable();
     Array<size_t> annoy_have(mneqcs);
     Array<size_t> ci_have(mneqcs);
     Table<size_t> ci_pos(mneqcs+1, cneqcs); // (i,j) nr of C in meq that become I in ceq
@@ -670,7 +667,6 @@ namespace amg
 	      if (ceq==cutid) continue; // CC edge
 	      auto ceq1_id = c_eqc_h.GetEQCID(ceq1);
 	      auto ceq2_id = c_eqc_h.GetEQCID(ceq2);
-	      auto cdps = c_eqc_h.GetDistantProcs(cutid);
 	      // master of coarse(C) adds the edge
 	      if (c_eqc_h.IsMasterOfEQC(ceq)) {
 		ANNOYE ce = {ceq1_id, map_cv_to_ceqc(cv1), ceq2_id, map_cv_to_ceqc(cv2)};
@@ -738,7 +734,6 @@ namespace amg
     BitArray has_set(mneqcs); has_set.Clear();
     for (auto k : Range(my_group.Size())) {
       auto eqmap = map_om[k];
-      auto vmap = vmaps[k];
       auto neq = eqmap.Size();
       for (auto eq : Range(neq)) {
 	auto meq = map_om[k][eq];
@@ -796,12 +791,6 @@ namespace amg
     c_mesh.edges.SetSize(cne);
     auto cedges = c_mesh.template GetNodes<NT_EDGE>();
     for (auto & e:cedges) e = {{{-1,-1}}, -1}; // TODO:remove
-    // FlatArray<idedge> ciedges(cnie, &(cedges[0]));
-    // FlatArray<AMG_Node<NT_EDGE>> ciedges (cnie, &(c_mesh.edges[0]));
-    FlatArray<AMG_Node<NT_EDGE>> ciedges = c_mesh.template GetENodes<NT_EDGE>(size_t(-1)); // all eqc-edges
-    // FlatArray<idedge> ccedges(cnce, &(cedges[cnie]));
-    // ccedges (cnce, &(c_mesh.edgecnie[0]));
-    FlatArray<AMG_Node<NT_EDGE>> ccedges = c_mesh.template GetCNodes<NT_EDGE>(size_t(-1)); // all eqc-edges
 
     /** Literally no idea what I did here **/
     if (ccounts.Size()) {
@@ -1093,7 +1082,6 @@ namespace amg
     /** contract eqc table + make map **/
     auto crs_dps = [&](const auto & dps) {
       Array<int> out;
-      auto cr = proc_map[comm.Rank()];
       for (auto k : Range(dps.Size())) {
 	auto dcr = proc_map[dps[k]];
 	if ( (dcr!=c_comm.Rank()) && (!out.Contains(dcr)) )

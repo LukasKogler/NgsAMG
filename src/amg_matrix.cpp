@@ -73,13 +73,13 @@ namespace amg
     // static double tb = 0;
     /** pre-smooth **/
 
-    auto check_vec = [](auto & vecp) {
-      if(vecp==nullptr) { cout << " VEC IS NULLPTR" << endl; return; }
-      if(vecp->Size()==0) { cout << " VEC IS LEN 0 " << endl; return; }
-      cout << "check vec, len " << vecp->Size() << " FVD s " << vecp->FVDouble().Size() << endl;
-      cout << "factor: " << vecp->FVDouble().Size()/(1.0*vecp->Size()) << endl;
-      // cout << "vec: " << endl << *vecp << endl;
-    };
+    // auto check_vec = [](auto & vecp) {
+    //   if(vecp==nullptr) { cout << " VEC IS NULLPTR" << endl; return; }
+    //   if(vecp->Size()==0) { cout << " VEC IS LEN 0 " << endl; return; }
+    //   cout << "check vec, len " << vecp->Size() << " FVD s " << vecp->FVDouble().Size() << endl;
+    //   cout << "factor: " << vecp->FVDouble().Size()/(1.0*vecp->Size()) << endl;
+    //   // cout << "vec: " << endl << *vecp << endl;
+    // };
     
     for(auto level:Range(n_levels-1))
       {

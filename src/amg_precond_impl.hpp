@@ -62,7 +62,7 @@ namespace amg
     Array<INT<3>> levels;
     auto MAX_NL = options->max_n_levels;
     auto MAX_NV = options->max_n_verts;
-    bool contr_locked = true, disc_locked = true;
+    bool contr_locked = true; //, disc_locked = true;
     int cnt_lc = 0;
     Array<size_t> nvs;
     nvs.Append(fm->template GetNNGlobal<NT_VERTEX>());
@@ -140,14 +140,14 @@ namespace amg
     // cout << "type " << typeid(*fmat).name() << endl;
     auto mats = dof_map->AssembleMatrices(fmat);
 
-    {
-      auto nlevs = dof_map->GetNLevels();
-      for (auto k : Range(nlevs)) {
-	// cout << "---" << endl << "dps for level " << k << ":" << endl;
-    	// cout << *dof_map->GetParDofs(k) << endl << "----" << endl;
-      }
-      cout << endl;
-    }
+    // {
+    //   auto nlevs = dof_map->GetNLevels();
+    //   for (auto k : Range(nlevs)) {
+    // 	cout << "---" << endl << "dps for level " << k << ":" << endl;
+    // 	cout << *dof_map->GetParDofs(k) << endl << "----" << endl;
+    //   }
+    //   cout << endl;
+    // }
 
     Array<shared_ptr<BaseSmoother>> sms;
     for (auto k : Range(mats.Size()-1)) {
@@ -165,7 +165,6 @@ namespace amg
     
     if (options->clev_type=="inv") {
       if (mats.Last()!=nullptr) {
-	auto max_l = mats.Size();
 	auto cpds = dof_map->GetMappedParDofs();
 	auto comm = cpds->GetCommunicator();
 	if (comm.Size()>0) {

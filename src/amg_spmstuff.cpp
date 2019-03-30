@@ -54,9 +54,9 @@ namespace amg
 
     // C = A * B
     typedef typename mult_spm<TSPMA,TSPMB>::type TSPMC;
-    typedef typename TM_OF_SPM<TSPMA>::type TMA;
-    typedef typename TM_OF_SPM<TSPMB>::type TMB;
-    typedef typename TM_OF_SPM<TSPMC>::type TMC;
+    // typedef typename TM_OF_SPM<TSPMA>::type TMA;
+    // typedef typename TM_OF_SPM<TSPMB>::type TMB;
+    // typedef typename TM_OF_SPM<TSPMC>::type TMC;
     
     RegionTimer reg(t);
     t1a.Start();

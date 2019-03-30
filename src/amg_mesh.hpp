@@ -487,6 +487,7 @@ namespace amg
     PARALLEL_STATUS stat;
   public:
     AttachedNodeData (Array<T> && _data, PARALLEL_STATUS _stat) : data(move(_data)), stat(_stat) {}
+    virtual ~AttachedNodeData () { ; }
     void SetMesh (BlockTM * _mesh) { mesh = _mesh; }
     PARALLEL_STATUS GetParallelStatus () const { return stat; }
     FlatArray<T> Data () const { return data; }
