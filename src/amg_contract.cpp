@@ -570,7 +570,7 @@ namespace amg
     firsti_v = 0;
     for (auto k : Range(my_group.Size())) {
       for (auto j : Range(mg_btms[k]->GetNEqcs())) {
-	auto eqc_vs = mg_btms[k]->GetENodes<NT_VERTEX>(j);
+	auto eqc_vs = mg_btms[k]->template GetENodes<NT_VERTEX>(j);
 	if (my_group[k]==eqc_sender[map_om[k][j]]) {
 	  v_dsp[map_oc[k][j]+1] += eqc_vs.Size();
 	  firsti_v[map_om[k][j]] = eqc_vs.Size();
@@ -603,14 +603,14 @@ namespace amg
 
     sz.SetSize(my_group.Size());
     for (auto k : Range(my_group.Size())) {
-      sz[k] = 0; for (auto row : Range(mg_btms[k]->GetNEqcs())) sz[k] += mg_btms[k]->GetENodes<NT_VERTEX>(row).Size();
+      sz[k] = 0; for (auto row : Range(mg_btms[k]->GetNEqcs())) sz[k] += mg_btms[k]->template GetENodes<NT_VERTEX>(row).Size();
     }
     node_maps[NT_VERTEX] = Table<amg_nts::id_type>(sz);
     auto & vmaps = node_maps[NT_VERTEX];
     vmaps.AsArray() = -1;
     for (auto k : Range(my_group.Size())) {
       for (auto eqc : Range(mg_btms[k]->GetNEqcs())) {
-	auto eqc_vs = mg_btms[k]->GetENodes<NT_VERTEX>(eqc);
+	auto eqc_vs = mg_btms[k]->template GetENodes<NT_VERTEX>(eqc);
 	for (auto l : Range(eqc_vs.Size())) {
 	  vmaps[k][eqc_vs[l]] = firsti_v[map_om[k][eqc]]+l;
 	}
@@ -638,8 +638,8 @@ namespace amg
     // eq0, v0, eq1, v1
     typedef INT<4,int> ANNOYE;
     Table<ANNOYE> tannoy_edges;
-    auto eq_of_v = [&c_mesh](auto v) { return c_mesh.GetEqcOfNode<NT_VERTEX>(v); };
-    auto map_cv_to_ceqc = [&c_mesh](auto v) { return c_mesh.MapNodeToEQC<NT_VERTEX>(v); };
+    auto eq_of_v = [&c_mesh](auto v) { return c_mesh.template GetEqcOfNode<NT_VERTEX>(v); };
+    auto map_cv_to_ceqc = [&c_mesh](auto v) { return c_mesh.template MapNodeToEQC<NT_VERTEX>(v); };
     {
       TableCreator<ANNOYE> ct(cneqcs);
       while (!ct.Done()) {
@@ -652,7 +652,7 @@ namespace amg
 	    auto meq = map_om[k][eq];
 	    auto ceq = map_oc[k][eq];
 	    if (my_group[k]!=eqc_sender[map_om[k][eq]]) continue;
-	    auto es = mg_btms[k]->GetCNodes<NT_EDGE>(eq);
+	    auto es = mg_btms[k]->template GetCNodes<NT_EDGE>(eq);
 	    for (auto l : Range(es.Size())) {
 	      const auto& v = es[l].v;
 	      auto cv1 = vmaps[k][v[0]];
@@ -724,7 +724,7 @@ namespace amg
     Array<size_t> s_emap(my_group.Size());  // size for emap
     for (auto k : Range(my_group.Size())) {
       // s_emap[k] = recv_es[k].Size();
-      s_emap[k] = mg_btms[k]->GetNN<NT_EDGE>();
+      s_emap[k] = mg_btms[k]->template GetNN<NT_EDGE>();
     }
     node_maps[NT_EDGE] = Table<amg_nts::id_type>(s_emap);
     auto & emaps = node_maps[NT_EDGE];
@@ -747,8 +747,8 @@ namespace amg
 	if (!is_sender) continue;
 	has_set.Set(meq);
 	// auto ces = recv_cetab[k][eq];
-	auto eqes = mg_btms[k]->GetENodes<NT_EDGE>(eq);
-	auto ces = mg_btms[k]->GetCNodes<NT_EDGE>(eq);
+	auto eqes = mg_btms[k]->template GetENodes<NT_EDGE>(eq);
+	auto ces = mg_btms[k]->template GetCNodes<NT_EDGE>(eq);
 	// ii_pos[meq] = recv_etab[k][eq].Size();
 	ii_pos[meq] = eqes.Size();
 	// ccounts[ceq][0] += recv_etab[k][eq].Size();
@@ -794,14 +794,14 @@ namespace amg
     mapped_NN[NT_EDGE] = cne;
     c_mesh.nnodes[NT_EDGE] = cne;
     c_mesh.edges.SetSize(cne);
-    auto cedges = c_mesh.GetNodes<NT_EDGE>();
+    auto cedges = c_mesh.template GetNodes<NT_EDGE>();
     for (auto & e:cedges) e = {{{-1,-1}}, -1}; // TODO:remove
     // FlatArray<idedge> ciedges(cnie, &(cedges[0]));
     // FlatArray<AMG_Node<NT_EDGE>> ciedges (cnie, &(c_mesh.edges[0]));
-    FlatArray<AMG_Node<NT_EDGE>> ciedges = c_mesh.GetENodes<NT_EDGE>(size_t(-1)); // all eqc-edges
+    FlatArray<AMG_Node<NT_EDGE>> ciedges = c_mesh.template GetENodes<NT_EDGE>(size_t(-1)); // all eqc-edges
     // FlatArray<idedge> ccedges(cnce, &(cedges[cnie]));
     // ccedges (cnce, &(c_mesh.edgecnie[0]));
-    FlatArray<AMG_Node<NT_EDGE>> ccedges = c_mesh.GetCNodes<NT_EDGE>(size_t(-1)); // all eqc-edges
+    FlatArray<AMG_Node<NT_EDGE>> ccedges = c_mesh.template GetCNodes<NT_EDGE>(size_t(-1)); // all eqc-edges
 
     /** Literally no idea what I did here **/
     if (ccounts.Size()) {
@@ -878,7 +878,7 @@ namespace amg
 	auto ceq = map_mc[meq];
 	// II edges
 	// auto ies = recv_etab[k][eq];
-	auto ies = mg_btms[k]->GetENodes<NT_EDGE>(eq);
+	auto ies = mg_btms[k]->template GetENodes<NT_EDGE>(eq);
 	for (auto l : Range(ies.Size())) {
 	  amg_nts::id_type id = ii_pos[meq] + l;
 	  lam(id, ies[l]);
@@ -888,7 +888,7 @@ namespace amg
 	amg_nts::id_type id = 0;
 	size_t ccc = 0;
 	// auto ces = recv_cetab[k][eq];
-	auto ces = mg_btms[k]->GetCNodes<NT_EDGE>(eq);
+	auto ces = mg_btms[k]->template GetCNodes<NT_EDGE>(eq);
 	cci = 0;
 	for (auto l : Range(ces.Size())) {
 	  auto edge = ces[l];

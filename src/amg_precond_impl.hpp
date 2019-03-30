@@ -619,7 +619,7 @@ namespace amg
       cout << endl;
       /** Vertex positions **/
       if (options->keep_vp) {
-	auto & vpos(node_pos[NT_VERTEX]); vpos.SetSize(top_mesh->GetNN<NT_VERTEX>());
+	auto & vpos(node_pos[NT_VERTEX]); vpos.SetSize(top_mesh->template GetNN<NT_VERTEX>());
 	for (auto k : Range(vpos.Size()))
 	  ma->GetPoint(k,vpos[vsort[k]]);
       }

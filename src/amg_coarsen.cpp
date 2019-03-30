@@ -393,7 +393,7 @@ namespace amg
 
     // cout << "sync: " << endl << sync << endl;
 
-    auto syncsync = ReduceTable<int, int>(sync, mesh.template GetEQCHierarchy(), [&](auto & in) { // syncsync ... haha
+    auto syncsync = ReduceTable<int, int>(sync, mesh.GetEQCHierarchy(), [&](auto & in) { // syncsync ... haha
 	Array<int> out;
 	int nrows = in.Size(); if (nrows==0) return out;
 	int tot_entries = 0; for (auto k:Range(nrows)) tot_entries += in[k].Size();
