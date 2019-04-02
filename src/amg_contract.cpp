@@ -142,7 +142,7 @@ namespace amg
       groups = cgs.MoveTable();
     }
     comm.Bcast(groups, root);
-    cout << "groups: " << endl << groups << endl;
+    // cout << "groups: " << endl << groups << endl;
     return groups;
   }
 
@@ -253,6 +253,7 @@ namespace amg
     for (auto j : Range(loc_map.Size()))
       fvf(j) = fvc(loc_map[j]);
     reqs[0] = MPI_REQUEST_NULL; MyMPI_WaitAll(reqs);
+    // cout << "x fine: " << endl << fvf << endl;
   }
 
   
@@ -273,6 +274,7 @@ namespace amg
     NgsAMG_Comm comm(pardofs->GetCommunicator());
 
     if (!is_gm) {
+      cout << "mat drops, return nullptr!!" << endl;
       comm.Send(*mat, group[0], MPI_TAG_AMG);
       return nullptr;
     }

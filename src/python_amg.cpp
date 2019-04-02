@@ -20,7 +20,14 @@ namespace amg {
       else if (name == "edges") { opts->edges = item.second.cast<string>(); }
       else if (name == "clev") { opts->clev_type = item.second.cast<string>(); }
       else if (name == "clev_inv") { opts->clev_type = item.second.cast<string>(); }
-      else if (name == "enable_smooth") { opts->enable_sm = item.second.cast<bool>(); }
+      else if (name == "enable_sm") { opts->enable_sm = item.second.cast<bool>(); }
+      else if (name == "ass_lev") { py::list py_list = item.second.cast<py::list>(); opts->ass_levels = move(makeCArray<int>(py_list)); }
+      else if (name == "ass_skip_lev") { py::list py_list = item.second.cast<py::list>(); opts->ass_skip_levels = move(makeCArray<int>(py_list)); }
+      else if (name == "force_ass") { py::list py_list = item.second.cast<py::list>(); opts->force_ass = true; opts->ass_levels = move(makeCArray<int>(py_list)); }
+      else if (name == "sm_lev") { py::list py_list = item.second.cast<py::list>(); opts->sm_levels = move(makeCArray<int>(py_list)); }
+      else if (name == "sm_skip_lev") { py::list py_list = item.second.cast<py::list>(); opts->sm_skip_levels = move(makeCArray<int>(py_list)); }
+      else if (name == "force_sm") { py::list py_list = item.second.cast<py::list>(); opts->force_sm = true; opts->sm_levels = move(makeCArray<int>(py_list)); }
+      else if (name == "enable_redist") { opts->enable_ctr = item.second.cast<bool>(); }
       else { cout << "warning, invalid AMG option: " << name << endl; break; }
     }
     // opts->v_pos = "VERTEX";

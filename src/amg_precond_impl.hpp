@@ -87,8 +87,9 @@ namespace amg
 	  bool smoothit = true;
 	  // Smooth prol?
 	  if (options->enable_sm == false) { smoothit = false; }
-	  else if (options->force_smooth_levels.Contains(level[0])) { smoothit = true; }
-	  else if (options->forbid_smooth_levels.Contains(level[0])) { smoothit = false; }
+	  else if (options->force_sm) { smoothit = options->sm_levels.Contains(level[0]); }
+	  else if (options->sm_levels.Contains(level[0])) { smoothit = true; }
+	  else if (options->sm_skip_levels.Contains(level[0])) { smoothit = false; }
 	  else if (level[0] < options->skip_smooth_first) { smoothit = false; }
 	  else if (curr_nv > options->smooth_after_frac * last_nv_smo) { smoothit = false; }
 	  cout << "CRS-step, smooth? " << smoothit << endl;
@@ -117,11 +118,13 @@ namespace amg
 	double frac_crs = (1.0*next_nv) / curr_nv;
 	bool assit = false;
 	// Assemble next level ?
-	if (options->force_ass_levels.Contains(level[0]) ) { assit = true; }
-	else if (options->forbid_ass_levels.Contains(level[0])) { assit = false; }
-	else if (level[0] < options->skip_ass_first) { assit = false; }
-	else if (next_nv < options->ass_after_frac * last_nv_ass) { assit = true; }
-	cout << "level " << level << ", assemble? " << assit << endl;
+	cout << "level " << level << ", assemble? ";
+	if (options->force_ass) { assit = options->ass_levels.Contains(level[0]); }
+	else if (options->ass_levels.Contains(level[0]) ) { cout << "1Y"; assit = true; }
+	else if (options->ass_skip_levels.Contains(level[0])) { cout << "2F"; assit = false; }
+	else if (level[0] < options->skip_ass_first) { cout << "3F"; assit = false; }
+	else if (next_nv < options->ass_after_frac * last_nv_ass) { cout << "4Y"; assit = true; }
+	cout << "  " << assit << endl;
 	if (assit) { cutoffs.Append(step_cnt); last_nv_ass = curr_nv; }
 	// Unlock contract ?
 	if ( (level[1] == 0) && (level[2]==0) ) {
@@ -142,10 +145,6 @@ namespace amg
 	{ cutoffs.Append(step_cnt); }
     }
 
-    cout << "mesh-loop done, enter barrier!" << endl;
-    glob_comm.Barrier();
-    cout << "mesh-loop done, barrier done!" << endl;
-
     cout << " cutoffs are: " << endl; prow2(cutoffs, cout); cout << endl;
     
     {
@@ -157,6 +156,8 @@ namespace amg
     tmats.Start();
     auto mats = dof_map->AssembleMatrices(dynamic_pointer_cast<BaseSparseMatrix>(finest_mat)); // cannot static_cast - virtual inheritance??
     tmats.Stop();
+
+    // cout << "mats: " << endl; prow2(mats, cout); cout << endl;
     
     // {
     //   auto nlevs = dof_map->GetNLevels();

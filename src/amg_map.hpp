@@ -56,10 +56,10 @@ namespace amg {
 			     const shared_ptr<BaseVector> & x_coarse) const = 0;
     virtual void TransferC2F(const shared_ptr<BaseVector> & x_fine,
 			     const shared_ptr<const BaseVector> & x_coarse) const = 0;
-    virtual shared_ptr<BaseVector> CreateVector() const
-    { return make_shared<ParallelVVector<double>>(pardofs->GetNDofLocal(), pardofs, CUMULATED); }
-    virtual shared_ptr<BaseVector> CreateMappedVector() const
-    { return (mapped_pardofs!=nullptr) ? make_shared<ParallelVVector<double>>(mapped_pardofs->GetNDofLocal(), mapped_pardofs, CUMULATED) : nullptr; }
+    virtual shared_ptr<BaseVector> CreateVector() const = 0;
+    //{ return make_shared<ParallelVVector<double>>(pardofs->GetNDofLocal(), pardofs, CUMULATED); }
+    virtual shared_ptr<BaseVector> CreateMappedVector() const = 0;
+    //{ return (mapped_pardofs!=nullptr) ? make_shared<ParallelVVector<double>>(mapped_pardofs->GetNDofLocal(), mapped_pardofs, CUMULATED) : nullptr; }
     virtual shared_ptr<BaseDOFMapStep> Concatenate (shared_ptr<BaseDOFMapStep> other) { return nullptr; }
     shared_ptr<ParallelDofs> GetParDofs() const { return pardofs; }
     shared_ptr<ParallelDofs> GetMappedParDofs() const { return mapped_pardofs; }
@@ -115,6 +115,8 @@ namespace amg {
 	for(auto k:Range(size_t(1),sub_steps.Size()))
 	  vecs[k-1] = sub_steps[k]->CreateVector();
     }
+    virtual shared_ptr<BaseVector> CreateVector() const override { return sub_steps[0]->CreateVector(); }
+    virtual shared_ptr<BaseVector> CreateMappedVector() const override { return sub_steps.Last()->CreateMappedVector(); }
     virtual void TransferF2C (const shared_ptr<const BaseVector> & x_fine,
 			      const shared_ptr<BaseVector> & x_coarse) const override
     {
@@ -184,6 +186,7 @@ namespace amg {
       auto pstep = make_shared<ProlMap<typename mult_spm<TMATO, TMAT>::type>> (other.GetParDofs(), this->GetMappedParDofs());
       shared_ptr<typename mult_spm<TMATO, TMAT>::type> pp = MatMultAB (*other.prol, *prol);
       cout << "conc NDS: " << pstep->GetParDofs()->GetNDofGlobal() << " -> " << pstep->GetMappedParDofs()->GetNDofGlobal() << endl;
+      // cout << "conc prol: " << endl; print_tm_spmat(cout, *pp); cout << endl;
       pstep->SetProl(pp);
       return pstep;
     }
