@@ -53,9 +53,9 @@ namespace amg
 	  if ( (CV != -1) && (touched[v] == 0) )
 	    { cdata[CV] = data[v]; }
 	}, true);
-      cout << "(distr) c-pos: " << endl;
-      for (auto CV : Range(cmap.GetMappedNN<NT_VERTEX>())) cout << cdata[CV].pos << endl;
-      cout << endl;
+      // cout << "(distr) c-pos: " << endl;
+      // for (auto CV : Range(cmap.GetMappedNN<NT_VERTEX>())) cout << cdata[CV].pos << endl;
+      // cout << endl;
       return DISTRIBUTED;
     }
   };
@@ -114,7 +114,8 @@ namespace amg
     using BASE = VWiseAMG<ElasticityAMG<D>, ElasticityMesh<D>, TMAT>;
     using Options = typename BASE::Options;
     ElasticityAMG (shared_ptr<ElasticityMesh<D>> mesh, shared_ptr<Options> opts)
-      : VWiseAMG<ElasticityAMG<D>, ElasticityMesh<D>, Mat<dofpv(D), dofpv(D), double>>(mesh, opts) { ; }
+      : VWiseAMG<ElasticityAMG<D>, ElasticityMesh<D>, Mat<dofpv(D), dofpv(D), double>>(mesh, opts)
+    { this->name = string("ElastAMG") + to_string(D) + string("D"); }
     template<NODE_TYPE NT> INLINE double GetWeight (const TMESH & mesh, const AMG_Node<NT> & node) const
     { // TODO: should this be in BlockAlgMesh instead???
       if constexpr(NT==NT_VERTEX) { return get<0>(mesh.Data())->Data()[node].wt; }
@@ -151,11 +152,11 @@ namespace amg
       mat(1,0).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) = - bend_mat;
       mat(0,1).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) = - bend_mat;
       mat(1,1).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) =   bend_mat;
-      cout << "bending energy block: " << endl; print_tm_mat(cout, mat); cout << endl;
+      // cout << "bending energy block: " << endl; print_tm_mat(cout, mat); cout << endl;
       // S x == t \cross {r}
       Vec<3,double> tang = get<0>(fmesh.Data())->Data()[edge.v[1]].pos;
       tang -= get<0>(fmesh.Data())->Data()[edge.v[0]].pos;
-      cout << "tang: " << tang << endl;
+      // cout << "tang: " << tang << endl;
       Mat<disppv(D), rotpv(D), double> S;
       if constexpr(D==2) {
 	  S(0,0) = 0.5 * tang(1);
@@ -204,28 +205,28 @@ namespace amg
       mat(1,0).Rows(0, disppv(D)).Cols(disppv(D), dofpv(D))         =   MS;
       mat(1,0).Rows(disppv(D), dofpv(D)).Cols(0, disppv(D))         = - Trans(MS);
       mat(1,0).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) +=   StMS;
-      cout << "fin RM block: " << endl; print_tm_mat(cout, mat); cout << endl;
+      // cout << "fin RM block: " << endl; print_tm_mat(cout, mat); cout << endl;
 
-      if constexpr(D==2) {
-	  cout << "test RM block: " << endl;
-	  Vector<Vec<3,double>> v(2);
-	  Vector<Vec<3,double>> v2(2);
-	  cout << "disp x ";
-	  v2 = 0; v2(0)[0] = 1; v2(1)[0] = 1;
-	  v = mat * v2;
-	  cout << L2Norm(v) << " : " << endl << v << endl;
-	  cout << "disp y ";
-	  v2 = 0; v2(0)[1] = 1; v2(1)[1] = 1;
-	  v = mat * v2;
-	  cout << L2Norm(v) << " : " << endl << v << endl;
-	  cout << "rot x ";
-	  v2 = 0;
-	  v2(0)[0] = 0.5*tang(1); v2(0)[1] = -0.5*tang(0);
-	  v2(1) = -v2(0);
-	  v2(0)[2] = 1; v2(1)[2] = 1;
-	  v = mat * v2;
-	  cout << L2Norm(v) << " : " << endl << v << endl;
-	}
+      // if constexpr(D==2) {
+      // 	  cout << "test RM block: " << endl;
+      // 	  Vector<Vec<3,double>> v(2);
+      // 	  Vector<Vec<3,double>> v2(2);
+      // 	  cout << "disp x ";
+      // 	  v2 = 0; v2(0)[0] = 1; v2(1)[0] = 1;
+      // 	  v = mat * v2;
+      // 	  cout << L2Norm(v) << " : " << endl << v << endl;
+      // 	  cout << "disp y ";
+      // 	  v2 = 0; v2(0)[1] = 1; v2(1)[1] = 1;
+      // 	  v = mat * v2;
+      // 	  cout << L2Norm(v) << " : " << endl << v << endl;
+      // 	  cout << "rot x ";
+      // 	  v2 = 0;
+      // 	  v2(0)[0] = 0.5*tang(1); v2(0)[1] = -0.5*tang(0);
+      // 	  v2(1) = -v2(0);
+      // 	  v2(0)[2] = 1; v2(1)[2] = 1;
+      // 	  v = mat * v2;
+      // 	  cout << L2Norm(v) << " : " << endl << v << endl;
+      // 	}
       
       
       

@@ -47,99 +47,117 @@ namespace amg
   template<class AMG_CLASS, class TMESH, class TMAT>
   void VWiseAMG<AMG_CLASS, TMESH, TMAT> :: Setup ()
   {
-    string timer_name = this->name + " Setup";
+    string timer_name = this->name + "::Setup";
     static Timer t(timer_name);
     RegionTimer rt(t);
     shared_ptr<TMESH> fm = mesh;
     shared_ptr<ParallelDofs> fm_pd = BuildParDofs(fm);
     NgsAMG_Comm glob_comm = (fm_pd==nullptr) ? NgsAMG_Comm() : NgsAMG_Comm(fm_pd->GetCommunicator());
-    auto grid_map = make_shared<GridMap>();
-    shared_ptr<BaseGridMapStep> grid_step;
-    shared_ptr<CoarseMap<TMESH>> gstep_coarse;
-    shared_ptr<GridContractMap<TMESH>> gstep_contr;
     auto dof_map = make_shared<DOFMap>();
-    shared_ptr<BaseDOFMapStep> dof_step;
     Array<INT<3>> levels;
     auto MAX_NL = options->max_n_levels;
     auto MAX_NV = options->max_n_verts;
-    bool contr_locked = true; //, disc_locked = true;
     int cnt_lc = 0;
     Array<size_t> nvs;
     nvs.Append(fm->template GetNNGlobal<NT_VERTEX>());
-    double frac_coarse = 0.0;
-    const double contr_after_frac = options->contr_after_frac;
-    size_t nv_lc = nvs[0];
-    
+
+    Array<size_t> cutoffs = {0};
     { // coarsen mesh!
+      static Timer t(timer_name + string("-GridMaps")); RegionTimer rt(t);
+      shared_ptr<BaseGridMapStep> grid_step;
+      shared_ptr<CoarseMap<TMESH>> gstep_coarse;
+      shared_ptr<GridContractMap<TMESH>> gstep_contr;
+      shared_ptr<BaseDOFMapStep> dof_step;
       INT<3> level = 0; // coarse, contr, elim
       levels.Append(level);
+      bool contr_locked = true, disc_locked = true;
+      size_t last_nv_ass = nvs[0], last_nv_smo = nvs[0], last_nv_ctr = nvs[0];
+      size_t step_cnt = 0;
       while ( level[0] < MAX_NL-1 && fm->template GetNNGlobal<NT_VERTEX>()>MAX_NV) {
-
-	cout << "now level " << level << endl;
-	
+	size_t curr_nv = fm->template GetNNGlobal<NT_VERTEX>();
 	if ( (!contr_locked) && (grid_step = (gstep_contr = TryContract(level, fm))) != nullptr ) {
 	  contr_locked = true;
 	  dof_step = BuildDOFMapStep(gstep_contr, fm_pd);
-	  cout << "HAVE CONTR STEP!!" << endl;
+	  last_nv_ctr = curr_nv;
 	  level[1]++;
 	}
        	else if ( (grid_step = (gstep_coarse = TryCoarsen(level, fm))) != nullptr ) {
 	  cnt_lc++;
-	  dof_step = BuildDOFMapStep(gstep_coarse, fm_pd);
-	  if (level[0]==0 && embed_step!=nullptr) {
-	    // cout << "embst: " << embed_step << endl;
-	    // cout << "dof s " << dof_step << endl;
-	    // cout << "concatenate embedding + first ProlStep!!" << endl;
-	    dof_step = embed_step->Concatenate(dof_step);
+	  auto prol_step = BuildDOFMapStep(gstep_coarse, fm_pd);
+	  bool smoothit = true;
+	  // Smooth prol?
+	  if (options->enable_sm == false) { smoothit = false; }
+	  else if (options->force_smooth_levels.Contains(level[0])) { smoothit = true; }
+	  else if (options->forbid_smooth_levels.Contains(level[0])) { smoothit = false; }
+	  else if (level[0] < options->skip_smooth_first) { smoothit = false; }
+	  else if (curr_nv > options->smooth_after_frac * last_nv_smo) { smoothit = false; }
+	  cout << "CRS-step, smooth? " << smoothit << endl;
+	  if (smoothit)
+	    {
+	      last_nv_smo = curr_nv;
+	      SmoothProlongation(prol_step, static_pointer_cast<TMESH>(gstep_coarse->GetMesh()));
+	    }
+	  if ( (level[0] == 0) && (embed_step != nullptr) ) {
+	    cout << " conc embed step! " << endl;
+	    dof_step = embed_step->Concatenate(prol_step);
 	  }
+	  else { dof_step = prol_step; }
        	  level[0]++; level[1] = level[2] = 0;
        	}
+	else if ( !disc_locked ) {throw Exception("Discard-Map not yet ported to new Version!"); }
        	else { cout << "warning, no map variant worked!" << endl; break; } // all maps failed
-
-	grid_map->AddStep(grid_step);
-	dof_map->AddStep(dof_step);
-
-	auto NV = fm->template GetNNGlobal<NT_VERTEX>();
+	levels.Append(level);
+      	dof_map->AddStep(dof_step);
 	fm = dynamic_pointer_cast<TMESH>(grid_step->GetMappedMesh());
-
-	
-	if (fm==nullptr) { cout << "dropped out, break loop!" << endl; break; } // no mesh due to contract
-
-	auto CNV = fm->template GetNNGlobal<NT_VERTEX>();
-	if (fm->GetEQCHierarchy()->GetCommunicator().Rank()==0) {
-	  double fac = (NV==0) ? 0 : (1.0*CNV)/NV;
-	  cout << "map NV " << NV << " -> " << CNV << ", factor " <<  fac << endl;
+	step_cnt++;
+	if (fm == nullptr) { fm_pd = nullptr; cutoffs.Append(step_cnt); break; } // no mesh due to contract
+	fm_pd = BuildParDofs(fm);
+	size_t next_nv = fm->template GetNNGlobal<NT_VERTEX>();
+	nvs.Append(next_nv);
+	double frac_crs = (1.0*next_nv) / curr_nv;
+	bool assit = false;
+	// Assemble next level ?
+	if (options->force_ass_levels.Contains(level[0]) ) { assit = true; }
+	else if (options->forbid_ass_levels.Contains(level[0])) { assit = false; }
+	else if (level[0] < options->skip_ass_first) { assit = false; }
+	else if (next_nv < options->ass_after_frac * last_nv_ass) { assit = true; }
+	cout << "level " << level << ", assemble? " << assit << endl;
+	if (assit) { cutoffs.Append(step_cnt); last_nv_ass = curr_nv; }
+	// Unlock contract ?
+	if ( (level[1] == 0) && (level[2]==0) ) {
+	  if ( options->ctr_after_frac * last_nv_ctr > next_nv) { contr_locked = false; }
+	  else if ( frac_crs > options->ctr_crs_thresh) { contr_locked = false; }
+	  if (!contr_locked) {
+	    if (next_nv <= options->ctr_seq_nv) { this->ctr_factor = -1; }
+	    else {
+	      double fac = options->ctr_pfac;
+	      auto ccomm = fm->GetEQCHierarchy()->GetCommunicator();
+	      fac = min2(fac, next_nv / options->ctr_min_nv / (1.0 * ccomm.Size()));
+	      this->ctr_factor = fac;
+	    }
+	  }
 	}
-	fm_pd = dof_step->GetMappedParDofs();
-
-	nvs.Append((fm!=nullptr ? fm->template GetNNGlobal<NT_VERTEX>() : 0));
-	if (level[1]==0 && level[2]==0) frac_coarse = (1.0*nvs.Last())/(1.0*nvs[nvs.Size()-2]);
-	if (level[1]!=0) nv_lc = nvs.Last();
-	
-	if (cnt_lc>3) // we have not contracted for a long time
-	  contr_locked = false;
-	else if (frac_coarse>0.75 && level[0]>2 && cnt_lc>1) // coarsening is slowing down
-	  contr_locked = false;
-	// else if (nvs.Last()/fpd->GetCommunicator().Size()<MIN_V_PP && cnt_lc>1) // too few verts per proc
-	//   contr_locked = false;
-	else if ((1.0*nvs.Last())/nv_lc < contr_after_frac && cnt_lc>1) // if NV reduces by a good factor
-	  contr_locked = false;
-	// if (level[0]<5) contr_locked = true;
-	
-      }
+      } // grid-map loop
+      if (cutoffs.Last() != step_cnt) // make sure last level is assembled
+	{ cutoffs.Append(step_cnt); }
     }
 
     cout << "mesh-loop done, enter barrier!" << endl;
     glob_comm.Barrier();
     cout << "mesh-loop done, barrier done!" << endl;
 
-    // cout << "finest level mat: " << finest_mat << endl;
-    // cout << "type " << typeid(*finest_mat).name() << endl;
-    auto fmat = dynamic_pointer_cast<BaseSparseMatrix>(finest_mat);
-    // cout << "fmat: " << fmat << endl;
-    // cout << "type " << typeid(*fmat).name() << endl;
-    auto mats = dof_map->AssembleMatrices(fmat);
+    cout << " cutoffs are: " << endl; prow2(cutoffs, cout); cout << endl;
+    
+    {
+      static Timer t(timer_name + string("-ConcDofMaps")); RegionTimer rt(t);
+      dof_map->SetCutoffs(cutoffs);
+    }
 
+    static Timer tmats(timer_name + string("-AssembleMats"));
+    tmats.Start();
+    auto mats = dof_map->AssembleMatrices(dynamic_pointer_cast<BaseSparseMatrix>(finest_mat)); // cannot static_cast - virtual inheritance??
+    tmats.Stop();
+    
     // {
     //   auto nlevs = dof_map->GetNLevels();
     //   for (auto k : Range(nlevs)) {
@@ -149,43 +167,50 @@ namespace amg
     //   cout << endl;
     // }
 
-    Array<shared_ptr<BaseSmoother>> sms;
-    for (auto k : Range(mats.Size()-1)) {
-      // cout << "make smoother!!" << endl;
-      auto pds = dof_map->GetParDofs(k);
-      shared_ptr<const TSPMAT> mat = dynamic_pointer_cast<TSPMAT>(mats[k]);
-      sms.Append(make_shared<HybridGSS<mat_traits<TV>::HEIGHT>>(mat,pds,(k==0) ? options->finest_free_dofs : nullptr));
-    }
-    
-    cout << "make AMG-mat!" << endl;
-    Array<shared_ptr<const BaseSmoother>> const_sms(sms.Size()); const_sms = sms;
-    Array<shared_ptr<const BaseMatrix>> bmats_mats(mats.Size()); bmats_mats = mats;
-    amg_mat = make_shared<AMGMatrix> (dof_map, const_sms, bmats_mats);
-    cout << "have AMG-mat!" << endl;
-    
-    if (options->clev_type=="inv") {
-      if (mats.Last()!=nullptr) {
-	auto cpds = dof_map->GetMappedParDofs();
-	auto comm = cpds->GetCommunicator();
-	if (comm.Size()>0) {
-	  cout << "coarse inv " << endl;
-	  auto cpm = make_shared<ParallelMatrix>(mats.Last(), cpds);
-	  cpm->SetInverseType(options->clev_inv_type);
-	  auto cinv = cpm->InverseMatrix();
-	  cout << "coarse inv done" << endl;
-	  amg_mat->AddFinalLevel(cinv);
-	}
-	// else {
-	//   auto cinv = mats.Last().Inverse("sparsecholesky");
-	//   amg_mat->AddFinalLevel(cinv);
-	// }
+    Array<shared_ptr<BaseSmoother>> sms(cutoffs.Size()); sms.SetSize(0);
+    {
+      static Timer t(timer_name + string("-Smoothers")); RegionTimer rt(t);
+      for (auto k : Range(mats.Size()-1)) {
+	cout << "make smoother " << k << "!!" << endl;
+	auto pds = dof_map->GetParDofs(k);
+	shared_ptr<const TSPMAT> mat = dynamic_pointer_cast<TSPMAT>(mats[k]);
+	cout << "mat: " << mat << endl;
+	cout << mat->Height() << " x " << mat->Width() << endl;
+	cout << "ndglob: " << pds->GetNDofGlobal() << endl;
+	sms.Append(make_shared<HybridGSS<mat_traits<TV>::HEIGHT>>(mat,pds,(k==0) ? options->finest_free_dofs : nullptr));
       }
     }
-    else if (options->clev_type=="nothing") {
-      amg_mat->AddFinalLevel(nullptr);
-    }
-    else {
-      throw Exception(string("coarsest level type ")+options->clev_type+string(" not implemented!"));
+    
+    Array<shared_ptr<const BaseSmoother>> const_sms(sms.Size()); const_sms = sms;
+    Array<shared_ptr<const BaseMatrix>> bmats_mats(mats.Size()); bmats_mats = mats;
+    this->amg_mat = make_shared<AMGMatrix> (dof_map, const_sms, bmats_mats);
+
+    {
+      static Timer t(timer_name + string("-CLevel")); RegionTimer rt(t);
+      if (options->clev_type=="inv") {
+	if (mats.Last()!=nullptr) {
+	  auto cpds = dof_map->GetMappedParDofs();
+	  auto comm = cpds->GetCommunicator();
+	  if (comm.Size()>0) {
+	    cout << "coarse inv " << endl;
+	    auto cpm = make_shared<ParallelMatrix>(mats.Last(), cpds);
+	    cpm->SetInverseType(options->clev_inv_type);
+	    auto cinv = cpm->InverseMatrix();
+	    cout << "coarse inv done" << endl;
+	    amg_mat->AddFinalLevel(cinv);
+	  }
+	  // else {
+	  //   auto cinv = mats.Last().Inverse("sparsecholesky");
+	  //   amg_mat->AddFinalLevel(cinv);
+	  // }
+	}
+      }
+      else if (options->clev_type=="nothing") {
+	amg_mat->AddFinalLevel(nullptr);
+      }
+      else {
+	throw Exception(string("coarsest level type ")+options->clev_type+string(" not implemented!"));
+      }
     }
     
     cout << "AMG LOOP DONE, enter barrier" << endl;
@@ -239,15 +264,15 @@ namespace amg
 	}
       }
     }
-    cout << "have pw-prol: " << endl;
-    print_tm_spmat(cout, *prol); cout << endl;
+    // cout << "have pw-prol: " << endl;
+    // print_tm_spmat(cout, *prol); cout << endl;
 
-    auto pmap = make_shared<ProlMap<TSPMAT>> (prol, fpd, cpd);
-
-    cout << "smooth prol..." << endl;
-    if (options->do_smooth==true)
-      SmoothProlongation(pmap, static_pointer_cast<TMESH>(cmap.GetMesh()));
-    cout << "smooth prol done!" << endl;
+    auto pmap = make_shared<ProlMap<TSPMAT>> (fpd, cpd);
+    pmap->SetProl(prol);
+	
+    // if (options->do_smooth==true)
+    //   SmoothProlongation(pmap, static_pointer_cast<TMESH>(cmap.GetMesh()));
+    // cout << "smooth prol done!" << endl;
     
     return pmap;
   } // VWiseAMG<...> :: BuildDOFMapStep ( CoarseMap )
@@ -300,7 +325,6 @@ namespace amg
       }, false);
     for (auto v : Range(NV))
       vcw[v] = self.template GetWeight<NT_VERTEX>(mesh, v)/vcw[v];
-    cout << "VCW: "; prow2(vcw); cout << endl;
     opts->vcw = move(vcw);
     opts->ecw = move(ecw);
   }
@@ -322,11 +346,14 @@ namespace amg
   template<class AMG_CLASS, class TMESH, class TMAT> shared_ptr<GridContractMap<TMESH>>
   VWiseAMG<AMG_CLASS, TMESH, TMAT> :: TryContract (INT<3> level, shared_ptr<TMESH> mesh)
   {
+    if (options->enable_ctr == false) return nullptr;
     if (level[0] == 0) return nullptr; // TODO: if I remove this, take care of contracting free vertices!
     if (level[1] != 0) return nullptr; // dont contract twice in a row
     if (mesh->GetEQCHierarchy()->GetCommunicator().Size()==1) return nullptr; // dont add an unnecessary step
     if (mesh->GetEQCHierarchy()->GetCommunicator().Size()==2) return nullptr; // keep this as long as 0 is seperated
-    int n_groups = 1 + (mesh->GetEQCHierarchy()->GetCommunicator().Size()-1)/3; // 0 is extra
+    int n_groups;
+    if (this->ctr_factor == -1 ) { n_groups = 2; }
+    else { n_groups = 1 + ( (mesh->GetEQCHierarchy()->GetCommunicator().Size()-1) * this->ctr_factor) ; }
     n_groups = max2(2, n_groups); // dont send everything from 1 to 0 for no reason
     Table<int> groups = PartitionProcsMETIS (*mesh, n_groups);
     return make_shared<GridContractMap<TMESH>>(move(groups), mesh);
@@ -515,10 +542,10 @@ namespace amg
 	for (auto k:Range(uve.Size()))
 	  { used_verts[k] = uve[k][0]; used_edges[k] = uve[k][1]; }
 	
-	cout << "sprol row " << V << endl;
-	cout << "graph: "; prow2(graph_row); cout << endl;
-	cout << "used_verts: "; prow2(used_verts); cout << endl;
-	cout << "used_edges: "; prow2(used_edges); cout << endl;
+	// cout << "sprol row " << V << endl;
+	// cout << "graph: "; prow2(graph_row); cout << endl;
+	// cout << "used_verts: "; prow2(used_verts); cout << endl;
+	// cout << "used_edges: "; prow2(used_edges); cout << endl;
 
 	// auto posV = used_verts.Pos(V);
 	auto posV = find_in_sorted_array(int(V), used_verts);
@@ -537,13 +564,13 @@ namespace amg
 	}
 
 	TMAT diag = mat(0, posV);
-	cout << "diag: " << endl; print_tm(cout, diag); cout << endl;
+	// cout << "diag: " << endl; print_tm(cout, diag); cout << endl;
 	CalcInverse(diag); // TODO: can this be singular (with embedding?)
-	for ( auto l : Range(unv)) {
-	  TMAT diag2 = mat(0, l);
-	  TMAT diag3 = diag * diag2;
-	  cout << "diag * block " << l << ": " << endl; print_tm(cout, diag3); cout << endl;
-	}
+	// for ( auto l : Range(unv)) {
+	//   TMAT diag2 = mat(0, l);
+	//   TMAT diag3 = diag * diag2;
+	//   // cout << "diag * block " << l << ": " << endl; print_tm(cout, diag3); cout << endl;
+	// }
 	// FlatMatrix<TMAT> row (1, unv, lh);
 	// // Matrix<TMAT> row (1, unv);
 	// row = diag * mat;
@@ -552,8 +579,8 @@ namespace amg
 	// cout << " - omega * diag * row : " << endl; print_tm_mat(cout, row); cout << endl;
 	// row(0, posV) = (1.0-omega) * id;
 
-	cout << "mat: " << endl; print_tm_mat(cout, mat); cout << endl;
-	cout << "inv: " << endl; print_tm(cout, diag); cout << endl;
+	// cout << "mat: " << endl; print_tm_mat(cout, mat); cout << endl;
+	// cout << "inv: " << endl; print_tm(cout, diag); cout << endl;
 	// cout << " repl-row: " << endl; print_tm_mat(cout, row); cout << endl;
 	
 	auto sp_ri = sprol->GetRowIndices(V); sp_ri = graph_row;
@@ -562,28 +589,30 @@ namespace amg
 	  int vl = used_verts[l];
 	  auto pw_rv = pwprol.GetRowValues(vl);
 	  int cvl = vmap[vl];
-	  cout << "v " << l << ", " << vl << " maps to " << cvl << endl;
-	  cout << "pw-row for vl: " << endl; prow_tm(cout, pw_rv); cout << endl;
+	  // cout << "v " << l << ", " << vl << " maps to " << cvl << endl;
+	  // cout << "pw-row for vl: " << endl; prow_tm(cout, pw_rv); cout << endl;
 	  auto pos = find_in_sorted_array(cvl, sp_ri);
-	  cout << "pos is " << pos << endl;
+	  // cout << "pos is " << pos << endl;
 	  // sp_rv[pos] += row(0,l) * pw_rv[0];
-	  cout << " before "; print_tm(cout, sp_rv[pos]); cout << endl;
+	  // cout << " before "; print_tm(cout, sp_rv[pos]); cout << endl;
 	  if (l==posV) {
-	    sp_rv[pos] += pw_rv[0];
-	    cout << " mid "; print_tm(cout, sp_rv[pos]); cout << endl;
+	    sp_rv[pos] += (1-omega) * pw_rv[0];
+	    // cout << " mid "; print_tm(cout, sp_rv[pos]); cout << endl;
 	  }
-	  TMAT m1 = mat(0,l);
-	  TMAT m2 = diag * m1;
-	  TMAT m3 = m2 * pw_rv[0];
-	  cout << " should add " << omega << " * "; print_tm(cout, m3); cout << endl;
-	  sp_rv[pos] += - omega * diag * mat(0,l) * pw_rv[0];
-	  cout << " after "; print_tm(cout, sp_rv[pos]); cout << endl;
+	  else {
+	    // TMAT m1 = mat(0,l);
+	    // TMAT m2 = diag * m1;
+	    // TMAT m3 = m2 * pw_rv[0];
+	    // cout << " should add " << omega << " * "; print_tm(cout, m3); cout << endl;
+	    sp_rv[pos] += - omega * diag * mat(0,l) * pw_rv[0];
+	    // cout << " after "; print_tm(cout, sp_rv[pos]); cout << endl;
+	  }
 	}
       }
     }
 
-    cout << "smoothed: " << endl;
-    print_tm_spmat(cout, *sprol); cout << endl;
+    // cout << "smoothed: " << endl;
+    // print_tm_spmat(cout, *sprol); cout << endl;
 
     pmap->SetProl(sprol);
     
@@ -603,7 +632,7 @@ namespace amg
       auto top_mesh = MeshAccessToBTM (ma, eqc_h, node_sort[0], true, node_sort[1],
 				       false, node_sort[2], false, node_sort[3]);
       auto & vsort = node_sort[0];
-      cout << "v-sort: "; prow2(vsort); cout << endl;
+      // cout << "v-sort: "; prow2(vsort); cout << endl;
       /** Convert FreeDofs **/
       auto fes_fds = fes->GetFreeDofs();
       auto fvs = make_shared<BitArray>(ma->GetNV());
@@ -611,13 +640,13 @@ namespace amg
       for (auto k : Range(ma->GetNV())) if (fes_fds->Test(k)) { fvs->Set(vsort[k]); }
       options->free_verts = fvs;
       options->finest_free_dofs = fes_fds;
-      cout << "init free vertices: " << fvs->NumSet() << " of " << fvs->Size() << endl;
-      cout << " diri verts: "; 
-      for (auto k : Range(ma->GetNV())) if (!fes_fds->Test(k)) { cout << k << " "; }
-      cout << endl;
-      cout << " map to: "; 
-      for (auto k : Range(ma->GetNV())) if (!fvs->Test(k)) { cout << k << " "; }
-      cout << endl;
+      // cout << "init free vertices: " << fvs->NumSet() << " of " << fvs->Size() << endl;
+      // cout << " diri verts: "; 
+      // for (auto k : Range(ma->GetNV())) if (!fes_fds->Test(k)) { cout << k << " "; }
+      // cout << endl;
+      // cout << " map to: "; 
+      // for (auto k : Range(ma->GetNV())) if (!fvs->Test(k)) { cout << k << " "; }
+      // cout << endl;
       /** Vertex positions **/
       if (options->keep_vp) {
 	auto & vpos(node_pos[NT_VERTEX]); vpos.SetSize(top_mesh->template GetNN<NT_VERTEX>());

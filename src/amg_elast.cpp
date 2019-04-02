@@ -12,7 +12,7 @@ namespace amg
   Hack_BuildAlgMesh (Array<Vec<3,double>> && vp, shared_ptr<BlockTM> top_mesh)
   {
     // Array<Vec<3,double>> vp = move(amg->node_pos[NT_VERTEX]); // dont keep this
-    cout << "v-pos: " << vp.Size() << " " << top_mesh->GetNN<NT_VERTEX>() << endl << vp << endl;
+    // cout << "v-pos: " << vp.Size() << " " << top_mesh->GetNN<NT_VERTEX>() << endl << vp << endl;
     Array<PosWV> pwv(top_mesh->GetNN<NT_VERTEX>());
     for (auto k : Range(pwv.Size())) {
       pwv[k].wt = 0.0;
@@ -38,16 +38,18 @@ namespace amg
   EmbedVAMG<ElasticityAMG<2>> :: BuildEmbedding ()
   {
     auto & vsort = node_sort[NT_VERTEX];
-    auto permat = BuildPermutationMatrix<Mat<3,3,double>>(vsort);
-    return make_shared<ProlMap<SparseMatrix<Mat<3,3,double>>>>(permat, fes->GetParallelDofs(), nullptr);
+    auto pmap = make_shared<ProlMap<SparseMatrix<Mat<3,3,double>>>>(fes->GetParallelDofs(), nullptr);
+    pmap->SetProl(BuildPermutationMatrix<Mat<3,3,double>>(vsort));
+    return pmap;
   }
 
   template<> shared_ptr<BaseDOFMapStep>
   EmbedVAMG<ElasticityAMG<3>> :: BuildEmbedding ()
   {
     auto & vsort = node_sort[NT_VERTEX];
-    auto permat = BuildPermutationMatrix<Mat<6,6,double>>(vsort);
-    return make_shared<ProlMap<SparseMatrix<Mat<6,6,double>>>>(permat, fes->GetParallelDofs(), nullptr);
+    auto pmap = make_shared<ProlMap<SparseMatrix<Mat<6,6,double>>>>(fes->GetParallelDofs(), nullptr);
+    pmap->SetProl(BuildPermutationMatrix<Mat<6,6,double>>(vsort));
+    return pmap;
   }
 
 

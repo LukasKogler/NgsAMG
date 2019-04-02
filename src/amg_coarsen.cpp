@@ -223,7 +223,6 @@ namespace amg
   template<class TMESH>
   void HierarchicVWC<TMESH> :: Collapse (const TMESH & mesh, HierarchicVWC::CollapseTracker & coll)
   {
-    cout << "HCOL mesh: " << endl << mesh << endl;
     RegionTimer rt(HierVWCTimerHack());
     auto block_opts = make_shared<typename BlockVWC<TMESH>::Options>();
     block_opts->min_cw = options->min_cw;
@@ -254,7 +253,7 @@ namespace amg
 
     if (free!=nullptr) {
       // cout << free->NumSet() << " of " << free->Size() << " are free!" << endl;
-      const auto & fv = *free; for (auto k:Range(NV)) if (!fv.Test(k)) { cout << " g+f vertex " << k << endl; coll.GroundVertex(k); coll.FixVertex(k); }
+      const auto & fv = *free; for (auto k:Range(NV)) if (!fv.Test(k)) { /*cout << " g+f vertex " << k << endl;*/ coll.GroundVertex(k); coll.FixVertex(k); }
     }
 
     // if (free) cout << "total free: " << free->NumSet() << " of " << free->Size() << endl;
@@ -904,7 +903,7 @@ namespace amg
       if (cv0>cv1) swap(cv0,cv1);
       node_map[k] = (t[0]==1 ? disp_ie[t[1]] : NECI+disp_ce[t[1]] ) + t[2];
       coarse_nodes[node_map[k]] = {cv0, cv1};
-      cout << " loc edge " << node << " became c-ndode " << node_map[k] << " " << cv0 << " " << cv1 << endl;
+      // cout << " loc edge " << node << " became c-ndode " << node_map[k] << " " << cv0 << " " << cv1 << endl;
     }
     // ok, now add_edges
     for (auto eqc:Range(neqcs)) {

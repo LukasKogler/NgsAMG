@@ -31,22 +31,40 @@ namespace amg
   public:
     struct Options
     {
-      int max_n_levels = 20;
-      size_t max_n_verts = 1;
       /** Dirichlet conditions for finest level **/
       shared_ptr<BitArray> free_verts = nullptr;
       shared_ptr<BitArray> finest_free_dofs = nullptr;
-      /** Used for Prolongation smoothing **/
-      // double min_prol_wt = 0.05; // absolute min. wt to include an edge
-      double min_prol_frac = 0.1; // relative min. wt to include an edge
-      int max_per_row = 3; // maximum entries per row (>=1!)
-      double sp_omega = 0.5;
-      /** Coarsest level opts **/
-      double contr_after_frac = 0.025; // re-distribute after we have reduced the NV by this factor
+      /** Level-control **/
+      int max_n_levels = 20;               // maximum number of coarsening steps
+      size_t max_n_verts = 1;              // stop coarsening when the coarsest mesh has this few vertices
+      int skip_ass_first = 2;              // skip this many levels in the beginning
+      Array<int> force_ass_levels;         // force matrix assembly on these levels
+      Array<int> forbid_ass_levels;        // forbid matrix assembly on these levels
+      double ass_after_frac = 0.15;        // assemble a level after reducing NV by this factor
+      /** Discard - only dummies for not!!  **/
+      bool enable_disc = false;            // enable node-discarding
+      double disc_crs_thresh = 0.7;        // try discard if coarsening becomes worse than this
+      double disc_fac_ok     = 0.95;       // accept discard map if we reduce by at least this
+      /** Contract (Re-Distribute) **/
+      bool enable_ctr = true;              // enable re-distributing
+      double ctr_after_frac = 0.05;        // re-distribute after we have reduced the NV by this factor
+      double ctr_crs_thresh = 0.7;         // if coarsening slows down more than this, ctract
+      double ctr_pfac = 0.25;              // contract proc-factor (overruled by min NV per proc)
+      size_t ctr_min_nv = 500;             // re-distribute such that at least this many NV per proc remain
+      size_t ctr_seq_nv = 500;             // re-distribute to sequential once NV reached this threshhold
+      /** Prolongation smoothing **/
+      bool enable_sm = true;               // emable prolongation-smoothing
+      double min_prol_frac = 0.1;          // min. (relative) wt to include an edge
+      int max_per_row = 3;                 // maximum entries per row (should be >= 2!)
+      double sp_omega = 0.5;               // relaxation parameter for prol-smoothing
+      int skip_smooth_first = 3;           // do this many piecewise prols in the beginning
+      double smooth_after_frac = 0.5;      // smooth a prol after reducing NV by this factor
+      Array<int> force_smooth_levels;      // force prol-smoothing on these levels
+      Array<int> forbid_smooth_levels;     // forbid prol-smoothing on these levels
+      /** Smoothers - haha, you have no choice  **/
       /** Coarsest level opts **/
       string clev_type = "inv";
       string clev_inv_type = "masterinverse";
-      bool do_smooth = false; // TODO: TEMPORARY!!
     };
 
     using TMESH = ATMESH;
@@ -82,7 +100,8 @@ namespace amg
     shared_ptr<TMESH> mesh;
     shared_ptr<BaseMatrix> finest_mat;
     shared_ptr<BaseDOFMapStep> embed_step;
-
+    double ctr_factor = -1;
+    
     virtual void SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts, INT<3> level, shared_ptr<TMESH> mesh);
     virtual shared_ptr<CoarseMap<TMESH>> TryCoarsen  (INT<3> level, shared_ptr<TMESH> mesh);
     virtual shared_ptr<GridContractMap<TMESH>> TryContract (INT<3> level, shared_ptr<TMESH> mesh);

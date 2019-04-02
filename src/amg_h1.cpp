@@ -60,8 +60,9 @@ namespace amg
   template<> shared_ptr<BaseDOFMapStep> EmbedVAMG<H1AMG> :: BuildEmbedding ()
   {
     auto & vsort = node_sort[NT_VERTEX];
-    auto permat = BuildPermutationMatrix<double>(vsort);
-    return make_shared<ProlMap<SparseMatrix<double>>>(permat, fes->GetParallelDofs(), nullptr);
+    auto pmap = make_shared<ProlMap<SparseMatrix<double>>>(fes->GetParallelDofs(), nullptr);
+    pmap->SetProl(BuildPermutationMatrix<double>(vsort));
+    return pmap;
   }
 
 } // namespace amg

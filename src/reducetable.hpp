@@ -641,12 +641,12 @@ namespace amg
       }
     }
     
-    cout << " send data: " << endl;
-    for (auto kp : Range(ex_procs.Size())) {
-      cout << " to " << kp << " rk " << ex_procs[kp] << ": ";
-      prow2(send_buffers[kp]); cout << endl;
-    }
-    cout << endl;
+    // cout << " send data: " << endl;
+    // for (auto kp : Range(ex_procs.Size())) {
+    //   cout << " to " << kp << " rk " << ex_procs[kp] << ": ";
+    //   prow2(send_buffers[kp]); cout << endl;
+    // }
+    // cout << endl;
 
     // TODO: this sends a couple of empty messages from ranks that are not master of anything
     for (size_t kp = n_smaller; kp < ex_procs.Size(); kp++) {
@@ -662,12 +662,12 @@ namespace amg
       // comm.Recv(recv_buffers[kp], ex_procs[kp], MPI_TAG_AMG);
     }
 
-    cout << " got data: " << endl;
-    for (auto kp : Range(ex_procs.Size())) {
-      cout << " from " << kp << " rk " << ex_procs[kp] << ": ";
-      prow2(recv_buffers[kp]); cout << endl;
-    }
-    cout << endl;
+    // cout << " got data: " << endl;
+    // for (auto kp : Range(ex_procs.Size())) {
+    //   cout << " from " << kp << " rk " << ex_procs[kp] << ": ";
+    //   prow2(recv_buffers[kp]); cout << endl;
+    // }
+    // cout << endl;
     
     Table<T> table_out;
     

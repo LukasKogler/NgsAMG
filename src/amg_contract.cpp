@@ -434,19 +434,15 @@ namespace amg
 
     BuildCEQCH();
 
-    cout << "c_eqc_h: ";
-    if (c_eqc_h!=nullptr) cout << endl << *c_eqc_h << endl;
-    else cout << "NULLPTR" << endl;
+    // cout << "c_eqc_h: ";
+    // if (c_eqc_h!=nullptr) cout << endl << *c_eqc_h << endl;
+    // else cout << "NULLPTR" << endl;
 	  
-    cout << "BuildNodeMaps " << endl;
     eqc_h->GetCommunicator().Barrier();
-    cout << "BuildNodeMaps " << endl;
 
     BuildNodeMaps();
 
-    cout << "BuildNodeMaps done " << endl;
     eqc_h->GetCommunicator().Barrier();
-    cout << "BuildNodeMaps done " << endl;
 
     // throw Exception("GridContractMap not yet usable!!!");
   } // GridContractMap (..)
@@ -521,10 +517,10 @@ namespace amg
     Array<shared_ptr<BlockTM>> mg_btms(mgs); // (BlockTM on purpose)
     mg_btms[0] = this->mesh;
     for (size_t k = 1; k < my_group.Size(); k++) {
-      cout << "get mesh from " << my_group[k] << endl;
+      // cout << "get mesh from " << my_group[k] << endl;
       comm.Recv(mg_btms[k], my_group[k], MPI_TAG_AMG);
-      cout << "got mesh from " << my_group[k] << endl;
-      cout << *mg_btms[k] << endl;
+      // cout << "got mesh from " << my_group[k] << endl;
+      // cout << *mg_btms[k] << endl;
     }
 
     // constexpr int lhs = 1024*1024;
@@ -615,12 +611,12 @@ namespace amg
       }
     }
 
-    cout << "contr emap: " << endl;
-    for (auto k : Range(my_group.Size())) {
-      cout << "map for " << k << ", rank " << my_group[k] << ":  ";
-      prow2(vmaps[k]); cout << endl;
-    }
-    cout << endl;
+    // cout << "contr emap: " << endl;
+    // for (auto k : Range(my_group.Size())) {
+    //   cout << "map for " << k << ", rank " << my_group[k] << ":  ";
+    //   prow2(vmaps[k]); cout << endl;
+    // }
+    // cout << endl;
 
     /** 
 	Abandon hope all ye who enter here - this might
@@ -682,7 +678,7 @@ namespace amg
       tannoy_edges = ct.MoveTable();
     }
 
-    cout << "tannoy_edges: " << endl << tannoy_edges << endl;
+    // cout << "tannoy_edges: " << endl << tannoy_edges << endl;
     auto annoy_edges = ReduceTable<ANNOYE, ANNOYE>
       (tannoy_edges, this->c_eqc_h, [](const auto & in) {
 	Array<ANNOYE> out;
@@ -703,7 +699,7 @@ namespace amg
 	return out;
       });
     
-    cout << "reduced annoy_edges: " << endl << annoy_edges << endl;
+    // cout << "reduced annoy_edges: " << endl << annoy_edges << endl;
 
 
     Array<INT<2, size_t>> annoy_count(cneqcs);
@@ -756,7 +752,7 @@ namespace amg
       }
     }
 
-    cout << "ccounts: " << endl << ccounts << endl;
+    // cout << "ccounts: " << endl << ccounts << endl;
 
     /** displacements, edge and edge-map allocation**/
     // Array<size_t> disp_ie(cneqcs+1); disp_ie = 0;
@@ -779,11 +775,11 @@ namespace amg
     size_t cne = cnie+cnce;
 
     
-    cout << "CNE CNIE CNCE: " << cne << " " << cnie << " " << cnce << endl;
-    cout << "II CI ANNOYI CC ANNOYC: " << cniie << " " << cncie << " "
-    	 << cnannoyi << " " << cncce << " " << cnannoyc << endl;
-    cout << "disp_ie: " << endl << disp_ie << endl;
-    cout << "disp_ce: " << endl << disp_ce << endl;
+    // cout << "CNE CNIE CNCE: " << cne << " " << cnie << " " << cnce << endl;
+    // cout << "II CI ANNOYI CC ANNOYC: " << cniie << " " << cncie << " "
+    // 	 << cnannoyi << " " << cncce << " " << cnannoyc << endl;
+    // cout << "disp_ie: " << endl << disp_ie << endl;
+    // cout << "disp_ce: " << endl << disp_ce << endl;
 
     
     mapped_NN[NT_EDGE] = cne;
@@ -956,12 +952,12 @@ namespace amg
       }
     }
 
-    cout << "contr emap: " << endl;
-    for (auto k : Range(my_group.Size())) {
-      cout << "map for " << k << ", rank " << my_group[k] << ":  ";
-      prow2(emaps[k]); cout << endl;
-    }
-    cout << endl;
+    // cout << "contr emap: " << endl;
+    // for (auto k : Range(my_group.Size())) {
+    //   cout << "map for " << k << ", rank " << my_group[k] << ":  ";
+    //   prow2(emaps[k]); cout << endl;
+    // }
+    // cout << endl;
     
     for (auto k : Range(cneqcs)) {
       c_mesh.nnodes_eqc[NT_EDGE][k] = disp_ie[k+1] - disp_ie[k];
@@ -977,9 +973,9 @@ namespace amg
         mapped_mesh = move(p_c_mesh);
       }
     else {
-      cout << "MAKE MAPPED ALGMESH!!" << endl;
+      // cout << "MAKE MAPPED ALGMESH!!" << endl;
       this->mapped_mesh = make_shared<TMESH> ( move(*p_c_mesh), mesh->MapData(*this) );
-      cout << "MAPPED ALGMESH: " << endl;
+      // cout << "MAPPED ALGMESH: " << endl;
       // cout << *mapped_mesh << endl;
     }
   }
