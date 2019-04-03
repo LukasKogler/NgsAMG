@@ -11,11 +11,18 @@ namespace amg
   // template<int N, int M> INLINE void TM_Set_A_BT (Mat<N,M,double> & a, const Mat<M,N,double> & b)
   // { for (auto i : Range(N)) for (auto j : Range(M)) a(i,j) = b(j,i); }
   // INLINE void TM_Set_A_BT (double & a, const double & b) { a = b; }
-  
+
+  INLINE Timer & timer_hack_TransposeSPM (int nr) {
+    switch(nr) {
+    case(0): { static Timer t("AMG - TransposeMatrix 1"); return t; }
+    case(1): { static Timer t("AMG - TransposeMatrix 2"); return t; }
+    default: { static Timer t("TIMERERR"); return t; }
+    }
+  };
   template <typename TMA> shared_ptr<typename trans_spm<TMA>::type> TransposeSPM (const TMA & mat)
   {
-    static Timer t1("AMG - TransposeMatrix 1");
-    static Timer t2("AMG - TransposeMatrix 2");
+    Timer & t1 = timer_hack_TransposeSPM(0);
+    Timer & t2 = timer_hack_TransposeSPM(1);
     t1.Start();
     Array<int> cnt(mat.Width()); cnt = 0;
     for (int i : Range(mat.Height()))
@@ -43,14 +50,24 @@ namespace amg
   } // TransposeSPM (..)
 
 
+  INLINE Timer & timer_hack_MatMultAB (int nr) {
+    switch(nr) {
+    case(0): { static Timer t("AMG - sparse matrix multiplication"); return t; }
+    case(1): { static Timer t("AMG - sparse matrix multiplication - setup a"); return t; }
+    case(2): { static Timer t("AMG - sparse matrix multiplication - setup b"); return t; }
+    case(3): { static Timer t("AMG - sparse matrix multiplication - setup b1"); return t; }
+    case(4): { static Timer t("AMG - sparse matrix multiplication - mult"); return t; }
+    default: { static Timer t("TIMERERR"); return t; }
+    }
+  }
   template <typename TSPMA, typename TSPMB>
   shared_ptr<typename mult_spm<TSPMA,TSPMB>::type> MatMultAB (const TSPMA & mata, const TSPMB & matb)
   {
-    static Timer t ("AMG - sparse matrix multiplication");
-    static Timer t1a ("AMG - sparse matrix multiplication - setup a");
-    static Timer t1b ("AMG - sparse matrix multiplication - setup b");
-    static Timer t1b1 ("AMG - sparse matrix multiplication - setup b1");
-    static Timer t2 ("AMG - sparse matrix multiplication - mult"); 
+    Timer & t = timer_hack_MatMultAB(0);
+    Timer & t1a = timer_hack_MatMultAB(1);
+    Timer & t1b = timer_hack_MatMultAB(2);
+    Timer & t1b1 = timer_hack_MatMultAB(3);
+    Timer & t2 = timer_hack_MatMultAB(4);
 
     // C = A * B
     typedef typename mult_spm<TSPMA,TSPMB>::type TSPMC;

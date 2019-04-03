@@ -60,14 +60,14 @@ namespace amg
   INLINE shared_ptr<typename mult_spm<typename mult_spm<typename trans_spm<TMB>::type,TMA>::type, TMB>::type>
   RestrictMatrix (const TMA & A, const TMB & P)
   {
-    cout << "restrict A: " << A.Height() << " x " << A.Width() << endl;
-    cout << "with P: " << P.Height() << " x " << P.Width() << endl;
+    // cout << "restrict A: " << A.Height() << " x " << A.Width() << endl;
+    // cout << "with P: " << P.Height() << " x " << P.Width() << endl;
     auto PT = TransposeSPM(P);
-    cout << "PT: " << PT->Height() << " x " << PT->Width() << endl;
+    // cout << "PT: " << PT->Height() << " x " << PT->Width() << endl;
     auto AP = MatMultAB(A, P);
-    cout << "AP: " << AP->Height() << " x " << AP->Width() << endl;
+    // cout << "AP: " << AP->Height() << " x " << AP->Width() << endl;
     auto PTAP = MatMultAB(*PT, *AP);
-    cout << "result PTAP: " << PTAP->Height() << " x " << PTAP->Width() << endl;
+    // cout << "result PTAP: " << PTAP->Height() << " x " << PTAP->Width() << endl;
     return PTAP;
   }
 
