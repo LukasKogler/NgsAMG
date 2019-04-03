@@ -139,9 +139,9 @@ namespace amg
 	  mat(1,2) = -tang(0);
 	}
       else {
-	mat(1,5) = - (mat(2,4) = tang[0]);
-	mat(2,3) = - (mat(0,5) = tang[1]);
-	mat(0,4) = - (mat(1,3) = tang[2]);
+	mat(1,5) = - (mat(2,4) = tang(0));
+	mat(2,3) = - (mat(0,5) = tang(1));
+	mat(0,4) = - (mat(1,3) = tang(2));
       }
     }
     INLINE void CalcRMBlock (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge, FlatMatrix<TMAT> mat) const
@@ -166,9 +166,9 @@ namespace amg
 	}
       else {
 	S(0,0) = S(1,1) = S(2,2) = 0;
-	S(0,1) = - (S(1,0) = - 0.5 * tang(2));
-	S(0,2) = - (S(2,0) =   0.5 * tang(1));
-	S(1,2) = - (S(2,1) = - 0.5 * tang(0));
+	S(1,2) = - (S(2,1) = 0.5 * tang(0));
+	S(2,0) = - (S(0,2) = 0.5 * tang(1));
+	S(0,1) = - (S(1,0) = 0.5 * tang(2));
       }
       // cout << "S: " << endl; print_tm(cout, S); cout << endl;
       // [u] - t \cross {r}

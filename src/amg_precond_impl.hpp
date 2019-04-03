@@ -275,7 +275,6 @@ namespace amg
 	}
       }
     }
-    cout << "have pw-prol: " << endl;
     print_tm_spmat(cout, *prol); cout << endl;
 
     auto pmap = make_shared<ProlMap<TSPMAT>> (fpd, cpd);

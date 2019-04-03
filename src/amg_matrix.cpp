@@ -354,25 +354,19 @@ namespace amg
     /** prolongate down **/
     if(my_max_level == level) { //does not drop out -> #trans=#levels-1
       for(int k = level-1; k>=0; k--) {
-	cout << "bef x_level[" << k << "]: " << endl << *x_level[k] << endl;
 	map->TransferC2F(k, x_level[k], x_level[k+1]);
-	cout << "x_level[" << k << "]: " << endl << *x_level[k] << endl;
       }
     }
     else { //drops out -> #trans=#levels
       map->TransferC2F(my_max_level, x_level[my_max_level], nullptr);
       for(int k = my_max_level-1; k>=0; k--) {
-	cout << "bef x_level[" << k << "]: " << endl << *x_level[k] << endl;
 	map->TransferC2F(k, x_level[k], x_level[k+1]);
-	cout << "x_level[" << k << "]: " << endl << *x_level[k] << endl;
       }
     }
     x_level[0]->Cumulate();
-    cout << "vec sizes: " << vec.FVDouble().Size() << " " << x_level[0]->FVDouble().Size() << endl;
     for(auto k:Range(vec.FVDouble().Size()))
       vec.FVDouble()[k] = x_level[0]->FVDouble()[k];
     vec.SetParallelStatus(CUMULATED);
-    cout << "vec out: " << endl << vec << endl;
   }
 
   size_t AMGMatrix :: GetNDof(size_t level, int arank) const
