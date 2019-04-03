@@ -23,6 +23,7 @@ namespace amg {
     			     BaseVector &res, bool res_updated = false,
     			     bool update_res = true, bool x_zero =false) const = 0;
     virtual string SType() const { return "base"; }
+    virtual Array<MemoryUsage> GetMemoryUsage() const override = 0;
     // virtual void Mult (const BaseVector & x, BaseVector & y) const = 0;
     // virtual void MultTrans (const BaseVector & x, BaseVector & y) const = 0;
   };
@@ -60,6 +61,7 @@ namespace amg {
       // smoothfull(3, x, b, res, res_updated, update_res, x_zero);
     }
     virtual string SType() const override { return name; }
+    virtual Array<MemoryUsage> GetMemoryUsage() const override;
   protected:
     string name;
     shared_ptr<const BitArray> free_dofs;

@@ -69,6 +69,8 @@ namespace amg
     typedef SparseMatrix<double> T_RIGHT;
   };
   
+  enum INFO_LEVEL { NONE = 0, BASIC = 1, DETAILED = 2, EXTRA = 3 };
+    
 } // namespace amg
 
 

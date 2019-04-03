@@ -201,7 +201,11 @@ namespace amg {
 			     const shared_ptr<const BaseVector> & x_coarse) const override
     {
       x_coarse->Cumulate();
+      cout << "MA 1, coarse: " << *x_coarse << endl;
+      cout << "MA 1, fine: " << *x_fine << endl;
       prol->Mult(*x_coarse, *x_fine);
+      cout << "MA 2, coarse: " << *x_coarse << endl;
+      cout << "MA 2, fine: " << *x_fine << endl;
       x_fine->SetParallelStatus(CUMULATED);
     }
     virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const override

@@ -475,6 +475,34 @@ namespace amg {
     }
   } // scatter_vec
 
+  
+  template<int BS> Array<MemoryUsage>
+  HybridGSS<BS> ::  GetMemoryUsage() const
+  {
+    string name = string("buffers,HybridGSS<") + to_string(BS) + string(">");
+    size_t nbytes = 0, nblocks = 1;
+    nbytes += buffer.Size() * sizeof(TV);
+    nbytes += x_buffer.Size() * sizeof(TV);
+    nbytes += ax_buffer.Size() * sizeof(TV);
+    nbytes += buf_os.Size() * sizeof(int);
+    nbytes += buf_cnt.Size() * sizeof(int);
+    nbytes += rr_gather.Size() * sizeof(MPI_Request);
+    nbytes += rr_scatter.Size() * sizeof(MPI_Request);
+    nbytes += diag.Size() * sizeof(TM);
+    Array<MemoryUsage> mus = { { name+string("buffers"), nbytes, nblocks } };
+    if (addA != nullptr) {
+      auto mu_addA = addA->GetMemoryUsage();
+      for (auto & mu : mu_addA) mu.AddName("-addA");
+      mus += mu_addA;
+    }
+    if (CLD != nullptr) {
+      auto mu_CLD = CLD->GetMemoryUsage();
+      for (auto & mu : mu_CLD) mu.AddName("-CLD");
+      mus += mu_CLD;
+    }
+    return mus;
+  }
+
 
   /**
     L,D,L.T    - refers to diag-block of A
@@ -514,7 +542,6 @@ namespace amg {
 		   !!restore buffered x_old_D values
   	    III) as above
   **/
-
   template<int BS> Timer& hgss_timer_hack (string bname, int type) {
     static Timer t0(bname+string("::FW"));
     static Timer t1(bname+string("::BW"));

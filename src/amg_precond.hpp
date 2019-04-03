@@ -29,6 +29,12 @@ namespace amg
   {
     // TODO: do I need ATMESH? could take that from AMG_CLASS
   public:
+
+    using TMESH = ATMESH;
+    using TV = typename mat_traits<TMAT>::TV_ROW;
+    using TSCAL = typename mat_traits<TMAT>::TSCAL;
+    using TSPMAT = SparseMatrix<TMAT, TV, TV>;
+
     struct Options
     {
       /** Dirichlet conditions for finest level **/
@@ -67,12 +73,149 @@ namespace amg
       /** Coarsest level opts **/
       string clev_type = "inv";
       string clev_inv_type = "masterinverse";
+      /** Wether we keep track of info **/
+      INFO_LEVEL info_level = NONE;
     };
 
-    using TMESH = ATMESH;
-    using TV = typename mat_traits<TMAT>::TV_ROW;
-    using TSCAL = typename mat_traits<TMAT>::TSCAL;
-    using TSPMAT = SparseMatrix<TMAT, TV, TV>;
+    
+    struct Info {
+      /** Only values on rank 0 are true, others can be garbage !! **/
+      INFO_LEVEL ilev;
+      // BASIC+ // summary values
+      Array<INT<3>> lvs;                   // levels [CRS,CTR,DISC]
+      Array<int> isass;                    // is level assembled?
+      Array<size_t> NVs;                   // NR of vertices per level
+      double v_comp;                       // vertex-complexity: \frac{sum_l NV_l}{NV_0}
+      Array<double> vcc;                   // vertex-complexity components
+      double op_comp;                      // operator-complexity: \frac{sum_l NZE_l}{NZE_0}
+      Array<double> occ;                   // oeprator-complexity components
+      // DETAILED+ // per-level info
+      Array<size_t> NEs;                   // NR of edges per level
+      Array<size_t> NPs;                   // #active procs per level
+      double mem_comp1;                    // memory-complexity, V1:  \frac{sum_l MMAT_l}{ MMAT_0 }
+      Array<double> mcc1;                  // ...
+      double mem_comp2;                    // memory-complexity, V1:  \frac{sum_l MSM_l}{ MMAT_0 }
+      Array<double> mcc2;                  // ...
+      // EXTRA+ // per-level local info
+      double v_comp_l;                     // max. local v-comp
+      Array<double> vcc_l;                 // ...
+      double op_comp_l;                    // max. local op-comp
+      Array<double> occ_l;                 // ...
+      double mem_comp1_l;                  // ...
+      Array<double> mcc1_l;                // memory-complexity components
+      double mem_comp2_l;                  // ...
+      Array<double> mcc2_l;                // memory-complexity components
+      Array<double> fvloc;                 // fraction of local vertices
+
+      bool has_comm;
+      NgsAMG_Comm glob_comm;
+    public:
+      Info (INFO_LEVEL ailev, size_t asize) : ilev(ailev) {
+	has_comm = false;
+	auto alloc = [asize](auto & array) {
+	  array.SetSize(asize); array.SetSize0();
+	};
+	if (ilev >= BASIC)
+	  { alloc(lvs); alloc(isass); alloc(NVs); alloc(vcc); alloc(occ); }
+	if (ilev >= DETAILED)
+	  { alloc(mcc1); alloc(mcc2); alloc(NEs); alloc(NPs); }
+	if (ilev >= EXTRA)
+	  { alloc(vcc_l); alloc(occ_l); alloc(mcc1_l); alloc(mcc2_l); }
+      }
+
+      void LogMesh (INT<3> level, shared_ptr<TMESH> & amesh, bool assit) {
+	if (ilev == NONE) return;
+	auto comm = amesh->GetEQCHierarchy()->GetCommunicator();
+	if(!has_comm) { has_comm = true; glob_comm = comm; }
+	if (comm.Rank() == 0) {
+	  lvs.Append(level);
+	  isass.Append(assit?1:0);
+	  NVs.Append(amesh->template GetNNGlobal<NT_VERTEX>());
+	}
+	if (ilev <= BASIC) return;
+	if (comm.Rank() == 0) {
+	  NEs.Append(amesh->template GetNNGlobal<NT_EDGE>());
+	  NPs.Append(comm.Size());
+	}
+	if (ilev <= DETAILED) return;
+	vcc_l.Append(amesh->template GetNN<NT_EDGE>());
+	size_t locnv_l = amesh->template GetENN<NT_VERTEX>(0);
+	size_t locnv_g = comm.Reduce(locnv_l, MPI_SUM, 0);
+	if (comm.Rank()==0) fvloc.Append( locnv_g/double(NVs.Last()) );
+      }
+      
+      void LogMatSm (shared_ptr<BaseSparseMatrix> & amat, shared_ptr<BaseSmoother> & sm) {
+	if (ilev == NONE) return;
+	auto comm = sm->GetParallelDofs()->GetCommunicator();
+	size_t ocmat_l = amat->NZE()*mat_traits<TMAT>::HEIGHT*mat_traits<TMAT>::WIDTH;
+	size_t ocmat_g = comm.Reduce(ocmat_l, MPI_SUM, 0);
+	if (comm.Rank()==0) occ.Append(ocmat_g);
+	if (ilev <= BASIC) return;
+	// cast to TSPMAT because "error: member 'GetMemoryUsage' found in multiple base classes of different types"
+	size_t nbts_mat_l = 0; for (auto & mu : static_cast<TSPMAT*>(amat.get())->GetMemoryUsage()) nbts_mat_l += mu.NBytes();
+	size_t nbts_mat_g = comm.Reduce(nbts_mat_l, MPI_SUM, 0);
+	size_t nbts_sm_l = 0; for (auto & mu : sm->GetMemoryUsage()) nbts_sm_l += mu.NBytes();
+	size_t nbts_sm_g = comm.Reduce(nbts_sm_l, MPI_SUM, 0);
+	if (comm.Rank()==0) { mcc1.Append(nbts_mat_g); mcc2.Append(nbts_sm_g); }
+	if (ilev <= DETAILED ) return;
+	occ_l.Append(ocmat_l);
+	mcc1_l.Append(nbts_mat_l);
+	mcc2_l.Append(nbts_sm_l);
+      }
+      
+      void Finalize() {
+	if (ilev == NONE) return;
+	static Timer t("Info::Finalize"); RegionTimer rt(t);
+	int n_meshes = NVs.Size(), n_mats = occ.Size(); // == 0 if not master
+	auto lam_max = [&](auto & val, auto & arr) {
+	  auto val2 = glob_comm.AllReduce(val, MPI_MAX);
+	  int mrk = (val==val2) ? glob_comm.Rank() : glob_comm.Size()+1;
+	  int sender = glob_comm.AllReduce(mrk, MPI_MIN);
+	  if (sender != 0) {
+	    if (glob_comm.Rank()==sender) { glob_comm.Send(arr, 0, MPI_TAG_AMG); }
+	    else if (glob_comm.Rank()==0) { val = val2; glob_comm.Recv(arr, sender, MPI_TAG_AMG); }
+	  }
+	};
+	// VC
+	v_comp = 0;
+	for (auto k : Range(n_meshes))
+	  if (isass[k]==1) { double val = double(NVs[k])/NVs[0]; v_comp += val; vcc.Append(val); }
+	// OC
+	op_comp = 0; double oc0 = occ[0];
+	for (auto k : Range(n_mats))
+	  { auto v = occ[k]/oc0; op_comp += v; occ[k] = v; }
+	if (ilev <= BASIC) return;
+	// MC-1 & MC-2
+	mem_comp1 = 0; mem_comp2 = 0; double mm0 = mcc1[0];
+	for (auto k : Range(n_mats))
+	  {
+	    auto v1 = mcc1[k]/mm0; mem_comp1 += v1; mcc1[k] = v1;
+	    auto v2 = mcc2[k]/mm0; mem_comp2 += v2; mcc2[k] = v2;
+	  }
+	if (ilev <= DETAILED ) return;
+	n_meshes = vcc_l.Size(); n_mats = occ_l.Size();
+	// VC-L
+	v_comp_l = 0; double vcl0 = max2(1.0, vcc_l[0]);
+	for (auto k : Range(n_meshes))
+	  if (isass[k]==1) { double val = vcc_l[k]/vcl0; v_comp_l += val; vcc_l[k] = val; }
+	lam_max(v_comp_l, vcc_l);
+	// OC-L
+	op_comp_l = 0; double ocl0 = max2(1.0, occ_l[0]);
+	for (auto k : Range(n_mats))
+	  { auto v = occ_l[k]/ocl0; op_comp_l += v; occ_l[k] = v; }
+	lam_max(op_comp_l, occ_l);
+	// MC-1-L & MC-2-L
+	mem_comp1_l = 0; mem_comp2_l = 0; double mml0 = max2(1.0, mcc1_l[0]);
+	for (auto k : Range(n_mats))
+	  {
+	    auto v1 = mcc1_l[k]/mml0; mem_comp1_l += v1; mcc1_l[k] = v1;
+	    auto v2 = mcc2_l[k]/mml0; mem_comp2_l += v2; mcc2_l[k] = v2;
+	  }
+	lam_max(mem_comp1_l, mcc1_l);
+	lam_max(mem_comp2_l, mcc2_l);
+      }
+
+    };
 
     VWiseAMG (shared_ptr<TMESH> finest_mesh, shared_ptr<Options> opts) : options(opts), mesh(finest_mesh) { ; };
     /** the first prolongation is concatenated with embed_step (it should be provided by EmbedAMGPC) **/
@@ -94,7 +237,8 @@ namespace amg
     {this->amg_mat->GetBF(level, rank, dof, vec); }
     size_t GetNDof(size_t level, int rank) const
     { return this->amg_mat->GetNDof(level, rank); }
-    
+    shared_ptr<Info> GetInfo () const { return infos; }
+
   protected:
     string name = "VWiseAMG";
     shared_ptr<Options> options;
@@ -103,6 +247,7 @@ namespace amg
     shared_ptr<BaseMatrix> finest_mat;
     shared_ptr<BaseDOFMapStep> embed_step;
     double ctr_factor = -1;
+    shared_ptr<Info> infos = nullptr;
     
     virtual void SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts, INT<3> level, shared_ptr<TMESH> mesh);
     virtual shared_ptr<CoarseMap<TMESH>> TryCoarsen  (INT<3> level, shared_ptr<TMESH> mesh);
@@ -216,6 +361,8 @@ namespace amg
     virtual void FinalizeLevel (const BaseMatrix * mat) override;
     virtual void Update () override { ; };
     virtual void Setup ();
+
+    shared_ptr<typename AMG_CLASS::Info> GetInfo () const { return amg_pc->GetInfo(); }
 
     void MyTest () const
     {

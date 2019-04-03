@@ -10,6 +10,13 @@ namespace amg {
   template <class TOPTS>
   void opts_from_kwa (shared_ptr<TOPTS> opts, py::kwargs & kwa)
   {
+    auto int_to_il = [](int in)->INFO_LEVEL {
+      if (in==0) return NONE;
+      if (in==1) return BASIC;
+      if (in==2) return DETAILED;
+      if (in==3) return EXTRA;
+      return NONE;
+    };
     for (auto item : kwa) {
       string name = item.first.cast<string>();
       if (name == "max_levels") { opts->max_n_levels = item.second.cast<int>(); }
@@ -28,14 +35,68 @@ namespace amg {
       else if (name == "sm_skip_lev") { py::list py_list = item.second.cast<py::list>(); opts->sm_skip_levels = move(makeCArray<int>(py_list)); }
       else if (name == "force_sm") { py::list py_list = item.second.cast<py::list>(); opts->force_sm = true; opts->sm_levels = move(makeCArray<int>(py_list)); }
       else if (name == "enable_redist") { opts->enable_ctr = item.second.cast<bool>(); }
-      else { cout << "warning, invalid AMG option: " << name << endl; break; }
+      else if (name == "ctr_min_nv") { opts->ctr_min_nv = item.second.cast<size_t>(); }
+      else if (name == "ctr_seq_nv") { opts->ctr_seq_nv = item.second.cast<size_t>(); }
+      else if (name == "ctr_frac") { opts->ctr_after_frac = item.second.cast<double>(); }
+      else if (name == "log_level") { opts->info_level = int_to_il(item.second.cast<int>()); }
+      else { cout << "warning, invalid AMG option: " << name << endl; }
     }
     // opts->v_pos = "VERTEX";
   }
 
+  py::list py_list_int3p1 (Array<INT<3>> & ar, Array<int> & ar2) {
+    py::list pl(ar.Size());
+    for (auto k : Range(ar.Size())) {
+      auto v = ar[k]; auto v2 = ar2[k];
+      pl[k] = py::make_tuple(v[0], v[1], v[2], v2);
+    }
+    return pl;
+  }
+
+  template<class T>
+  py::list py_list (Array<T> & ar) {
+    py::list pl(ar.Size());
+    for (auto k : Range(ar.Size()))
+      pl[k] = ar[k];
+    return pl;
+  }
+  
   template<class AMG_CLASS, class TLAM>
   void ExportEmbedVAMG (py::module & m, string name, string description, TLAM lam_opts)
   {
+
+    auto dict_from_info = [](auto spi) -> py::object {
+      py::dict pd;
+      auto il_to_str = [](INFO_LEVEL in) {
+	if (in==NONE) return "NONE";
+	if (in==BASIC) return "BASIC";
+	if (in==DETAILED) return "DETAILED";
+	if (in==EXTRA) return "EXTRA";
+	return "UNKNOWN";
+      };
+      pd["log_level"] = il_to_str(spi->ilev);
+      if ( spi->has_comm && spi->glob_comm.Rank() !=0 ) return py::none();
+      if (spi->ilev >= BASIC) {
+	pd["levels"] = py_list_int3p1(spi->lvs, spi->isass);
+	pd["VC"] = spi->v_comp;
+	pd["VCcs"] = py_list(spi->vcc);
+	pd["OC"] = spi->op_comp;
+	pd["OCcs"] = py_list(spi->occ);
+	pd["NVs"] = py_list(spi->NVs);
+      }
+      if (spi->ilev >= DETAILED) {
+	pd["NEs"] = py_list(spi->NEs);
+	pd["NPs"] = py_list(spi->NPs);
+	pd["MCMat"] = spi->mem_comp1;
+	pd["MCSm"] = spi->mem_comp2;
+	pd["MCMatcs"] = py_list(spi->mcc1);
+	pd["MCSmocs"] = py_list(spi->mcc2);
+      }
+      if (spi->ilev >= EXTRA) {
+      }
+      return move(pd);
+    };
+    
     py::class_<EmbedVAMG<AMG_CLASS>, shared_ptr<EmbedVAMG<AMG_CLASS> >, BaseMatrix>
       (m, name.c_str(), description.c_str())
       .def(py::init<>
@@ -46,17 +107,18 @@ namespace amg {
 	     lam_opts(opts);
 	     return new EmbedVAMG<AMG_CLASS>(blf, opts);
 	   }), py::arg("blf") = nullptr)
-    .def ("Test", [](EmbedVAMG<AMG_CLASS> &pre) { pre.MyTest();} )
-       .def("GetNLevels", [](EmbedVAMG<AMG_CLASS> &pre, size_t rank) {
-	   return pre.GetNLevels(rank);
-	 }, py::arg("rank")=int(0))
-       .def("GetNDof", [](EmbedVAMG<AMG_CLASS> &pre, size_t level, size_t rank) {
-	   return pre.GetNDof(level, rank);
-	 }, py::arg("level"), py::arg("rank")=int(0))
-       .def("GetBF", [](EmbedVAMG<AMG_CLASS> &pre, shared_ptr<BaseVector> vec,
-			size_t level, size_t rank, size_t dof) {
-	      pre.GetBF(level, rank, dof, *vec);
-	    });
+      .def ("GetLogs", [dict_from_info](EmbedVAMG<AMG_CLASS> &pre) { return dict_from_info(pre.GetInfo()); } )
+      .def ("Test", [](EmbedVAMG<AMG_CLASS> &pre) { pre.MyTest();} )
+      .def("GetNLevels", [](EmbedVAMG<AMG_CLASS> &pre, size_t rank) {
+	  return pre.GetNLevels(rank);
+	}, py::arg("rank")=int(0))
+      .def("GetNDof", [](EmbedVAMG<AMG_CLASS> &pre, size_t level, size_t rank) {
+	  return pre.GetNDof(level, rank);
+	}, py::arg("level"), py::arg("rank")=int(0))
+      .def("GetBF", [](EmbedVAMG<AMG_CLASS> &pre, shared_ptr<BaseVector> vec,
+		       size_t level, size_t rank, size_t dof) {
+	     pre.GetBF(level, rank, dof, *vec);
+	   });
   }
   
 } // namespace amg

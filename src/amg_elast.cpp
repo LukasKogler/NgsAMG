@@ -47,8 +47,13 @@ namespace amg
   EmbedVAMG<ElasticityAMG<3>> :: BuildEmbedding ()
   {
     auto & vsort = node_sort[NT_VERTEX];
+    bool need_mat = false;
+    for (int k : Range(vsort.Size()))
+      if (vsort[k]!=k) { need_mat = true; break; }
+    if (need_mat == false) return nullptr;
     auto pmap = make_shared<ProlMap<SparseMatrix<Mat<6,6,double>>>>(fes->GetParallelDofs(), nullptr);
     pmap->SetProl(BuildPermutationMatrix<Mat<6,6,double>>(vsort));
+    cout << "embed mat: " << endl; print_tm_spmat(cout, *pmap->GetProl()); cout << endl;
     return pmap;
   }
 

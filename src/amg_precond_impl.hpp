@@ -60,7 +60,9 @@ namespace amg
     int cnt_lc = 0;
     Array<size_t> nvs;
     nvs.Append(fm->template GetNNGlobal<NT_VERTEX>());
-
+    
+    infos = make_shared<Info>(options->info_level, 3*MAX_NL); // over-estimate
+    
     Array<size_t> cutoffs = {0};
     { // coarsen mesh!
       static Timer t(timer_name + string("-GridMaps")); RegionTimer rt(t);
@@ -70,10 +72,11 @@ namespace amg
       shared_ptr<BaseDOFMapStep> dof_step;
       INT<3> level = 0; // coarse, contr, elim
       levels.Append(level);
+      infos->LogMesh(level, fm, true);
       bool contr_locked = true, disc_locked = true;
       size_t last_nv_ass = nvs[0], last_nv_smo = nvs[0], last_nv_ctr = nvs[0];
       size_t step_cnt = 0;
-      while ( level[0] < MAX_NL-1 && fm->template GetNNGlobal<NT_VERTEX>()>MAX_NV) {
+      while ( level[0] < MAX_NL-1 && ( (level[0]==0) || (fm->template GetNNGlobal<NT_VERTEX>() > MAX_NV) ) ) {
 	size_t curr_nv = fm->template GetNNGlobal<NT_VERTEX>();
 	if ( (!contr_locked) && (grid_step = (gstep_contr = TryContract(level, fm))) != nullptr ) {
 	  contr_locked = true;
@@ -125,17 +128,21 @@ namespace amg
 	else if (level[0] < options->skip_ass_first) { cout << "3F"; assit = false; }
 	else if (next_nv < options->ass_after_frac * last_nv_ass) { cout << "4Y"; assit = true; }
 	cout << "  " << assit << endl;
+	infos->LogMesh(level, fm, assit);
 	if (assit) { cutoffs.Append(step_cnt); last_nv_ass = curr_nv; }
 	// Unlock contract ?
 	if ( (level[1] == 0) && (level[2]==0) ) {
 	  if ( options->ctr_after_frac * last_nv_ctr > next_nv) { contr_locked = false; }
 	  else if ( frac_crs > options->ctr_crs_thresh) { contr_locked = false; }
 	  if (!contr_locked) {
-	    if (next_nv <= options->ctr_seq_nv) { this->ctr_factor = -1; }
+	    if (next_nv <= options->ctr_seq_nv) { cout << "redis to 1 rank" << endl; this->ctr_factor = -1; }
 	    else {
 	      double fac = options->ctr_pfac;
 	      auto ccomm = fm->GetEQCHierarchy()->GetCommunicator();
-	      fac = min2(fac, next_nv / options->ctr_min_nv / (1.0 * ccomm.Size()));
+	      fac = min2(fac, double(next_nv) / options->ctr_min_nv / ccomm.Size());
+	      cout << " next_nv / min_nv : " << double(next_nv) / options->ctr_min_nv << endl;
+	      cout << " ccomn sz: " << ccomm.Size() << endl;
+	      cout << "fac: " << fac << endl;
 	      this->ctr_factor = fac;
 	    }
 	  }
@@ -144,7 +151,7 @@ namespace amg
       if (cutoffs.Last() != step_cnt) // make sure last level is assembled
 	{ cutoffs.Append(step_cnt); }
     }
-
+      
     cout << " cutoffs are: " << endl; prow2(cutoffs, cout); cout << endl;
     
     {
@@ -179,9 +186,12 @@ namespace amg
 	cout << mat->Height() << " x " << mat->Width() << endl;
 	cout << "ndglob: " << pds->GetNDofGlobal() << endl;
 	sms.Append(make_shared<HybridGSS<mat_traits<TV>::HEIGHT>>(mat,pds,(k==0) ? options->finest_free_dofs : nullptr));
+	infos->LogMatSm(mats[k], sms.Last());
       }
     }
-    
+
+    infos->Finalize();
+
     Array<shared_ptr<const BaseSmoother>> const_sms(sms.Size()); const_sms = sms;
     Array<shared_ptr<const BaseMatrix>> bmats_mats(mats.Size()); bmats_mats = mats;
     this->amg_mat = make_shared<AMGMatrix> (dof_map, const_sms, bmats_mats);
@@ -265,8 +275,8 @@ namespace amg
 	}
       }
     }
-    // cout << "have pw-prol: " << endl;
-    // print_tm_spmat(cout, *prol); cout << endl;
+    cout << "have pw-prol: " << endl;
+    print_tm_spmat(cout, *prol); cout << endl;
 
     auto pmap = make_shared<ProlMap<TSPMAT>> (fpd, cpd);
     pmap->SetProl(prol);
@@ -354,7 +364,8 @@ namespace amg
     if (mesh->GetEQCHierarchy()->GetCommunicator().Size()==2) return nullptr; // keep this as long as 0 is seperated
     int n_groups;
     if (this->ctr_factor == -1 ) { n_groups = 2; }
-    else { n_groups = 1 + ( (mesh->GetEQCHierarchy()->GetCommunicator().Size()-1) * this->ctr_factor) ; }
+    else { n_groups = 1 + std::round( (mesh->GetEQCHierarchy()->GetCommunicator().Size()-1) * this->ctr_factor) ; }
+    cout << "want groups " << (mesh->GetEQCHierarchy()->GetCommunicator().Size()-1) * this->ctr_factor << endl;
     n_groups = max2(2, n_groups); // dont send everything from 1 to 0 for no reason
     Table<int> groups = PartitionProcsMETIS (*mesh, n_groups);
     return make_shared<GridContractMap<TMESH>>(move(groups), mesh);

@@ -131,16 +131,18 @@ namespace amg
       Vec<3,double> tang = get<0>(cmesh.Data())->Data()[cv].pos;
       tang -= get<0>(fmesh.Data())->Data()[v].pos;
       mat = 0;
-      for (auto k : Range(disppv(D))) {
+      for (auto k : Range(dofpv(D))) {
 	mat(k,k) = 1.0;
-	if constexpr(D==3) for (auto j : Range(rotpv(D))) mat(k,disppv(D)+j) = tang(k)*tang(j);
       }
       if constexpr(D==2) {
 	  mat(0,2) = tang(1);
 	  mat(1,2) = -tang(0);
 	}
-      for (auto k : Range(disppv(D), disppv(D)+rotpv(D)))
-	mat(k,k) = 1.0;
+      else {
+	mat(1,5) = - (mat(2,4) = tang[0]);
+	mat(2,3) = - (mat(0,5) = tang[1]);
+	mat(0,4) = - (mat(1,3) = tang[2]);
+      }
     }
     INLINE void CalcRMBlock (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge, FlatMatrix<TMAT> mat) const
     {
