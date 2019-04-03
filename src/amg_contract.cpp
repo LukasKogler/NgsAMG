@@ -182,6 +182,7 @@ namespace amg
       MPI_Type_free(&mpi_types[k]);
   }
 
+  INLINE Timer & timer_hack_ctr_f2c () { static Timer t("CtrMap::TransferF2C"); return t; }
   template<class TV>
   void CtrMap<TV> :: TransferF2C(const shared_ptr<const BaseVector> & x_fine,
 				 const shared_ptr<BaseVector> & x_coarse) const
@@ -191,6 +192,7 @@ namespace amg
 	typically this does not matter, because F2C works with DISTRIBUTED vectors
 	anyways
      **/
+    RegionTimer rt(timer_hack_ctr_f2c());
     x_fine->Distribute();
     auto fvf = x_fine->FV<TV>();
     auto& comm(pardofs->GetCommunicator());
@@ -224,6 +226,7 @@ namespace amg
     // cout << " x coarse is: " << endl << fvc << endl;
   }
 
+  INLINE Timer & timer_hack_ctr_c2f () { static Timer t("CtrMap::TransferC2F"); return t; }
   template<class TV>
   void CtrMap<TV> :: TransferC2F(const shared_ptr<BaseVector> & x_fine,
 				 const shared_ptr<const BaseVector> & x_coarse) const
@@ -232,6 +235,7 @@ namespace amg
        some values are transfered to multiple ranks 
        does not matter because coarse grid vectors are typically CUMULATED
      **/
+    RegionTimer rt(timer_hack_ctr_c2f());
     auto& comm(pardofs->GetCommunicator());
     x_fine->SetParallelStatus(CUMULATED);
     auto fvf = x_fine->FV<TV>();

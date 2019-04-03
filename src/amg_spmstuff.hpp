@@ -53,6 +53,7 @@ namespace amg
   shared_ptr<typename mult_spm<TMA,TMB>::type>
   MatMultAB (const TMA & mata, const TMB & matb);
 
+  INLINE Timer & timer_hack_restrictspm () { static Timer t("RestrictMatrix"); return t; }
   // B.T * A * B
   template <typename TMA, typename TMB,
 	    typename TSIZE_MATCH = typename std::enable_if<mat_traits<TMA>::WIDTH==mat_traits<TMB>::HEIGHT>::type >
@@ -60,6 +61,7 @@ namespace amg
   INLINE shared_ptr<typename mult_spm<typename mult_spm<typename trans_spm<TMB>::type,TMA>::type, TMB>::type>
   RestrictMatrix (const TMA & A, const TMB & P)
   {
+    RegionTimer rt(timer_hack_restrictspm());
     // cout << "restrict A: " << A.Height() << " x " << A.Width() << endl;
     // cout << "with P: " << P.Height() << " x " << P.Width() << endl;
     auto PT = TransposeSPM(P);

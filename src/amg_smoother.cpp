@@ -375,6 +375,8 @@ namespace amg {
   template<int BS> void
   HybridGSS<BS> :: gather_vec (const BaseVector & vec) const
   {
+    static Timer t(string("HybridGSS<")+to_string(BS)+">::gather_vec");
+    RegionTimer rt(t);
     FlatVector<TV> tvec = vec.FV<TV>();
     auto & pds = *parallel_dofs;
     auto ex_procs = pds.GetDistantProcs();
@@ -433,6 +435,8 @@ namespace amg {
   template<int BS> void
   HybridGSS<BS> :: scatter_vec (const BaseVector & vec) const
   {
+    static Timer t(string("HybridGSS<")+to_string(BS)+">::scatter_vec");
+    RegionTimer rt(t);
     FlatVector<TV> fvec = vec.FV<TV>();
     auto & pds = *parallel_dofs;
     auto ex_procs = pds.GetDistantProcs();
@@ -552,10 +556,13 @@ namespace amg {
   HybridGSS<BS> :: smoothfull (int _type, BaseVector  &x, const BaseVector &b, BaseVector &res,
 			       bool _res_updated, bool _update_res, bool _x_zero) const
   {
-    string tname = name + string("::Smooth");
+    string tname = string("HybridGSS<")+to_string(BS)+">::Smooth";
     static Timer t1 (tname);
     RegionTimer RT1(t1);
     RegionTimer RT2(hgss_timer_hack<BS>(tname, _type));
+    static Timer tprep (tname+"-prep");
+    static Timer tcloc (tname+"-calc");
+    static Timer tpost (tname+"-post");
 
     const int type = _type;
     const bool res_updated = _res_updated;
@@ -677,6 +684,8 @@ namespace amg {
     //   }
     // }
 
+    tprep.Start();
+    
     if (x.GetParallelStatus()!=CUMULATED) {
       // Note: this can happen in Preconditioner::Test()
       x.Cumulate();
@@ -742,6 +751,8 @@ namespace amg {
       res.Distribute();
     }
     // res has now full values on masters, 0 on others
+    tprep.Stop();
+    tcloc.Start();
 
     // cout << "res after prep: " << endl; // cout << res << endl;
     // print_vec(tvr);
@@ -924,7 +935,8 @@ namespace amg {
 	for (int rownr = H-1; rownr>=0; rownr--)
 	  update_row_resnotu(rownr);
     }
-      
+    tcloc.Stop();
+    tpost.Start();
 
     // // compensate C_DL x_L_old
     // if ( (!res_updated) && (update_res) && (!x_zero) ) {
@@ -1008,7 +1020,7 @@ namespace amg {
     //   check_res(res);
     //   cout << "check output res done" << endl;
     // }
-    
+    tpost.Stop();
   } // smoothfull
 
 } // namespace amg

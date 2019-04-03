@@ -404,6 +404,7 @@ namespace amg
     
     shared_ptr<Options> options;
   protected:
+    string name = "EmbedVAMG";
     shared_ptr<BilinearForm> bfa;
     shared_ptr<FESpace> fes;
     shared_ptr<AMG_CLASS> amg_pc;

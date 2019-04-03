@@ -16,6 +16,7 @@ namespace amg
   template<class AMG_CLASS, class TMESH, class TMAT>
   void VWiseAMG<AMG_CLASS, TMESH, TMAT> :: Finalize (shared_ptr<BaseMatrix> fine_mat, shared_ptr<BaseDOFMapStep> aembed_step)
   {
+    static Timer t(this->name+string("::Finalize")); RegionTimer rt(t);
     finest_mat = fine_mat;
     embed_step = aembed_step;
     Setup();
@@ -24,6 +25,7 @@ namespace amg
   template<class AMG_CLASS, class TMESH, class TMAT> shared_ptr<ParallelDofs> 
   VWiseAMG<AMG_CLASS, TMESH, TMAT> :: BuildParDofs (shared_ptr<TMESH> amesh)
   {
+    static Timer t(this->name+string("::BuildParDofs")); RegionTimer rt(t);
     const auto & mesh = *amesh;
     const auto & eqc_h = *mesh.GetEQCHierarchy();
     size_t neqcs = eqc_h.GetNEQCS();
@@ -89,13 +91,14 @@ namespace amg
 	  auto prol_step = BuildDOFMapStep(gstep_coarse, fm_pd);
 	  bool smoothit = true;
 	  // Smooth prol?
-	  if (options->enable_sm == false) { smoothit = false; }
-	  else if (options->force_sm) { smoothit = options->sm_levels.Contains(level[0]); }
-	  else if (options->sm_levels.Contains(level[0])) { smoothit = true; }
-	  else if (options->sm_skip_levels.Contains(level[0])) { smoothit = false; }
-	  else if (level[0] < options->skip_smooth_first) { smoothit = false; }
-	  else if (curr_nv > options->smooth_after_frac * last_nv_smo) { smoothit = false; }
-	  cout << "CRS-step, smooth? " << smoothit << endl;
+	  cout << "CRS-step, smooth? "; 
+	  if (options->enable_sm == false) { cout << "1F"; smoothit = false; }
+	  else if (options->force_sm) { cout << "2"; smoothit = options->sm_levels.Contains(level[0]); }
+	  else if (options->sm_levels.Contains(level[0])) { cout << "3T"; smoothit = true; }
+	  else if (options->sm_skip_levels.Contains(level[0])) { cout << "4F"; smoothit = false; }
+	  else if (level[0] < options->skip_smooth_first) { cout << "5F"; smoothit = false; }
+	  else if (curr_nv > options->smooth_after_frac * last_nv_smo) { cout << "6F"; smoothit = false; }
+	  cout << smoothit << endl;
 	  if (smoothit)
 	    {
 	      last_nv_smo = curr_nv;
@@ -316,6 +319,7 @@ namespace amg
   VWiseAMG<AMG_CLASS, TMESH, TMAT> :: SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts,
 							    INT<3> level, shared_ptr<TMESH> _mesh)
   {
+    static Timer t(this->name+string("::SetCoarseningOptions")); RegionTimer rt(t);
     const TMESH & mesh(*_mesh);
     const AMG_CLASS & self = static_cast<const AMG_CLASS&>(*this);
     auto NV = mesh.template GetNN<NT_VERTEX>();
@@ -374,6 +378,7 @@ namespace amg
   template<class AMG_CLASS, class TMESH, class TMAT> void
   VWiseAMG<AMG_CLASS, TMESH, TMAT> :: SmoothProlongation (shared_ptr<ProlMap<TSPMAT>> pmap, shared_ptr<TMESH> afmesh) const
   {
+    static Timer t(this->name+string("::SmoothProlongation")); RegionTimer rt(t);
     // cout << "SmoothProlongation" << endl;
     // cout << "fecon-ptr: " << afmesh->GetEdgeCM() << endl;
     // cout << "mesh at " << afmesh << endl;
@@ -634,6 +639,7 @@ namespace amg
   template<class AMG_CLASS> shared_ptr<BlockTM> 
   EmbedVAMG<AMG_CLASS> :: BuildTopMesh ()
   {
+    static Timer t(this->name + string("::BuildTopMesh")); RegionTimer rt(t);
     // Array<Array<int>> node_sort(4);
     if (options->v_pos == "VERTEX") {
       auto pds = fes->GetParallelDofs();
@@ -679,6 +685,7 @@ namespace amg
   
   template<class AMG_CLASS> void EmbedVAMG<AMG_CLASS> :: Setup ()
   {
+    static Timer t(this->name+string("::Setup")); RegionTimer rt(t);
     auto mesh = BuildInitialMesh();
     amg_pc = make_shared<AMG_CLASS>(mesh, options);
     auto fmat = (finest_mat==nullptr) ? bfa->GetMatrixPtr() : finest_mat;

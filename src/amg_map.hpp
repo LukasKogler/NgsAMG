@@ -155,6 +155,8 @@ namespace amg {
      This maps DOFs via a prolongation matrix (which is assumed to be hierarchic).
      ProlMaps can concatenate by multiplying their prolongation matrices.
   **/
+  INLINE Timer & timer_hack_prol_f2c () { static Timer t("ProlMap::TransferF2C"); return t; }
+  INLINE Timer & timer_hack_prol_c2f () { static Timer t("ProlMap::TransferC2F"); return t; }
   template<class TMAT>
   class ProlMap : public BaseDOFMapStep
   {
@@ -193,6 +195,7 @@ namespace amg {
     virtual void TransferF2C (const shared_ptr<const BaseVector> & x_fine,
 			      const shared_ptr<BaseVector> & x_coarse) const override
     {
+      RegionTimer rt(timer_hack_prol_f2c());
       x_coarse->FVDouble() = 0.0;
       prol->MultTransAdd(1.0, *x_fine, *x_coarse);
       x_coarse->SetParallelStatus(DISTRIBUTED);
@@ -200,6 +203,7 @@ namespace amg {
     virtual void TransferC2F (const shared_ptr<BaseVector> & x_fine,
 			     const shared_ptr<const BaseVector> & x_coarse) const override
     {
+      RegionTimer rt(timer_hack_prol_c2f());
       x_coarse->Cumulate();
       prol->Mult(*x_coarse, *x_fine);
       x_fine->SetParallelStatus(CUMULATED);

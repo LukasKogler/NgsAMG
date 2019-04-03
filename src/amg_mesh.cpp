@@ -320,6 +320,7 @@ namespace amg
 				       bool build_faces, FlatArray<int> face_sort,
 				       bool build_cells, FlatArray<int> cell_sort)
   {
+    static Timer t("MeshAccessToBTM"); RegionTimer rt(t);
     if(build_cells)
       throw Exception("Cant build cells yet, sorry!!");
     if(build_faces && (eqc_h->GetCommunicator().Rank()==0))

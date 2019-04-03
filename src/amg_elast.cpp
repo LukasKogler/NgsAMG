@@ -8,9 +8,11 @@ namespace amg
   template class ElasticityAMG<2>;
   template class ElasticityAMG<3>;
 
+  INLINE Timer & timer_hack_Hack_BuildAlgMesh () { static Timer t("ElasticityAMG::BuildAlgMesh"); return t; }
   template<int D> shared_ptr<ElasticityMesh<D>>
   Hack_BuildAlgMesh (Array<Vec<3,double>> && vp, shared_ptr<BlockTM> top_mesh)
   {
+    Timer & t(timer_hack_Hack_BuildAlgMesh()); RegionTimer rt(t);
     // Array<Vec<3,double>> vp = move(amg->node_pos[NT_VERTEX]); // dont keep this
     // cout << "v-pos: " << vp.Size() << " " << top_mesh->GetNN<NT_VERTEX>() << endl << vp << endl;
     Array<PosWV> pwv(top_mesh->GetNN<NT_VERTEX>());
@@ -37,7 +39,12 @@ namespace amg
   template<> shared_ptr<BaseDOFMapStep>
   EmbedVAMG<ElasticityAMG<2>> :: BuildEmbedding ()
   {
+    static Timer t(this->name+string("::BuildEmbedding")); RegionTimer rt(t);
     auto & vsort = node_sort[NT_VERTEX];
+    bool need_mat = false;
+    for (int k : Range(vsort.Size()))
+      if (vsort[k]!=k) { need_mat = true; break; }
+    if (need_mat == false) return nullptr;
     auto pmap = make_shared<ProlMap<SparseMatrix<Mat<3,3,double>>>>(fes->GetParallelDofs(), nullptr);
     pmap->SetProl(BuildPermutationMatrix<Mat<3,3,double>>(vsort));
     return pmap;
@@ -46,6 +53,7 @@ namespace amg
   template<> shared_ptr<BaseDOFMapStep>
   EmbedVAMG<ElasticityAMG<3>> :: BuildEmbedding ()
   {
+    static Timer t(this->name+string("::BuildEmbedding")); RegionTimer rt(t);
     auto & vsort = node_sort[NT_VERTEX];
     bool need_mat = false;
     for (int k : Range(vsort.Size()))
@@ -53,7 +61,6 @@ namespace amg
     if (need_mat == false) return nullptr;
     auto pmap = make_shared<ProlMap<SparseMatrix<Mat<6,6,double>>>>(fes->GetParallelDofs(), nullptr);
     pmap->SetProl(BuildPermutationMatrix<Mat<6,6,double>>(vsort));
-    cout << "embed mat: " << endl; print_tm_spmat(cout, *pmap->GetProl()); cout << endl;
     return pmap;
   }
 
