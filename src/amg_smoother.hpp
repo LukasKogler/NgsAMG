@@ -41,7 +41,7 @@ namespace amg {
     using TSCAL = double;
     using TM = typename strip_mat<Mat<BS,BS,TSCAL>> :: type;
     using TV = typename strip_vec<Vec<BS,TSCAL>> :: type;
-    using TSPMAT = typename strip_spmat<TM,TV,TV> :: type;
+    using TSPMAT = stripped_spm<TM,TV,TV>;
     HybridGSS ( const shared_ptr<const TSPMAT> & amat,
 		const shared_ptr<ParallelDofs> & apds,
 		const shared_ptr<const BitArray> & atake_dofs);

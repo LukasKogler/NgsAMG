@@ -57,18 +57,6 @@ namespace amg
   template<ngfem::NODE_TYPE NT> using AMG_CNode = typename amg_type_trait_cross<NT>::type;
 
 
-  template<class TSPMAT>
-  struct amg_spm_traits {
-    typedef SparseMatrix<Mat<mat_traits<typename TSPMAT::TVY>::HEIGHT, mat_traits<typename TSPMAT::TVY>::HEIGHT, typename TSPMAT::TSCAL>,
-			 typename TSPMAT::TVY, typename TSPMAT::TVY> T_LEFT; 
-    typedef SparseMatrix<Mat<mat_traits<typename TSPMAT::TVX>::HEIGHT, mat_traits<typename TSPMAT::TVX>::HEIGHT, typename TSPMAT::TSCAL>,
-			 typename TSPMAT::TVX, typename TSPMAT::TVX> T_RIGHT; 
-  };
-  template<> struct amg_spm_traits<SparseMatrix<double>> {
-    typedef SparseMatrix<double> T_LEFT;
-    typedef SparseMatrix<double> T_RIGHT;
-  };
-  
   enum INFO_LEVEL { NONE = 0, BASIC = 1, DETAILED = 2, EXTRA = 3 };
     
 } // namespace amg

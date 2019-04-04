@@ -10,8 +10,8 @@ namespace amg {
 
 #include "mpiwrap_extension.hpp"
 #include "amg_typedefs.hpp"  
-#include "amg_utils.hpp"  
 #include "amg_spmstuff.hpp"  
+#include "amg_utils.hpp"  
 #include "eqchierarchy.hpp"  
 #include "reducetable.hpp"
 #include "amg_mesh.hpp"

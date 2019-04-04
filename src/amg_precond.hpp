@@ -324,16 +324,16 @@ namespace amg
 	    "VARIABLE" -> dofs for vertex k: v_blocks[k] (need for 3d TDNNS)
        **/
       string v_dofs = "NODAL";
-      shared_ptr<BitArray> on_dofs = nullptr; FlatArray<int> block_s;
-      FlatTable<int> v_blocks;
+      shared_ptr<BitArray> on_dofs = nullptr; Array<int> block_s;
+      Table<int> v_blocks;
       /** v_pos: 
 	    "VERTEX", "FACE" -> use node pos
 	    "GIVEN" -> positions in v_pos_array **/
       string v_pos = "VERTEX"; FlatArray<Vec<3>> v_pos_array;
       bool keep_vp = false; // save vertex position
       /** energy: 
-	    "ELMAT" -> calc from elmats, use ext_blf if given, else blf
-	    "ALGEB" -> determine algebraically (not implemented properly)
+	    "ELMAT" -> calc from elmats, use ext_blf if given, else blf (not back yet)
+	    "ALGEB" -> determine algebraically (not implemented)
 	    "TRIV" -> use 1 weights everywhere **/
       string energy = "TRIV"; shared_ptr<BilinearForm> ext_blf = nullptr; shared_ptr<BitArray> elmat_dofs = nullptr;
       /** kvecs: 

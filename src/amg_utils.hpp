@@ -448,17 +448,17 @@ namespace amg
   } // MergeArrays
 
   INLINE void SetIdentity (double & x) { x = 1.0; }
-  template<int D> INLINE void SetIdentity (Mat<D,D,double> & x) { x = 0.0; for (auto i:Range(D)) x(i,i) = 1.0; }
+  template<int H, int W> INLINE void SetIdentity (Mat<H,W,double> & x) { x = 0.0; for (auto i:Range(min(H,W))) x(i,i) = 1.0; }
   template<class TM> INLINE void SetIdentity (FlatMatrix<TM> mat)
   { for (auto k : Range(mat.Height())) SetIdentity(mat(k,k)); }
   template<int D, class TM> INLINE void SetIdentity (FlatMatrixFixWidth<D, TM> mat)
   { mat = 0; for (auto k : Range(D)) SetIdentity(mat(k,k)); }
   
   template<class TM>
-  shared_ptr<SparseMatrix<TM>> BuildPermutationMatrix (FlatArray<int> sort) {
+  shared_ptr<stripped_spm<TM>> BuildPermutationMatrix (FlatArray<int> sort) {
     size_t N = sort.Size();
     Array<int> epr(N); epr = 1.0;
-    auto embed_mat = make_shared<SparseMatrix<TM>>(epr, N);
+    auto embed_mat = make_shared<stripped_spm<TM>>(epr, N);
     const auto & em = *embed_mat;
     for (auto k : Range(N)) {
       em.GetRowIndices(k)[0] = sort[k];

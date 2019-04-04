@@ -109,6 +109,7 @@ namespace amg
   class ElasticityAMG : public VWiseAMG<ElasticityAMG<D>, ElasticityMesh<D>, Mat<dofpv(D), dofpv(D), double>>
   {
   public:
+    enum { DIM = D };
     using TMESH = ElasticityMesh<D>;
     using TMAT = Mat<dofpv(D), dofpv(D), double>;
     using BASE = VWiseAMG<ElasticityAMG<D>, ElasticityMesh<D>, TMAT>;

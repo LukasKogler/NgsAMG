@@ -13,72 +13,69 @@ namespace amg
   template<class T> struct strip_vec { typedef T type; };
   template<> struct strip_vec<Vec<1, double>> { typedef double type; };
   // Strip SparseMatrix<Mat<...>,..> -> SparseMatrix<double>
-  template<class TM, class TVX, class TVY> struct strip_spmat {
-    typedef SparseMatrix<typename strip_mat<TM>::type,
-			 typename strip_vec<TVX>::type,
-			 typename strip_vec<TVY>::type > type;
-  };
-  template<class TSA, class TSB> struct mult_scal { typedef double type; };
-  template<class TMA, class TMB> struct mult_spm {
-    typedef typename strip_spmat<Mat<mat_traits<typename TMA::TVY>::HEIGHT,
-				     mat_traits<typename TMB::TVX>::HEIGHT,
-				     typename mult_scal<typename TMA::TSCAL, typename TMB::TSCAL>::type>,
-				 typename TMA::TVY,
-				 typename TMB::TVX>::type type;
-  };
-  template<class TMA> struct trans_spm {
-    typedef typename strip_spmat<Mat<mat_traits<typename TMA::TVX>::HEIGHT,
-				     mat_traits<typename TMA::TVY>::HEIGHT,
-				     typename TMA::TSCAL>,
-				 typename TMA::TVX,
-				 typename TMA::TVY>::type type;
-  };
-  // Get TM/TVX/TVY back from SparseMatrix<....>
+  template<class TM,
+	   class TVX = typename mat_traits<TM>::TV_ROW,
+	   class TVY = typename mat_traits<TM>::TV_COL>
+  using stripped_spm =  SparseMatrix<typename strip_mat<TM>::type,
+				  typename strip_vec<TVX>::type,
+				  typename strip_vec<TVY>::type >;
   template<class TM> struct TM_OF_SPM { typedef typename std::remove_reference<typename std::result_of<TM(int, int)>::type >::type type; };
   template<> struct TM_OF_SPM<SparseMatrix<double>> { typedef double type; };
+  template<class TSPM>
+  using strip_spm =  SparseMatrix<typename strip_mat<typename TM_OF_SPM<TSPM>::type>::type,
+				  typename strip_vec<typename TSPM::TVX>::type,
+				  typename strip_vec<typename TSPM::TVY>::type >;
+  // Sparse Matrix Transpose
+  template<class TMA>
+  using trans_spm = stripped_spm<Mat<mat_traits<typename TMA::TVX>::HEIGHT,
+				     mat_traits<typename TMA::TVY>::HEIGHT,
+				     typename TMA::TSCAL>,
+				 typename TMA::TVY,
+				 typename TMA::TVX>;
+  template <typename TMA> shared_ptr<trans_spm<TMA>> TransposeSPM (const TMA & mat);
 
-  // template<class TM> struct TVX_OF_SPM { typedef typename TM::TVX type; };
-  // template<> struct TVX_OF_SPM<SparseMatrix<double>> { typedef double type; };
-  // template<class TM> struct TVY_OF_SPM { typedef typename TM::TVY type; };
-  // template<> struct TVY_OF_SPM<SparseMatrix<double>> { typedef double type; };
-
-  
-  // A.T
-  template <typename TMA> shared_ptr<typename trans_spm<TMA>::type> TransposeSPM (const TMA & mat);
-  // template<> shared_ptr<SparseMatrix<double>> TransposeSPM<SparseMatrix<double>> (const SparseMatrix<double> & mat);
-  
-  // A * B
-  // typename TSIZE_MATCH = typename std::enable_if<mat_traits<typename TMA::TVX>::HEIGHT==mat_traits<typename TMB::TVY>::HEIGHT>::type >
-  template <typename TMA, typename TMB>
-  shared_ptr<typename mult_spm<TMA,TMB>::type>
+  // Sparse Matrix Multiplication
+  template<class TSA, class TSB> struct mult_scal { typedef double type; };
+  template<class TMA, class TMB>
+  using mult_spm = stripped_spm<Mat<mat_traits<typename TMA::TVY>::HEIGHT,
+				    mat_traits<typename TMB::TVX>::HEIGHT,
+				    typename mult_scal<typename TMA::TSCAL, typename TMB::TSCAL>::type>,
+				typename TMB::TVX,
+				typename TMA::TVY >;
+  template <typename TMA, typename TMB> shared_ptr<mult_spm<TMA,TMB>>
   MatMultAB (const TMA & mata, const TMB & matb);
 
-  INLINE Timer & timer_hack_restrictspm () { static Timer t("RestrictMatrix"); return t; }
+  // Get TM/TVX/TVY back from SparseMatrix<....>
+
+  template<class TSPMAT> struct amg_spm_traits {
+    typedef stripped_spm<Mat<mat_traits<typename TSPMAT::TVX>::HEIGHT, mat_traits<typename TSPMAT::TVX>::HEIGHT, typename TSPMAT::TSCAL>,
+			 typename TSPMAT::TVX, typename TSPMAT::TVX> T_RIGHT; // TVX - row_vector
+    typedef stripped_spm<Mat<mat_traits<typename TSPMAT::TVY>::HEIGHT, mat_traits<typename TSPMAT::TVY>::HEIGHT, typename TSPMAT::TSCAL>,
+			 typename TSPMAT::TVY, typename TSPMAT::TVY> T_LEFT;  // TVY - col_vector
+  };
+  
+  
+
   // B.T * A * B
-  template <typename TMA, typename TMB,
-	    typename TSIZE_MATCH = typename std::enable_if<mat_traits<TMA>::WIDTH==mat_traits<TMB>::HEIGHT>::type >
-  // shared_ptr<typename mult_spm<typename trans_spm<TMB>::type,TMB>::type>
-  INLINE shared_ptr<typename mult_spm<typename mult_spm<typename trans_spm<TMB>::type,TMA>::type, TMB>::type>
+  INLINE Timer & timer_hack_restrictspm () { static Timer t("RestrictMatrix"); return t; }
+  template <typename TMA, typename TMB>
+  INLINE shared_ptr<mult_spm<mult_spm<trans_spm<TMB>,TMA>, TMB>>
   RestrictMatrix (const TMA & A, const TMB & P)
   {
     RegionTimer rt(timer_hack_restrictspm());
     // cout << "restrict A: " << A.Height() << " x " << A.Width() << endl;
     // cout << "with P: " << P.Height() << " x " << P.Width() << endl;
-    auto PT = TransposeSPM(P);
+    // auto PT = TransposeSPM(P);
+    shared_ptr<trans_spm<TMB>> PT = TransposeSPM(P);
     // cout << "PT: " << PT->Height() << " x " << PT->Width() << endl;
-    auto AP = MatMultAB(A, P);
+    // auto AP = MatMultAB(A, P);
+    shared_ptr<mult_spm<TMA,TMB>> AP = MatMultAB(A, P);
     // cout << "AP: " << AP->Height() << " x " << AP->Width() << endl;
-    auto PTAP = MatMultAB(*PT, *AP);
+    // auto PTAP = MatMultAB(*PT, *AP);
+    shared_ptr<mult_spm<trans_spm<TMB>, mult_spm<TMA,TMB>>> PTAP = MatMultAB(*PT, *AP);
     // cout << "result PTAP: " << PTAP->Height() << " x " << PTAP->Width() << endl;
     return PTAP;
   }
-
-// #ifndef FILE_AMG_SPMSTUFF_CPP
-// #define SPMSEXT extern
-// #else
-// #define SPMSEXT
-// #endif
-// #undef SPMSEXT
 
 } // namespace amg
 

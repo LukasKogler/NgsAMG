@@ -2,8 +2,6 @@
 
 #include "amg.hpp"
 
-#include "amg_tcs.hpp"
-
 namespace amg
 {
   
@@ -19,7 +17,7 @@ namespace amg
     default: { static Timer t("TIMERERR"); return t; }
     }
   };
-  template <typename TMA> shared_ptr<typename trans_spm<TMA>::type> TransposeSPM (const TMA & mat)
+  template <typename TMA> shared_ptr<trans_spm<TMA>> TransposeSPM (const TMA & mat)
   {
     Timer & t1 = timer_hack_TransposeSPM(0);
     Timer & t2 = timer_hack_TransposeSPM(1);
@@ -30,7 +28,7 @@ namespace amg
 	cnt[c]++;
     t1.Stop();
     t2.Start();
-    auto trans = make_shared<typename trans_spm<TMA>::type>(cnt, mat.Height());
+    auto trans = make_shared<trans_spm<TMA>>(cnt, mat.Height());
     cnt = 0;
     for (int i : Range(mat.Height())) {
       for (int ci : Range(mat.GetRowIndices(i))) {
@@ -43,7 +41,7 @@ namespace amg
     for (int r : Range(trans->Height())) {
       auto rowvals = trans->GetRowValues(r);
       BubbleSort (trans->GetRowIndices(r),
-		  FlatArray<typename TM_OF_SPM<typename trans_spm<TMA>::type>::type> (rowvals.Size(), &rowvals(0)));
+		  FlatArray<typename TM_OF_SPM<trans_spm<TMA>>::type> (rowvals.Size(), &rowvals(0)));
     }
     t2.Stop();
     return trans;
@@ -60,20 +58,14 @@ namespace amg
     default: { static Timer t("TIMERERR"); return t; }
     }
   }
-  template <typename TSPMA, typename TSPMB>
-  shared_ptr<typename mult_spm<TSPMA,TSPMB>::type> MatMultAB (const TSPMA & mata, const TSPMB & matb)
+  template <typename TMA, typename TMB> shared_ptr<mult_spm<TMA,TMB>>
+  MatMultAB (const TMA & mata, const TMB & matb)
   {
     Timer & t = timer_hack_MatMultAB(0);
     Timer & t1a = timer_hack_MatMultAB(1);
     Timer & t1b = timer_hack_MatMultAB(2);
     Timer & t1b1 = timer_hack_MatMultAB(3);
     Timer & t2 = timer_hack_MatMultAB(4);
-
-    // C = A * B
-    typedef typename mult_spm<TSPMA,TSPMB>::type TSPMC;
-    // typedef typename TM_OF_SPM<TSPMA>::type TMA;
-    // typedef typename TM_OF_SPM<TSPMB>::type TMB;
-    // typedef typename TM_OF_SPM<TSPMC>::type TMC;
     
     RegionTimer reg(t);
     t1a.Start();
@@ -103,7 +95,7 @@ namespace amg
     t1a.Stop();
     t1b.Start();
     t1b1.Start();
-    auto prod = make_shared<TSPMC>(cnt, matb.Width());
+    auto prod = make_shared<mult_spm<TMA,TMB>>(cnt, matb.Width());
     prod->AsVector() = 0.0;
     t1b1.Stop();
     // fill col-indices
@@ -186,4 +178,28 @@ namespace amg
 
   
 } // namespace amg
+
+namespace ngbla
+{
+  /** So we can have SparseMatrix<Mat<1,N,double>, Vec<N,double>, double> ! **/
+  template<class TB>
+  INLINE double & operator+= (double & a, const Expr<TB> & b) { a += b.Spec()(0,0); return a; }
+
+  template<int H>
+  INLINE Mat<H,1,double> operator* (const Mat<H,1,double> & mat, const double & x)
+  {
+    Mat<H,1,double> res; for (int i = 0; i < H; i++) res(i,0) = mat(i,0) * x;
+    return res;
+  }
+}
+
+#include "sparsematrix_impl.hpp"
+
+// namespace ngla
+// {
+//   template class SparseMatrixTM<Mat<6,6,double>>;
+//   template class SparseMatrix<Mat<6,6,double>>;
+// } // namespace ngla
+
+#include "amg_tcs.hpp"
 

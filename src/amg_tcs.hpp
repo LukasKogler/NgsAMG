@@ -14,15 +14,45 @@
 #define EXTERN
 #endif
 
-namespace amg
+namespace ngla
 {
 
+  /**
+     depending on which MAX_SYS_DIM NGSolve has been compiled with, 
+     we might not already have SparseMatrix<Mat<K,J>>
+   **/
+#if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMG_SPMSTUFF_CPP)
+#if MAX_SYS_DIM < 3
+  EXTERN template class SparseMatrixTM<Mat<3,3,double>>;
+  EXTERN template class SparseMatrix<Mat<3,3,double>>;
+#endif
+  EXTERN template class SparseMatrixTM<Mat<1,3,double>>;
+  EXTERN template class SparseMatrix<Mat<1,3,double>>;
+  EXTERN template class SparseMatrixTM<Mat<2,3,double>>;
+  EXTERN template class SparseMatrix<Mat<2,3,double>>;
+
+#if MAX_SYS_DIM < 6
+  EXTERN template class SparseMatrixTM<Mat<6,6,double>>;
+  EXTERN template class SparseMatrix<Mat<6,6,double>>;
+#endif
+  EXTERN template class SparseMatrixTM<Mat<1,6,double>>;
+  EXTERN template class SparseMatrix<Mat<1,6,double>>;
+  EXTERN template class SparseMatrixTM<Mat<3,6,double>>;
+  EXTERN template class SparseMatrix<Mat<3,6,double>>;
+#endif
+
+} // namespace ngla
+
+
+namespace amg
+{
+  
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGSM_CPP)
   EXTERN template class HybridGSS<1>;
   EXTERN template class HybridGSS<2>;
   EXTERN template class HybridGSS<3>;
-  EXTERN template class HybridGSS<4>;
-  EXTERN template class HybridGSS<5>;
+  // EXTERN template class HybridGSS<4>;
+  // EXTERN template class HybridGSS<5>;
   EXTERN template class HybridGSS<6>;
 #endif
 
@@ -43,8 +73,8 @@ namespace amg
   EXTERN template class CtrMap<double>;
   EXTERN template class CtrMap<Vec<2,double>>;
   EXTERN template class CtrMap<Vec<3,double>>;
-  EXTERN template class CtrMap<Vec<4,double>>;
-  EXTERN template class CtrMap<Vec<5,double>>;
+  // EXTERN template class CtrMap<Vec<4,double>>;
+  // EXTERN template class CtrMap<Vec<5,double>>;
   EXTERN template class CtrMap<Vec<6,double>>;
   EXTERN template class GridContractMap<H1Mesh>;
   EXTERN template class GridContractMap<ElasticityMesh<2>>;
@@ -56,38 +86,54 @@ namespace amg
 #endif
 
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGELAST_CPP)
-#ifndef FILE_AMGELAST_CPP
+  //#ifndef FILE_AMGELAST_CPP
   EXTERN template class ElasticityAMG<2>;
   EXTERN template class ElasticityAMG<3>;
-#endif
+  //#endif
   EXTERN template class EmbedVAMG<ElasticityAMG<2>>;
   EXTERN template class EmbedVAMG<ElasticityAMG<3>>;
 #endif
 
-#if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMG_SPMSTUFF_CPP)
-  /** Transpose **/
-  EXTERN template shared_ptr<typename trans_spm<SparseMatrix<double>>::type> TransposeSPM (const SparseMatrix<double> & mat);
-  // EXTERN template shared_ptr<typename trans_spm<SparseMatrix<Mat<2,1,double>, double, Vec<2,double>>>::type> TransposeSPM
-  // (const SparseMatrix<Mat<2,1,double>, double, Vec<2,double>> & mat); // TODO: NGSolve cant hande this for now ...
-  EXTERN template shared_ptr<typename trans_spm<SparseMatrix<Mat<2,2,double>, Vec<2,double>, Vec<2,double>>>::type> TransposeSPM (const SparseMatrix<Mat<2,2,double>, Vec<2,double>, Vec<2,double>> & mat);
-  EXTERN template shared_ptr<typename trans_spm<SparseMatrix<Mat<3,3,double>, Vec<3,double>, Vec<3,double>>>::type> TransposeSPM (const SparseMatrix<Mat<3,3,double>, Vec<3,double>, Vec<3,double>> & mat);
-  EXTERN template shared_ptr<typename trans_spm<SparseMatrix<Mat<4,4,double>, Vec<4,double>, Vec<4,double>>>::type> TransposeSPM (const SparseMatrix<Mat<4,4,double>, Vec<4,double>, Vec<4,double>> & mat);
-  EXTERN template shared_ptr<typename trans_spm<SparseMatrix<Mat<5,5,double>, Vec<5,double>, Vec<5,double>>>::type> TransposeSPM (const SparseMatrix<Mat<5,5,double>, Vec<5,double>, Vec<5,double>> & mat);
-  EXTERN template shared_ptr<typename trans_spm<SparseMatrix<Mat<6,6,double>, Vec<6,double>, Vec<6,double>>>::type> TransposeSPM (const SparseMatrix<Mat<6,6,double>, Vec<6,double>, Vec<6,double>> & mat);
+#define InstTransMat(N,M) \
+  template shared_ptr<trans_spm<stripped_spm<Mat<N,M,double>>>>	\
+  TransposeSPM<stripped_spm<Mat<N,M,double>>> (const stripped_spm<Mat<N,M,double>> & mat);
+  // template shared_ptr<trans_spm<SparseMatrix<Mat<N,M,double>>>>	\
+  // TransposeSPM<SparseMatrix<typename strip_mat<Mat<N,M,double>>::type>> (const SparseMatrix<typename strip_mat<Mat<N,M,double>>::type> & mat);
 
+#define InstMultMat(A,B,C) \
+  template shared_ptr<stripped_spm<Mat<A,C,double>>>			\
+  MatMultAB<stripped_spm<Mat<A,B,double>>, stripped_spm<Mat<B,C,double>>> (const stripped_spm<Mat<A,B,double>> & mata, const stripped_spm<Mat<B,C,double>> & matb);
+  
+#define InstEmbedMults(N,M) /* embedding NxN to MxM */	\
+  InstMultMat(N,M,M); /* conctenate prols */		\
+  InstMultMat(N,N,M); /* A * P */			\
+  InstMultMat(M,N,M); /* PT * [A*P] */ 
+  
+#if !defined(AMG_EXTERN_TEMPLATES) && defined(FILE_AMG_SPMSTUFF_CPP)
+  /** Transpose **/
+  InstTransMat(1,1);
+  InstTransMat(1,3);
+  InstTransMat(2,3);
+  InstTransMat(3,3);
+  InstTransMat(1,6);
+  InstTransMat(3,6);
+  InstTransMat(6,6);
 
   /** A * B **/
-  EXTERN template shared_ptr<SparseMatrix<double>> MatMultAB (const SparseMatrix<double> & mata, const SparseMatrix<double> & matb);
-  EXTERN template shared_ptr<SparseMatrix<Mat<2,2,double>, Vec<2,double>, Vec<2,double>>> MatMultAB (const SparseMatrix<Mat<2,2,double>, Vec<2,double>, Vec<2,double>> & mata, const SparseMatrix<Mat<2,2,double>, Vec<2,double>, Vec<2,double>> & matb);
-  EXTERN template shared_ptr<SparseMatrix<Mat<3,3,double>, Vec<3,double>, Vec<3,double>>> MatMultAB (const SparseMatrix<Mat<3,3,double>, Vec<3,double>, Vec<3,double>> & mata, const SparseMatrix<Mat<3,3,double>, Vec<3,double>, Vec<3,double>> & matb);
-  EXTERN template shared_ptr<SparseMatrix<Mat<4,4,double>, Vec<4,double>, Vec<4,double>>> MatMultAB (const SparseMatrix<Mat<4,4,double>, Vec<4,double>, Vec<4,double>> & mata, const SparseMatrix<Mat<4,4,double>, Vec<4,double>, Vec<4,double>> & matb);
-  EXTERN template shared_ptr<SparseMatrix<Mat<5,5,double>, Vec<5,double>, Vec<5,double>>> MatMultAB (const SparseMatrix<Mat<5,5,double>, Vec<5,double>, Vec<5,double>> & mata, const SparseMatrix<Mat<5,5,double>, Vec<5,double>, Vec<5,double>> & matb);
-  EXTERN template shared_ptr<SparseMatrix<Mat<6,6,double>, Vec<6,double>, Vec<6,double>>> MatMultAB (const SparseMatrix<Mat<6,6,double>, Vec<6,double>, Vec<6,double>> & mata, const SparseMatrix<Mat<6,6,double>, Vec<6,double>, Vec<6,double>> & matb);
-    
+  InstMultMat(1,1,1);
+  InstEmbedMults(1,3);
+  InstEmbedMults(2,3);
+  InstMultMat(3,3,3);
+  InstMultMat(6,6,6);
+  InstEmbedMults(1,6);
+  InstEmbedMults(3,6);
 #endif
   
 } // namespace amg
 
 #undef EXTERN
+#undef InstTransMat
+#undef InstMultMat
+#undef InstEmbedMults
 
 #endif

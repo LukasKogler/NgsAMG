@@ -161,8 +161,9 @@ namespace amg {
   class ProlMap : public BaseDOFMapStep
   {
   public:
-    using TFMAT = typename amg_spm_traits<TMAT>::T_RIGHT;
-    using TCMAT = typename amg_spm_traits<TMAT>::T_LEFT;
+    using TFMAT = typename amg_spm_traits<TMAT>::T_LEFT;
+    using TCMAT = typename amg_spm_traits<TMAT>::T_RIGHT;
+
     ProlMap (shared_ptr<ParallelDofs> fpd, shared_ptr<ParallelDofs> cpd)
       : BaseDOFMapStep(fpd, cpd), prol(nullptr)
     { ; }
@@ -185,8 +186,8 @@ namespace amg {
       auto oprol = other.GetProl();
       cout << " other " << &other << endl;
       cout << "ConcBack, other dims: " << oprol->Height() << " " << oprol->Width() << endl;
-      auto pstep = make_shared<ProlMap<typename mult_spm<TMATO, TMAT>::type>> (other.GetParDofs(), this->GetMappedParDofs());
-      shared_ptr<typename mult_spm<TMATO, TMAT>::type> pp = MatMultAB (*other.prol, *prol);
+      auto pstep = make_shared<ProlMap<mult_spm<TMATO, TMAT>>> (other.GetParDofs(), this->GetMappedParDofs());
+      shared_ptr<mult_spm<TMATO, TMAT>> pp = MatMultAB (*oprol, *prol);
       cout << "conc NDS: " << pstep->GetParDofs()->GetNDofGlobal() << " -> " << pstep->GetMappedParDofs()->GetNDofGlobal() << endl;
       // cout << "conc prol: " << endl; print_tm_spmat(cout, *pp); cout << endl;
       pstep->SetProl(pp);
