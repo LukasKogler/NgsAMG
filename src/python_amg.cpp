@@ -43,7 +43,7 @@ namespace amg {
       else if (name == "ctr_seq_nv") { opts->ctr_seq_nv = item.second.cast<size_t>(); }
       else if (name == "ctr_frac") { opts->ctr_after_frac = item.second.cast<double>(); }
       else if (name == "log_level") { opts->info_level = int_to_il(item.second.cast<int>()); }
-      else if (name == "dpv") { options->block_s.SetSize(1); options->block_s[0] = item.second.cast<int>(); }
+      else if (name == "dpv") { opts->block_s.SetSize(1); opts->block_s[0] = item.second.cast<int>(); }
       else { cout << "warning, invalid AMG option: " << name << endl; }
     }
     // opts->v_pos = "VERTEX";

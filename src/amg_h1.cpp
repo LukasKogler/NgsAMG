@@ -10,6 +10,13 @@ namespace amg
     : VWiseAMG<H1AMG, H1AMG::TMESH, double>(mesh, opts)
   { name = "H1AMG"; }
 
+  shared_ptr<BaseSmoother> H1AMG :: BuildSmoother  (INT<3> level, shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs> par_dofs,
+						    shared_ptr<BitArray> free_dofs)
+  {
+    shared_ptr<const TSPMAT> spmat = dynamic_pointer_cast<TSPMAT> (mat);
+    return make_shared<HybridGSS<1>> (spmat, par_dofs, free_dofs);
+  }
+
   template<> shared_ptr<EmbedVAMG<H1AMG>::TMESH>
   EmbedVAMG<H1AMG> :: BuildAlgMesh (shared_ptr<BlockTM> top_mesh)
   {
@@ -19,6 +26,7 @@ namespace amg
     // cout << "finest mesh: " << endl << *mesh << endl;
     return mesh;
   }
+
 
   // void H1AMG :: SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts, INT<3> level, shared_ptr<H1AMG::TMESH> _mesh)
   // {

@@ -57,6 +57,7 @@ namespace amg
     NgsAMG_Comm glob_comm = (fm_pd==nullptr) ? NgsAMG_Comm() : NgsAMG_Comm(fm_pd->GetCommunicator());
     auto dof_map = make_shared<DOFMap>();
     Array<INT<3>> levels;
+    Array<INT<3>> ass_levels;
     auto MAX_NL = options->max_n_levels;
     auto MAX_NV = options->max_n_verts;
     int cnt_lc = 0;
@@ -73,7 +74,7 @@ namespace amg
       shared_ptr<GridContractMap<TMESH>> gstep_contr;
       shared_ptr<BaseDOFMapStep> dof_step;
       INT<3> level = 0; // coarse, contr, elim
-      levels.Append(level);
+      levels.Append(level); ass_levels.Append(level);
       infos->LogMesh(level, fm, true);
       bool contr_locked = true, disc_locked = true;
       size_t last_nv_ass = nvs[0], last_nv_smo = nvs[0], last_nv_ctr = nvs[0];
@@ -107,8 +108,9 @@ namespace amg
 	  if ( (level[0] == 0) && (embed_step != nullptr) ) {
 	    cout << " conc embed step! " << endl;
 	    dof_step = embed_step->Concatenate(prol_step);
+	    cout << " initial coned step: " << dof_step << " " << typeid(dof_step).name() << endl;
 	  }
-	  else { dof_step = prol_step; }
+	  else { cout << " NO EMBED STEP!!" << endl; dof_step = prol_step; }
        	  level[0]++; level[1] = level[2] = 0;
        	}
 	else if ( !disc_locked ) {throw Exception("Discard-Map not yet ported to new Version!"); }
@@ -132,7 +134,7 @@ namespace amg
 	else if (next_nv < options->ass_after_frac * last_nv_ass) { cout << "4Y"; assit = true; }
 	cout << "  " << assit << endl;
 	infos->LogMesh(level, fm, assit);
-	if (assit) { cutoffs.Append(step_cnt); last_nv_ass = curr_nv; }
+	if (assit) { ass_levels.Append(level); cutoffs.Append(step_cnt); last_nv_ass = curr_nv; }
 	// Unlock contract ?
 	if ( (level[1] == 0) && (level[2]==0) ) {
 	  if ( options->ctr_after_frac * last_nv_ctr > next_nv) { contr_locked = false; }
@@ -178,17 +180,31 @@ namespace amg
     //   cout << endl;
     // }
 
+    // Array<shared_ptr<BaseSmoother>> sms(cutoffs.Size()); sms.SetSize(0);
+    // {
+    //   static Timer t(timer_name + string("-Smoothers")); RegionTimer rt(t);
+    //   for (auto k : Range(mats.Size()-1)) {
+    // 	cout << "make smoother " << k << "!!" << endl;
+    // 	auto pds = dof_map->GetParDofs(k);
+    // 	shared_ptr<const TSPMAT> mat = dynamic_pointer_cast<TSPMAT>(mats[k]);
+    // 	cout << "mat: " << mat << endl;
+    // 	cout << mat->Height() << " x " << mat->Width() << endl;
+    // 	cout << "ndglob: " << pds->GetNDofGlobal() << endl;
+    // 	sms.Append(make_shared<HybridGSS<mat_traits<TV>::HEIGHT>>(mat,pds,(k==0) ? options->finest_free_dofs : nullptr));
+    // 	infos->LogMatSm(mats[k], sms.Last());
+    //   }
+    // }
+
     Array<shared_ptr<BaseSmoother>> sms(cutoffs.Size()); sms.SetSize(0);
     {
       static Timer t(timer_name + string("-Smoothers")); RegionTimer rt(t);
       for (auto k : Range(mats.Size()-1)) {
 	cout << "make smoother " << k << "!!" << endl;
+	cout << "mat: " << mats[k] << endl;
+	cout << mats[k]->Height() << " x " << mats[k]->Width() << endl;
 	auto pds = dof_map->GetParDofs(k);
-	shared_ptr<const TSPMAT> mat = dynamic_pointer_cast<TSPMAT>(mats[k]);
-	cout << "mat: " << mat << endl;
-	cout << mat->Height() << " x " << mat->Width() << endl;
 	cout << "ndglob: " << pds->GetNDofGlobal() << endl;
-	sms.Append(make_shared<HybridGSS<mat_traits<TV>::HEIGHT>>(mat,pds,(k==0) ? options->finest_free_dofs : nullptr));
+	sms.Append(BuildSmoother(ass_levels[k], mats[k], pds, (k==0) ? options->finest_free_dofs : nullptr));
 	infos->LogMatSm(mats[k], sms.Last());
       }
     }

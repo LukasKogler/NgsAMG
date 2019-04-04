@@ -161,7 +161,7 @@ namespace amg
                      unsigned hashval = unsigned(colb) & nhashm1; // % nhash;
                      if (hash[hashval].idx == colb)
                        { // lucky fast branch
-                        matc_vals[hash[hashval].pos] += vala * matb_vals[k]; 
+			 matc_vals[hash[hashval].pos] += vala * matb_vals[k];
                        }
                      else
                       { // do the binary search

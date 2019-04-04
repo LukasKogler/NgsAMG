@@ -7,6 +7,32 @@
 **/
 namespace amg
 {
+  template<class T>
+  INLINE void print_tm_spmat (ostream &os, const T & mat) {
+    constexpr int H = mat_traits<typename std::remove_reference<typename std::result_of<T(int, int)>::type>::type>::HEIGHT;
+    constexpr int W = mat_traits<typename std::remove_reference<typename std::result_of<T(int, int)>::type>::type>::WIDTH;
+    for (auto k : Range(mat.Height())) {
+      auto ri = mat.GetRowIndices(k);
+      auto rv = mat.GetRowValues(k);
+      if (ri.Size()) {
+	for (int kH : Range(H)) {
+	  if (kH==0) os << "Row " << setw(6) << k  << ": ";
+	  else os << "          : ";
+      	  for (auto j : Range(ri.Size())) {
+	    if (kH==0) os << setw(4) << ri[j] << ": ";
+	    else os << "    : ";
+	    auto& etr = rv[j];
+	    for (int jW : Range(W)) { os << setw(4) << etr(kH,jW) << " "; }
+	    os << " | ";
+	  }
+	  os << endl;
+	}
+      }
+      else { os << "Row " << setw(6) << k << ": (empty)" << endl; }
+    }
+  }
+  template<> INLINE void print_tm_spmat (ostream &os, const SparseMatrix<double> & mat) { os << mat << endl; }
+
   // Strip Mat<1,1,double> and Vec<1,double> -> double
   template<class T> struct strip_mat { typedef T type; };
   template<> struct strip_mat<Mat<1,1,double>> { typedef double type; };
@@ -65,14 +91,16 @@ namespace amg
     RegionTimer rt(timer_hack_restrictspm());
     // cout << "restrict A: " << A.Height() << " x " << A.Width() << endl;
     // cout << "with P: " << P.Height() << " x " << P.Width() << endl;
-    // auto PT = TransposeSPM(P);
-    shared_ptr<trans_spm<TMB>> PT = TransposeSPM(P);
+    // cout << "A: " << endl; print_tm_spmat(cout, A); cout << endl;
+    // cout << "P: " << endl; print_tm_spmat(cout, P); cout << endl;
+
+    auto PT = TransposeSPM(P);
     // cout << "PT: " << PT->Height() << " x " << PT->Width() << endl;
-    // auto AP = MatMultAB(A, P);
-    shared_ptr<mult_spm<TMA,TMB>> AP = MatMultAB(A, P);
+    // cout << "PT: " << endl; print_tm_spmat(cout, *PT); cout << endl;
+    auto AP = MatMultAB(A, P);
     // cout << "AP: " << AP->Height() << " x " << AP->Width() << endl;
-    // auto PTAP = MatMultAB(*PT, *AP);
-    shared_ptr<mult_spm<trans_spm<TMB>, mult_spm<TMA,TMB>>> PTAP = MatMultAB(*PT, *AP);
+    // cout << "AP: " << endl; print_tm_spmat(cout, *AP); cout << endl;
+    auto PTAP = MatMultAB(*PT, *AP);
     // cout << "result PTAP: " << PTAP->Height() << " x " << PTAP->Width() << endl;
     return PTAP;
   }

@@ -191,6 +191,7 @@ namespace amg {
       cout << "conc NDS: " << pstep->GetParDofs()->GetNDofGlobal() << " -> " << pstep->GetMappedParDofs()->GetNDofGlobal() << endl;
       // cout << "conc prol: " << endl; print_tm_spmat(cout, *pp); cout << endl;
       pstep->SetProl(pp);
+      cout << "CONC " << typeid(*oprol).name() << endl << " and " << typeid(*prol).name() << endl << " --- " << typeid(*pp).name() << endl;
       return pstep;
     }
     virtual void TransferF2C (const shared_ptr<const BaseVector> & x_fine,
@@ -211,6 +212,9 @@ namespace amg {
     }
     virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const override
     {
+      // cout << "my prol type: " << typeid(*prol).name() << endl;
+      // cout << "TFMAT : " << typeid(TFMAT).name() << endl;
+      // cout << "TCMAT : " << typeid(TCMAT).name() << endl;
       auto tfmat = dynamic_pointer_cast<TFMAT>(mat);
       if (tfmat==nullptr) {
 	string exname = "Cannot cast ";
@@ -218,6 +222,10 @@ namespace amg {
 	exname += " to "; ;
 	exname += typeid(TFMAT).name();
 	exname += "!!";
+	exname += " \n its actual type is ";
+	exname += typeid(*mat).name();
+	exname += " \n MY PROL actual type is ";
+	exname += typeid(*prol).name();
 	throw Exception(exname);
       }
       return DoAssembleMatrix (tfmat);

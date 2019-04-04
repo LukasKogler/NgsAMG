@@ -253,6 +253,9 @@ namespace amg
     virtual shared_ptr<CoarseMap<TMESH>> TryCoarsen  (INT<3> level, shared_ptr<TMESH> mesh);
     virtual shared_ptr<GridContractMap<TMESH>> TryContract (INT<3> level, shared_ptr<TMESH> mesh);
     virtual shared_ptr<BaseGridMapStep> TryDiscard  (INT<3> level, shared_ptr<TMESH> mesh) { return nullptr; }
+    virtual shared_ptr<BaseSmoother> BuildSmoother  (INT<3> level, shared_ptr<BaseSparseMatrix> mat,
+						     shared_ptr<ParallelDofs> par_dofs,
+						     shared_ptr<BitArray> free_dofs) = 0;
     
     void Setup ();
 

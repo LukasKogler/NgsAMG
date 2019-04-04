@@ -32,9 +32,11 @@ namespace amg {
     // if (free_dofs) cout << *free_dofs << endl;
 
     // cout << "mat is: " << endl << A << endl;
-    
+    cout << "MAT" << endl;
     SetUpMat();
+    cout << "DIAG" << endl;
     CalcDiag();
+    cout << "OK" << endl;
   } // HybridGSS
 
   template<int BS>
@@ -339,6 +341,7 @@ namespace amg {
     ParallelDofs block_pds(pds.GetCommunicator(), cvp.MoveTable(), MS, false);
     shared_ptr<ParallelDofs> spbp(&block_pds, NOOP_Deleter);
     ParallelVVector<Vec<MS,double>> pvec(spbp, DISTRIBUTED);
+    cout << "diag 1" << endl;
     for (auto k : Range(H)) {
       auto & diag_etr = spm(k,k);
       auto & dvec = pvec(k);
@@ -355,19 +358,23 @@ namespace amg {
 	}
       }
     }
+    cout << "diag 2" << endl;
     pvec.Cumulate();
+    cout << "diag 3" << endl;
     diag.SetSize(H);
     for (auto k : Range(H)) {
       auto & diag_etr = diag[k];
       const auto & pve = pvec(k);
       set_v2m(diag_etr, pve);
     }
-    // cout << "final diags: " << endl << diag << endl;
+    cout << "diag 4" << endl;
+    //cout << "final diags: " << endl << diag << endl;
     for (auto k : Range(H)) {
       if (!free_dofs || free_dofs->Test(k))
 	CalcInverse(diag[k]);
     }
     // cout << "final inved diags: " << endl << diag << endl;
+    cout << "done" << endl;
   } // CalcDiag
 
 

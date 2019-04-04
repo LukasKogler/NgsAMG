@@ -63,6 +63,9 @@ namespace amg
     using TMESH = H1Mesh;
     using VWiseAMG<H1AMG, H1Mesh, double>::Options;
     H1AMG (shared_ptr<TMESH> mesh,  shared_ptr<Options> opts);
+    virtual shared_ptr<BaseSmoother> BuildSmoother  (INT<3> level, shared_ptr<BaseSparseMatrix> mat,
+						     shared_ptr<ParallelDofs> par_dofs,
+						     shared_ptr<BitArray> free_dofs) override;
     template<NODE_TYPE NT> INLINE double GetWeight (const TMESH & mesh, const AMG_Node<NT> & node) const
     { // TODO: should this be in BlockAlgMesh instead???
       if constexpr(NT==NT_VERTEX) { return get<0>(mesh.Data())->Data()[node]; }

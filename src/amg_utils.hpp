@@ -218,31 +218,6 @@ namespace amg
   }
   template<> INLINE void print_tm_mat (ostream &os, const Matrix<double> & mat) { os << mat << endl; }
   template<> INLINE void print_tm_mat (ostream &os, const FlatMatrix<double> & mat) { os << mat << endl; }
-  template<class T>
-  INLINE void print_tm_spmat (ostream &os, const T & mat) {
-    constexpr int H = mat_traits<typename std::remove_reference<typename std::result_of<T(int, int)>::type>::type>::HEIGHT;
-    constexpr int W = mat_traits<typename std::remove_reference<typename std::result_of<T(int, int)>::type>::type>::WIDTH;
-    for (auto k : Range(mat.Height())) {
-      auto ri = mat.GetRowIndices(k);
-      auto rv = mat.GetRowValues(k);
-      if (ri.Size()) {
-	for (int kH : Range(H)) {
-	  if (kH==0) os << "Row " << setw(6) << k  << ": ";
-	  else os << "          : ";
-      	  for (auto j : Range(ri.Size())) {
-	  if (kH==0) os << setw(4) << ri[j] << ": ";
-	  else os << "    : ";
-	    auto& etr = rv[j];
-	    for (int jW : Range(W)) { os << setw(4) << etr(kH,jW) << " "; }
-	    os << " | ";
-	  }
-	  os << endl;
-	}
-      }
-      else { os << "Row " << setw(6) << k << ": (empty)" << endl; }
-    }
-  }
-  template<> INLINE void print_tm_spmat (ostream &os, const SparseMatrix<double> & mat) { os << mat << endl; }
   
   // copied from ngsolve/comp/h1amg.cpp
   // and removed all shm-parallelization.

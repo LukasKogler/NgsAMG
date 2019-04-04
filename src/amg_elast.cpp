@@ -5,6 +5,25 @@
 
 namespace amg
 {
+  template<int D> shared_ptr<BaseSmoother>
+  ElasticityAMG<D> :: BuildSmoother  (INT<3> level, shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs> par_dofs,
+				      shared_ptr<BitArray> free_dofs)
+  {
+    if (shared_ptr<const SparseMatrix<Mat<dofpv(D), dofpv(D), double>>> spmat = dynamic_pointer_cast<SparseMatrix<Mat<dofpv(D), dofpv(D), double>>> (mat)) {
+      cout << "DOF x DOF SMOOTHER" << endl;
+      return make_shared<HybridGSS<dofpv(D)>> (spmat, par_dofs, free_dofs);
+    }
+    else if (shared_ptr<const SparseMatrix<Mat<disppv(D), disppv(D), double>>> spmat = dynamic_pointer_cast<SparseMatrix<Mat<disppv(D), disppv(D), double>>> (mat)) {
+      cout << "DISP x DISP SMOOTHER" << endl;
+      return make_shared<HybridGSS<disppv(D)>> (spmat, par_dofs, free_dofs);
+    }
+    else if (shared_ptr<const SparseMatrix<double>> spmat = dynamic_pointer_cast<SparseMatrix<double>> (mat)) {
+      cout << "1 x 1 SMOOTHER" << endl;
+      return make_shared<HybridGSS<1>> (spmat, par_dofs, free_dofs);
+    }
+    throw Exception(string("Could not build a Smoother for mat-type ") + string(typeid(*mat).name()));
+    return nullptr;
+  }
 
   INLINE Timer & timer_hack_Hack_BuildAlgMesh () { static Timer t("ElasticityAMG::BuildAlgMesh"); return t; }
   template<class C> shared_ptr<typename C::TMESH>
@@ -30,10 +49,6 @@ namespace amg
   {
     static Timer t(this->name+string("::BuildEmbedding")); RegionTimer rt(t);
     auto & vsort = node_sort[NT_VERTEX];
-    bool need_mat = false;
-    for (int k : Range(vsort.Size()))
-      if (vsort[k]!=k) { need_mat = true; break; }
-    if (need_mat == false) return nullptr;
     if (options->v_dofs == "NODAL") {
       if (options->block_s.Size() == 1 ) { // ndof/vertex != #kernel vecs
 	if (options->block_s[0] != disppv(C::DIM)) {
@@ -53,6 +68,10 @@ namespace amg
 	return nullptr;
       }
       else { // ndof/vertex != #kernel vecs (so we have rotational DOFs)
+	bool need_mat = false;
+	for (int k : Range(vsort.Size()))
+	  if (vsort[k]!=k) { need_mat = true; break; }
+	if (need_mat == false) return nullptr;
 	auto pmap = make_shared<ProlMap<SparseMatrix<typename C::TMAT>>>(fes->GetParallelDofs(), nullptr);
 	pmap->SetProl(BuildPermutationMatrix<typename C::TMAT>(vsort));
 	return pmap;
