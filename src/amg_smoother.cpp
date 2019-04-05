@@ -597,6 +597,68 @@ namespace amg {
   }
 
 
+  template<int H, int W>
+  INLINE void SubsAxFromy (FlatVec<H> y, const Mat<H,W> & A, const Vec<W> & x)
+  {
+    Iterate<H>([&](auto i) {
+	Iterate<W>([&](auto j) {
+	    y(i.value) -= A(i.value,j.value) * x(j.value);
+	  });
+      });
+  }
+  template<int H, int W>
+  INLINE void SubsAxFromy (Vec<H> &y, const Mat<H,W> & A, FlatVec<W> x)
+  {
+    Iterate<H>([&](auto i) {
+	Iterate<W>([&](auto j) {
+	    y(i.value) -= A(i.value,j.value) * x(j.value);
+	  });
+      });
+  }
+  template<int H, int W>
+  INLINE void SubsAxFromy (FlatVec<H> &y, const Mat<H,W> & A, FlatVec<W> x)
+  {
+    Iterate<H>([&](auto i) {
+	Iterate<W>([&](auto j) {
+	    y(i.value) -= A(i.value,j.value) * x(j.value);
+	  });
+      });
+  }
+  INLINE void SubsAxFromy (double& y, const double & A, const double & x)
+  { y -= A * x; }
+
+  template<int H, int W>
+  INLINE void SubsATxFromy (FlatVec<W> y, const Mat<H,W> & A, const Vec<H> & x)
+  {
+    Iterate<H>([&](auto j) {
+	Iterate<W>([&](auto i) {
+	    y(i.value) -= A(j.value,i.value) * x(j.value);
+	  });
+      });
+  }
+  template<int H, int W>
+  INLINE void SubsATxFromy (Vec<W> & y, const Mat<H,W> & A, FlatVec<H> x)
+  {
+    Iterate<H>([&](auto j) {
+	Iterate<W>([&](auto i) {
+	    y(i.value) -= A(j.value,i.value) * x(j.value);
+	  });
+      });
+  }
+  template<int H, int W>
+  INLINE void SubsATxFromy (FlatVec<W> y, const Mat<H,W> & A, FlatVec<H> x)
+  {
+    Iterate<H>([&](auto j) {
+	Iterate<W>([&](auto i) {
+	    y(i.value) -= A(j.value,i.value) * x(j.value);
+	  });
+      });
+  }
+  INLINE void SubsATxFromy (double& y, const double & A, const double & x)
+  { y -= A * x; }
+
+
+
   /**
     L,D,L.T    - refers to diag-block of A
     C          - the off-diag part of A
@@ -927,6 +989,70 @@ namespace amg {
       }
     };
 
+    auto update_row_resu2 = [&](auto rownr,
+				auto bf_in_min, auto bf_in_max,
+				auto af_ex_min, auto af_ex_max) {
+      if (!mf_dofs.Test(rownr)) return;
+      TV w = diag[rownr] * tvr(rownr);
+      tvx(rownr) += w;
+      auto ris = A.GetRowIndices(rownr);
+      auto rvs = A.GetRowValues(rownr);
+      auto pos = ris.Pos(rownr);
+      auto sz = ris.Size();
+      // L update for future rows
+      // [0..pos) or [pos+1,..sz)
+      const int imin = af_ex_min(pos,sz);
+      const int imax = af_ex_max(pos,sz);
+      for (int l = imin; l < imax; l++) {
+	// cout << "tvr( " << ris[l] << "/" << tvr.Size() << ") -= " << rvs[l] << " * " << w << endl;
+	// cerr << "tvr( " << ris[l] << "/" << tvr.Size() << ") -= " << rvs[l] << " * " << w << endl;
+	SubsATxFromy(tvr(ris[l]),rvs[l],w);
+	// tvr(ris[l]) -= Trans(rvs[l]) * w;
+      }
+      if (update_res) {  // D + L.T update for prev. rows
+	// [0..pos] or [pos..sz)
+	const int imin = bf_in_min(pos,sz);
+	const int imax = bf_in_max(pos,sz);
+	for (int l = imin; l < imax; l++) {
+	  SubsATxFromy(tvr(ris[l]), rvs[l], w);
+	  // tvr(ris[l]) -= Trans(rvs[l]) * w;
+	}
+      }
+      if (mf_exd.Test(rownr)) {
+	auto dps = pds.GetDistantProcs(rownr);
+	for (auto k : Range(dps.Size())) {
+	  int ind = index_of_proc(dps[k]);
+	  if (type == 0) {
+	    auto offset = buf_os[ind];
+	    buffer[offset + buf_cnt[ind]++] = w;
+	  }
+	  else {
+	    auto offset = buf_os[ind+1];
+	    buffer[offset - ++buf_cnt[ind]] = w;
+	  }
+	}
+	auto ris = addA->GetRowIndices(rownr);
+	auto rvs = addA->GetRowValues(rownr);
+	auto pos = ris.Pos(rownr);
+	auto sz = ris.Size();
+	// L update for future rows
+	const int imin = af_ex_min(pos, sz);
+	const int imax = af_ex_max(pos, sz);
+      	for (int l = imin; l < imax; l++) {
+	  SubsATxFromy(tvr(ris[l]), rvs[l], w);
+	  // tvr(ris[l]) -= Trans(rvs[l]) * w;
+	}
+	if (update_res) {  // L.T update for prev. rows
+	  const int imin = bf_in_min(pos, sz);
+	  const int imax = bf_in_max(pos, sz);
+	  for (int l = imin; l < imax; l++) {
+	    SubsATxFromy(tvr(ris[l]), rvs[l], w);
+	    // tvr(ris[l]) -= Trans(rvs[l]) * w;
+	  }
+	}
+      }
+    };
+
     /**
        INIT: b - C_DL x_L - C_LD x_D = b - Cx
        update res:
@@ -936,7 +1062,7 @@ namespace amg {
        -> w = dinv * (res - add_res)
        update prev. rows for RES -> adds values to residual at D-dofs [A_LL w_L + C_DL w_L]
     **/
-    int pos(-1), pos_add(-1), sz(-1), sz_add(-1);
+    int pos_add(-1), sz_add(-1);
     auto update_row_resnotu = [&](auto rownr) {
       if (free_dofs && !free_dofs->Test(rownr)) return;
       const bool exrow = mf_exd.Test(rownr);
@@ -944,8 +1070,8 @@ namespace amg {
       // cout << "type " << typeid(resval).name() << endl;
       auto ris = A.GetRowIndices(rownr);
       auto rvs = A.GetRowValues(rownr);
-      pos = ris.Pos(rownr);
-      sz = ris.Size();
+      int pos = ris.Pos(rownr);
+      int sz = ris.Size();
       // L * x_new -> exclude diag
       const int imin = (type==0) ? 0 : pos+1;
       const int imax = (type==0) ? pos : sz;
@@ -1007,22 +1133,149 @@ namespace amg {
       }
     };
 
+    auto update_row_resnotu2 = [&](auto rownr,
+				   auto bf_ex_min, auto bf_ex_max,
+				   auto bf_in_min, auto bf_in_max,
+				   auto af_in_min, auto af_in_max) {
+      if (free_dofs && !free_dofs->Test(rownr)) return;
+      const bool exrow = mf_exd.Test(rownr);
+      auto resval = tvr(rownr);
+      // cout << "type " << typeid(resval).name() << endl;
+      auto ris = A.GetRowIndices(rownr);
+      auto rvs = A.GetRowValues(rownr);
+      int pos = ris.Pos(rownr);
+      int sz = ris.Size();
+      // L * x_new -> exclude diag
+      const int imin = bf_ex_min(pos,sz);
+      const int imax = bf_ex_max(pos,sz);
+      for (int l = imin; l < imax; l++) {
+	SubsAxFromy(resval, rvs[l], tvx(ris[l]));
+	// resval -= rvs[l] * tvx(ris[l]);
+      }
+      // if free & not master, only do L-update (per def only local mat needed!)
+      if (!mf_dofs.Test(rownr)) return;
+      TV tot_rv(0);
+      // update res curr.row
+      // (L.T+D) * x_old -> include diag
+      const int imin2 = af_in_min(pos,sz);
+      const int imax2 = af_in_max(pos,sz);
+      for (int l = imin2; l < imax2; l++) {
+	SubsAxFromy(tot_rv, rvs[l], tvx(ris[l]));
+	// tot_rv -= rvs[l] * tvx(ris[l]);
+      }
+      if (exrow) {
+	auto ris = addA->GetRowIndices(rownr);
+	auto rvs = addA->GetRowValues(rownr);
+	pos_add = ris.Pos(rownr);
+	sz_add = ris.Size();
+	// L * x_new -> exclude diag
+	const int imin = bf_ex_min(pos_add,sz_add);
+	const int imax = bf_ex_max(pos_add,sz_add);
+	// cout << " res L up ex " << imin << " " << imax << endl;
+      	for (int l = imin; l < imax; l++) {
+	  SubsAxFromy(resval, rvs[l], tvx(ris[l]));
+	  // resval -= rvs[l] * tvx(ris[l]);
+	}
+	// (L.T+D) * x_old -> include diag
+	const int imin2 = af_in_min(pos_add,sz_add);
+	const int imax2 = af_in_max(pos_add,sz_add);
+      	for (int l = imin2; l < imax2; l++) {
+	  SubsAxFromy(tot_rv, rvs[l], tvx(ris[l]));
+	  //tot_rv -= rvs[l] * tvx(ris[l]);
+	}
+      }
+      // calc & store update
+      tot_rv += resval;
+      TV w = diag[rownr] * tot_rv;
+      tvx(rownr) += w;
+      if (exrow) {
+      	auto dps = pds.GetDistantProcs(rownr);
+	for (auto k : Range(dps.Size())) {
+	  int ind = index_of_proc(dps[k]);
+	  if (type == 0) {
+	    auto offset = buf_os[ind];
+	    buffer[offset + buf_cnt[ind]++] = w;
+	  }
+	  else {
+	    auto offset = buf_os[ind+1];
+	    buffer[offset - ++buf_cnt[ind]] = w;
+	  }
+	}
+      }
+      // update res for prev. rows: (L.T+D), include diag
+      if (update_res) {
+	auto xval = tvx(rownr);
+      	const int imin = bf_in_min(pos,sz);
+	const int imax = bf_in_max(pos,sz);
+	for (int l = imin; l < imax; l++) {
+	  SubsATxFromy(tvr(ris[l]), rvs[l], xval);
+	  //tvr(ris[l]) -= Trans(rvs[l]) * xval;
+	}
+	if (exrow) {
+	  auto ris = addA->GetRowIndices(rownr);
+	  auto rvs = addA->GetRowValues(rownr);
+	  const int imin = bf_in_min(pos_add,sz_add);
+	  const int imax = bf_in_max(pos_add,sz_add);
+	  for (int l = imin; l < imax; l++) {
+	    SubsATxFromy(tvr(ris[l]), rvs[l], xval);
+	    //tvr(ris[l]) -= Trans(rvs[l]) * xval;
+	  }
+	}
+      }
+    };
+
+    
     buf_cnt = 0;
+    // if (type==0) { // FW
+    //   if (res_updated)
+    // 	for (size_t rownr = 0; rownr<H; rownr++)
+    // 	  update_row_resu(rownr);
+    //   else
+    // 	for (size_t rownr = 0; rownr<H; rownr++)
+    // 	  update_row_resnotu(rownr);
+    // }
+    // else { // BW
+    //   if (res_updated)
+    // 	for (int rownr = H-1; rownr>=0; rownr--)
+    // 	  update_row_resu(rownr);
+    //   else
+    // 	for (int rownr = H-1; rownr>=0; rownr--)
+    // 	  update_row_resnotu(rownr);
+    // }
+
     if (type==0) { // FW
+      auto bf_in_min = [](auto min, auto max){ return 0; };
+      auto bf_in_max = [](auto min, auto max){ return min+1; };
+      auto af_in_min = [](auto min, auto max){ return min; };
+      auto af_in_max = [](auto min, auto max){ return max; };
+      auto bf_ex_min = [](auto min, auto max){ return 0; };
+      auto bf_ex_max = [](auto min, auto max){ return min; };
+      auto af_ex_min = [](auto min, auto max){ return min+1; };
+      auto af_ex_max = [](auto min, auto max){ return max; };
       if (res_updated)
 	for (size_t rownr = 0; rownr<H; rownr++)
-	  update_row_resu(rownr);
+	  update_row_resu2(rownr, bf_in_min, bf_in_max, af_ex_min, af_ex_max);
       else
 	for (size_t rownr = 0; rownr<H; rownr++)
-	  update_row_resnotu(rownr);
+	  update_row_resnotu2(rownr, bf_ex_min, bf_ex_max, bf_in_min, bf_in_max,
+			      af_in_min, af_in_max);
     }
     else { // BW
+      auto bf_in_min = [](auto min, auto max){ return min; };
+      auto bf_in_max = [](auto min, auto max){ return max; };
+      auto af_in_min = [](auto min, auto max){ return 0; };
+      auto af_in_max = [](auto min, auto max){ return min+1; };
+      auto bf_ex_min = [](auto min, auto max){ return min+1; };
+      auto bf_ex_max = [](auto min, auto max){ return max; };
+      auto af_ex_min = [](auto min, auto max){ return 0; };
+      auto af_ex_max = [](auto min, auto max){ return min; };
       if (res_updated)
 	for (int rownr = H-1; rownr>=0; rownr--)
-	  update_row_resu(rownr);
+	  update_row_resu2(rownr, bf_in_min, bf_in_max, af_ex_min, af_ex_max);
       else
 	for (int rownr = H-1; rownr>=0; rownr--)
-	  update_row_resnotu(rownr);
+	  update_row_resnotu2(rownr, bf_ex_min, bf_ex_max, bf_in_min, bf_in_max,
+			      af_in_min, af_in_max);
     }
     tcloc.Stop();
     tpost.Start();
