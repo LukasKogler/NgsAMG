@@ -54,6 +54,7 @@ namespace amg
   // EXTERN template class HybridGSS<4>;
   // EXTERN template class HybridGSS<5>;
   EXTERN template class HybridGSS<6>;
+  EXTERN template class StabHGSS<6,3,6>;
 #endif
 
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGCRS_CPP)

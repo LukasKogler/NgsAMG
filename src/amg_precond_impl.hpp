@@ -204,7 +204,9 @@ namespace amg
 	cout << mats[k]->Height() << " x " << mats[k]->Width() << endl;
 	auto pds = dof_map->GetParDofs(k);
 	cout << "ndglob: " << pds->GetNDofGlobal() << endl;
-	sms.Append(BuildSmoother(ass_levels[k], mats[k], pds, (k==0) ? options->finest_free_dofs : nullptr));
+	auto sm = BuildSmoother(ass_levels[k], mats[k], pds, (k==0) ? options->finest_free_dofs : nullptr);
+	sm->Finalize();
+	sms.Append(sm);
 	infos->LogMatSm(mats[k], sms.Last());
       }
     }

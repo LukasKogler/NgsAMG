@@ -24,6 +24,7 @@ namespace amg {
     			     bool update_res = true, bool x_zero =false) const = 0;
     virtual string SType() const { return "base"; }
     virtual Array<MemoryUsage> GetMemoryUsage() const override = 0;
+    virtual void Finalize() { ; }
     // virtual void Mult (const BaseVector & x, BaseVector & y) const = 0;
     // virtual void MultTrans (const BaseVector & x, BaseVector & y) const = 0;
   };
@@ -88,6 +89,8 @@ namespace amg {
     int nexp_larger; mutable Array<MPI_Request> rr_scatter;
     Array<TM> diag;
 
+    virtual void Finalize () override { CalcDiag(); }
+    
     void SetUpMat ();
     void CalcDiag ();
 
@@ -106,7 +109,30 @@ namespace amg {
         
   }; // end class HybridSmoother
 
-
+  /** 
+      Regularizes the diagonal blocks.
+      diag_block(RMIN..RMAX, RMIN..RMAX) is regularized
+      diag_block(0..RMIN, 0..RMIN) is not touched
+      Useful for elasticity-AMG performed on a displacement-only formulation.
+  **/
+  template<int BS, int RMIN, int RMAX>
+  class StabHGSS : public HybridGSS<BS>
+  {
+  public:
+    using TSPMAT = typename HybridGSS<BS>::TSPMAT;
+    StabHGSS ( const shared_ptr<const TSPMAT> & amat,
+	       const shared_ptr<ParallelDofs> & apds,
+	       const shared_ptr<const BitArray> & atake_dofs)
+      : HybridGSS<BS>(amat, apds, atake_dofs)
+    { name = string("StabHGS<")+to_string(BS)+","+to_string(RMIN)+","+to_string(RMAX)+string(">"); }
+  protected:
+    using HybridGSS<BS>::spmat, HybridGSS<BS>::parallel_dofs,
+      HybridGSS<BS>::H, HybridGSS<BS>::diag, HybridGSS<BS>::free_dofs,
+      HybridGSS<BS>::name;
+    virtual void Finalize () override { CalcRegDiag(); }
+    void CalcRegDiag ();
+  };
+    
 } // end namespace amg
 
 #endif

@@ -14,7 +14,6 @@ namespace amg {
     : BaseSmoother(par_dofs), free_dofs(atake_dofs), parallel_dofs(par_dofs),
       comm(par_dofs->GetCommunicator()), spmat(amat), A(*spmat)
   {
-    
     name =  string("HybridGSS<") + to_string(BS) + string(">");
     auto & pds = *parallel_dofs;
     this->H = spmat->Height();
@@ -26,17 +25,7 @@ namespace amg {
 	if (pds.GetDistantProcs(k).Size()) mf_exd.Set(k);
       }
     }
-
-    // size_t nf = (free_dofs ? free_dofs->NumSet() : H);
-    // cout << "make smoother, free " << nf << " of " << H << endl;
-    // if (free_dofs) cout << *free_dofs << endl;
-
-    // cout << "mat is: " << endl << A << endl;
-    cout << "MAT" << endl;
     SetUpMat();
-    cout << "DIAG" << endl;
-    CalcDiag();
-    cout << "OK" << endl;
   } // HybridGSS
 
   template<int BS>
@@ -51,6 +40,7 @@ namespace amg {
   template<int BS>
   void HybridGSS<BS> :: SetUpMat ()
   {
+    static Timer t(name+"::SetUpMat"); RegionTimer rt(t);
     auto & pds = *parallel_dofs;
     auto rank = comm.Rank();
     // auto np = comm.Size();
@@ -326,9 +316,11 @@ namespace amg {
   { for (auto k : Range(BS*BS)) a(k) = b(k); }
   void set_m2v (Vec<1,double>& a, const double& b)
   { a(0) = b; }
+
   template<int BS>
   void HybridGSS<BS> :: CalcDiag ()
   {
+    static Timer t(name+"::CalcDiag"); RegionTimer rt(t);
     const TSPMAT & spm(*spmat);
     const ParallelDofs & pds(*parallel_dofs);
     TableCreator<int> cvp(H);
@@ -375,12 +367,102 @@ namespace amg {
     }
     // cout << "final inved diags: " << endl << diag << endl;
     cout << "done" << endl;
-  } // CalcDiag
+  } // HybridGSS<BS>::CalcDiag
 
-
+  template<int BS, int RMIN, int RMAX>
+  void StabHGSS<BS, RMIN, RMAX> :: CalcRegDiag ()
+  {
+    static Timer t(name+"::CalcRegDiag"); RegionTimer rt(t);
+    const TSPMAT & spm(*spmat);
+    const ParallelDofs & pds(*parallel_dofs);
+    TableCreator<int> cvp(H);
+    for (;!cvp.Done(); cvp++) {
+      for (auto k:Range(H))
+	for (auto p:pds.GetDistantProcs(k))
+	  cvp.Add(k,p);
+    }
+    constexpr int MS = BS*BS;
+    ParallelDofs block_pds(pds.GetCommunicator(), cvp.MoveTable(), MS, false);
+    shared_ptr<ParallelDofs> spbp(&block_pds, NOOP_Deleter);
+    ParallelVVector<Vec<MS,double>> pvec(spbp, DISTRIBUTED);
+    cout << "stab diag 1" << endl;
+    for (auto k : Range(H)) {
+      auto & diag_etr = spm(k,k);
+      auto & dvec = pvec(k);
+      set_m2v(dvec, diag_etr);
+      auto mproc = pds.GetMasterProc(k);
+      if (!free_dofs || free_dofs->Test(k)) {
+	auto ris = spm.GetRowIndices(k);
+	auto rvs = spm.GetRowValues(k);
+	for (auto j : Range(ris.Size())) {
+	  auto mj = pds.GetMasterProc(j);
+	  if (mproc!=mj) {
+	    add_diag(0.5, dvec, rvs[j]);
+	  }
+	}
+      }
+    }
+    cout << "stab diag 2" << endl;
+    pvec.Cumulate();
+    cout << "stab diag 3" << endl;
+    diag.SetSize(H);
+    for (auto k : Range(H)) {
+      auto & diag_etr = diag[k];
+      const auto & pve = pvec(k);
+      set_v2m(diag_etr, pve);
+    }
+    cout << "stab diag 4" << endl;
+    //cout << "final diags: " << endl << diag << endl;
+    constexpr int NR = RMAX-RMIN;
+    Matrix<double> rblock(NR, NR), evecs(NR,NR);
+    Vector<double> evals(NR), kv(NR);
+    size_t nr1 = 0, nr2 = 0, nnr = 0;
+    double trace = 0.0;
+    for (auto k : Range(H)) {
+      if (!free_dofs || free_dofs->Test(k)) {
+	bool zero_block = true;
+	auto & block = diag[k];
+	for (int i : Range(NR))
+	  if (block(RMIN+i, RMIN+i) != 0.0)
+	    { zero_block = false; break; }
+	if (zero_block) {
+	  nr1++;
+	  for (int i : Range(NR))
+	    block(RMIN+i, RMIN+i) = 1.0;
+	}
+	else {
+	  trace = 0;
+	  for (auto k : Range(RMIN)) trace += block(k,k);
+	  for (int k = RMAX; k < BS; k++) trace += block(k,k);
+	  trace /= BS;
+	  for (int i : Range(NR))
+	    for (int j : Range(NR))
+	      rblock(i,j) = block(RMIN+i, RMIN+j);
+	  LapackEigenValuesSymmetric(rblock, evals, evecs);
+	  bool reged = false;
+	  for (int l = 0; l < NR; l++) {
+	    if (fabs(evals(0)/evals(NR-1)) < 1e-15) {
+	      reged = true;
+	      kv = evecs.Rows(l, l+1);
+	      double fac = trace / L2Norm(kv);
+	      for (int i : Range(NR))
+		for (int j : Range(NR))
+		  block(RMIN+i, RMIN+j) += fac*kv(i)*kv(j);
+	    }
+	  }
+	  if(reged) nr2++;
+	  else nnr++;
+	}
+	CalcInverse(block);
+      }
+    }
+    cout << "REGED " << nr1+nr2 << " OF " << nr1+nr2+nnr << endl;
+    // cout << "final inved diags: " << endl << diag << endl;
+  } // StabHGSS<BS>::CalcDiag
   
-  template<int BS> void
-  HybridGSS<BS> :: gather_vec (const BaseVector & vec) const
+  
+  template<int BS>
+  void HybridGSS<BS> :: gather_vec (const BaseVector & vec) const
   {
     static Timer t(string("HybridGSS<")+to_string(BS)+">::gather_vec");
     RegionTimer rt(t);

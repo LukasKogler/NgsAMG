@@ -324,8 +324,7 @@ namespace amg
       size_t n_verts = 0;
       /** v_dofs:
 	    "NODAL" -> sum(block_s) dofs per "vertex", determined by on_dofs+block_s
-	    "VARIABLE" -> dofs for vertex k: v_blocks[k] (need for 3d TDNNS)
-       **/
+	    "VARIABLE" -> dofs for vertex k: v_blocks[k] (need for 3d TDNNS) **/
       string v_dofs = "NODAL";
       shared_ptr<BitArray> on_dofs = nullptr; Array<int> block_s;
       Table<int> v_blocks;

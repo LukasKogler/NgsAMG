@@ -113,7 +113,10 @@ namespace amg
     using TMESH = ElasticityMesh<D>;
     using TMAT = Mat<dofpv(D), dofpv(D), double>;
     using BASE = VWiseAMG<ElasticityAMG<D>, ElasticityMesh<D>, TMAT>;
-    using Options = typename BASE::Options;
+    struct Options : BASE::Options
+    {
+      bool regularize = false;
+    };
     ElasticityAMG (shared_ptr<ElasticityMesh<D>> mesh, shared_ptr<Options> opts)
       : VWiseAMG<ElasticityAMG<D>, ElasticityMesh<D>, Mat<dofpv(D), dofpv(D), double>>(mesh, opts)
     { this->name = string("ElastAMG") + to_string(D) + string("D"); }
@@ -199,6 +202,8 @@ namespace amg
       mat(1,0).Rows(disppv(D), dofpv(D)).Cols(0, disppv(D))         = - Trans(MS);
       mat(1,0).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) +=   StMS;
     }
+  protected:
+    using BASE::options;
   };
 
 } // namespace amg

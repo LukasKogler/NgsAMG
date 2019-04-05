@@ -9,8 +9,13 @@ namespace amg
   ElasticityAMG<D> :: BuildSmoother  (INT<3> level, shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs> par_dofs,
 				      shared_ptr<BitArray> free_dofs)
   {
+    auto options = static_pointer_cast<Options>(this->options);
     if (shared_ptr<const SparseMatrix<Mat<dofpv(D), dofpv(D), double>>> spmat = dynamic_pointer_cast<SparseMatrix<Mat<dofpv(D), dofpv(D), double>>> (mat)) {
-      cout << "DOF x DOF SMOOTHER" << endl;
+      if constexpr(D==3) {
+	  if (options->regularize)
+	    { cout << "DOF DOF REG " << endl; return make_shared<StabHGSS<dofpv(D), disppv(D), dofpv(D)>> (spmat, par_dofs, free_dofs); }
+	}
+      cout << "DOF DOF NO REG " << endl;
       return make_shared<HybridGSS<dofpv(D)>> (spmat, par_dofs, free_dofs);
     }
     else if (shared_ptr<const SparseMatrix<Mat<disppv(D), disppv(D), double>>> spmat = dynamic_pointer_cast<SparseMatrix<Mat<disppv(D), disppv(D), double>>> (mat)) {
@@ -56,18 +61,20 @@ namespace amg
 	  throw Exception("This should not happen ... !");
 	}
 	using TESM = Mat<disppv(C::DIM), dofpv(C::DIM)>;
+	options->regularize = true;
 	auto pmap = make_shared<ProlMap<SparseMatrix<TESM>>> (fes->GetParallelDofs(), nullptr);
 	pmap->SetProl(BuildPermutationMatrix<TESM>(vsort));
 	return pmap;
       }
       else if (options->block_s.Size() > 1) {
 	using TESM = Mat<1, dofpv(C::DIM)>;
+	// NOT CORRECT!! just for template insantiation so we get compile time checks
 	auto pmap = make_shared<ProlMap<stripped_spm<TESM>>> (fes->GetParallelDofs(), nullptr);
 	pmap->SetProl(BuildPermutationMatrix<TESM>(vsort));
 	throw Exception("Compound FES embedding not implemented, sorry!");
 	return nullptr;
       }
-      else { // ndof/vertex != #kernel vecs (so we have rotational DOFs)
+      else { // ndof/vertex == #kernel vecs (so we have rotational DOFs)
 	bool need_mat = false;
 	for (int k : Range(vsort.Size()))
 	  if (vsort[k]!=k) { need_mat = true; break; }
