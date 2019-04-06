@@ -218,14 +218,9 @@ namespace amg {
       auto tfmat = dynamic_pointer_cast<TFMAT>(mat);
       if (tfmat==nullptr) {
 	string exname = "Cannot cast ";
-	// exname += typeid(*mat).name();
 	exname += " to "; ;
 	exname += typeid(TFMAT).name();
 	exname += "!!";
-	exname += " \n its actual type is ";
-	exname += typeid(*mat).name();
-	exname += " \n MY PROL actual type is ";
-	exname += typeid(*prol).name();
 	throw Exception(exname);
       }
       return DoAssembleMatrix (tfmat);

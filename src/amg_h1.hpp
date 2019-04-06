@@ -82,7 +82,6 @@ namespace amg
     }
   };
 
-
 } // namespace amg
 
 #endif

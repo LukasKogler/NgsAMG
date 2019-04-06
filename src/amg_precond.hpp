@@ -71,7 +71,7 @@ namespace amg
       bool force_sm = false;               // force smoothing on exactyle sm_levels
       /** Smoothers - haha, you have no choice  **/
       /** Coarsest level opts **/
-      string clev_type = "inv";
+      string clev_type = "INV"; // available: "INV", "NOTHING"
       string clev_inv_type = "masterinverse";
       /** Wether we keep track of info **/
       INFO_LEVEL info_level = NONE;
@@ -256,40 +256,14 @@ namespace amg
     virtual shared_ptr<BaseSmoother> BuildSmoother  (INT<3> level, shared_ptr<BaseSparseMatrix> mat,
 						     shared_ptr<ParallelDofs> par_dofs,
 						     shared_ptr<BitArray> free_dofs) = 0;
-    
-    void Setup ();
-
     virtual void SmoothProlongation (shared_ptr<ProlMap<TSPMAT>> pmap, shared_ptr<TMESH> mesh) const;
-
+    void Setup ();
     
     shared_ptr<ParallelDofs> BuildParDofs (shared_ptr<TMESH> amesh);
     shared_ptr<ProlMap<TSPMAT>> BuildDOFMapStep (shared_ptr<CoarseMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd);
     shared_ptr<CtrMap<TV>> BuildDOFMapStep (shared_ptr<GridContractMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd);
 
   };
-
-  // /**
-  //    AMG for Elasticity.
-
-  //    Works with Vec<3, double> as scalar.
-  // **/
-  // template<int D>
-  // class ElastAMG : public VWiseAMG<ElastAMG<D>>
-  // {
-  // public:
-  //   static constexpr int disppv (int dim)
-  //   { return dim; }
-  //   static constexpr int rotpv (int dim)
-  //   { return dim*(dim-1)/2; }
-  //   static constexpr int dofpv (int n)
-  //   { return disppv(n)+rotpv(n); }
-  //   using double = TSCAL;
-  //   using Vec<dofpv(D), TSCAL> = TV;
-  //   using Mat<dofpv(D), dofpv(D), TSCAL> = TMAT;
-  //   using BlockTM = TMESH;
-  // protected:
-    
-  // };
 
 
 
@@ -309,12 +283,12 @@ namespace amg
        - Construct topological part of the "Mesh" (BlockTM)
        - Reordering of DOFs and embedding of a VAMG-style vector (0..NV-1, vertex-major blocks)
          into the FESpace.
-     Pure virtual:
+     Implement in specialization:
        - Construct attached data for finest mesh
-  	  - Construct 2-level matrix
+  	  - Construct 2-level matrix (?)
   	  - AddElementMatrix
    **/
-  template<class AMG_CLASS>
+  template<class AMG_CLASS, class HTVD = double, class HTED = double>
   class EmbedVAMG : public Preconditioner
   {
   public:
@@ -351,7 +325,8 @@ namespace amg
     using TMESH = typename AMG_CLASS::TMESH;
 
     EmbedVAMG (shared_ptr<BilinearForm> blf, shared_ptr<Options> opts);
-    ~EmbedVAMG () { ; }
+    // virtual ~EmbedVAMG ();
+    ~EmbedVAMG ();
 
     virtual void Mult (const BaseVector & b, BaseVector & x) const override
     { amg_pc->Mult(b, x); }
@@ -362,7 +337,8 @@ namespace amg
 
     virtual void FinalizeLevel (const BaseMatrix * mat) override;
     virtual void Update () override { ; };
-    virtual void Setup ();
+    virtual void AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
+				   ElementId ei, LocalHeap & lh) override;
 
     shared_ptr<typename AMG_CLASS::Info> GetInfo () const { return amg_pc->GetInfo(); }
 
@@ -371,14 +347,11 @@ namespace amg
       cout << IM(1) << "Compute eigenvalues" << endl;
       const BaseMatrix & amat = GetAMatrix();
       const BaseMatrix & pre = GetMatrix();
-
       auto v = amat.CreateVector();
       int eigenretval;
-
       EigenSystem eigen (amat, pre);
       eigen.SetPrecision(1e-30);
       eigen.SetMaxSteps(100); 
-        
       eigen.SetPrecision(1e-15);
       eigenretval = eigen.Calc();
       eigen.PrintEigenValues (*testout);
@@ -387,17 +360,10 @@ namespace amg
       cout << IM(1) << " Condition   " << eigen.MaxEigenValue()/eigen.EigenValue(1) << endl; 
       (*testout) << " Min Eigenvalue : "  << eigen.EigenValue(1) << endl; 
       (*testout) << " Max Eigenvalue : " << eigen.MaxEigenValue() << endl; 
-        
       if(testresult_ok) *testresult_ok = eigenretval;
       if(testresult_min) *testresult_min = eigen.EigenValue(1);
       if(testresult_max) *testresult_max = eigen.MaxEigenValue();
-        
-        
-      //    (*testout) << " Condition   " << eigen.MaxEigenValue()/eigen.EigenValue(1) << endl; 
-      //    for (int i = 1; i < min2 (10, eigen.NumEigenValues()); i++)
-      //      cout << "cond(i) = " << eigen.MaxEigenValue() / eigen.EigenValue(i) << endl;
       (*testout) << " Condition   " << eigen.MaxEigenValue()/eigen.EigenValue(1) << endl;
-        
     }
 
     size_t GetNLevels(int rank) const {return this->amg_pc->GetNLevels(rank); }
@@ -415,6 +381,9 @@ namespace amg
 
     Array<Array<int>> node_sort;
     Array<Array<Vec<3,double>>> node_pos;
+
+    HashTable<int, HTVD> * ht_vertex;
+    HashTable<INT<2,int>, HTED> * ht_edge;
     
     // implemented once for all AMG_CLASS
     virtual shared_ptr<BlockTM> BuildTopMesh ();

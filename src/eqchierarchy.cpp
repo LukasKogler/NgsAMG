@@ -307,31 +307,23 @@ namespace amg {
   } // end SetupFromInitialDPs(Table<int> && vanilla_dps)
 
 
-  void EQCHierarchy :: SetupFromDPs(Table<int> && new_dps)
+  void EQCHierarchy :: SetupFromDPs(Table<int> && anew_dps)
   {
     static Timer t("EQCHierarchy::SetupFromDPs");
     RegionTimer rt(t);
+    Table<int> new_dps = move(anew_dps);
     Array<int> perm(new_dps.Size());
-    for (auto k:Range(new_dps.Size()))
-      perm[k] = k;
-    //note: lambda has to be strictly less
+    for (auto k : Range(new_dps.Size())) perm[k] = k;
     QuickSort(perm, [new_dps](auto l, auto j) -> bool {
-	auto dp1 = new_dps[l];
-	auto dp2 = new_dps[j];
-    	if( (!dp1.Size()) && (!dp2.Size()) )
-    	  return false;
-    	else if(dp1.Size()>dp2.Size())
-    	  return false;
-    	else if(dp1.Size()<dp2.Size())
-    	  return true;
+	auto dp1 = new_dps[l]; auto dps1 = dp1.Size();
+	auto dp2 = new_dps[j]; auto dps2 = dp2.Size();
+    	if(dps1 > dps2) return false;
+    	else if(dps1<dps2) return true;
     	else
-    	  for (auto k:Range(dp1.Size()))
-    	    {
-    	      if(dp1[k]<dp2[k])
-    		return true;
-    	      else if(dp1[k]>dp2[k])
-    		return false;
-    	    }
+	  for (auto k:Range(dps1)) {
+	    auto p1 = dp1[k]; auto p2 = dp2[k];
+	    if (p1<p2) return true; else if (p2<p1) return false;
+	  }
     	return false;
       });
     auto permute = [&perm] (auto & a){

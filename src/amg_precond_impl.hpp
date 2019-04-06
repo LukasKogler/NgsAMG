@@ -5,13 +5,6 @@
 
 namespace amg
 {
-  template<class AMG_CLASS>
-  EmbedVAMG<AMG_CLASS> :: EmbedVAMG (shared_ptr<BilinearForm> blf, shared_ptr<EmbedVAMG<AMG_CLASS>::Options> opts)
-    : Preconditioner(blf, Flags({"not_register_for_auto_update"})), options(opts), bfa(blf), fes(blf->GetFESpace()),
-      node_sort(4), node_pos(4)
-  {
-    Setup();
-  }
 
   template<class AMG_CLASS, class TMESH, class TMAT>
   void VWiseAMG<AMG_CLASS, TMESH, TMAT> :: Finalize (shared_ptr<BaseMatrix> fine_mat, shared_ptr<BaseDOFMapStep> aembed_step)
@@ -134,7 +127,7 @@ namespace amg
 	else if (next_nv < options->ass_after_frac * last_nv_ass) { cout << "4Y"; assit = true; }
 	cout << "  " << assit << endl;
 	infos->LogMesh(level, fm, assit);
-	if (assit) { ass_levels.Append(level); cutoffs.Append(step_cnt); last_nv_ass = curr_nv; }
+	if (assit) { ass_levels.Append(level); cutoffs.Append(step_cnt); last_nv_ass = next_nv; }
 	// Unlock contract ?
 	if ( (level[1] == 0) && (level[2]==0) ) {
 	  if ( options->ctr_after_frac * last_nv_ctr > next_nv) { contr_locked = false; }
@@ -219,7 +212,7 @@ namespace amg
 
     {
       static Timer t(timer_name + string("-CLevel")); RegionTimer rt(t);
-      if (options->clev_type=="inv") {
+      if (options->clev_type=="INV") {
 	if (mats.Last()!=nullptr) {
 	  auto cpds = dof_map->GetMappedParDofs();
 	  auto comm = cpds->GetCommunicator();
@@ -237,7 +230,7 @@ namespace amg
 	  // }
 	}
       }
-      else if (options->clev_type=="nothing") {
+      else if (options->clev_type=="NOTHING") {
 	amg_mat->AddFinalLevel(nullptr);
       }
       else {
@@ -654,66 +647,120 @@ namespace amg
   }
 
 
-  template<class AMG_CLASS> shared_ptr<BlockTM> 
-  EmbedVAMG<AMG_CLASS> :: BuildTopMesh ()
+  template<class AMG_CLASS, class HTVD, class HTED>
+  EmbedVAMG<AMG_CLASS, HTVD, HTED> :: EmbedVAMG (shared_ptr<BilinearForm> blf, shared_ptr<EmbedVAMG<AMG_CLASS, HTVD, HTED>::Options> opts)
+    : Preconditioner(blf, (opts->energy=="ELMAT" ? Flags() : Flags({"not_register_for_auto_update"}))), options(opts), bfa(blf), fes(blf->GetFESpace()),
+      node_sort(4), node_pos(4), ht_vertex(nullptr), ht_edge(nullptr)
   {
-    static Timer t(this->name + string("::BuildTopMesh")); RegionTimer rt(t);
-    // Array<Array<int>> node_sort(4);
-    if (options->v_pos == "VERTEX") {
-      auto pds = fes->GetParallelDofs();
-      auto eqc_h = make_shared<EQCHierarchy>(pds, true);
-      node_sort[0].SetSize(ma->GetNV());
-      node_sort[1].SetSize(ma->GetNEdges());
-      // node_sort[2].SetSize(ma->GetNFaces());
-      auto top_mesh = MeshAccessToBTM (ma, eqc_h, node_sort[0], true, node_sort[1],
-				       false, node_sort[2], false, node_sort[3]);
-      auto & vsort = node_sort[0];
-      // cout << "v-sort: "; prow2(vsort); cout << endl;
-      /** Convert FreeDofs **/
-      auto fes_fds = fes->GetFreeDofs();
-      auto fvs = make_shared<BitArray>(ma->GetNV());
-      fvs->Clear();
-      for (auto k : Range(ma->GetNV())) if (fes_fds->Test(k)) { fvs->Set(vsort[k]); }
-      options->free_verts = fvs;
-      options->finest_free_dofs = fes_fds;
-      // cout << "init free vertices: " << fvs->NumSet() << " of " << fvs->Size() << endl;
-      // cout << " diri verts: "; 
-      // for (auto k : Range(ma->GetNV())) if (!fes_fds->Test(k)) { cout << k << " "; }
-      // cout << endl;
-      // cout << " map to: "; 
-      // for (auto k : Range(ma->GetNV())) if (!fvs->Test(k)) { cout << k << " "; }
-      // cout << endl;
-      /** Vertex positions **/
-      if (options->keep_vp) {
-	auto & vpos(node_pos[NT_VERTEX]); vpos.SetSize(top_mesh->template GetNN<NT_VERTEX>());
-	for (auto k : Range(vpos.Size()))
-	  ma->GetPoint(k,vpos[vsort[k]]);
-      }
-      return top_mesh;
+    if (options->energy != "ELMAT") {
+      /** we are setting up directly from the assembled matrix.
+	  call FinalizeLevel ourselfs **/
+      FinalizeLevel(nullptr);
     }
-    return nullptr;
+    else {
+      /** we are setting up from element matrices - allocate hash-tables
+	  FinalizeLevel will be called from BLF-Assemble **/
+      auto fes = blf->GetFESpace();
+      shared_ptr<FESpace> lofes = fes->LowOrderFESpacePtr();
+      cout << "fes " << fes << " lofes " << lofes << endl;
+      if (lofes == nullptr) lofes = fes; // no LO-space
+      size_t dof_per_v = 0;
+      if (options->block_s.Size()) { // embedding
+	for(auto v : options->block_s) dof_per_v += v;
+      }
+      else { // no embedding
+	dof_per_v = mat_traits<typename AMG_CLASS::TV>::HEIGHT;
+      }
+      //TODO: good enough or not ??
+      size_t NV = lofes->GetNDof()/dof_per_v;
+      ht_vertex = new HashTable<int, HTVD>(NV);
+      //TODO: is this ok??
+      ht_edge = new HashTable<INT<2,int>, HTED>(8*NV);
+    }
   }
 
-
-  template<class AMG_CLASS> void EmbedVAMG<AMG_CLASS> :: FinalizeLevel (const BaseMatrix * mat)
+  template<class AMG_CLASS, class HTVD, class HTED>
+  EmbedVAMG<AMG_CLASS, HTVD, HTED> :: ~EmbedVAMG ()
   {
-    if (finest_mat==nullptr) { finest_mat = shared_ptr<BaseMatrix>(const_cast<BaseMatrix*>(mat), NOOP_Deleter); }
-    Setup();
+    if (ht_vertex != nullptr) delete ht_vertex;
+    if (ht_edge   != nullptr) delete ht_edge;
   }
   
-  template<class AMG_CLASS> void EmbedVAMG<AMG_CLASS> :: Setup ()
+  template<class AMG_CLASS, class HTVD, class HTED>
+  void EmbedVAMG<AMG_CLASS, HTVD, HTED> :: FinalizeLevel (const BaseMatrix * mat)
   {
-    static Timer t(this->name+string("::Setup")); RegionTimer rt(t);
+    cout << "FINALIZE LEVEL!" << endl;
+    static Timer t(this->name+string("::FinalizeLevel")); RegionTimer rt(t);
+    if (mat != nullptr)
+      { finest_mat = shared_ptr<BaseMatrix>(const_cast<BaseMatrix*>(mat), NOOP_Deleter); }
+    else
+      { finest_mat = bfa->GetMatrixPtr(); }
+
+    cout << "finest mat is: " << typeid(*finest_mat).name() << endl;
+    
     auto mesh = BuildInitialMesh();
     amg_pc = make_shared<AMG_CLASS>(mesh, options);
-    auto fmat = (finest_mat==nullptr) ? bfa->GetMatrixPtr() : finest_mat;
-    if (auto pmat = dynamic_pointer_cast<ParallelMatrix>(fmat))
-      fmat = pmat->GetMatrix();
-    if (finest_mat==nullptr) finest_mat = bfa->GetMatrixPtr();
+
     auto embed_step = BuildEmbedding();
-    amg_pc->Finalize(fmat, embed_step);
+
+    auto fine_spm = finest_mat;
+    if (auto pmat = dynamic_pointer_cast<ParallelMatrix>(finest_mat))
+      fine_spm = pmat->GetMatrix();
+    amg_pc->Finalize(fine_spm, embed_step);
   }
-  
+
+  template<class AMG_CLASS, class HTVD, class HTED>
+  shared_ptr<BlockTM> EmbedVAMG<AMG_CLASS, HTVD, HTED> :: BuildTopMesh ()
+  {
+    static Timer t(this->name + string("::BuildTopMesh")); RegionTimer rt(t);
+    auto & O(*options);
+    shared_ptr<BlockTM> top_mesh = nullptr;
+    auto fpd = finest_mat->GetParallelDofs();
+    auto eqc_h = make_shared<EQCHierarchy>(fpd); // TODO: this could be more efficient
+    if (O.edges == "MESH") { // convert Netgen-mesh to AMG-Mesh
+      if (O.v_pos == "VERTEX") {
+	/** edges to edges **/
+	node_sort[0].SetSize(ma->GetNV());
+	node_sort[1].SetSize(ma->GetNEdges());
+	top_mesh = MeshAccessToBTM (ma, eqc_h, node_sort[0], true, node_sort[1],
+				    false, node_sort[2], false, node_sort[3]);
+	auto & vsort = node_sort[0];
+	/** Convert FreeDofs **/
+	auto fes_fds = fes->GetFreeDofs();
+	auto fvs = make_shared<BitArray>(ma->GetNV());
+	fvs->Clear();
+	for (auto k : Range(ma->GetNV())) if (fes_fds->Test(k)) { fvs->Set(vsort[k]); }
+	options->free_verts = fvs;
+	options->finest_free_dofs = fes_fds;
+	/** Vertex positions **/
+	if (options->keep_vp) {
+	  auto & vpos(node_pos[NT_VERTEX]); vpos.SetSize(top_mesh->template GetNN<NT_VERTEX>());
+	  for (auto k : Range(vpos.Size()))
+	    ma->GetPoint(k,vpos[vsort[k]]);
+	}
+      }
+      else if (O.v_pos == "EDGE") {
+	/** actually, not sure how to do this **/
+	throw Exception("Sorry, have not implemented this case yet.");
+      }
+      else if (O.v_pos == "FACE") {
+	/** edges through vol-els **/
+	throw Exception("Sorry, have not implemented this case yet.");
+      }
+      else if (O.v_pos == "CELL") {
+	/** edges through faces **/
+	throw Exception("Sorry, have not implemented this case yet.");
+      }
+    }
+    else if (O.edges == "ELMAT") { // AMG-Mesh top. from hash-tables
+      throw Exception("Sorry, have not implemented this case yet either.");
+    }
+    else { // vertices/edges from matrix (is this even relevant??)
+      throw Exception("Sorry, have not implemented this case yet either.");
+    }
+    return top_mesh;
+  }
+
 } // namespace amg
 
 #endif

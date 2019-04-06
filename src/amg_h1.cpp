@@ -17,62 +17,108 @@ namespace amg
     return make_shared<HybridGSS<1>> (spmat, par_dofs, free_dofs);
   }
 
+  /** See ngsolve/comp/h1amg.cpp **/
+  template<> void
+  EmbedVAMG<H1AMG> :: AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
+					ElementId ei, LocalHeap & lh)
+  {
+    // vertex weights
+    static Timer t("EmbedVAMG<H1AMG>::AddElementMatrix");
+    static Timer t1("EmbedVAMG<H1AMG>::AddElementMatrix - inv");
+    static Timer t3("EmbedVAMG<H1AMG>::AddElementMatrix - v-schur");
+    static Timer t5("EmbedVAMG<H1AMG>::AddElementMatrix - e-schur");
+    RegionTimer rt(t);
+    size_t ndof = dnums.Size();
+    BitArray used(ndof, lh);
+    FlatMatrix<double> ext_elmat(ndof+1, ndof+1, lh);
+    {
+      ThreadRegionTimer reg (t5, TaskManager::GetThreadId());
+      ext_elmat.Rows(0,ndof).Cols(0,ndof) = elmat;
+      ext_elmat.Row(ndof) = 1;
+      ext_elmat.Col(ndof) = 1;
+      ext_elmat(ndof, ndof) = 0;
+      CalcInverse (ext_elmat);
+    }
+    {
+      RegionTimer reg (t1);
+      for (size_t i = 0; i < dnums.Size(); i++)
+        {
+          Mat<2,2,double> ai;
+          ai(0,0) = ext_elmat(i,i);
+          ai(0,1) = ai(1,0) = ext_elmat(i, ndof);
+          ai(1,1) = ext_elmat(ndof, ndof);
+          ai = Inv(ai);
+          double weight = fabs(ai(0,0));
+          // vertex_weights_ht.Do(INT<1>(dnums[i]), [weight] (auto & v) { v += weight; });
+          (*ht_vertex)[dnums[i]] += weight;
+        }
+    }
+    {
+      RegionTimer reg (t3);
+      for (size_t i = 0; i < dnums.Size(); i++)
+        for (size_t j = 0; j < i; j++)
+          {
+            Mat<3,3,double> ai;
+            ai(0,0) = ext_elmat(i,i);
+            ai(1,1) = ext_elmat(j,j);
+            ai(0,1) = ai(1,0) = ext_elmat(i,j);
+            ai(2,2) = ext_elmat(ndof,ndof);
+            ai(0,2) = ai(2,0) = ext_elmat(i,ndof);
+            ai(1,2) = ai(2,1) = ext_elmat(j,ndof);
+            ai = Inv(ai);
+            double weight = fabs(ai(0,0));
+            // edge_weights_ht.Do(INT<2>(dnums[j], dnums[i]).Sort(), [weight] (auto & v) { v += weight; });
+            (*ht_edge)[INT<2, int>(dnums[j], dnums[i]).Sort()] += weight;
+          }
+    }
+  }
+
   template<> shared_ptr<EmbedVAMG<H1AMG>::TMESH>
   EmbedVAMG<H1AMG> :: BuildAlgMesh (shared_ptr<BlockTM> top_mesh)
   {
-    auto a = new H1VData(Array<double>(top_mesh->GetNN<NT_VERTEX>()), DISTRIBUTED); a->Data() = 0.0;
-    auto b = new H1EData(Array<double>(top_mesh->GetNN<NT_EDGE>()), DISTRIBUTED); b->Data() = 1.0;
+    auto a = new H1VData(Array<double>(top_mesh->GetNN<NT_VERTEX>()), DISTRIBUTED);
+    auto b = new H1EData(Array<double>(top_mesh->GetNN<NT_EDGE>()), DISTRIBUTED);
+    if (options->energy == "TRIV") {
+      a->Data() = 0.0; b->Data() = 1.0;
+    }
+    else if (options->energy == "ELMAT") {
+      FlatArray<int> vsort = node_sort[NT_VERTEX];
+      Array<int> rvsort(vsort.Size());
+      for (auto k : Range(vsort.Size()))
+	rvsort[vsort[k]] = k;
+      auto ad = a->Data();
+      for (auto key_val : *ht_vertex) {
+	// int vnr = vsort[key_val.get<0>()];
+	ad[rvsort[get<0>(key_val)]] = get<1>(key_val);
+      }
+      cout << "elmat vertex weights: " << endl; prow2(ad); cout << endl;
+      auto bd = b->Data();
+      auto edges = top_mesh->GetNodes<NT_EDGE>();
+      for (auto & e : edges) {
+	bd[e.id] = (*ht_edge)[INT<2,int>(rvsort[e.v[0]], rvsort[e.v[1]])];
+      }
+      cout << "elmat edge weights: " << endl; prow2(bd); cout << endl;
+    }
+    else { // "ALGEB"
+      throw Exception("sorry not in!");
+    }
     auto mesh = make_shared<H1AMG::TMESH>(move(*top_mesh), a, b);
-    // cout << "finest mesh: " << endl << *mesh << endl;
     return mesh;
   }
 
-
-  // void H1AMG :: SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts, INT<3> level, shared_ptr<H1AMG::TMESH> _mesh)
-  // {
-  //   const TMESH & mesh(*_mesh);
-  //   auto NV = mesh.GetNN<NT_VERTEX>();
-  //   auto vdata = get<0>(mesh.Data()); vdata->Cumulate();
-  //   auto vwts = vdata->Data();
-  //   auto NE = mesh.GetNN<NT_EDGE>();
-  //   auto edata = get<1>(mesh.Data()); edata->Cumulate();
-  //   auto ewts = edata->Data();
-  //   Array<double> vcw(NV);
-  //   auto econ = mesh.GetEdgeCM();
-  //   auto & eqc_h = *mesh.GetEQCHierarchy();
-  //   auto neqcs = eqc_h.GetNEQCS();
-  //   for (auto eqc : Range(neqcs)) {
-  //     if (!eqc_h.IsMasterOfEQC(eqc)) continue;
-  //     auto lam_es = [&](auto the_edges) {
-  // 	for (const auto & edge : the_edges) {
-  // 	  auto ew = ewts[edge.id];
-  // 	  vcw[edge.v[0]] += ew;
-  // 	  vcw[edge.v[1]] += ew;
-  // 	}
-  //     };
-  //     lam_es(mesh.GetENodes<NT_EDGE>(eqc));
-  //     lam_es(mesh.GetCNodes<NT_EDGE>(eqc));
-  //   }
-  //   mesh.AllreduceNodalData<NT_VERTEX>(vcw, [](auto & in) { return sum_table(in); }, false);
-  //   vcw += vwts;
-  //   Array<double> ecw(NE);
-  //   for (const auto & edge : mesh.GetNodes<NT_EDGE>()) {
-  //     double vw = min(vcw[edge.v[0]], vcw[edge.v[1]]);
-  //     ecw[edge.id] = ewts[edge.id] / vw;
-  //   }
-  //   for (auto k : Range(NV)) vcw[k] = vwts[k] / vcw[k];
-  //   opts->vcw = move(vcw);
-  //   opts->ecw = move(ecw);
-  // }
-
+  
   template<> shared_ptr<BaseDOFMapStep> EmbedVAMG<H1AMG> :: BuildEmbedding ()
   {
     auto & vsort = node_sort[NT_VERTEX];
-    auto pmap = make_shared<ProlMap<SparseMatrix<double>>>(fes->GetParallelDofs(), nullptr);
+    shared_ptr<ParallelDofs> fpds = finest_mat->GetParallelDofs();
+    auto pmap = make_shared<ProlMap<SparseMatrix<double>>>(fpds, nullptr);
     pmap->SetProl(BuildPermutationMatrix<double>(vsort));
     return pmap;
   }
 
+  
+  
+  
 } // namespace amg
 
 #include "amg_tcs.hpp"

@@ -31,8 +31,8 @@ namespace amg
   }
 
   INLINE Timer & timer_hack_Hack_BuildAlgMesh () { static Timer t("ElasticityAMG::BuildAlgMesh"); return t; }
-  template<class C> shared_ptr<typename C::TMESH>
-  EmbedVAMG<C> :: BuildAlgMesh (shared_ptr<BlockTM> top_mesh)
+  template<class C, class D, class E> shared_ptr<typename C::TMESH>
+  EmbedVAMG<C, D, E> :: BuildAlgMesh (shared_ptr<BlockTM> top_mesh)
   {
     Timer & t(timer_hack_Hack_BuildAlgMesh()); RegionTimer rt(t);
     FlatArray<Vec<3,double>> vp = node_pos[NT_VERTEX];
@@ -49,10 +49,11 @@ namespace amg
     return mesh;
   }
 
-  template<class C> shared_ptr<BaseDOFMapStep>
-  EmbedVAMG<C> :: BuildEmbedding ()
+  template<class C, class D, class E> shared_ptr<BaseDOFMapStep>
+  EmbedVAMG<C, D, E> :: BuildEmbedding ()
   {
     static Timer t(this->name+string("::BuildEmbedding")); RegionTimer rt(t);
+    auto fpardofs = finest_mat->GetParallelDofs();
     auto & vsort = node_sort[NT_VERTEX];
     if (options->v_dofs == "NODAL") {
       if (options->block_s.Size() == 1 ) { // ndof/vertex != #kernel vecs
@@ -62,14 +63,14 @@ namespace amg
 	}
 	using TESM = Mat<disppv(C::DIM), dofpv(C::DIM)>;
 	options->regularize = true;
-	auto pmap = make_shared<ProlMap<SparseMatrix<TESM>>> (fes->GetParallelDofs(), nullptr);
+	auto pmap = make_shared<ProlMap<SparseMatrix<TESM>>> (fpardofs, nullptr);
 	pmap->SetProl(BuildPermutationMatrix<TESM>(vsort));
 	return pmap;
       }
       else if (options->block_s.Size() > 1) {
 	using TESM = Mat<1, dofpv(C::DIM)>;
 	// NOT CORRECT!! just for template insantiation so we get compile time checks
-	auto pmap = make_shared<ProlMap<stripped_spm<TESM>>> (fes->GetParallelDofs(), nullptr);
+	auto pmap = make_shared<ProlMap<stripped_spm<TESM>>> (fpardofs, nullptr);
 	pmap->SetProl(BuildPermutationMatrix<TESM>(vsort));
 	throw Exception("Compound FES embedding not implemented, sorry!");
 	return nullptr;
@@ -79,7 +80,7 @@ namespace amg
 	for (int k : Range(vsort.Size()))
 	  if (vsort[k]!=k) { need_mat = true; break; }
 	if (need_mat == false) return nullptr;
-	auto pmap = make_shared<ProlMap<SparseMatrix<typename C::TMAT>>>(fes->GetParallelDofs(), nullptr);
+	auto pmap = make_shared<ProlMap<SparseMatrix<typename C::TMAT>>>(fpardofs, nullptr);
 	pmap->SetProl(BuildPermutationMatrix<typename C::TMAT>(vsort));
 	return pmap;
       }
@@ -89,6 +90,11 @@ namespace amg
       return nullptr;
     }
   }
+
+  template<class C, class D, class E> void EmbedVAMG<C, D, E> ::
+  AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
+		    ElementId ei, LocalHeap & lh) { ; }
+
 
   // template class ElasticityAMG<2>;
   // template class ElasticityAMG<3>;

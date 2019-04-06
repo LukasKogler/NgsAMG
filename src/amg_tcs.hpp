@@ -91,8 +91,8 @@ namespace amg
   EXTERN template class ElasticityAMG<2>;
   EXTERN template class ElasticityAMG<3>;
   //#endif
-  EXTERN template class EmbedVAMG<ElasticityAMG<2>>;
-  EXTERN template class EmbedVAMG<ElasticityAMG<3>>;
+  EXTERN template class EmbedVAMG<ElasticityAMG<2>, double, ElEW<2>>;
+  EXTERN template class EmbedVAMG<ElasticityAMG<3>, double, ElEW<3>>;
 #endif
 
 #define InstTransMat(N,M) \
