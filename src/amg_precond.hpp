@@ -40,6 +40,8 @@ namespace amg
       /** Dirichlet conditions for finest level **/
       shared_ptr<BitArray> free_verts = nullptr;
       shared_ptr<BitArray> finest_free_dofs = nullptr;
+      /** Coarsening **/
+      double min_ecw = 0.05, min_vcw = 0.1;
       /** Level-control **/
       int max_n_levels = 20;               // maximum number of coarsening steps
       size_t max_n_verts = 1;              // stop coarsening when the coarsest mesh has this few vertices

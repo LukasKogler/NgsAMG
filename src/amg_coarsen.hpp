@@ -17,7 +17,7 @@ namespace amg
   public:
     struct Options
     {
-      double min_cw = 0.05;
+      double min_ecw = 0.05, min_vcw = 0.1;
       shared_ptr<BitArray> free_verts = nullptr;
       Array<double> vcw, ecw;
     };

@@ -77,7 +77,7 @@ namespace amg
     { SetIdentity(mat); }
     INLINE void CalcRMBlock (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge, FlatMatrix<double> mat) const
     {
-      auto w = GetWeight<NT_EDGE>(fmesh, edge); cout << "wt is " << w << endl;
+      auto w = GetWeight<NT_EDGE>(fmesh, edge);
       mat(0,1) = mat(1,0) = - (mat(0,0) = mat(1,1) = w);
     }
   };

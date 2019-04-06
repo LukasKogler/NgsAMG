@@ -91,13 +91,13 @@ namespace amg
 	// int vnr = vsort[key_val.get<0>()];
 	ad[rvsort[get<0>(key_val)]] = get<1>(key_val);
       }
-      cout << "elmat vertex weights: " << endl; prow2(ad); cout << endl;
+      // cout << "elmat vertex weights: " << endl; prow2(ad); cout << endl;
       auto bd = b->Data();
       auto edges = top_mesh->GetNodes<NT_EDGE>();
       for (auto & e : edges) {
 	bd[e.id] = (*ht_edge)[INT<2,int>(rvsort[e.v[0]], rvsort[e.v[1]])];
       }
-      cout << "elmat edge weights: " << endl; prow2(bd); cout << endl;
+      // cout << "elmat edge weights: " << endl; prow2(bd); cout << endl;
     }
     else { // "ALGEB"
       throw Exception("sorry not in!");

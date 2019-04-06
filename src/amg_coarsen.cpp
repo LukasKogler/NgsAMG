@@ -58,7 +58,8 @@ namespace amg
     auto verts = mesh.template GetNodes<NT_VERTEX>();
     auto edges = mesh.template GetNodes<NT_EDGE>();
     size_t NE = mesh.template GetNN<NT_EDGE>();
-    const double MIN_CW(options->min_cw);
+    const double MIN_VCW(options->min_vcw);
+    const double MIN_ECW(options->min_ecw);
     shared_ptr<BitArray> free_verts = options->free_verts;
     const double* ecw(&options->ecw[0]);
     const double* vcw(&options->vcw[0]);
@@ -94,7 +95,7 @@ namespace amg
     	});
     }
     auto edge_valid = [&] (const auto & edge) -> bool {
-      return ( (GetECW(edge) > MIN_CW) &&
+      return ( (GetECW(edge) > MIN_ECW) &&
     	       (!coll.IsVertexCollapsed(edge.v[0])) &&
     	       (!coll.IsVertexCollapsed(edge.v[1])) &&
     	       (!coll.IsVertexFixed(edge.v[0])) &&
@@ -122,7 +123,7 @@ namespace amg
 			    }
     			  });
     for (auto vertex:verts)
-      if ((GetVCW(vertex) > MIN_CW) && (!coll.IsVertexFixed(vertex)) &&
+      if ((GetVCW(vertex) > MIN_VCW) && (!coll.IsVertexFixed(vertex)) &&
     	  (!coll.IsVertexGrounded(vertex)) && (!coll.IsVertexCollapsed(vertex)) )
     	{ /**cout << "warning, ground V!!" << endl; **/ coll.GroundVertex(vertex); }
   }
@@ -154,7 +155,8 @@ namespace amg
     if (free!=nullptr) for (auto k:Range(mesh.template GetNN<NT_VERTEX>())) if (!free->Test(k)) { coll.GroundVertex(k); coll.FixVertex(k); }
 
     auto block_opts = make_shared<typename SeqVWC<FlatTM>::Options>();
-    block_opts->min_cw = options->min_cw;
+    block_opts->min_vcw = options->min_vcw;
+    block_opts->min_ecw = options->min_ecw;
     block_opts->vcw = Array<double>(options->vcw.Size(), &(options->vcw[0])); block_opts->vcw.NothingToDelete();
     block_opts->ecw = Array<double>(options->ecw.Size(), &(options->ecw[0])); block_opts->ecw.NothingToDelete();
     block_opts->free_verts = nullptr;
@@ -225,7 +227,8 @@ namespace amg
   {
     RegionTimer rt(HierVWCTimerHack());
     auto block_opts = make_shared<typename BlockVWC<TMESH>::Options>();
-    block_opts->min_cw = options->min_cw;
+    block_opts->min_vcw = options->min_vcw;
+    block_opts->min_ecw = options->min_ecw;
     // block_opts->free_verts = nullptr; // I am taking care of that!
     block_opts->vcw = Array<double>(options->vcw.Size(), &(options->vcw[0])); block_opts->vcw.NothingToDelete();
     block_opts->ecw = Array<double>(options->ecw.Size(), &(options->ecw[0])); block_opts->ecw.NothingToDelete();
@@ -248,7 +251,9 @@ namespace amg
     const double* vcw(&options->vcw[0]);
     auto GetECW = [ecw](const auto & x) { return ecw[x.id]; };
     auto GetVCW = [vcw](const auto & x) { return vcw[x]; };
-    const double MIN_CW(options->min_cw);
+    // TODO: do hierarchic V-coll maybe?? (should be no issue...)
+    // const double MIN_VCW(options->min_vcw);
+    const double MIN_ECW(options->min_ecw);
     auto free = options->free_verts;
 
     if (free!=nullptr) {
@@ -260,7 +265,7 @@ namespace amg
     
     double nvalid = 0;
     for (auto k : Range(NE)) {
-      bool val = (ecw[k]>MIN_CW);
+      bool val = (ecw[k]>MIN_ECW);
       if (val) nvalid++;
       // cout << "ecw " << k << " of " << NE << ": " << ecw[k] << ", valid: " << val << endl;
     }
@@ -287,7 +292,7 @@ namespace amg
 	if (coll.IsVertexFixed(edge.v[0]) || coll.IsVertexFixed(edge.v[1]) ||
 	   coll.IsEdgeFixed(edge)) continue;
 	const auto ew = GetECW(edge);
-	if (ew < MIN_CW) continue;
+	if (ew < MIN_ECW) continue;
 	auto e0 = mesh.template GetEqcOfNode<NT_VERTEX>(edge.v[0]);
 	auto e1 = mesh.template GetEqcOfNode<NT_VERTEX>(edge.v[1]);
 	// cout << "eqcs " << e0 << " " << e1 << endl;

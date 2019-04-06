@@ -108,13 +108,17 @@ namespace amg
        	}
 	else if ( !disc_locked ) {throw Exception("Discard-Map not yet ported to new Version!"); }
        	else { cout << "warning, no map variant worked!" << endl; break; } // all maps failed
-	levels.Append(level);
-      	dof_map->AddStep(dof_step);
 	fm = dynamic_pointer_cast<TMESH>(grid_step->GetMappedMesh());
+	if (fm != nullptr && fm->template GetNNGlobal<NT_VERTEX>()==0) { // can happen due to discard/vertex ground
+	  if (cutoffs.Last() != step_cnt) cutoffs.Append(step_cnt);
+	  fm_pd = nullptr; break;
+	}
+	levels.Append(level);
+	dof_map->AddStep(dof_step);
 	step_cnt++;
 	if (fm == nullptr) { fm_pd = nullptr; cutoffs.Append(step_cnt); break; } // no mesh due to contract
-	fm_pd = BuildParDofs(fm);
 	size_t next_nv = fm->template GetNNGlobal<NT_VERTEX>();
+	fm_pd = BuildParDofs(fm);
 	nvs.Append(next_nv);
 	double frac_crs = (1.0*next_nv) / curr_nv;
 	bool assit = false;
@@ -214,6 +218,7 @@ namespace amg
       static Timer t(timer_name + string("-CLevel")); RegionTimer rt(t);
       if (options->clev_type=="INV") {
 	if (mats.Last()!=nullptr) {
+	  cout << "COARSE MAT: " << endl << *mats.Last() << endl;
 	  auto cpds = dof_map->GetMappedParDofs();
 	  auto comm = cpds->GetCommunicator();
 	  if (comm.Size()>0) {
@@ -352,7 +357,9 @@ namespace amg
     for (auto v : Range(NV))
       vcw[v] = self.template GetWeight<NT_VERTEX>(mesh, v)/vcw[v];
     opts->vcw = move(vcw);
+    opts->min_vcw = options->min_vcw;
     opts->ecw = move(ecw);
+    opts->min_ecw = options->min_ecw;
   }
 
   template<class AMG_CLASS, class TMESH, class TMAT> shared_ptr<CoarseMap<TMESH>>

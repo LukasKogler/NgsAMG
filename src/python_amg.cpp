@@ -48,6 +48,8 @@ namespace amg {
       else if (name == "ctr_seq_nv") { opts->ctr_seq_nv = item.second.cast<size_t>(); }
       else if (name == "ctr_frac") { opts->ctr_after_frac = item.second.cast<double>(); }
       else if (name == "log_level") { opts->info_level = int_to_il(item.second.cast<int>()); }
+      else if (name == "crs_v_tresh") { opts->min_vcw = item.second.cast<double>(); }
+      else if (name == "crs_e_tresh") { opts->min_ecw = item.second.cast<double>(); }
       else if (name == "dpv") { opts->block_s.SetSize(1); opts->block_s[0] = item.second.cast<int>(); }
       else { cout << "warning, invalid AMG option: " << name << endl; }
     }
