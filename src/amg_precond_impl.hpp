@@ -356,6 +356,8 @@ namespace amg
       }, false);
     for (auto v : Range(NV))
       vcw[v] = self.template GetWeight<NT_VERTEX>(mesh, v)/vcw[v];
+    cout << "VCWS: " << endl; prow2(vcw); cout << endl << endl;
+    cout << "ECWS: " << endl; prow2(ecw); cout << endl << endl;
     opts->vcw = move(vcw);
     opts->min_vcw = options->min_vcw;
     opts->ecw = move(ecw);
