@@ -68,7 +68,7 @@ namespace amg
             ai = Inv(ai);
             double weight = fabs(ai(0,0));
             // edge_weights_ht.Do(INT<2>(dnums[j], dnums[i]).Sort(), [weight] (auto & v) { v += weight; });
-            (*ht_edge)[INT<2, int>(dnums[j], dnums[i]).Sort()] += weight;
+	    (*ht_edge)[INT<2, int>(dnums[j], dnums[i]).Sort()] += weight;
           }
     }
   }
@@ -95,12 +95,35 @@ namespace amg
       auto bd = b->Data();
       auto edges = top_mesh->GetNodes<NT_EDGE>();
       for (auto & e : edges) {
-	bd[e.id] = (*ht_edge)[INT<2,int>(rvsort[e.v[0]], rvsort[e.v[1]])];
+	bd[e.id] = (*ht_edge)[INT<2,int>(rvsort[e.v[0]], rvsort[e.v[1]]).Sort()];
       }
       // cout << "elmat edge weights: " << endl; prow2(bd); cout << endl;
     }
     else { // "ALGEB"
-      throw Exception("sorry not in!");
+      // provisional for now, will probably only work on actually nodal mats
+      FlatArray<int> vsort = node_sort[NT_VERTEX];
+      Array<int> rvsort(vsort.Size());
+      for (auto k : Range(vsort.Size()))
+	rvsort[vsort[k]] = k;
+      // sum up rows -> rest is vertex weight
+      auto NV = vsort.Size();
+      shared_ptr<BaseMatrix> fseqmat = finest_mat;
+      if (auto fpm = dynamic_pointer_cast<ParallelMatrix>(finest_mat))
+	fseqmat = fpm->GetMatrix();
+      auto fspm = dynamic_pointer_cast<SparseMatrix<double>>(fseqmat);
+      auto ad = a->Data();
+      for (auto k : Range(NV)) {
+	auto rvs = fspm->GetRowValues(k);
+	double sum = 0; for (auto v : rvs) sum += v;
+	ad[rvsort[k]] = sum;
+      }
+      // off-diag entry -> is edge weight
+      auto edges = top_mesh->GetNodes<NT_EDGE>();
+      const auto & cspm(*fspm);
+      auto bd = b->Data();
+      for (auto & e : edges) {
+	bd[e.id] = fabs(cspm(rvsort[e.v[0]], rvsort[e.v[1]]));
+      }
     }
     auto mesh = make_shared<H1AMG::TMESH>(move(*top_mesh), a, b);
     return mesh;

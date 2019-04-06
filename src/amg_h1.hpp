@@ -33,7 +33,7 @@ namespace amg
       cdata.SetSize(cmap.GetMappedNN<NT_VERTEX>()); cdata = 0.0;
       auto map = cmap.GetMap<NT_VERTEX>();
       auto lam_v = [&](const AMG_Node<NT_VERTEX> & v)
-	{ auto cv = map[v]; if (cv != -1) cdata[cv] += data[v]; };
+    	{ auto cv = map[v]; if (cv != -1) cdata[cv] += data[v]; };
       bool master_only = (GetParallelStatus()==CUMULATED);
       mesh->Apply<NT_VERTEX>(lam_v, master_only);
       return DISTRIBUTED;
@@ -81,6 +81,32 @@ namespace amg
       mat(0,1) = mat(1,0) = - (mat(0,0) = mat(1,1) = w);
     }
   };
+
+
+  // add e-wts connecting to grounded vertices to coarse v-wts. seems not a good idea
+  // INLINE PARALLEL_STATUS H1VData :: map_data (const BaseCoarseMap & cmap, Array<double> & cdata) const
+  // {
+  //   cdata.SetSize(cmap.GetMappedNN<NT_VERTEX>()); cdata = 0.0;
+  //   auto map = cmap.GetMap<NT_VERTEX>();
+  //   auto lam_v = [&](const AMG_Node<NT_VERTEX> & v)
+  //     { auto cv = map[v]; if (cv != -1) cdata[cv] += data[v]; };
+  //   bool master_only = (GetParallelStatus()==CUMULATED);
+  //   mesh->Apply<NT_VERTEX>(lam_v, master_only);
+  //   auto e_map = cmap.GetMap<NT_EDGE>();
+  //   auto aed = get<1>(static_cast<H1Mesh&>(*(static_cast<const CoarseMap<H1Mesh>&>(cmap).GetMesh())).Data()); // dirty!!
+  //   auto ewts = aed->Data();
+  //   auto lam_e = [&](const AMG_Node<NT_EDGE>& e)
+  //     {
+  // 	auto cid = e_map[e.id];
+  // 	if ( cid == decltype(cid)(-1)) {
+  // 	  auto vc0 = map[e.v[0]];
+  // 	  if(vc0 != decltype(vc0)(-1)) cdata[vc0] += ewts[e.id];
+  // 	  else { auto vc1 = map[e.v[1]]; if(vc1 != decltype(vc1)(-1)) cdata[vc1] += ewts[e.id]; }
+  // 	}
+  //     };
+  //   // mesh->Apply<NT_EDGE>(lam_e, (aed->GetParallelStatus()==CUMULATED));
+  //   return DISTRIBUTED;
+  // }
 
 } // namespace amg
 

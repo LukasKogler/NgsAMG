@@ -342,11 +342,16 @@ namespace amg
     auto NE = mesh.template GetNN<NT_EDGE>();
     mesh.CumulateData();
     Array<double> vcw(NV); vcw = 0;
-    mesh.template ApplyEQ<NT_EDGE>([&](auto eqc, const auto & edge) {
+    mesh.template Apply<NT_EDGE>([&](const auto & edge) {
 	auto ew = self.template GetWeight<NT_EDGE>(mesh, edge);
 	vcw[edge.v[0]] += ew;
 	vcw[edge.v[1]] += ew;
       }, true);
+    // mesh.template ApplyEQ<NT_EDGE>([&](auto eqc, const auto & edge) {
+    // 	auto ew = self.template GetWeight<NT_EDGE>(mesh, edge);
+    // 	vcw[edge.v[0]] += ew;
+    // 	vcw[edge.v[1]] += ew;
+    //   }, true);
     mesh.template AllreduceNodalData<NT_VERTEX>(vcw, [](auto & in) { return sum_table(in); }, false);
     mesh.template Apply<NT_VERTEX>([&](auto v) { vcw[v] += self.template GetWeight<NT_VERTEX>(mesh, v); });
     Array<double> ecw(NE);
