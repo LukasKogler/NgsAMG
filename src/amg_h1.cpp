@@ -22,6 +22,7 @@ namespace amg
   EmbedVAMG<H1AMG> :: AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
 					ElementId ei, LocalHeap & lh)
   {
+    if (options->energy != "ELMAT") return;
     // vertex weights
     static Timer t("EmbedVAMG<H1AMG>::AddElementMatrix");
     static Timer t1("EmbedVAMG<H1AMG>::AddElementMatrix - inv");

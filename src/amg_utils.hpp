@@ -428,6 +428,13 @@ namespace amg
   { for (auto k : Range(mat.Height())) SetIdentity(mat(k,k)); }
   template<int D, class TM> INLINE void SetIdentity (FlatMatrixFixWidth<D, TM> mat)
   { mat = 0; for (auto k : Range(D)) SetIdentity(mat(k,k)); }
+
+  INLINE void SetScalIdentity (double scal, double & x) { x = scal; }
+  template<int H, int W> INLINE void SetScalIdentity (double scal, Mat<H,W,double> & x) { x = 0.0; for (auto i:Range(min(H,W))) x(i,i) = scal; }
+  template<class TM> INLINE void SetScalIdentity (double scal, FlatMatrix<TM> mat)
+  { for (auto k : Range(mat.Height())) SetScalIdentity(scal, mat(k,k)); }
+  template<int D, class TM> INLINE void SetScalIdentity (double scal, FlatMatrixFixWidth<D, TM> mat)
+  { mat = 0; for (auto k : Range(D)) SetScalIdentity(scal, mat(k,k)); }
   
   template<class TM>
   shared_ptr<stripped_spm<TM>> BuildPermutationMatrix (FlatArray<int> sort) {
@@ -457,6 +464,10 @@ namespace amg
       }
       os << endl;
     }
+  }
+
+  template<int A, class B> INLINE double calc_trace (FlatMatrixFixWidth<A,B> x) {
+    double sum = 0; for (auto k : Range(A)) sum += x(k,k); return sum;
   }
   
 } // namespace amg

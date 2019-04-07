@@ -21,7 +21,7 @@ namespace amg
     PosWV (Vec<3,double> _pos, double _wt) : pos(_pos), wt(_wt) { ; }
     // PosWV (PosWV && other) : pos(move(other.pos)), wt(move(other.wt)) { ; }
     PosWV (PosWV && other) = default;
-    PosWV (PosWV & other) = default;
+    PosWV (const PosWV & other) = default;
     INLINE void operator = (double x) { wt = x; pos = x; }; // for Cumulate
     INLINE void operator = (const PosWV & other) { wt = other.wt; pos = other.pos; }; // for Cumulate
     INLINE void operator += (const PosWV & other) { pos += other.pos; wt += other.wt; }; // for Cumulate
@@ -67,13 +67,13 @@ namespace amg
     ElEW (double val) { wt_data = val; }
     ElEW () : ElEW<D>(0.0) { ; }
     ElEW (ElEW<D> && other) = default;
-    ElEW (ElEW<D> & other) = default;
+    ElEW (const ElEW<D> & other) = default;
     INLINE void operator = (double x) { wt_data = x; }; // for Cumulate
     INLINE void operator = (const ElEW<D> & other) { wt_data = other.wt_data; }
     INLINE void operator += (const ElEW<D> & other)
     { for (auto l : Range(disppv(D)*disppv(D)+rotpv(D)*rotpv(D))) wt_data[l] += other.wt_data[l]; }; // for Cumulate
     INLINE bool operator == (const ElEW<D> & other) { return wt_data == other.wt_data; }
-    INLINE double get_wt () const { return wt_data[0]; }
+    INLINE double get_wt () { return calc_trace(bend_mat()) + calc_trace(wigg_mat()); }
     INLINE FlatMatrixFixWidth<rotpv(D), double> bend_mat ()
     { return FlatMatrixFixWidth<rotpv(D), double>(rotpv(D), &wt_data[0]); }
     INLINE FlatMatrixFixWidth<disppv(D), double> wigg_mat ()

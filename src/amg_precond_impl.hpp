@@ -663,15 +663,19 @@ namespace amg
 
   template<class AMG_CLASS, class HTVD, class HTED>
   EmbedVAMG<AMG_CLASS, HTVD, HTED> :: EmbedVAMG (shared_ptr<BilinearForm> blf, shared_ptr<EmbedVAMG<AMG_CLASS, HTVD, HTED>::Options> opts)
-    : Preconditioner(blf, (opts->energy=="ELMAT" ? Flags() : Flags({"not_register_for_auto_update"}))), options(opts), bfa(blf), fes(blf->GetFESpace()),
+    : Preconditioner(blf, Flags() /*(opts->energy=="ELMAT" ? Flags() : Flags({"not_register_for_auto_update"}))*/), options(opts), bfa(blf), fes(blf->GetFESpace()),
       node_sort(4), node_pos(4), ht_vertex(nullptr), ht_edge(nullptr)
   {
     if (options->energy != "ELMAT") {
-      /** we are setting up directly from the assembled matrix.
-	  call FinalizeLevel ourselfs **/
-      FinalizeLevel(nullptr);
+      /** we might be setting up directly from the assembled matrix.
+	  in that case call FinalizeLevel ourselfs **/
+      if (auto mp = bfa->GetMatrixPtr())
+	FinalizeLevel(mp.get());
     }
     else {
+      if (auto mp = bfa->GetMatrixPtr()) {
+	throw Exception("enrgy is set to ELMAT, but BLF is already assembled!!");
+      }
       /** we are setting up from element matrices - allocate hash-tables
 	  FinalizeLevel will be called from BLF-Assemble **/
       auto fes = blf->GetFESpace();
@@ -690,6 +694,13 @@ namespace amg
       ht_vertex = new HashTable<int, HTVD>(NV);
       //TODO: is this ok??
       ht_edge = new HashTable<INT<2,int>, HTED>(8*NV);
+      // TODO: this is a super dirty hack!
+      if (options->keep_vp) {
+	auto & vpos(node_pos[NT_VERTEX]); vpos.SetSize(ma->GetNV());
+	for (auto k : Range(vpos.Size()))
+	  ma->GetPoint(k,vpos[k]);
+      }
+      // cout << "vpos init: " << endl; prow2(vpos); cout << endl;
     }
   }
 
