@@ -90,16 +90,16 @@ namespace amg
     using AttachedNodeData<NT_EDGE, ElEW<D>, ElEData<D>>::stat;
     using AttachedNodeData<NT_EDGE, ElEW<D>, ElEData<D>>::data; // ?? why do I need all of this> ??
     ElEData (Array<ElEW<D>> && _data, PARALLEL_STATUS _stat) : AttachedNodeData<NT_EDGE, ElEW<D>, ElEData>(move(_data), _stat) {}
-    INLINE PARALLEL_STATUS map_data (const BaseCoarseMap & cmap, Array<ElEW<D>> & cdata) const
-    {
-      cdata.SetSize(cmap.GetMappedNN<NT_EDGE>()); cdata = 0.0;
-      auto map = cmap.GetMap<NT_EDGE>();
-      mesh->template Apply<NT_EDGE>([&](const auto & e) {
-      	  auto CE = map[e.id];
-      	  if (CE != -1) cdata[CE] += data[e.id];
-      	}, stat==CUMULATED);
-      return DISTRIBUTED;
-    }
+    PARALLEL_STATUS map_data (const BaseCoarseMap & cmap, Array<ElEW<D>> & cdata) const;
+    // {
+    //   cdata.SetSize(cmap.GetMappedNN<NT_EDGE>()); cdata = 0.0;
+    //   auto map = cmap.GetMap<NT_EDGE>();
+    //   mesh->template Apply<NT_EDGE>([&](const auto & e) {
+    //   	  auto CE = map[e.id];
+    //   	  if (CE != -1) cdata[CE] += data[e.id];
+    //   	}, stat==CUMULATED);
+    //   return DISTRIBUTED;
+    // }
   };
 
   template<int D>

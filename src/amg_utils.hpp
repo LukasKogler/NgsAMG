@@ -469,6 +469,22 @@ namespace amg
   template<int A, class B> INLINE double calc_trace (FlatMatrixFixWidth<A,B> x) {
     double sum = 0; for (auto k : Range(A)) sum += x(k,k); return sum;
   }
+
+  template<class A, class B, class C>
+  void intersect_sorted_arrays (A & a, B & b, C & c)
+  {
+    int sa = a.Size(), sb = b.Size();
+    int i1 = 0, i2 = 0; c.SetSize(0);
+    while( (i1<sa) && (i2<sb) ) {
+      if(a[i1]==b[i2]) {
+	c.Append(a[i1]);
+	i1++; i2++;
+      }
+      else if(a[i1]<b[i2]) { i1++; }
+      else { i2++; }
+    }
+  };
+
   
 } // namespace amg
 

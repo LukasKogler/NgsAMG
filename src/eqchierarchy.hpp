@@ -25,6 +25,12 @@ namespace amg {
     **/
     EQCHierarchy (Table<int> && eqcs, NgsAMG_Comm acomm, bool do_cutunion = false);
 
+    /** 
+	take vertex-eqcs
+    **/
+    EQCHierarchy (const shared_ptr<MeshAccess> & ma, Array<NODE_TYPE> nts, bool do_cutunion);
+
+    
     ~EQCHierarchy () { ; }
     
     INLINE size_t GetNEQCS () const { return neqcs; }

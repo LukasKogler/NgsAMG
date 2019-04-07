@@ -3,8 +3,43 @@
 namespace amg {
 
 
+  EQCHierarchy :: EQCHierarchy (const shared_ptr<MeshAccess> & ma, Array<NODE_TYPE> nts, bool do_cutunion)
+    : comm(ma->GetCommunicator())
+  {
+    Table<int> vanilla_dps;
+    Array<int> size_of_dps(100); size_of_dps.SetSize(0);
+    Array<int> index_of_block(100); index_of_block.SetSize(0);
+    Array<NODE_TYPE> nt_of_block(100); nt_of_block.SetSize(0);
+    this->rank = comm.Rank(); this->np = comm.Size();
+    neqcs = 0;	neqcs_glob = 0;
+    for (NODE_TYPE NT : nts) {
+      auto nnodes = ma->GetNNodes(NT);
+      for (auto k : Range(nnodes)) {
+	auto dps = ma->GetDistantProcs(NodeId(NT, k));
+	int pos = -1;
+	for (size_t l = 0; l < index_of_block.Size() && (pos==-1);l++)
+	  if (ma->GetDistantProcs(NodeId(NT, index_of_block[l]))==dps)
+	    pos = l;
+	if (pos>=0) continue;
+	index_of_block.Append(k);
+	nt_of_block.Append(NT);
+	size_of_dps.Append(dps.Size());
+	neqcs++;	
+      }
+    }
+    vanilla_dps = Table<int>(size_of_dps);
+    for (auto k : Range(neqcs))
+      if (vanilla_dps[k].Size())
+	{ vanilla_dps[k] = ma->GetDistantProcs(NodeId(nt_of_block[k], index_of_block[k])); }
+    if (do_cutunion)
+      this->SetupFromInitialDPs(std::move(vanilla_dps));
+    else
+      this->SetupFromDPs(std::move(vanilla_dps));
+  }
+
+
   EQCHierarchy :: EQCHierarchy (const shared_ptr<ParallelDofs> & apd,
-			       bool do_cutunion)
+				bool do_cutunion)
     : comm(apd->GetCommunicator())
   {
     // if(apd==nullptr) {

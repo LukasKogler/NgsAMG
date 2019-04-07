@@ -218,15 +218,15 @@ namespace amg
       static Timer t(timer_name + string("-CLevel")); RegionTimer rt(t);
       if (options->clev_type=="INV") {
 	if (mats.Last()!=nullptr) {
-	  cout << "COARSE MAT: " << endl << *mats.Last() << endl;
+	  // cout << "COARSE MAT: " << endl << *mats.Last() << endl;
 	  auto cpds = dof_map->GetMappedParDofs();
 	  auto comm = cpds->GetCommunicator();
 	  if (comm.Size()>0) {
-	    cout << "coarse inv " << endl;
+	    // cout << "coarse inv " << endl;
 	    auto cpm = make_shared<ParallelMatrix>(mats.Last(), cpds);
 	    cpm->SetInverseType(options->clev_inv_type);
 	    auto cinv = cpm->InverseMatrix();
-	    cout << "coarse inv done" << endl;
+	    // cout << "coarse inv done" << endl;
 	    amg_mat->AddFinalLevel(cinv);
 	  }
 	  // else {
@@ -361,8 +361,8 @@ namespace amg
       }, false);
     for (auto v : Range(NV))
       vcw[v] = self.template GetWeight<NT_VERTEX>(mesh, v)/vcw[v];
-    cout << "VCWS: " << endl; prow2(vcw); cout << endl << endl;
-    cout << "ECWS: " << endl; prow2(ecw); cout << endl << endl;
+    // cout << "VCWS: " << endl; prow2(vcw); cout << endl << endl;
+    // cout << "ECWS: " << endl; prow2(ecw); cout << endl << endl;
     opts->vcw = move(vcw);
     opts->min_vcw = options->min_vcw;
     opts->ecw = move(ecw);
@@ -741,7 +741,8 @@ namespace amg
     auto & O(*options);
     shared_ptr<BlockTM> top_mesh = nullptr;
     auto fpd = finest_mat->GetParallelDofs();
-    auto eqc_h = make_shared<EQCHierarchy>(fpd); // TODO: this could be more efficient
+    // auto eqc_h = make_shared<EQCHierarchy>(fpd, true); // TODO: this could be more efficient
+    auto eqc_h = make_shared<EQCHierarchy>(ma, Array<NODE_TYPE>({NT_VERTEX}), true); // TODO: this could be more efficient
     if (O.edges == "MESH") { // convert Netgen-mesh to AMG-Mesh
       if (O.v_pos == "VERTEX") {
 	/** edges to edges **/

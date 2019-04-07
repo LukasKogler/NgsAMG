@@ -54,9 +54,8 @@ namespace amg
       for (auto & e : edges) {
 	auto ed = (*ht_edge)[INT<2,int>(rvsort[e.v[0]], rvsort[e.v[1]]).Sort()];
 	we[e.id] = (*ht_edge)[INT<2,int>(rvsort[e.v[0]], rvsort[e.v[1]]).Sort()];
+	// workaround for embedding
 	SetScalIdentity(calc_trace(we[e.id].wigg_mat())/disppv(C::DIM), we[e.id].bend_mat());
-	// cout << "edge" << e << endl;
-	// cout << ed.wigg_mat() << endl << ed.bend_mat() << endl << endl;
       }
     }
     else if (options->energy == "ALG")
@@ -120,6 +119,8 @@ namespace amg
 		    ElementId ei, LocalHeap & lh)
   {
     if (options->energy != "ELMAT") return;
+    static Timer t(string("EmbedVAMG<ElasticityAMG<")+to_string(C::DIM)+">::AddElementMatrix");
+    RegionTimer rt(t);
     constexpr int D = C::DIM;
     const bool vmajor = (options->block_s.Size()==1) ? 1 : 0;
     int ndof_vec = dnums.Size();
@@ -127,130 +128,162 @@ namespace amg
     int perv = 0;
     if(options->block_s.Size()==0) perv = dofpv(D);
     else for (auto v : options->block_s) perv += v; 
-    if (perv==dofpv(D)) {
-      throw Exception("not back in, sorry");
-    }
-    const int nv = ndof / perv;
-    auto & vpos(node_pos[NT_VERTEX]);
-    auto get_dof = [perv](auto v, auto comp) {
-      return perv*v + comp;
-    };
-
-    // cout << "elmat: " << endl << elmat << endl;
-    // cout << "disppv " << disppv(D) << endl;
-    // cout << "rotpv " << rotpv(D) << endl;
-    // cout << "perv " << perv << endl;
-    // cout << "ndof " << ndof_vec << " " << ndof << endl;
-    // cout << "nv " << nv << endl;
-
-    int ext_ndof = ndof+disppv(D);
-    FlatMatrix<double> extmat (ext_ndof, ext_ndof, lh);
-    extmat.Rows(0, ndof).Cols(0,ndof) = elmat;
-    extmat.Rows(ndof, ext_ndof) = 0; extmat.Cols(ndof, ext_ndof) = 0;
-    // {u} = 0
-    for (int i : Range(disppv(D)))
-      for (int j : Range(nv))
-    	extmat(ndof+i, get_dof(j, i)) = extmat(get_dof(j, i), ndof+i) = 1.0;
-    Vec<3,double> mid = 0;
-    for (int i : Range(nv)) mid += vpos[dnums[i]]; mid /= nv;
-    FlatMatrixFixWidth<dofpv(D), double> rots(ext_ndof, lh); rots = 0;
-    for (int i : Range(nv)) {
-          Vec<3,double> tang = vpos[dnums[i]] - mid;
-          // cout << "tang: " << tang << endl;
-          // (0,-z,y)
-          rots(get_dof(i,1),0) = -tang(2);
-          rots(get_dof(i,2),0) = tang(1);
-          // (-z,0,x)
-          rots(get_dof(i,0),1) = -tang(2);
-          rots(get_dof(i,2),1) = tang(0);
-          // (y,-x,0)
-          rots(get_dof(i,0),2) = tang(1);
-          rots(get_dof(i,1),2) = -tang(0);
-        }
-    extmat += Trans(rots) * rots;
-    
-    // for (int i : Range(nv)) {
-    //       Vec<3,double> tang = vpos[dnums[i]] - mid;
-    //       cout << "tang: " << tang << endl;
-    //       // (0,-z,y)
-    //       extmat(ndof + disppv(D)    , get_dof(i,1)) = -tang(2);
-    //       extmat(get_dof(i,1), ndof + disppv(D)) = -tang(2);
-    //       extmat(ndof + disppv(D)    , get_dof(i,2)) = tang(1);
-    //       extmat(get_dof(i,2), ndof + disppv(D)) = tang(1);
-    //       // (-z,0,x)
-    //       extmat(ndof + disppv(D) + 1, get_dof(i,0)) = -tang(2);
-    //       extmat(get_dof(i,0), ndof + disppv(D) + 1) = -tang(2);
-    //       extmat(ndof + disppv(D) + 1, get_dof(i,2)) = tang(0);
-    //       extmat(get_dof(i,2), ndof + disppv(D) + 1) = tang(0);
-    //       // (y,-x,0)
-    //       extmat(ndof + disppv(D) + 2, get_dof(i,0)) = tang(1);
-    //       extmat(get_dof(i,0), ndof + disppv(D) + 2) = tang(1);
-    //       extmat(ndof + disppv(D) + 2, get_dof(i,1)) = -tang(0);
-    //       extmat(get_dof(i,1), ndof + disppv(D) + 2) = -tang(0);
-    //     }
-
-    // FlatMatrix<double> evecs(ndof, ndof, lh);
-    // FlatVector<double> evals(ndof, lh);
-    // LapackEigenValuesSymmetric(elmat, evals, evecs);
-    // FlatMatrix<double> evecs2(ext_ndof, ext_ndof, lh);
-    // FlatVector<double> evals2(ext_ndof, lh);
-    // LapackEigenValuesSymmetric(extmat, evals2, evecs2);
-    // cout << "elmat evecs: " << endl << evecs << endl;
-    // cout << "extmat evecs: " << endl << evecs2 << endl;
-    // cout << "elmat evals: " << endl; prow2(evals); cout << endl;
-    // cout << "extmat evals: " << endl; prow2(evals2); cout << endl;
-    // CalcInverse(extmat);
-    // cout << "inv extmat: " << endl << extmat << endl;
-    // LapackEigenValuesSymmetric(extmat, evals2, evecs2);
-    // cout << "inv extmat evecs: " << endl << evecs2 << endl;
-    // cout << "inv extmat evals: " << endl; prow2(evals2); cout << endl;
-        
-    for (int i = 0; i < nv; i++) {
-      for (int j = i+1; j < nv; j++) {
-	constexpr int small_nd = 2*disppv(D)+disppv(D);
-	Mat<small_nd, small_nd> schur;
-	Array<int> inds (small_nd);
-	for (auto k : Range(disppv(D))) {
-	  inds[k] = get_dof(i,k);
-	  inds[disppv(D)+k] = get_dof(j,k);
-	}
-	for (auto k : Range(disppv(D)))
-	  inds[2*disppv(D)+k] = ndof+k;
-	schur = extmat.Rows(inds).Cols(inds);
-	// for (auto k : Range(inds.Size()))
-	//   for (auto j : Range(inds.Size()))
-	//     schur(k,j) = extmat(inds[k], inds[j]);
-
-	// FlatMatrix<double> sm(small_nd, small_nd, lh), evecs(small_nd, small_nd, lh);
-	// FlatVector<double> evals(small_nd, lh);
-	// sm = extmat.Rows(inds).Cols(inds);
-	// LapackEigenValuesSymmetric(sm, evals, evecs);
-	// cout << "small mat evals: " << endl; prow2(evals); cout << endl;
-	// cout << "small mat evercs: " << endl; cout << evecs; cout << endl;
-	// cout << "schur block: " << endl; print_tm(cout, schur); cout << endl;
-	// CalcInverse(schur);
-	// cout << "schur block inved: " << endl; print_tm(cout, schur); cout << schur << endl;
-	// sm = schur;
-	// LapackEigenValuesSymmetric(sm, evals, evecs);
-	// cout << "inv small mat evals: " << endl; prow2(evals); cout << endl;
-	// cout << "inv small mat evercs: " << endl; cout << evecs; cout << endl;
-
-	auto & hte(*ht_edge);
-	ElEW<D> & elew = hte[INT<2,int>(dnums[i], dnums[j]).Sort()];
-	auto wigg_mat = elew.wigg_mat(); wigg_mat = 0;
-	for (auto k : Range(disppv(D))) {
-	  for (auto j : Range(disppv(D))) {
-	    wigg_mat(k,j) = schur(k,j);
-	  }
-	}
-	// cout << "wigg_mat: " << endl << wigg_mat << endl;
+    if (perv==disppv(D)) {
+      const int nv = ndof / perv;
+      auto & vpos(node_pos[NT_VERTEX]);
+      auto get_dof = [perv](auto v, auto comp) {
+	return perv*v + comp;
+      };
+      // cout << "dnums: "; prow(dnums); cout << endl;
+      // cout << "disppv " << disppv(D) << endl;
+      // cout << "rotpv " << rotpv(D) << endl;
+      // cout << "perv " << perv << endl;
+      // cout << "ndof " << ndof_vec << " " << ndof << endl;
+      // cout << "nv " << nv << endl;
+      int ext_ndof = ndof+disppv(D);
+      FlatMatrix<double> extmat (ext_ndof, ext_ndof, lh);
+      extmat.Rows(0, ndof).Cols(0,ndof) = elmat;
+      extmat.Rows(ndof, ext_ndof) = 0; extmat.Cols(ndof, ext_ndof) = 0;
+      // {u} = 0
+      for (int i : Range(disppv(D)))
+	for (int j : Range(nv))
+	  extmat(ndof+i, get_dof(j, i)) = extmat(get_dof(j, i), ndof+i) = 1.0;
+      Vec<3,double> mid = 0;
+      for (int i : Range(nv)) mid += vpos[dnums[i]]; mid /= nv;
+      FlatMatrixFixWidth<dofpv(D), double> rots(ext_ndof, lh); rots = 0;
+      for (int i : Range(nv)) {
+	Vec<3,double> tang = vpos[dnums[i]] - mid;
+	// (0,-z,y)
+	rots(get_dof(i,1),0) = -tang(2);
+	rots(get_dof(i,2),0) = tang(1);
+	// (-z,0,x)
+	rots(get_dof(i,0),1) = -tang(2);
+	rots(get_dof(i,2),1) = tang(0);
+	// (y,-x,0)
+	rots(get_dof(i,0),2) = tang(1);
+	rots(get_dof(i,1),2) = -tang(0);
       }
+      extmat += Trans(rots) * rots;
+      // FlatMatrix<double> evecs(ndof, ndof, lh);
+      // FlatVector<double> evals(ndof, lh);
+      // LapackEigenValuesSymmetric(elmat, evals, evecs);
+      // FlatMatrix<double> evecs2(ext_ndof, ext_ndof, lh);
+      // FlatVector<double> evals2(ext_ndof, lh);
+      // LapackEigenValuesSymmetric(extmat, evals2, evecs2);
+      // cout << "elmat evecs: " << endl << evecs << endl;
+      // cout << "extmat evecs: " << endl << evecs2 << endl;
+      // cout << "elmat evals: " << endl; prow2(evals); cout << endl;
+      // cout << "extmat evals: " << endl; prow2(evals2); cout << endl;
+      // CalcInverse(extmat);
+      // cout << "inv extmat: " << endl << extmat << endl;
+      // LapackEigenValuesSymmetric(extmat, evals2, evecs2);
+      // cout << "inv extmat evecs: " << endl << evecs2 << endl;
+      // cout << "inv extmat evals: " << endl; prow2(evals2); cout << endl;
+      for (int i = 0; i < nv; i++) {
+	for (int j = i+1; j < nv; j++) {
+	  constexpr int small_nd = 2*disppv(D)+disppv(D);
+	  Mat<small_nd, small_nd> schur;
+	  Array<int> inds (small_nd);
+	  for (auto k : Range(disppv(D))) {
+	    inds[k] = get_dof(i,k);
+	    inds[disppv(D)+k] = get_dof(j,k);
+	    inds[2*disppv(D)+k] = ndof+k;
+	  }
+	  schur = extmat.Rows(inds).Cols(inds);
+	  // FlatMatrix<double> sm(small_nd, small_nd, lh), evecs(small_nd, small_nd, lh);
+	  // FlatVector<double> evals(small_nd, lh);
+	  // sm = extmat.Rows(inds).Cols(inds);
+	  // LapackEigenValuesSymmetric(sm, evals, evecs);
+	  // cout << "small mat evals: " << endl; prow2(evals); cout << endl;
+	  // cout << "small mat evercs: " << endl; cout << evecs; cout << endl;
+	  // cout << "schur block: " << endl; print_tm(cout, schur); cout << endl;
+	  // CalcInverse(schur);
+	  // cout << "schur block inved: " << endl; print_tm(cout, schur); cout << schur << endl;
+	  // sm = schur;
+	  // LapackEigenValuesSymmetric(sm, evals, evecs);
+	  // cout << "inv small mat evals: " << endl; prow2(evals); cout << endl;
+	  // cout << "inv small mat evercs: " << endl; cout << evecs; cout << endl;
+	  auto & hte(*ht_edge);
+	  ElEW<D> & elew = hte[INT<2,int>(dnums[i], dnums[j]).Sort()];
+	  // cout << "add to " << INT<2,int>(dnums[i], dnums[j]).Sort() << endl;
+	  auto wigg_mat = elew.wigg_mat(); wigg_mat = 0;
+	  for (auto k : Range(disppv(D))) {
+	    for (auto j : Range(disppv(D))) {
+	      wigg_mat(k,j) = schur(k,j);
+	    }
+	  }
+	  // cout << "wigg_mat: " << endl << wigg_mat << endl;
+	}
+      }
+    }
+    else {
+
     }
   }
 
+  template <int D>
+  PARALLEL_STATUS ElEData<D> :: map_data (const BaseCoarseMap & acmap, Array<ElEW<D>> & cdata) const
+  {
+    auto cmap = static_cast<const CoarseMap<ElasticityMesh<D>>&>(acmap);
+    auto & mesh = static_cast<ElasticityMesh<D>&>(*cmap.GetMesh());
 
-  // template class ElasticityAMG<2>;
-  // template class ElasticityAMG<3>;
+    cdata.SetSize(cmap.template GetMappedNN<NT_EDGE>()); cdata = 0.0;
+    auto map = cmap.template GetMap<NT_EDGE>();
+    auto econ = mesh.GetEdgeCM();
+    auto edges = mesh.template GetNodes<NT_EDGE>();
+    auto v_map = cmap.template GetMap<NT_VERTEX>();
+    auto vd = get<0>(mesh.Data())->Data();
+    Array<int> common_ovs;
+    Mat<disppv(D), rotpv(D), double> skt, sktt;
+    auto calc_skt = [&](const auto & t) {
+      skt = 0;
+      if constexpr(D==3) {
+	  skt(0,1) = -(skt(1,0) =  t[2]);
+	  skt(0,2) = -(skt(2,0) = -t[1]);
+	  skt(1,2) = -(skt(2,1) =  t[0]);
+	}
+      else {
+	skt(0,0) =  t[1];
+	skt(1,0) = -t[0];
+      }
+      sktt = Trans(skt);
+    };
+    auto calc_admat = [&](const auto & edge) {
+      Mat<rotpv(D), rotpv(D)> mat(0);
+      auto fdm = data[edge.id].wigg_mat();
+      mat = 0.25 * sktt * fdm * skt;
+      // cout << "ad-mat: " << endl; print_tm(cout, mat); cout << endl;
+      return mat;
+    };
+    mesh.template Apply<NT_EDGE>([&](const auto & edge) {
+	auto CE = map[edge.id];
+	if (CE != -1) {
+	  cdata[CE] += data[edge.id];
+	}
+	else if ( (v_map[edge.v[0]]==v_map[edge.v[1]]) && (v_map[edge.v[0]]!=-1) ) {
+	  Vec<3> tang = vd[edge.v[0]].pos - vd[edge.v[1]].pos;
+	  auto ri0 = econ->GetRowIndices(edge.v[0]);
+	  auto ri1 = econ->GetRowIndices(edge.v[1]);
+	  calc_skt(tang);
+	  intersect_sorted_arrays(ri0, ri1, common_ovs);
+	  for (auto ov : common_ovs) {
+	    auto conn_edge_id = (*econ)(edge.v[0], ov);
+	    if (map[conn_edge_id] == -1 ) continue;
+	    auto ce_id = map[conn_edge_id];
+	    auto& con_edge = edges[(*econ)(edge.v[0], ov)];
+	    auto& con_edge2 = edges[(*econ)(edge.v[1], ov)];
+	    auto add_here = cdata[ce_id].bend_mat();
+	    add_here += calc_admat(con_edge);
+	    add_here += calc_admat(con_edge2);
+	  }
+	}
+      }, stat==CUMULATED);
+    return DISTRIBUTED;
+  }
+
+  template class ElEData<2>;
+  template class ElEData<3>;
+
 
 } // namespace amg
 
