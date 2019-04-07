@@ -490,6 +490,7 @@ namespace amg
     virtual ~AttachedNodeData () { ; }
     void SetMesh (BlockTM * _mesh) { mesh = _mesh; }
     PARALLEL_STATUS GetParallelStatus () const { return stat; }
+    void SetParallelStatus (PARALLEL_STATUS astat) { stat = astat; }
     FlatArray<T> Data () const { return data; }
     // INLINE void map_data (const CoarseMap & cmap, FlatArray<T> fdata, FlatArray<T> cdata); 
     template<class TMESH>

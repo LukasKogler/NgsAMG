@@ -669,8 +669,13 @@ namespace amg
     if (options->energy != "ELMAT") {
       /** we might be setting up directly from the assembled matrix.
 	  in that case call FinalizeLevel ourselfs **/
-      if (auto mp = bfa->GetMatrixPtr())
+      if (auto mp = bfa->GetMatrixPtr()) {
 	FinalizeLevel(mp.get());
+      }
+      // else {
+      // 	// some problem with multiple registration??
+      // 	throw Exception("BLF not assembled and energy != elmat!");
+      // }
     }
     else {
       if (auto mp = bfa->GetMatrixPtr()) {
@@ -699,8 +704,8 @@ namespace amg
 	auto & vpos(node_pos[NT_VERTEX]); vpos.SetSize(ma->GetNV());
 	for (auto k : Range(vpos.Size()))
 	  ma->GetPoint(k,vpos[k]);
+	// cout << "vpos init: " << endl; prow2(vpos); cout << endl;
       }
-      // cout << "vpos init: " << endl; prow2(vpos); cout << endl;
     }
   }
 

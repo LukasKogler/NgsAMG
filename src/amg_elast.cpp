@@ -35,15 +35,18 @@ namespace amg
   EmbedVAMG<C, D, E> :: BuildAlgMesh (shared_ptr<BlockTM> top_mesh)
   {
     Timer & t(timer_hack_Hack_BuildAlgMesh()); RegionTimer rt(t);
+    auto a = new ElVData(Array<PosWV>(top_mesh->GetNN<NT_VERTEX>()), CUMULATED); // !! otherwise pos is garbage
+    auto b = new ElEData<C::DIM>(Array<ElEW<C::DIM>>(top_mesh->GetNN<NT_EDGE>()), DISTRIBUTED);
     FlatArray<Vec<3,double>> vp = node_pos[NT_VERTEX];
-    Array<PosWV> pwv(top_mesh->GetNN<NT_VERTEX>());
+    auto pwv = a->Data();
     for (auto k : Range(pwv.Size())) {
       pwv[k].wt = 0.0;
       pwv[k].pos = vp[k];
     }
-    Array<ElEW<C::DIM>> we(top_mesh->GetNN<NT_EDGE>());
+    auto we = b->Data();
     if (options->energy == "TRIV") {
       for (auto & x : we) { SetIdentity(x.bend_mat()); SetIdentity(x.wigg_mat()); }
+      b->SetParallelStatus(CUMULATED);
     }
     else if (options->energy == "ELMAT") {
       FlatArray<int> vsort = node_sort[NT_VERTEX];
@@ -56,14 +59,33 @@ namespace amg
 	we[e.id] = (*ht_edge)[INT<2,int>(rvsort[e.v[0]], rvsort[e.v[1]]).Sort()];
 	// workaround for embedding
 	SetScalIdentity(calc_trace(we[e.id].wigg_mat())/disppv(C::DIM), we[e.id].bend_mat());
+	// cout << "edge " << e << endl;
+	// cout << we[e.id].bend_mat() << endl;
+	// cout << we[e.id].wigg_mat() << endl;
       }
     }
     else if (options->energy == "ALG")
-      { throw Exception("ALG WTS for elasticity not implemented."); }
+      {
+	if ( (options->block_s.Size() != 1) || (options->block_s[0] != disppv(C::DIM)) )
+	  throw Exception("ALG WTS for elasticity only mit multidim+disp only (rest TODO).");
+	shared_ptr<BaseMatrix> fseqmat = finest_mat;
+	if (auto fpm = dynamic_pointer_cast<ParallelMatrix>(finest_mat))
+	  fseqmat = fpm->GetMatrix();
+	auto fspm = dynamic_pointer_cast<SparseMatrixTM<Mat<disppv(C::DIM), disppv(C::DIM), double>>>(fseqmat);
+	const auto & cspm(*fspm);
+	FlatArray<int> vsort = node_sort[NT_VERTEX];
+	Array<int> rvsort(vsort.Size());
+	for (auto k : Range(vsort.Size()))
+	  rvsort[vsort[k]] = k;
+	auto edges = top_mesh->GetNodes<NT_EDGE>();
+	for (auto & e : edges) {
+	  double fc = fabs(calc_trace(cspm(rvsort[e.v[0]], rvsort[e.v[1]])));
+	  SetScalIdentity(fc, we[e.id].bend_mat());
+	  SetScalIdentity(fc, we[e.id].wigg_mat());
+	}
+      }
     else
       { throw Exception(string("Invalid energy type ")+options->energy); }
-    auto a = new ElVData(move(pwv), CUMULATED);
-    auto b = new ElEData<C::DIM>(move(we), CUMULATED);
     auto mesh = make_shared<ElasticityMesh<C::DIM>>(move(*top_mesh), a, b);
     return mesh;
   }
@@ -110,10 +132,6 @@ namespace amg
     }
   }
 
-  // template<class C, class D, class E> void EmbedVAMG<C, D, E> ::
-  // AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
-  // 		    ElementId ei, LocalHeap & lh) { ; }
-
   template<class C, class X, class Y> void EmbedVAMG<C, X, Y> ::
   AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
 		    ElementId ei, LocalHeap & lh)
@@ -128,6 +146,7 @@ namespace amg
     int perv = 0;
     if(options->block_s.Size()==0) perv = dofpv(D);
     else for (auto v : options->block_s) perv += v; 
+    // cout << perv << " " << disppv(D) << endl;
     if (perv==disppv(D)) {
       const int nv = ndof / perv;
       auto & vpos(node_pos[NT_VERTEX]);
@@ -217,7 +236,7 @@ namespace amg
       }
     }
     else {
-
+      throw Exception("sorry, only disp X disp elmats implemented");
     }
   }
 
