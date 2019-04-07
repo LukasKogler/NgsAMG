@@ -1,1 +1,1 @@
-For elasticity, compile NGSovle with -DMAX_SYS_DIM=6 (or higher).
+For elasticity, compile NGSolve with -DMAX_SYS_DIM=6 (or higher).
