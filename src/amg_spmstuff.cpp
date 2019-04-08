@@ -193,7 +193,9 @@ namespace ngbla
   }
 }
 
+#ifdef ELASTICITY
 #include "sparsematrix_impl.hpp"
+#endif
 
 // namespace ngla
 // {
