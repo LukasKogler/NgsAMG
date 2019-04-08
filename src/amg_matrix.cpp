@@ -396,7 +396,7 @@ namespace amg
 #ifdef ELASTICITY
     if (arank==0) return map->GetParDofs(level)->GetNDofGlobal() * map->GetParDofs(level)->GetEntrySize();
 #else
-    if (arank==0) return map->GetParDofs(level)->GetNDofGlobal());
+    if (arank==0) return map->GetParDofs(level)->GetNDofGlobal();
 #endif
     else return comm.AllReduce((rank==arank) ? x_level[level]->FVDouble().Size() : 0, MPI_SUM);
   }
