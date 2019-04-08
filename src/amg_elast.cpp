@@ -1,3 +1,4 @@
+#ifdef ELASTICITY
 #define FILE_AMGELAST_CPP
 
 #include "amg.hpp"
@@ -307,3 +308,4 @@ namespace amg
 } // namespace amg
 
 #include "amg_tcs.hpp"
+#endif // ELASTICITY

@@ -21,6 +21,7 @@ namespace ngla
      depending on which MAX_SYS_DIM NGSolve has been compiled with, 
      we might not already have SparseMatrix<Mat<K,J>>
    **/
+#ifdef ELASTICITY
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMG_SPMSTUFF_CPP)
 #if MAX_SYS_DIM < 3
   EXTERN template class SparseMatrixTM<Mat<3,3,double>>;
@@ -30,7 +31,6 @@ namespace ngla
   EXTERN template class SparseMatrix<Mat<1,3,double>>;
   EXTERN template class SparseMatrixTM<Mat<2,3,double>>;
   EXTERN template class SparseMatrix<Mat<2,3,double>>;
-
 #if MAX_SYS_DIM < 6
   EXTERN template class SparseMatrixTM<Mat<6,6,double>>;
   EXTERN template class SparseMatrix<Mat<6,6,double>>;
@@ -40,7 +40,8 @@ namespace ngla
   EXTERN template class SparseMatrixTM<Mat<3,6,double>>;
   EXTERN template class SparseMatrix<Mat<3,6,double>>;
 #endif
-
+#endif
+  
 } // namespace ngla
 
 
@@ -49,6 +50,7 @@ namespace amg
   
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGSM_CPP)
   EXTERN template class HybridGSS<1>;
+#ifdef ELASTICITY
   EXTERN template class HybridGSS<2>;
   EXTERN template class HybridGSS<3>;
   // EXTERN template class HybridGSS<4>;
@@ -56,12 +58,14 @@ namespace amg
   EXTERN template class HybridGSS<6>;
   EXTERN template class StabHGSS<6,3,6>;
 #endif
+#endif
 
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGCRS_CPP)
   EXTERN template class SeqVWC<FlatTM>;
   EXTERN template class BlockVWC<H1Mesh>;
   EXTERN template class HierarchicVWC<H1Mesh>;
   EXTERN template class CoarseMap<H1Mesh>;
+#ifdef ELASTICITY
   EXTERN template class BlockVWC<ElasticityMesh<2>>;
   EXTERN template class HierarchicVWC<ElasticityMesh<2>>;
   EXTERN template class CoarseMap<ElasticityMesh<2>>;
@@ -69,17 +73,20 @@ namespace amg
   EXTERN template class HierarchicVWC<ElasticityMesh<3>>;
   EXTERN template class CoarseMap<ElasticityMesh<3>>;
 #endif
+#endif
 
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGCTR_CPP)
   EXTERN template class CtrMap<double>;
+#ifdef ELASTICITY
   EXTERN template class CtrMap<Vec<2,double>>;
   EXTERN template class CtrMap<Vec<3,double>>;
-  // EXTERN template class CtrMap<Vec<4,double>>;
-  // EXTERN template class CtrMap<Vec<5,double>>;
   EXTERN template class CtrMap<Vec<6,double>>;
+#endif
   EXTERN template class GridContractMap<H1Mesh>;
+#ifdef ELASTICITY
   EXTERN template class GridContractMap<ElasticityMesh<2>>;
   EXTERN template class GridContractMap<ElasticityMesh<3>>;
+#endif
 #endif
 
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGH1_CPP)
@@ -87,12 +94,14 @@ namespace amg
 #endif
 
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGELAST_CPP)
+#ifdef ELASTICITY
   //#ifndef FILE_AMGELAST_CPP
   EXTERN template class ElasticityAMG<2>;
   EXTERN template class ElasticityAMG<3>;
   //#endif
   EXTERN template class EmbedVAMG<ElasticityAMG<2>, double, ElEW<2>>;
   EXTERN template class EmbedVAMG<ElasticityAMG<3>, double, ElEW<3>>;
+#endif
 #endif
 
 #define InstTransMat(N,M) \
@@ -113,21 +122,26 @@ namespace amg
 #if !defined(AMG_EXTERN_TEMPLATES) && defined(FILE_AMG_SPMSTUFF_CPP)
   /** Transpose **/
   InstTransMat(1,1);
+#ifdef ELASTICITY
   InstTransMat(1,3);
   InstTransMat(2,3);
   InstTransMat(3,3);
   InstTransMat(1,6);
   InstTransMat(3,6);
   InstTransMat(6,6);
+#endif
 
   /** A * B **/
   InstMultMat(1,1,1);
+#ifdef ELASTICITY
   InstEmbedMults(1,3);
   InstEmbedMults(2,3);
   InstMultMat(3,3,3);
   InstMultMat(6,6,6);
   InstEmbedMults(1,6);
   InstEmbedMults(3,6);
+#endif
+
 #endif
   
 } // namespace amg

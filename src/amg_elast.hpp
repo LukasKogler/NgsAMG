@@ -1,3 +1,4 @@
+#ifdef ELASTICITY
 #ifndef FILE_AMGELAST
 #define FILE_AMGELAST
 
@@ -236,4 +237,5 @@ namespace ngcore
   };
 } // namespace ngcore
 
+#endif
 #endif
