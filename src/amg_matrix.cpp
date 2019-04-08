@@ -305,7 +305,11 @@ namespace amg
       cout << "rank " << rank << "does not have that many levels!!" << endl;
     else if( (rank==arank) && (rank!=0) && (dof>x_level[level]->FVDouble().Size()))
       cout << "rank " << rank << "only has " << x_level[level]->FVDouble().Size() << " dofs on level " << level << " (wanted dof " << dof << ")" << endl;
+#ifdef ELASTICITY
     else if( (rank==arank) && (rank==0) && (dof>map->GetParDofs(level)->GetNDofGlobal()*map->GetParDofs(level)->GetEntrySize()))
+#else
+    else if( (rank==arank) && (rank==0) && (dof>map->GetParDofs(level)->GetNDofGlobal()))
+#endif
       cout << "global ndof on level " << level << "is " << map->GetParDofs(level)->GetNDofGlobal() << " (wanted dof " << dof << ")" << endl;
     else
       input_notok = 0;
@@ -330,7 +334,11 @@ namespace amg
     else if ( (arank==0) && (my_max_level==level) ){
       // auto pd = mats[level]->GetParallelDofs();
       auto pd = map->GetParDofs(level);
+#ifdef ELASTICITY
       auto BS = pd->GetEntrySize();
+#else
+      auto BS = 1;
+#endif
       auto n = pd->GetNDofLocal();
       auto all = make_shared<BitArray>(n);
       all->Set();
@@ -385,7 +393,11 @@ namespace amg
     }
     input_notok = comm.AllReduce(input_notok, MPI_MAX);
     if (input_notok) return -1;
+#ifdef ELASTICITY
     if (arank==0) return map->GetParDofs(level)->GetNDofGlobal() * map->GetParDofs(level)->GetEntrySize();
+#else
+    if (arank==0) return map->GetParDofs(level)->GetNDofGlobal());
+#endif
     else return comm.AllReduce((rank==arank) ? x_level[level]->FVDouble().Size() : 0, MPI_SUM);
   }
 
