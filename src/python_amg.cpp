@@ -149,10 +149,10 @@ PYBIND11_MODULE (ngs_amg, m) {
   m.def("AMG_EL2", [&] (shared_ptr<BilinearForm> blf, py::kwargs kwa) {
       throw Exception("Elasticity AMG not available.");
       return py::none();      
-    });
+    }, py::arg("blf") = nullptr);
   m.def("AMG_EL3", [&] (shared_ptr<BilinearForm> blf, py::kwargs kwa) {
       throw Exception("Elasticity AMG not available.");
       return py::none();      
-    });
+    }, py::arg("blf") = nullptr);
 #endif  
 }
