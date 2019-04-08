@@ -85,29 +85,29 @@ namespace amg
 	  auto prol_step = BuildDOFMapStep(gstep_coarse, fm_pd);
 	  bool smoothit = true;
 	  // Smooth prol?
-	  cout << "CRS-step, smooth? "; 
-	  if (options->enable_sm == false) { cout << "1F"; smoothit = false; }
-	  else if (options->force_sm) { cout << "2"; smoothit = options->sm_levels.Contains(level[0]); }
-	  else if (options->sm_levels.Contains(level[0])) { cout << "3T"; smoothit = true; }
-	  else if (options->sm_skip_levels.Contains(level[0])) { cout << "4F"; smoothit = false; }
-	  else if (level[0] < options->skip_smooth_first) { cout << "5F"; smoothit = false; }
-	  else if (curr_nv > options->smooth_after_frac * last_nv_smo) { cout << "6F"; smoothit = false; }
-	  cout << smoothit << endl;
+	  // cout << "CRS-step, smooth? "; 
+	  if (options->enable_sm == false) { /*cout << "1F";*/ smoothit = false; }
+	  else if (options->force_sm) { /*cout << "2";*/ smoothit = options->sm_levels.Contains(level[0]); }
+	  else if (options->sm_levels.Contains(level[0])) { /*cout << "3T";*/ smoothit = true; }
+	  else if (options->sm_skip_levels.Contains(level[0])) { /*cout << "4F";*/ smoothit = false; }
+	  else if (level[0] < options->skip_smooth_first) { /*cout << "5F";*/ smoothit = false; }
+	  else if (curr_nv > options->smooth_after_frac * last_nv_smo) { /*cout << "6F";*/ smoothit = false; }
+	  // cout << smoothit << endl;
 	  if (smoothit)
 	    {
 	      last_nv_smo = curr_nv;
 	      SmoothProlongation(prol_step, static_pointer_cast<TMESH>(gstep_coarse->GetMesh()));
 	    }
 	  if ( (level[0] == 0) && (embed_step != nullptr) ) {
-	    cout << " conc embed step! " << endl;
+	    // cout << " conc embed step! " << endl;
 	    dof_step = embed_step->Concatenate(prol_step);
-	    cout << " initial coned step: " << dof_step << " " << typeid(dof_step).name() << endl;
+	    // cout << " initial coned step: " << dof_step << " " << typeid(dof_step).name() << endl;
 	  }
-	  else { cout << " NO EMBED STEP!!" << endl; dof_step = prol_step; }
+	  else { dof_step = prol_step; }
        	  level[0]++; level[1] = level[2] = 0;
        	}
 	else if ( !disc_locked ) {throw Exception("Discard-Map not yet ported to new Version!"); }
-       	else { cout << "warning, no map variant worked!" << endl; break; } // all maps failed
+       	else { throw Exception("No map variant worked!"); break; } // all maps failed
 	fm = dynamic_pointer_cast<TMESH>(grid_step->GetMappedMesh());
 	if (fm != nullptr && fm->template GetNNGlobal<NT_VERTEX>()==0) { // can happen due to discard/vertex ground
 	  if (cutoffs.Last() != step_cnt) cutoffs.Append(step_cnt);
@@ -123,13 +123,13 @@ namespace amg
 	double frac_crs = (1.0*next_nv) / curr_nv;
 	bool assit = false;
 	// Assemble next level ?
-	cout << "level " << level << ", assemble? ";
+	// cout << "level " << level << ", assemble? ";
 	if (options->force_ass) { assit = options->ass_levels.Contains(level[0]); }
-	else if (options->ass_levels.Contains(level[0]) ) { cout << "1Y"; assit = true; }
-	else if (options->ass_skip_levels.Contains(level[0])) { cout << "2F"; assit = false; }
-	else if (level[0] < options->skip_ass_first) { cout << "3F"; assit = false; }
-	else if (next_nv < options->ass_after_frac * last_nv_ass) { cout << "4Y"; assit = true; }
-	cout << "  " << assit << endl;
+	else if (options->ass_levels.Contains(level[0]) ) { /*cout << "1Y";*/ assit = true; }
+	else if (options->ass_skip_levels.Contains(level[0])) { /*cout << "2F";*/ assit = false; }
+	else if (level[0] < options->skip_ass_first) { /*cout << "3F";*/ assit = false; }
+	else if (next_nv < options->ass_after_frac * last_nv_ass) { /*cout << "4Y";*/ assit = true; }
+	// cout << "  " << assit << endl;
 	infos->LogMesh(level, fm, assit);
 	if (assit) { ass_levels.Append(level); cutoffs.Append(step_cnt); last_nv_ass = next_nv; }
 	// Unlock contract ?
@@ -137,14 +137,14 @@ namespace amg
 	  if ( options->ctr_after_frac * last_nv_ctr > next_nv) { contr_locked = false; }
 	  else if ( frac_crs > options->ctr_crs_thresh) { contr_locked = false; }
 	  if (!contr_locked) {
-	    if (next_nv <= options->ctr_seq_nv) { cout << "redis to 1 rank" << endl; this->ctr_factor = -1; }
+	    if (next_nv <= options->ctr_seq_nv) { /*cout << "redis to 1 rank" << endl;*/ this->ctr_factor = -1; }
 	    else {
 	      double fac = options->ctr_pfac;
 	      auto ccomm = fm->GetEQCHierarchy()->GetCommunicator();
 	      fac = min2(fac, double(next_nv) / options->ctr_min_nv / ccomm.Size());
-	      cout << " next_nv / min_nv : " << double(next_nv) / options->ctr_min_nv << endl;
-	      cout << " ccomn sz: " << ccomm.Size() << endl;
-	      cout << "fac: " << fac << endl;
+	      // cout << " next_nv / min_nv : " << double(next_nv) / options->ctr_min_nv << endl;
+	      // cout << " ccomn sz: " << ccomm.Size() << endl;
+	      // cout << "fac: " << fac << endl;
 	      this->ctr_factor = fac;
 	    }
 	  }
@@ -154,7 +154,7 @@ namespace amg
 	{ cutoffs.Append(step_cnt); }
     }
       
-    cout << " cutoffs are: " << endl; prow2(cutoffs, cout); cout << endl;
+    // cout << " cutoffs are: " << endl; prow2(cutoffs, cout); cout << endl;
     
     {
       static Timer t(timer_name + string("-ConcDofMaps")); RegionTimer rt(t);
@@ -196,11 +196,11 @@ namespace amg
     {
       static Timer t(timer_name + string("-Smoothers")); RegionTimer rt(t);
       for (auto k : Range(mats.Size()-1)) {
-	cout << "make smoother " << k << "!!" << endl;
-	cout << "mat: " << mats[k] << endl;
-	cout << mats[k]->Height() << " x " << mats[k]->Width() << endl;
+	// cout << "make smoother " << k << "!!" << endl;
+	// cout << "mat: " << mats[k] << endl;
+	// cout << mats[k]->Height() << " x " << mats[k]->Width() << endl;
 	auto pds = dof_map->GetParDofs(k);
-	cout << "ndglob: " << pds->GetNDofGlobal() << endl;
+	// cout << "ndglob: " << pds->GetNDofGlobal() << endl;
 	auto sm = BuildSmoother(ass_levels[k], mats[k], pds, (k==0) ? options->finest_free_dofs : nullptr);
 	sm->Finalize();
 	sms.Append(sm);
@@ -242,11 +242,6 @@ namespace amg
 	throw Exception(string("coarsest level type ")+options->clev_type+string(" not implemented!"));
       }
     }
-    
-    cout << "AMG LOOP DONE, enter barrier" << endl;
-    glob_comm.Barrier();
-    cout << "AMG LOOP DONE" << endl;
-    
   }
 
   template<class AMG_CLASS, class TMESH, class TMAT>
@@ -394,7 +389,6 @@ namespace amg
     int n_groups;
     if (this->ctr_factor == -1 ) { n_groups = 2; }
     else { n_groups = 1 + std::round( (mesh->GetEQCHierarchy()->GetCommunicator().Size()-1) * this->ctr_factor) ; }
-    cout << "want groups " << (mesh->GetEQCHierarchy()->GetCommunicator().Size()-1) * this->ctr_factor << endl;
     n_groups = max2(2, n_groups); // dont send everything from 1 to 0 for no reason
     Table<int> groups = PartitionProcsMETIS (*mesh, n_groups);
     return make_shared<GridContractMap<TMESH>>(move(groups), mesh);
@@ -685,7 +679,6 @@ namespace amg
 	  FinalizeLevel will be called from BLF-Assemble **/
       auto fes = blf->GetFESpace();
       shared_ptr<FESpace> lofes = fes->LowOrderFESpacePtr();
-      cout << "fes " << fes << " lofes " << lofes << endl;
       if (lofes == nullptr) lofes = fes; // no LO-space
       size_t dof_per_v = 0;
       if (options->block_s.Size()) { // embedding
@@ -719,15 +712,12 @@ namespace amg
   template<class AMG_CLASS, class HTVD, class HTED>
   void EmbedVAMG<AMG_CLASS, HTVD, HTED> :: FinalizeLevel (const BaseMatrix * mat)
   {
-    cout << "FINALIZE LEVEL!" << endl;
     static Timer t(this->name+string("::FinalizeLevel")); RegionTimer rt(t);
     if (mat != nullptr)
       { finest_mat = shared_ptr<BaseMatrix>(const_cast<BaseMatrix*>(mat), NOOP_Deleter); }
     else
       { finest_mat = bfa->GetMatrixPtr(); }
 
-    cout << "finest mat is: " << typeid(*finest_mat).name() << endl;
-    
     auto mesh = BuildInitialMesh();
     amg_pc = make_shared<AMG_CLASS>(mesh, options);
 

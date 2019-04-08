@@ -13,7 +13,7 @@ namespace amg
     
   void DOFMap :: ConcSteps ()
   {
-    cout << "CONCSTEPS: " << endl; prow2(steps); cout << endl;
+    // cout << "CONCSTEPS: " << endl; prow2(steps); cout << endl;
     static Timer t("DOFMap::ConcSteps");
     RegionTimer rt(t);
     Array<shared_ptr<BaseDOFMapStep>> sub_steps(steps.Size()),
@@ -33,35 +33,27 @@ namespace amg
 	sub_steps.SetSize(0);
 	int curr = next-1;
 	shared_ptr<BaseDOFMapStep> cstep = steps[curr];
-	cout << "take steps[" << curr << "]" << endl;
 	curr--; bool need_one = false;
 	while (curr >= last) {
-	  cout << "try to conc with steps[" << curr << "]" << endl;
 	  if ( auto cstep2 = steps[curr]->Concatenate(cstep) ) {
-	    cout << "success!" << endl;
 	    cstep = cstep2;
 	    need_one = true;
 	  }
 	  else {
-	    cout << "nope, append cstep" << endl;
 	    sub_steps.Append(cstep);
-	    cout << "take steps[" << curr << "]" << endl;
 	    cstep = steps[curr];
 	    need_one = true;
 	  }
 	  curr--;
 	}
 	if ( need_one ) {
-	  cout << "append final cstep" << endl;
 	  sub_steps.Append(cstep);
 	}
 	if (sub_steps.Size()==1)
 	  {
-	    cout << "just one step" << endl;
 	    new_steps.Append(cstep);
 	  }
 	else {
-	  cout << "composite step from " << sub_steps.Size() << endl;
 	  rss.SetSize(sub_steps.Size());
 	  for (auto l : Range(rss.Size()))
 	    rss[l] = sub_steps[rss.Size()-1-l];
@@ -81,7 +73,6 @@ namespace amg
     mats.Append(last_mat);
     // cout << "SS IS : " << steps.Size() << endl;
     for (auto step_nr : Range(steps.Size())) {
-      cout << "do step " << step_nr << " of " << steps.Size() << endl;
       auto & step = steps[step_nr];
       auto next_mat = step->AssembleMatrix(last_mat);
       mats.Append(next_mat);

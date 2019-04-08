@@ -1,3 +1,4 @@
+
 #ifndef FILE_AMG_MAP
 #define FILE_AMG_MAP
 
@@ -181,17 +182,10 @@ namespace amg {
     // me right -- other left
     template<class TMATO>
     shared_ptr<BaseDOFMapStep> ConcBack (ProlMap<TMATO> & other) {
-      cout << " me " << this << endl;
-      cout << "ConcBack, me dims: " << prol->Height() << " " << prol->Width() << endl;
       auto oprol = other.GetProl();
-      cout << " other " << &other << endl;
-      cout << "ConcBack, other dims: " << oprol->Height() << " " << oprol->Width() << endl;
       auto pstep = make_shared<ProlMap<mult_spm<TMATO, TMAT>>> (other.GetParDofs(), this->GetMappedParDofs());
       shared_ptr<mult_spm<TMATO, TMAT>> pp = MatMultAB (*oprol, *prol);
-      cout << "conc NDS: " << pstep->GetParDofs()->GetNDofGlobal() << " -> " << pstep->GetMappedParDofs()->GetNDofGlobal() << endl;
-      // cout << "conc prol: " << endl; print_tm_spmat(cout, *pp); cout << endl;
       pstep->SetProl(pp);
-      cout << "CONC " << typeid(*oprol).name() << endl << " and " << typeid(*prol).name() << endl << " --- " << typeid(*pp).name() << endl;
       return pstep;
     }
     virtual void TransferF2C (const shared_ptr<const BaseVector> & x_fine,
@@ -212,9 +206,6 @@ namespace amg {
     }
     virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const override
     {
-      // cout << "my prol type: " << typeid(*prol).name() << endl;
-      // cout << "TFMAT : " << typeid(TFMAT).name() << endl;
-      // cout << "TCMAT : " << typeid(TCMAT).name() << endl;
       auto tfmat = dynamic_pointer_cast<TFMAT>(mat);
       if (tfmat==nullptr) {
 	string exname = "Cannot cast ";
@@ -228,7 +219,7 @@ namespace amg {
     shared_ptr<TCMAT> DoAssembleMatrix (shared_ptr<TFMAT> mat) const
     { return RestrictMatrix<TFMAT, TMAT> (*mat, *prol); }
     shared_ptr<TMAT> GetProl () const { return prol; }
-    void SetProl (shared_ptr<TMAT> aprol) { if(prol==nullptr) { cout << "me: " << this << endl; cout << "set prol, dims: " << aprol->Height() << " " << aprol->Width() << endl;;} prol = aprol; }
+    void SetProl (shared_ptr<TMAT> aprol) { prol = aprol; }
   protected:
     shared_ptr<TMAT> prol;
   };

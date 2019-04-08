@@ -26,7 +26,6 @@ namespace amg
   {
     if(econ != nullptr) return econ;
     auto nv = GetNN<NT_VERTEX>();
-    cout << "ECM NV " << endl << nv << endl;
     Array<int> econ_s(nv);
     econ_s = 0;
     for(auto & edge: GetNodes<NT_EDGE>())

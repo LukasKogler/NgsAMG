@@ -116,7 +116,6 @@ namespace amg
 	  throw Exception("METIS did not succeed!!");
 	}
       }
-      cout << "partition is: " << endl; prow2(partition); cout << endl;
       // sort partition by min, rank it has
       
       TableCreator<int> cgs; // not (nparts), because in some cases metis gives enpty parts!!
@@ -278,7 +277,6 @@ namespace amg
     NgsAMG_Comm comm(pardofs->GetCommunicator());
 
     if (!is_gm) {
-      cout << "mat drops, return nullptr!!" << endl;
       comm.Send(*mat, group[0], MPI_TAG_AMG);
       return nullptr;
     }
@@ -435,22 +433,8 @@ namespace amg
     : GridMapStep<TMESH>(_mesh), eqc_h(_mesh->GetEQCHierarchy()), groups(_groups), node_maps(4), annoy_nodes(4)
   {
     RegionTimer rt(timer_hack_gcmc());
-
-    cout << "groups : " << endl << groups << endl;
-
     BuildCEQCH();
-
-    // cout << "c_eqc_h: ";
-    // if (c_eqc_h!=nullptr) cout << endl << *c_eqc_h << endl;
-    // else cout << "NULLPTR" << endl;
-	  
-    eqc_h->GetCommunicator().Barrier();
-
     BuildNodeMaps();
-
-    eqc_h->GetCommunicator().Barrier();
-
-    // throw Exception("GridContractMap not yet usable!!!");
   } // GridContractMap (..)
 
 
@@ -499,15 +483,12 @@ namespace amg
       // cout << "send mesh done" << endl;
       mapped_mesh = nullptr;
       if constexpr(std::is_same<TMESH, BlockTM>::value == 0) {
-	  cout << "MAP ALG MESH DATA (drops)" << endl;
 	  this->mesh->MapData(*this);
-	  cout << "DONE WITH MAP ALG MESH DATA (drops)" << endl;
 	}
       return;
     }
 
     const auto & c_eqc_h(*this->c_eqc_h);
-    cout << "coarse fine eqch: " << endl << c_eqc_h << endl;
     
     const TMESH & f_mesh(*this->mesh);
     auto p_c_mesh = make_shared<BlockTM>(this->c_eqc_h);
@@ -1005,9 +986,6 @@ namespace amg
     this->my_group.Assign(groups[proc_map[comm.Rank()]]);
     this->is_gm = my_group[0] == comm.Rank();
 
-    cout << "my_group: "; prow2(my_group); cout << endl;
-    cout << "is_gm ? " << is_gm << endl;
-    
     if (!is_gm) {
       /** Send DP-tables to master and return **/
       int master = my_group[0];

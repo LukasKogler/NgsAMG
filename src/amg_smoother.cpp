@@ -333,7 +333,6 @@ namespace amg {
     ParallelDofs block_pds(pds.GetCommunicator(), cvp.MoveTable(), MS, false);
     shared_ptr<ParallelDofs> spbp(&block_pds, NOOP_Deleter);
     ParallelVVector<Vec<MS,double>> pvec(spbp, DISTRIBUTED);
-    cout << "diag 1" << endl;
     for (auto k : Range(H)) {
       auto & diag_etr = spm(k,k);
       auto & dvec = pvec(k);
@@ -350,23 +349,19 @@ namespace amg {
 	}
       }
     }
-    cout << "diag 2" << endl;
     pvec.Cumulate();
-    cout << "diag 3" << endl;
     diag.SetSize(H);
     for (auto k : Range(H)) {
       auto & diag_etr = diag[k];
       const auto & pve = pvec(k);
       set_v2m(diag_etr, pve);
     }
-    cout << "diag 4" << endl;
     //cout << "final diags: " << endl << diag << endl;
     for (auto k : Range(H)) {
       if (!free_dofs || free_dofs->Test(k))
 	CalcInverse(diag[k]);
     }
     // cout << "final inved diags: " << endl << diag << endl;
-    cout << "done" << endl;
   } // HybridGSS<BS>::CalcDiag
 
   template<int BS, int RMIN, int RMAX>
@@ -385,7 +380,6 @@ namespace amg {
     ParallelDofs block_pds(pds.GetCommunicator(), cvp.MoveTable(), MS, false);
     shared_ptr<ParallelDofs> spbp(&block_pds, NOOP_Deleter);
     ParallelVVector<Vec<MS,double>> pvec(spbp, DISTRIBUTED);
-    cout << "stab diag 1" << endl;
     for (auto k : Range(H)) {
       auto & diag_etr = spm(k,k);
       auto & dvec = pvec(k);
@@ -402,16 +396,13 @@ namespace amg {
 	}
       }
     }
-    cout << "stab diag 2" << endl;
     pvec.Cumulate();
-    cout << "stab diag 3" << endl;
     diag.SetSize(H);
     for (auto k : Range(H)) {
       auto & diag_etr = diag[k];
       const auto & pve = pvec(k);
       set_v2m(diag_etr, pve);
     }
-    cout << "stab diag 4" << endl;
     //cout << "final diags: " << endl << diag << endl;
     constexpr int NR = RMAX-RMIN;
     Matrix<double> rblock(NR, NR), evecs(NR,NR);
@@ -456,7 +447,7 @@ namespace amg {
 	CalcInverse(block);
       }
     }
-    cout << "REGED " << nr1+nr2 << " OF " << nr1+nr2+nnr << endl;
+    // cout << "REGED " << nr1+nr2 << " OF " << nr1+nr2+nnr << endl;
     // cout << "final inved diags: " << endl << diag << endl;
   } // StabHGSS<BS>::CalcDiag
   
