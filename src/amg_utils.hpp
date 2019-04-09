@@ -1,0 +1,204 @@
+#ifndef FILE_AMGUTILS
+#define FILE_AMGUTILS
+
+namespace amg
+{
+  auto prow = [](const auto & ar, std::ostream &os = cout){ for(auto v:ar) os << v << " "; };
+  auto prow2 = [](const auto & ar, std::ostream &os = cout) {
+    for(auto k : Range(ar.Size())) os << "(" << k << "::" << ar[k] << ") ";
+  };
+
+  template<class T>
+  INLINE void print_ft(std::ostream &os, const T& t) {
+    if(!t.Size()) {
+      ( os << "empty flattable!!" << endl );
+    }
+    cout << "t.s: " << t.Size() << endl;
+    for(auto k:Range(t.Size())) {
+      os << "t[ " << k << "].s: " << t[k].Size();
+      os << " || "; prow(t[k], os); os << endl;
+    }
+  }
+
+  template<int D> INLINE double TVNorm (const Vec<D,double> & v) {
+    double n = 0; for (auto k : Range(D)) n += v(k)*v(k); n = sqrt(n); return n;
+  }
+  INLINE double TVNorm (double v) { return abs(v); }
+  
+  template<typename T> bool operator < (const INT<2,T> & a, const INT<2,T> & b) {
+    if(a[0]<b[0]) return true;
+    else return a[1]<b[1];
+  }
+  template<typename T> bool operator < (const INT<3,T> & a, const INT<3,T> & b) {
+    if(a[0]<b[0]) return true;
+    else if(a[1]<b[1]) return true;
+    else return a[2]<b[2];
+  }
+
+  auto hack_eval_tab = [](const auto &x) { return x[0][0]; };
+  template<class T> struct tab_scal_trait {
+    typedef typename std::remove_reference<typename std::result_of<decltype(hack_eval_tab)(T)>::type>::type type;
+  };
+  template<class T1, class T2>
+  INLINE Array<typename tab_scal_trait<T1>::type> merge_arrays (T1& tab_in, T2 lam_comp)
+  {
+    const size_t nrows = tab_in.Size();
+    size_t max_size = 0;
+    for (size_t k = 0; k < nrows; k++ )
+      if (tab_in[k].Size()>max_size)
+	max_size = tab_in[k].Size();
+    //probably not gonna add more than 5%??
+    // cerr << "tab in nrows " << nrows << endl;
+    // for (auto k:Range(nrows)) {
+    //   cerr << "row " << k << " ( " << tab_in[k].Size() << "): "; prow(tab_in[k], cerr); cerr << endl;
+    // }
+    // cerr << endl;
+    max_size += (105*max_size)/100; 
+    Array<typename tab_scal_trait<T1>::type> out(max_size);
+    out.SetSize(0);
+    Array<size_t> count(nrows);
+    count = 0;
+    size_t ndone = 0;
+    BitArray hasmin(nrows);
+    hasmin.Clear();
+    int rofmin = -1;
+    for (size_t k = 0;((k<nrows)&&(rofmin==-1));k++)
+      { if (tab_in[k].Size()>0) rofmin = k; }
+    if (rofmin==-1) { return out; }
+    // cerr << "rofmin so far: " << rofmin << endl;
+    for (size_t k = 0; k < nrows; k++ ) {
+	// cerr << "check " << k << endl; cerr << "ndone " << ndone <<endl;
+	// cerr << "row: "; prow(tab_in[k],cerr); cerr << endl; cerr << "len " << tab_in[k].Size() << endl;
+	// ndone++;
+	// cout << "still here ";
+	// cout << ndone << endl;
+	// ndone--;
+	// cout << "still here ";
+	// cout << ndone << endl;
+	if (tab_in[k].Size()==0) ndone++;
+	// cerr << "check ok " << endl;
+      }
+    // cerr << "suspicious loop done " << endl;
+    auto min_datum = tab_in[rofmin][0];
+    while (ndone<nrows) {
+      for (size_t k = 0; k < nrows; k++ ) {
+	if (count[k]<tab_in[k].Size()) {
+	  if (tab_in[k][count[k]]==min_datum)
+	    { hasmin.Set(k); }
+	  else if (lam_comp(tab_in[k][count[k]],min_datum)) {
+	    hasmin.Clear();
+	    hasmin.Set(k);
+	    min_datum = tab_in[k][count[k]];
+	    rofmin = k;
+	  }
+	}
+      }
+      for (size_t k = 0; k < nrows; k++) {
+	if (hasmin.Test(k)) {
+	  count[k]++;
+	  if (count[k]==tab_in[k].Size())
+	    ndone++;
+	}
+      }
+      out.Append(min_datum);
+      rofmin = -1;
+      for (size_t k=0;((k<nrows)&&(rofmin==-1));k++) {
+	if (count[k]<tab_in[k].Size()) {
+	  rofmin = k;
+	  min_datum = tab_in[k][count[k]];
+	}
+      }
+      hasmin.Clear();
+    }
+    return out;
+  };
+
+  // TODO: coutl this be binary_op_table?
+  template<class T> INLINE Array<typename tab_scal_trait<T>::type> sum_table (T & tab)
+  {
+    Array<typename tab_scal_trait<T>::type> out;
+    auto nrows = tab.Size();
+    if (nrows == 0) return out;
+    auto row_s = tab[0].Size();
+    if (row_s == 0) return out;
+    out = tab[0];
+    if (nrows == 1) { return out; }
+    bool ok = true;
+    for (int k = 1; k < tab.Size(); k++) {
+      auto row = tab[k];
+      for (auto l : Range(row_s)) out[l] += row[l];
+    }
+    return out;
+  }
+
+  template<typename T> ostream & operator << (ostream &os, const FlatTable<T>& t) {
+    if(!t.Size()) return ( os << "empty flattable!!" << endl );
+    os << "t.s: " << t.Size() << endl;
+    for(auto k:Range(t.Size())) {
+      os << "t[ " << k << "].s: " << t[k].Size();
+      os << " || "; prow(t[k], os); os << endl;
+    }
+    return os;
+  }
+
+  // copied from ngsolve/comp/h1amg.cpp
+  // and removed all shm-parallelization.
+  // (the function is not in any ngsolve-header)
+  template <typename TFUNC>
+  void RunParallelDependency (FlatTable<int> dag,
+                              TFUNC func)
+  {
+    Array<int> cnt_dep(dag.Size());
+    cnt_dep = 0;
+    for (auto i:Range(dag))
+      for (int j : dag[i])
+	cnt_dep[j]++;
+    // cerr << "cnt_dep: " << endl << cnt_dep << endl;
+    size_t num_ready(0), num_final(0);
+    // cerr << "count " << cnt_dep.Size() << endl;
+    for(auto k:Range(cnt_dep.Size())) {
+      // cerr << " now row " << k << endl;
+      // cerr << "if (cnt_dep[" << k << "] == 0) " << num_ready << "++;" << endl;
+      // if (cnt_dep[k] == 0) cerr << "(is true)" << endl;
+      // else cerr << "(is false)" << endl;
+      if (cnt_dep[k] == 0) num_ready++;
+      if (dag[k].Size() == 0) num_final++;
+    }
+    Array<int> ready(num_ready);
+    ready.SetSize0();
+    for (int j : Range(cnt_dep))
+      if (cnt_dep[j] == 0) ready.Append(j);
+    while (ready.Size())
+      {
+	int size = ready.Size();
+	int nr = ready[size-1];
+	ready.SetSize(size-1);
+	func(nr);
+	for (int j : dag[nr])
+	  {
+	    cnt_dep[j]--;
+	    if (cnt_dep[j] == 0)
+	      ready.Append(j);
+	  }
+      }
+    return;
+  }
+
+
+  INLINE std::ostream & operator<<(std::ostream &os, const ParallelDofs& p)
+  {
+    auto comm = p.GetCommunicator();
+    os << "Pardofs, rank " << comm.Rank() << " of " << comm.Size() << endl;
+    os << "ndof = " << p.GetNDofLocal() << ", glob " << p.GetNDofGlobal() << endl;
+    os << "dist-procs: " << endl;
+    for (auto k : Range(p.GetNDofLocal())) {
+      auto dps = p.GetDistantProcs(k);
+      os << k << ": "; prow(dps); os << endl;
+    }
+    os << endl;
+    return os;
+  }
+    
+} // namespace amg
+
+#endif
