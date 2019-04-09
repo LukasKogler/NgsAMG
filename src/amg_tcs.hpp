@@ -53,6 +53,7 @@ namespace amg
 #ifdef ELASTICITY
   EXTERN template class HybridGSS<2>;
   EXTERN template class HybridGSS<3>;
+  EXTERN template class StabHGSS<3,2,3>;
   // EXTERN template class HybridGSS<4>;
   // EXTERN template class HybridGSS<5>;
   EXTERN template class HybridGSS<6>;

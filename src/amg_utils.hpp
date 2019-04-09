@@ -472,6 +472,13 @@ namespace amg
   template<int A, int B, class C> INLINE double calc_trace (const Mat<A,B,C> & x) {
     double sum = 0; for (auto k : Range(A)) sum += x(k,k); return sum;
   }
+  template<int A, int B, class C> INLINE double fabsum (const Mat<A,B,C> & x) {
+    double sum = 0;
+    for (auto k : Range(A))
+      for (auto j : Range(B))
+	sum += fabs(x(k,j));
+    return sum;
+  }
 
   template<class A, class B, class C>
   void intersect_sorted_arrays (A & a, B & b, C & c)

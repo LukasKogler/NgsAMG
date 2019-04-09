@@ -12,19 +12,15 @@ namespace amg
   {
     auto options = static_pointer_cast<Options>(this->options);
     if (shared_ptr<const SparseMatrix<Mat<dofpv(D), dofpv(D), double>>> spmat = dynamic_pointer_cast<SparseMatrix<Mat<dofpv(D), dofpv(D), double>>> (mat)) {
-      if constexpr(D==3) {
-	  if (options->regularize)
-	    { cout << "DOF DOF REG " << endl; return make_shared<StabHGSS<dofpv(D), disppv(D), dofpv(D)>> (spmat, par_dofs, free_dofs); }
-	}
-      cout << "DOF DOF NO REG " << endl;
-      return make_shared<HybridGSS<dofpv(D)>> (spmat, par_dofs, free_dofs);
+      if (options->regularize)
+	{ return make_shared<StabHGSS<dofpv(D), disppv(D), dofpv(D)>> (spmat, par_dofs, free_dofs); }
+      else
+	{ return make_shared<HybridGSS<dofpv(D)>> (spmat, par_dofs, free_dofs); }
     }
     else if (shared_ptr<const SparseMatrix<Mat<disppv(D), disppv(D), double>>> spmat = dynamic_pointer_cast<SparseMatrix<Mat<disppv(D), disppv(D), double>>> (mat)) {
-      cout << "DISP x DISP SMOOTHER" << endl;
       return make_shared<HybridGSS<disppv(D)>> (spmat, par_dofs, free_dofs);
     }
     else if (shared_ptr<const SparseMatrix<double>> spmat = dynamic_pointer_cast<SparseMatrix<double>> (mat)) {
-      cout << "1 x 1 SMOOTHER" << endl;
       return make_shared<HybridGSS<1>> (spmat, par_dofs, free_dofs);
     }
     throw Exception(string("Could not build a Smoother for mat-type ") + string(typeid(*mat).name()));
@@ -60,7 +56,7 @@ namespace amg
 	we[e.id] = (*ht_edge)[INT<2,int>(rvsort[e.v[0]], rvsort[e.v[1]]).Sort()];
 	// workaround for embedding
 	SetScalIdentity(calc_trace(we[e.id].wigg_mat())/disppv(C::DIM), we[e.id].bend_mat());
-	// cout << "edge " << e << endl;
+	// cout << "edge v1" << e << endl;
 	// cout << we[e.id].bend_mat() << endl;
 	// cout << we[e.id].wigg_mat() << endl;
       }
@@ -80,9 +76,15 @@ namespace amg
 	  rvsort[vsort[k]] = k;
 	auto edges = top_mesh->GetNodes<NT_EDGE>();
 	for (auto & e : edges) {
-	  double fc = fabs(calc_trace(cspm(rvsort[e.v[0]], rvsort[e.v[1]])));
-	  SetScalIdentity(fc, we[e.id].bend_mat());
-	  SetScalIdentity(fc, we[e.id].wigg_mat());
+	  // double fc = fabs(calc_trace(cspm(rvsort[e.v[0]], rvsort[e.v[1]])));
+	  // cout << "FBS of " << endl; print_tm(cout, cspm(rvsort[e.v[0]], rvsort[e.v[1]])); cout << endl;
+	  double fc = fabsum(cspm(rvsort[e.v[0]], rvsort[e.v[1]]));
+	  // cout << fc << endl;
+	  SetScalIdentity(disppv(C::DIM) * fc / dofpv(C::DIM), we[e.id].bend_mat());
+	  SetScalIdentity(rotpv(C::DIM) * fc / dofpv(C::DIM), we[e.id].wigg_mat());
+	  // cout << "edge v2" << e << endl;
+	  // cout << we[e.id].bend_mat() << endl;
+	  // cout << we[e.id].wigg_mat() << endl;
 	}
       }
     else
@@ -154,7 +156,8 @@ namespace amg
       auto get_dof = [perv](auto v, auto comp) {
 	return perv*v + comp;
       };
-      // cout << "dnums: "; prow(dnums); cout << endl;
+      cout << "dnums: "; prow(dnums); cout << endl;
+      cout << "elmat: " << endl << elmat << endl;
       // cout << "disppv " << disppv(D) << endl;
       // cout << "rotpv " << rotpv(D) << endl;
       // cout << "perv " << perv << endl;
@@ -170,20 +173,29 @@ namespace amg
 	  extmat(ndof+i, get_dof(j, i)) = extmat(get_dof(j, i), ndof+i) = 1.0;
       Vec<3,double> mid = 0;
       for (int i : Range(nv)) mid += vpos[dnums[i]]; mid /= nv;
-      FlatMatrixFixWidth<dofpv(D), double> rots(ext_ndof, lh); rots = 0;
+      FlatMatrixFixWidth<rotpv(D), double> rots(ext_ndof, lh); rots = 0;
       for (int i : Range(nv)) {
 	Vec<3,double> tang = vpos[dnums[i]] - mid;
-	// (0,-z,y)
-	rots(get_dof(i,1),0) = -tang(2);
-	rots(get_dof(i,2),0) = tang(1);
-	// (-z,0,x)
-	rots(get_dof(i,0),1) = -tang(2);
-	rots(get_dof(i,2),1) = tang(0);
-	// (y,-x,0)
-	rots(get_dof(i,0),2) = tang(1);
-	rots(get_dof(i,1),2) = -tang(0);
+	if constexpr(D==3) {
+	    // (0,-z,y)
+	    rots(get_dof(i,1),0) = -tang(2);
+	    rots(get_dof(i,2),0) = tang(1);
+	    // (-z,0,x)
+	    rots(get_dof(i,0),1) = -tang(2);
+	    rots(get_dof(i,2),1) = tang(0);
+	    // (y,-x,0)
+	    rots(get_dof(i,0),2) = tang(1);
+	    rots(get_dof(i,1),2) = -tang(0);
+	  }
+	else {
+	  // (y, -x)
+	  rots(get_dof(i,0),0) = tang(1);
+	  rots(get_dof(i,1),0) = -tang(0);
+	}
       }
+      // cout << "extmat norots " << endl << extmat << endl;
       extmat += Trans(rots) * rots;
+      // cout << "extmat with rots " << endl << extmat << endl;
       // FlatMatrix<double> evecs(ndof, ndof, lh);
       // FlatVector<double> evals(ndof, lh);
       // LapackEigenValuesSymmetric(elmat, evals, evecs);
@@ -194,7 +206,7 @@ namespace amg
       // cout << "extmat evecs: " << endl << evecs2 << endl;
       // cout << "elmat evals: " << endl; prow2(evals); cout << endl;
       // cout << "extmat evals: " << endl; prow2(evals2); cout << endl;
-      // CalcInverse(extmat);
+      CalcInverse(extmat);
       // cout << "inv extmat: " << endl << extmat << endl;
       // LapackEigenValuesSymmetric(extmat, evals2, evecs2);
       // cout << "inv extmat evecs: " << endl << evecs2 << endl;
@@ -217,7 +229,7 @@ namespace amg
 	  // cout << "small mat evals: " << endl; prow2(evals); cout << endl;
 	  // cout << "small mat evercs: " << endl; cout << evecs; cout << endl;
 	  // cout << "schur block: " << endl; print_tm(cout, schur); cout << endl;
-	  // CalcInverse(schur);
+	  CalcInverse(schur);
 	  // cout << "schur block inved: " << endl; print_tm(cout, schur); cout << schur << endl;
 	  // sm = schur;
 	  // LapackEigenValuesSymmetric(sm, evals, evecs);
