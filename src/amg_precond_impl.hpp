@@ -782,7 +782,7 @@ namespace amg
 	  verts[0] = vert_sort[verts[0]];
 	  verts[1] = vert_sort[verts[1]];
 	  if (verts[1] < verts[0]) swap(verts[1], verts[0]);
-	  if (num == n_edges-1) { if (cntit==0) { ht_it = &ht_it2; cntit++; } else { ht_it = &ht_it3; } cout << "switch!" << endl; }
+	  if (num == n_edges-1) { if (cntit==0) { ht_it = &ht_it2; cntit++; } else { ht_it = &ht_it3; } }
 	  else { ++(*ht_it); }
 	  return verts;
 	}, [](auto node_num, auto id) { /* do nothing - dont care about edge-sort! */ });
