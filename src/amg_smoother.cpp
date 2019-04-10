@@ -330,7 +330,9 @@ namespace amg {
 	  cvp.Add(k,p);
     }
     constexpr int MS = BS*BS;
+    static Timer tpd(name+"::CalcDiag-pardofs constr"); tpd.Start();
     ParallelDofs block_pds(pds.GetCommunicator(), cvp.MoveTable(), MS, false);
+    tpd.Stop();
     shared_ptr<ParallelDofs> spbp(&block_pds, NOOP_Deleter);
     ParallelVVector<Vec<MS,double>> pvec(spbp, DISTRIBUTED);
     for (auto k : Range(H)) {
@@ -349,7 +351,9 @@ namespace amg {
 	}
       }
     }
+    static Timer tpd(name+"::CalcDiag-pardofs cumulate"); tcumu.Start();
     pvec.Cumulate();
+    tcumu.Stop();
     diag.SetSize(H);
     for (auto k : Range(H)) {
       auto & diag_etr = diag[k];
@@ -357,10 +361,12 @@ namespace amg {
       set_v2m(diag_etr, pve);
     }
     // cout << "final diags: " << endl << diag << endl;
+    static Timer tcalc(name+"::CalcDiag-calc"); tcalc.Start();
     for (auto k : Range(H)) {
       if (!free_dofs || free_dofs->Test(k))
 	CalcInverse(diag[k]);
     }
+    tcalc.Stop();
     // cout << "final inved diags: " << endl << diag << endl;
   } // HybridGSS<BS>::CalcDiag
 
