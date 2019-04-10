@@ -24,12 +24,18 @@ namespace amg {
     };
     for (auto item : kwa) {
       string name = item.first.cast<string>();
+      bool edges_set = false;
       if (name == "max_levels") { opts->max_n_levels = item.second.cast<int>(); }
       else if (name == "max_cv") { opts->max_n_verts = item.second.cast<int>(); }
       else if (name == "v_dofs") { opts->v_dofs = item.second.cast<string>(); }
       else if (name == "v_pos") { opts->v_pos = capitalize_it(item.second.cast<string>()); }
-      else if (name == "energy") { opts->energy = capitalize_it(item.second.cast<string>()); }
-      else if (name == "edges") { opts->edges = capitalize_it(item.second.cast<string>()); }
+      else if (name == "energy") {
+	opts->energy = capitalize_it(item.second.cast<string>());
+	if (!edges_set)
+	  if (opts->energy == "ELMAT") opts->edges = "ELMAT";
+	// else if (opts->energy == "ALG") opts->edges = "ALG"; // not implemented yet
+      }
+      else if (name == "edges") { edges_set = true; opts->edges = capitalize_it(item.second.cast<string>()); }
       else if (name == "clev") { opts->clev_type = capitalize_it(item.second.cast<string>()); }
       else if (name == "clev_inv") { opts->clev_type = item.second.cast<string>(); }
       else if (name == "skip_ass") { opts->skip_ass_first = item.second.cast<int>(); }
