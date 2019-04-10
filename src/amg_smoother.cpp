@@ -356,12 +356,12 @@ namespace amg {
       const auto & pve = pvec(k);
       set_v2m(diag_etr, pve);
     }
-    cout << "final diags: " << endl << diag << endl;
+    // cout << "final diags: " << endl << diag << endl;
     for (auto k : Range(H)) {
       if (!free_dofs || free_dofs->Test(k))
 	CalcInverse(diag[k]);
     }
-    cout << "final inved diags: " << endl << diag << endl;
+    // cout << "final inved diags: " << endl << diag << endl;
   } // HybridGSS<BS>::CalcDiag
 
   template<int BS, int RMIN, int RMAX>
