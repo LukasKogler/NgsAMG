@@ -351,7 +351,7 @@ namespace amg {
 	}
       }
     }
-    static Timer tpd(name+"::CalcDiag-pardofs cumulate"); tcumu.Start();
+    static Timer tcumu(name+"::CalcDiag-pardofs cumulate"); tcumu.Start();
     pvec.Cumulate();
     tcumu.Stop();
     diag.SetSize(H);
