@@ -515,7 +515,7 @@ namespace amg
     virtual void Distribute () const {
       AttachedNodeData<NT,T,CRTP>& nc_ref(const_cast<AttachedNodeData<NT,T,CRTP>&>(*this));
       if (stat == CUMULATED) {
-	const auto eqc_h = *mesh->GetEQCHierarchy();
+	const auto & eqc_h = *mesh->GetEQCHierarchy();
 	for (auto eqc : Range(eqc_h.GetNEQCS())) {
 	  if (eqc_h.IsMasterOfEQC(eqc)) continue;
 	  auto block = mesh->GetBlock(eqc);
