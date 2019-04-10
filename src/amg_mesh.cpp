@@ -325,9 +325,6 @@ namespace amg
     if(build_faces && (eqc_h->GetCommunicator().Rank()==0))
       cout << "Faces probably don't work consistently yet!!" << endl;
     auto mesh = make_shared<BlockTM>(eqc_h);
-    mesh->disp_eqc.SetSize(4);
-    mesh->disp_cross.SetSize(4);
-    Array<int> dps (20);
     mesh->SetVs (ma->GetNV(), [&](auto vnr)->FlatArray<int>{return ma->GetDistantProcs(NodeId(NT_VERTEX, vnr)); },
 		 [vert_sort](auto i, auto j){ vert_sort[i] = j; });
     const MeshAccess & mar = *ma;
