@@ -746,13 +746,6 @@ namespace amg
 	top_mesh = MeshAccessToBTM (ma, eqc_h, node_sort[0], true, node_sort[1],
 				    false, node_sort[2], false, node_sort[3]);
 	auto & vsort = node_sort[0];
-	/** Convert FreeDofs **/
-	auto fes_fds = fes->GetFreeDofs();
-	auto fvs = make_shared<BitArray>(ma->GetNV());
-	fvs->Clear();
-	for (auto k : Range(ma->GetNV())) if (fes_fds->Test(k)) { fvs->Set(vsort[k]); }
-	options->free_verts = fvs;
-	options->finest_free_dofs = fes_fds;
 	/** Vertex positions **/
 	if (options->keep_vp) {
 	  auto & vpos(node_pos[NT_VERTEX]); vpos.SetSize(top_mesh->template GetNN<NT_VERTEX>());
@@ -774,11 +767,36 @@ namespace amg
       }
     }
     else if (O.edges == "ELMAT") { // AMG-Mesh top. from hash-tables
-      throw Exception("Sorry, have not implemented this case yet either.");
+      top_mesh = make_shared<BlockTM>(eqc_h);
+      size_t n_verts = fpd->GetNDofLocal();
+      auto & vert_sort = node_sort[NT_VERTEX]; vert_sort.SetSize(n_verts);
+      top_mesh->SetVs (n_verts, [&](auto vnr)->FlatArray<int>{return fpd->GetDistantProcs(vnr); },
+		       [&vert_sort](auto i, auto j){ vert_sort[i] = j; });
+      size_t n_edges = 0; for (auto key_val : *ht_edge) { n_edges++; }
+      auto ht_it1 = ht_edge->begin(); // ohno, we have to loop three times haha
+      auto ht_it2 = ht_edge->begin();
+      auto ht_it3 = ht_edge->begin();
+      auto ht_it = &ht_it1; int cntit = 0;
+      top_mesh->SetNodes<NT_EDGE>(n_edges, [&](int num){
+	  decltype(AMG_Node<NT_EDGE>::v) verts = (**ht_it).first;
+	  verts[0] = vert_sort[verts[0]];
+	  verts[1] = vert_sort[verts[1]];
+	  if (verts[1] < verts[0]) swap(verts[1], verts[0]);
+	  if (num == n_edges-1) { if (cntit==0) { ht_it = &ht_it2; cntit++; } else { ht_it = &ht_it3; } cout << "switch!" << endl; }
+	  else { ++(*ht_it); }
+	  return verts;
+	}, [](auto node_num, auto id) { /* do nothing - dont care about edge-sort! */ });
     }
     else { // vertices/edges from matrix (is this even relevant??)
       throw Exception("Sorry, have not implemented this case yet either.");
     }
+    /** Convert FreeDofs **/
+    auto fes_fds = fes->GetFreeDofs();
+    auto fvs = make_shared<BitArray>(top_mesh->GetNN<NT_VERTEX>()); fvs->Clear();
+    auto & vsort = node_sort[NT_VERTEX];
+    for (auto k : Range(top_mesh->GetNN<NT_VERTEX>())) if (fes_fds->Test(k)) { fvs->Set(vsort[k]); }
+    options->free_verts = fvs;
+    options->finest_free_dofs = fes_fds;
     return top_mesh;
   }
 
