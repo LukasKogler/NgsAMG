@@ -649,9 +649,11 @@ namespace amg
     // cout << endl;
 
     // TODO: this sends a couple of empty messages from ranks that are not master of anything
+    Array<MPI_Request> reqs(ex_procs.Size()-n_smaller); reqs.SetSize(0);
     for (size_t kp = n_smaller; kp < ex_procs.Size(); kp++) {
       auto req = MyMPI_ISend(send_buffers[kp], ex_procs[kp], MPI_TAG_AMG, comm);
-      MPI_Request_free(&req);
+      reqs.Append(req);
+      // MPI_Request_free(&req);
     }
 
     // TODO: build buffer->row maps, then waitiany if this is critical
@@ -707,6 +709,7 @@ namespace amg
       }
     }
 
+    MyMPI_WaitAll(reqs);
     return move(table_out);
   }
 
