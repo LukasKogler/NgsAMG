@@ -306,21 +306,28 @@ namespace amg {
     }
   }
   void add_diag (double val, Vec<1,double>& a, const double& b) { a(0) += val * fabs(b); }
-  template<int BS>
-  void set_v2m (Mat<BS,BS,double>& a, const Vec<BS*BS,double>& b)
+  void add_diag (double val, double& a, const double& b) { a += val * fabs(b); }
+
+  template<int BS> void set_v2m (Mat<BS,BS,double>& a, const Vec<BS*BS,double>& b)
   { for (auto k : Range(BS*BS)) a(k) = b(k); }
-  void set_v2m (double& a, const Vec<1,double>& b)
-  { a = b(0); }
-  template<int BS>
-  void set_m2v (Vec<BS*BS,double>& a, const Mat<BS,BS,double>& b)
+  void set_v2m (double& a, const Vec<1,double>& b) { a = b(0); }
+  void set_v2m (double& a, const double& b) { a = b; }
+
+  template<int BS> void set_m2v (Vec<BS*BS,double>& a, const Mat<BS,BS,double>& b)
   { for (auto k : Range(BS*BS)) a(k) = b(k); }
   void set_m2v (Vec<1,double>& a, const double& b)
   { a(0) = b; }
+  void set_m2v (double& a, const double& b)
+  { a = b; }
 
   template<int BS>
   void HybridGSS<BS> :: CalcDiag ()
   {
     static Timer t(name+"::CalcDiag"); RegionTimer rt(t);
+    {
+      static Timer tbar(name+"::CalcDiag-barrier"); RegionTimer rt(tbar);
+      parallel_dofs->GetCommunicator().Barrier();
+    }
     const TSPMAT & spm(*spmat);
     const ParallelDofs & pds(*parallel_dofs);
     TableCreator<int> cvp(H);
@@ -331,10 +338,15 @@ namespace amg {
     }
     constexpr int MS = BS*BS;
     static Timer tpd(name+"::CalcDiag-pardofs constr"); tpd.Start();
-    ParallelDofs block_pds(pds.GetCommunicator(), cvp.MoveTable(), MS, false);
+    shared_ptr<ParallelDofs> block_pds = nullptr;
+    if constexpr(BS==1) {
+	block_pds = parallel_dofs;
+      }
+    else {
+      block_pds = make_shared<ParallelDofs>(pds.GetCommunicator(), cvp.MoveTable(), MS, false);
+    }
     tpd.Stop();
-    shared_ptr<ParallelDofs> spbp(&block_pds, NOOP_Deleter);
-    ParallelVVector<Vec<MS,double>> pvec(spbp, DISTRIBUTED);
+    ParallelVVector<typename strip_vec<Vec<MS,double>>::type> pvec(block_pds, DISTRIBUTED);
     for (auto k : Range(H)) {
       auto & diag_etr = spm(k,k);
       auto & dvec = pvec(k);
