@@ -202,7 +202,6 @@ namespace amg
     template<class TGET, class TSET>
     INLINE void SetVs  (size_t annodes, TGET get_dps, TSET set_sort)
     {
-      has_nodes[NT_VERTEX] = true;
       auto neqcs = eqc_h->GetNEQCS();
       const auto & eqc_h = *this->eqc_h;
       if (neqcs==0) { nnodes_glob[NT_VERTEX] = eqc_h.GetCommunicator().AllReduce(size_t(0), MPI_SUM); return; } // rank 0
