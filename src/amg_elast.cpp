@@ -27,13 +27,96 @@ namespace amg
     return nullptr;
   }
 
+
+  template<> shared_ptr<ElasticityAMG<3>::TSPMAT>
+  ElasticityAMG<3> :: RegularizeMatrix (shared_ptr<ElasticityAMG<3>::TSPMAT> mat, shared_ptr<ParallelDofs> & pardofs)
+  { return mat; }
+
+  template<> void
+  ElasticityAMG<3> :: SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts,
+					    INT<3> level, shared_ptr<TMESH> _mesh)
+  { BASE::SetCoarseningOptions(opts, level, mesh); };
+
+  template<> shared_ptr<ElasticityAMG<2>::TSPMAT>
+  ElasticityAMG<2> :: RegularizeMatrix (shared_ptr<ElasticityAMG<2>::TSPMAT> mat, shared_ptr<ParallelDofs> & pardofs)
+  {
+    cout << "REGULARIZE D 2" << endl;
+    for(auto k : Range(mat->Height())) {
+      auto& diag = (*mat)(k,k);
+      if (diag(2,2) == 0.0) {
+	diag(2,2) = 1.0;
+	cout << "RD diag: " << endl; print_tm(cout, diag); cout << endl;
+      }
+      else {
+	cout << "OK diag: " << endl; print_tm(cout, diag); cout << endl;
+      }
+    }
+    return mat;
+  }
+
+  template<> void
+  ElasticityAMG<2> :: SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts,
+					    INT<3> level, shared_ptr<TMESH> _mesh)
+  {
+    cout << "SCE LEVEL " << level << endl;
+    constexpr int D = 2;
+    static Timer t(this->name+string("::SetCoarseningOptions")); RegionTimer rt(t);
+    const ElasticityMesh<D> & mesh(*_mesh);
+    auto NV = mesh.template GetNN<NT_VERTEX>();
+    auto NE = mesh.template GetNN<NT_EDGE>();
+    mesh.CumulateData();
+    auto vdata = get<0>(mesh.Data())->Data();
+    auto edata = get<1>(mesh.Data())->Data();
+    double tol = 1e-8;
+    Array<INT<2, double>> vstr(NV); vstr = 0;
+    mesh.template Apply<NT_EDGE>([&](const auto & edge) {
+	
+	INT<2,double> ew(0);
+	auto WM = edata[edge.id].wigg_mat();
+	// ew[0] = calc_pow_det(WM);
+	ew[0] = calc_trace(WM);
+	auto BM = edata[edge.id].bend_mat();
+	// ew[1] = calc_pow_det(BM);
+	ew[1] = calc_trace(BM);
+	vstr[edge.v[0]] += ew;
+	vstr[edge.v[1]] += ew;
+      }, true);
+    mesh.template AllreduceNodalData<NT_VERTEX>(vstr, [](auto & in) { return sum_table(in); }, false);
+    Array<double> ecw(NE);
+    mesh.template Apply<NT_EDGE>([&](const auto & edge) {
+	cout << "edge " << edge << endl;
+	INT<2,double> ew(0);
+	auto WM = edata[edge.id].wigg_mat();
+	auto BM = edata[edge.id].bend_mat();
+	cout << "W " << endl << WM << endl;
+	cout << "B " << endl << BM << endl;
+	cout << "vstrs " << vstr[edge.v[0]] << " // " << vstr[edge.v[1]] << endl;
+	// ew[0] = calc_pow_det(WM);
+	ew[0] = calc_trace(WM);
+	cout << "abs wigg " << ew[0] << endl;
+	ew[0] = ew[0] / min2(vstr[edge.v[0]][0], vstr[edge.v[1]][0]);
+
+	double minw1 = min2(vstr[edge.v[0]][1], vstr[edge.v[1]][1]);
+
+	// ew[1] = (minw1 == 0.0) ? 1.0 : calc_pow_det(BM) / minw1;
+	ew[1] = (fabs(minw1) < tol) ? 1.0 : calc_trace(BM) / minw1;
+	cout << "edge " << edge << ", CW " << ew[0] << " " << ew[1] << " -> " << min2(ew[0], ew[1]) << endl;
+	ecw[edge.id] = min2(ew[0], ew[1]);
+      }, false);
+    opts->ecw = move(ecw);
+    opts->min_ecw = options->min_ecw;
+    opts->vcw = Array<double>(NV); opts->vcw = 0;
+    opts->min_vcw = options->min_vcw;
+  }
+    
+  
   INLINE Timer & timer_hack_Hack_BuildAlgMesh () { static Timer t("ElasticityAMG::BuildAlgMesh"); return t; }
   template<class C, class D, class E> shared_ptr<typename C::TMESH>
   EmbedVAMG<C, D, E> :: BuildAlgMesh (shared_ptr<BlockTM> top_mesh)
   {
     Timer & t(timer_hack_Hack_BuildAlgMesh()); RegionTimer rt(t);
     auto a = new ElVData(Array<PosWV>(top_mesh->GetNN<NT_VERTEX>()), CUMULATED); // !! otherwise pos is garbage
-    auto b = new ElEData<C::DIM>(Array<ElEW<C::DIM>>(top_mesh->GetNN<NT_EDGE>()), DISTRIBUTED);
+    auto b = new ElEData<C::DIM>(Array<STABEW<C::DIM>>(top_mesh->GetNN<NT_EDGE>()), DISTRIBUTED);
     FlatArray<Vec<3,double>> vp = node_pos[NT_VERTEX];
     auto pwv = a->Data();
     for (auto k : Range(pwv.Size())) {
@@ -42,7 +125,7 @@ namespace amg
     }
     auto we = b->Data();
     if (options->energy == "TRIV") {
-      for (auto & x : we) { SetIdentity(x.bend_mat()); SetIdentity(x.wigg_mat()); }
+      for (auto & x : we) { SetIdentity(x); }
       b->SetParallelStatus(CUMULATED);
     }
     else if (options->energy == "ELMAT") {
@@ -52,13 +135,7 @@ namespace amg
 	rvsort[vsort[k]] = k;
       auto edges = top_mesh->GetNodes<NT_EDGE>();
       for (auto & e : edges) {
-	auto ed = (*ht_edge)[INT<2,int>(rvsort[e.v[0]], rvsort[e.v[1]]).Sort()];
 	we[e.id] = (*ht_edge)[INT<2,int>(rvsort[e.v[0]], rvsort[e.v[1]]).Sort()];
-	// workaround for embedding
-	SetScalIdentity(calc_trace(we[e.id].wigg_mat())/disppv(C::DIM), we[e.id].bend_mat());
-	// cout << "edge v1" << e << endl;
-	// cout << we[e.id].bend_mat() << endl;
-	// cout << we[e.id].wigg_mat() << endl;
       }
     }
     else if (options->energy == "ALG")
@@ -76,15 +153,8 @@ namespace amg
 	  rvsort[vsort[k]] = k;
 	auto edges = top_mesh->GetNodes<NT_EDGE>();
 	for (auto & e : edges) {
-	  // double fc = fabs(calc_trace(cspm(rvsort[e.v[0]], rvsort[e.v[1]])));
-	  // cout << "FBS of " << endl; print_tm(cout, cspm(rvsort[e.v[0]], rvsort[e.v[1]])); cout << endl;
 	  double fc = fabsum(cspm(rvsort[e.v[0]], rvsort[e.v[1]]));
-	  // cout << fc << endl;
-	  SetScalIdentity(disppv(C::DIM) * fc / dofpv(C::DIM), we[e.id].bend_mat());
-	  SetScalIdentity(rotpv(C::DIM) * fc / dofpv(C::DIM), we[e.id].wigg_mat());
-	  // cout << "edge v2" << e << endl;
-	  // cout << we[e.id].bend_mat() << endl;
-	  // cout << we[e.id].wigg_mat() << endl;
+	  SetScalIdentity(disppv(C::DIM) * fc / dofpv(C::DIM), we[e.id]);
 	}
       }
     else
@@ -222,29 +292,37 @@ namespace amg
 	    inds[2*disppv(D)+k] = ndof+k;
 	  }
 	  schur = extmat.Rows(inds).Cols(inds);
-	  // FlatMatrix<double> sm(small_nd, small_nd, lh), evecs(small_nd, small_nd, lh);
-	  // FlatVector<double> evals(small_nd, lh);
-	  // sm = extmat.Rows(inds).Cols(inds);
-	  // LapackEigenValuesSymmetric(sm, evals, evecs);
-	  // cout << "small mat evals: " << endl; prow2(evals); cout << endl;
-	  // cout << "small mat evercs: " << endl; cout << evecs; cout << endl;
-	  // cout << "schur block: " << endl; print_tm(cout, schur); cout << endl;
+	  cout << "i/j " << i << " " << j << endl;
+	  cout << "di/dj " << dnums[i] << " " << dnums[j] << endl;
+	  FlatMatrix<double> sm(small_nd, small_nd, lh), evecs(small_nd, small_nd, lh);
+	  FlatVector<double> evals(small_nd, lh);
+	  sm = extmat.Rows(inds).Cols(inds);
+	  LapackEigenValuesSymmetric(sm, evals, evecs);
+	  cout << "small mat evals: " << endl; prow2(evals); cout << endl;
+	  cout << "small mat evercs: " << endl; cout << evecs; cout << endl;
+	  cout << "schur block: " << endl; print_tm(cout, schur); cout << endl;
+
 	  CalcInverse(schur);
-	  // cout << "schur block inved: " << endl; print_tm(cout, schur); cout << schur << endl;
-	  // sm = schur;
-	  // LapackEigenValuesSymmetric(sm, evals, evecs);
-	  // cout << "inv small mat evals: " << endl; prow2(evals); cout << endl;
-	  // cout << "inv small mat evercs: " << endl; cout << evecs; cout << endl;
+
+	  cout << "schur block inved: " << endl; print_tm(cout, schur); cout << schur << endl;
+	  sm = schur;
+	  LapackEigenValuesSymmetric(sm, evals, evecs);
+	  cout << "inv small mat evals: " << endl; prow2(evals); cout << endl;
+	  cout << "inv small mat evercs: " << endl; cout << evecs; cout << endl;
 	  auto & hte(*ht_edge);
-	  ElEW<D> & elew = hte[INT<2,int>(dnums[i], dnums[j]).Sort()];
-	  // cout << "add to " << INT<2,int>(dnums[i], dnums[j]).Sort() << endl;
-	  auto wigg_mat = elew.wigg_mat(); wigg_mat = 0;
+	  STABEW<D> & elew = hte[INT<2,int>(dnums[i], dnums[j]).Sort()];
+	  cout << "add to " << INT<2,int>(dnums[i], dnums[j]).Sort() << endl;
+	  auto wigg_mat = elew.wigg_mat();
+	  double lam = 0; for (auto k : Range(disppv(D))) lam += schur(k,k);
+	  lam /= disppv(D);
+	  Vec<3,double> tang = vpos[dnums[i]] - vpos[dnums[j]];
 	  for (auto k : Range(disppv(D))) {
 	    for (auto j : Range(disppv(D))) {
-	      wigg_mat(k,j) = schur(k,j);
+	      // wigg_mat(k,j) += schur(k,j);
+	      wigg_mat(k,j) += lam * tang(k) * tang(j);
 	    }
 	  }
-	  // cout << "wigg_mat: " << endl << wigg_mat << endl;
+	  cout << "wigg_mat: " << endl << wigg_mat << endl;
 	}
       }
     }
@@ -254,14 +332,15 @@ namespace amg
   }
 
   template <int D>
-  PARALLEL_STATUS ElEData<D> :: map_data (const BaseCoarseMap & acmap, Array<ElEW<D>> & cdata) const
+  void ElEData<D> :: map_data (const BaseCoarseMap & acmap, ElEData<D> & celed) const
   {
+    auto & cdata = celed.data;
     auto cmap = static_cast<const CoarseMap<ElasticityMesh<D>>&>(acmap);
     auto & mesh = static_cast<ElasticityMesh<D>&>(*cmap.GetMesh());
-
     cdata.SetSize(cmap.template GetMappedNN<NT_EDGE>()); cdata = 0.0;
     auto map = cmap.template GetMap<NT_EDGE>();
-    auto econ = mesh.GetEdgeCM();
+    auto pecon = mesh.GetEdgeCM();
+    const auto & econ(*pecon);
     auto edges = mesh.template GetNodes<NT_EDGE>();
     auto v_map = cmap.template GetMap<NT_VERTEX>();
     auto vd = get<0>(mesh.Data())->Data();
@@ -294,25 +373,239 @@ namespace amg
 	}
 	else if ( (v_map[edge.v[0]]==v_map[edge.v[1]]) && (v_map[edge.v[0]]!=-1) ) {
 	  Vec<3> tang = vd[edge.v[0]].pos - vd[edge.v[1]].pos;
-	  auto ri0 = econ->GetRowIndices(edge.v[0]);
-	  auto ri1 = econ->GetRowIndices(edge.v[1]);
+	  auto ri0 = econ.GetRowIndices(edge.v[0]);
+	  auto ri1 = econ.GetRowIndices(edge.v[1]);
 	  calc_skt(tang);
 	  intersect_sorted_arrays(ri0, ri1, common_ovs);
 	  for (auto ov : common_ovs) {
-	    auto conn_edge_id = (*econ)(edge.v[0], ov);
+	    auto conn_edge_id = econ(edge.v[0], ov);
 	    if (map[conn_edge_id] == -1 ) continue;
 	    auto ce_id = map[conn_edge_id];
-	    auto& con_edge = edges[(*econ)(edge.v[0], ov)];
-	    auto& con_edge2 = edges[(*econ)(edge.v[1], ov)];
+	    auto& con_edge = edges[econ(edge.v[0], ov)];
+	    auto& con_edge2 = edges[econ(edge.v[1], ov)];
 	    auto add_here = cdata[ce_id].bend_mat();
 	    add_here += calc_admat(con_edge);
 	    add_here += calc_admat(con_edge2);
 	  }
 	}
       }, stat==CUMULATED);
-    return DISTRIBUTED;
+    celed.SetParallelStatus(DISTRIBUTED);
   }
 
+  template <>
+  void ElEData<2> :: map_data (const BaseCoarseMap & acmap, ElEData<2> & celed) const
+  {
+    constexpr int D = 2;
+    auto cmap = static_cast<const CoarseMap<ElasticityMesh<D>>&>(acmap);
+    auto & mesh = static_cast<ElasticityMesh<D>&>(*this->mesh);
+    // mesh.CumulateData(); // TODO: should not be necessary
+    auto sp_eqc_h = mesh.GetEQCHierarchy();
+    const auto & eqc_h = *sp_eqc_h;
+    auto neqcs = mesh.GetNEqcs();
+    const size_t NE = mesh.template GetNN<NT_EDGE>();
+    ElasticityMesh<D> & cmesh = static_cast<ElasticityMesh<D>&>(*celed.mesh);
+    const size_t NCE = cmap.template GetMappedNN<NT_EDGE>();
+    celed.data.SetSize(NCE); celed.data = 0.0;
+    auto e_map = cmap.template GetMap<NT_EDGE>();
+    cout << "e_map: " << endl; prow2(e_map); cout << endl << endl;
+    auto v_map = cmap.template GetMap<NT_VERTEX>();
+    cout << "v_map: " << endl; prow2(v_map); cout << endl << endl;
+    auto pecon = mesh.GetEdgeCM();
+    cout << "fine mesh ECM: " << endl << *pecon << endl;
+    const auto & econ(*pecon);
+    auto fvd = get<0>(mesh.Data())->Data();
+    auto cvd = get<0>(cmesh.Data())->Data();
+    auto fed = Data();
+    auto ced = celed.Data();
+    auto edges = mesh.template GetNodes<NT_EDGE>();
+    Table<int> c2fe;
+    {
+      TableCreator<int> cc2fe(NCE);
+      for (; !cc2fe.Done(); cc2fe++)
+	for (auto k : Range(NE))
+	  if (is_valid(e_map[k]))
+	    cc2fe.Add(e_map[k], k);
+      c2fe = cc2fe.MoveTable();
+    }
+
+    Matrix<double> mat(dofpv(D), dofpv(D)), evecs(dofpv(D), dofpv(D));
+    Vector<double> evals(dofpv(D));
+    auto check_evals = [&](auto & M) {
+      mat = M;
+      LapackEigenValuesSymmetric(mat, evals, evecs);
+      cout << "evals: " << endl; prow2(evals); cout << endl;
+      cout << "evecs: " << endl << evecs << endl;
+    };
+
+    Matrix<double> mat_disp(disppv(D), disppv(D)), evecs_disp(disppv(D), disppv(D));
+    Vector<double> evals_disp(disppv(D));
+    auto check_evals_disp = [&](auto & M) {
+      mat_disp = M;
+      LapackEigenValuesSymmetric(mat_disp, evals_disp, evecs_disp);
+      cout << "evals: " << endl; prow2(evals_disp); cout << endl;
+      cout << "evecs: " << endl << evecs_disp << endl;
+    };
+
+    Matrix<double> mat_rot(rotpv(D), rotpv(D)), evecs_rot(rotpv(D), rotpv(D));
+    Vector<double> evals_rot(rotpv(D));
+    auto check_evals_rot = [&](auto & M) {
+      mat_rot = M;
+      LapackEigenValuesSymmetric(mat_rot, evals_rot, evecs_rot);
+      cout << "evals: " << endl; prow2(evals_rot); cout << endl;
+      cout << "evecs: " << endl << evecs_rot << endl;
+    };
+
+    Mat<disppv(D), rotpv(D), double> W, sktcf0, sktcf1, sktcc;
+    Mat<rotpv(D), rotpv(D), double> B, adbm;
+    auto calc_skt = [](const auto & tang, auto & skt/*, auto & sktt*/) {
+      skt = 0;
+      if constexpr(D==3) {
+	  skt(0,1) = -(skt(1,0) =  tang[2]);
+	  skt(0,2) = -(skt(2,0) = -tang[1]);
+	  skt(1,2) = -(skt(2,1) =  tang[0]);
+	}
+      else {
+	skt(0,0) = -tang[1];
+	skt(1,0) =  tang[0];
+      }
+      // sktt = skt.Trans();
+    };
+    auto calc_cemat = [&](const auto & cedge, auto & cemat, auto use_fenr) {
+      cout << "calc cemat!" << endl;
+      cout << "cedge: " << cedge << endl;
+      auto fenrs = c2fe[cedge.id];
+      cemat = 0;
+      cout << "fenrs: "; prow2(fenrs); cout << endl;
+      // Vec<3> cc_tang = cvd[cedge.v[0]].pos - cvd[cedge.v[1]].pos;
+      // calc_skt(cc_tang, sktcc);
+      for (auto fenr : fenrs) {
+	if (use_fenr(fenr)) {
+	  const auto & fedge = edges[fenr];
+	  int l = (v_map[fedge.v[0]] == cedge.v[0]) ? 0 : 1;
+	  Vec<3> tcf0 =  (fvd[fedge.v[0]].pos - cvd[cedge.v[l]].pos);
+	  Vec<3> tcf1 =  (fvd[fedge.v[1]].pos - cvd[cedge.v[1-l]].pos);
+	  cout << "fedge " << fedge << endl;
+	  cout << " vs map: " << v_map[fedge.v[0]] << " " << v_map[fedge.v[1]] << endl;
+	  cout << " l is " << l << endl;
+	  cout << "cf_tang0: " << tcf0 << endl;
+	  cout << "cf_tang1: " << tcf1 << endl;
+	  calc_skt(tcf0, sktcf0);
+	  calc_skt(tcf1, sktcf1);
+	  sktcf0 += sktcf1;
+	  auto & FM = fed[fedge.id];
+	  GetTMBlock<0,0>(W, FM);
+	  GetTMBlock<disppv(D), disppv(D)>(B, FM);
+	  cout << "W: " << endl; print_tm(W); cout << endl;
+	  cout << "B: " << endl; print_tm(B); cout << endl;
+	  cout << "sktcf: " << endl << sktcf0 << endl;
+	  sktcf1 = W * sktcf0;
+	  adbm = B + Trans(sktcf0) * sktcf1;
+	  cout << "W * sktcf: " << endl << sktcf1 << endl;
+	  cout << "adbm: " << endl << adbm << endl;
+	  /**  (Tcf ... tang from coarse to fine, so 0.5 * edge-tang)
+	     W                   W sk(Tcf)
+	     sk(Tcf).T W.T   sk(Tcf).T W sk(Tcf) + B
+	   **/
+	  AddTMBlock<0,0>(cemat, W);
+	  AddTMBlock<disppv(D),disppv(D)>(cemat, adbm);
+	  AddTMBlock<0,disppv(D)>(cemat, sktcf1);
+	  AddTMBlock<disppv(D), 0>(cemat, Trans(sktcf1));
+	  cout << "cemat: " << endl; print_tm(cout, cemat); cout << endl;
+	}
+      }
+      cout << "check evals of cemat: " << endl;
+      check_evals(cemat);
+    };
+    typedef Mat<dofpv(D), dofpv(D), double> TM;
+    /** rotpv x rotpv schur-complement **/
+    Mat<disppv(D), disppv(D), double> disp_mat;
+    Mat<rotpv(D), rotpv(D), double> rot_mat;
+    Mat<rotpv(D), disppv(D), double> rd_mat;
+    auto calc_cedata = [&](const auto & edge, TM & cfullmat) {
+      cout << "calc mats for edge " << edge << endl;
+      cout << "fullmat is: " << endl; print_tm(cout, cfullmat); cout << endl;
+      check_evals(cfullmat);
+
+      auto W = ced[edge.id].wigg_mat();
+      auto B = ced[edge.id].bend_mat();
+
+      /** For the disp-part ("wiggle"), just take the diagonal block
+	  I don't think this is critical **/
+      Iterate<disppv(D)>([&](auto i) {
+	  Iterate<disppv(D)> ([&](auto j) {
+	      disp_mat(i,j) = (W(i.value, j.value) = cfullmat(i,j));
+	    });
+	});
+
+      /** For the rot-part ("bend"), compute the (pseudo) schur-complement
+	  w.r.t the rotational DOFs. 
+	         For only 1 fine edge, the SC will be just fine_bend_mat.
+	  We can only assume that the disp-block has rank 1!
+		 There can also be multiple edges, but all parallel (e.g. quads).
+		 Then the off-diagonal part is 0 only if same fine_wigg.
+		 The disp-block of cfullmat has rank 1.
+      **/
+      Iterate<rotpv(D)>([&](auto i) {
+	  Iterate<rotpv(D)> ([&](auto j) {
+	      B(i.value,j.value) = cfullmat(disppv(D)+i.value,disppv(D)+j.value);
+	    });
+	});
+      Iterate<rotpv(D)>([&](auto i) {
+	  Iterate<disppv(D)> ([&](auto j) {
+	      rd_mat(i.value,j.value) = cfullmat(disppv(D)+i.value,j.value);
+	    });
+	});
+      cout << "disp_mat: " << endl; print_tm(cout, disp_mat); cout << endl;
+      CalcPseudoInv(disp_mat);
+      cout << "PSI disp_mat: " << endl; print_tm(cout, disp_mat); cout << endl;
+
+      cout << "rd_mat: " << endl; print_tm(cout, rd_mat); cout << endl;
+      cout << "tent bend mat: " << endl; print_tm(cout, B); cout << endl;
+      B -= rd_mat * disp_mat * Trans(rd_mat);
+      cout << "final bend mat: " << endl; print_tm(cout, B); cout << endl;
+      
+      // SetIdentity(ced[edge.id].wigg_mat());
+      // SetIdentity(ced[edge.id].bend_mat());
+
+      cout << "crs wigg mat evals: " << endl;
+      check_evals_disp(W);
+      cout << "crs bend mat evals: " << endl;
+      check_evals_rot(B);
+    };
+
+    /** ex-edge matrices:  calc & reduce full cmats **/
+    Table<TM> cemats;
+    Array<int> perow(neqcs);
+    if (neqcs>1) {
+      perow[0] = 0;
+      for (auto k : Range(neqcs))
+	perow[k] = cmesh.template GetENN<NT_EDGE>(k) + cmesh.template GetCNN<NT_EDGE>(k);
+      Table<TM> tcemats(perow); perow = 0;
+      const PARALLEL_STATUS mesh_stat = GetParallelStatus();
+      cmesh.ApplyEQ<NT_EDGE>(Range(size_t(1), neqcs), [&](auto eqc, const auto & cedge){
+	  calc_cemat(cedge, tcemats[eqc][perow[eqc]++],
+		     [&](auto fenr) { return mesh_stat==DISTRIBUTED || eqc_h.IsMasterOfEQC(eqc); } );
+	}, false); // def, false!
+      cemats = ReduceTable<TM,TM> (tcemats, sp_eqc_h, [&](auto & tab) { return sum_table(tab); });
+      /** ex-edge matrices:  split to bend + wigg-mats **/
+      perow = 0;
+      cmesh.ApplyEQ<NT_EDGE>(Range(size_t(1), neqcs), [&](auto eqc, const auto & cedge){
+	  calc_cedata(cedge, cemats[eqc][perow[eqc]++]);
+	}, false); // def, false!
+    }
+    
+    /** loc-edge matrices:  all in one **/
+    TM cmat;
+    cmesh.ApplyEQ<NT_EDGE>(Range(min(neqcs, size_t(1))), [&](auto eqc, const auto & cedge){
+	calc_cemat(cedge, cmat, [&](auto fenr) { return true; });
+	calc_cedata(cedge, cmat);
+      }, false); // def, false!
+    
+    
+    celed.SetParallelStatus(DISTRIBUTED);
+  }
+
+  
   template class ElEData<2>;
   template class ElEData<3>;
 
