@@ -15,14 +15,14 @@ namespace amg
 
      Implements:
        - coarse-level-loop
-       - assembly loop for tentative prolongations
+       - assembly loop for tentative & smoothed prolongations
      CRTP for:
-       - mesh-type to be used (for attached data)
        - scalar/block-scalar types
        - prolongation-kernels
        - replacement-matrix kernels
-     Pure virtual methods:
-       - Collapse
+     Virtual methods:
+       - set coarsening options
+       - regularize matrix
    **/
   template<class AMG_CLASS, class ATMESH, class TMAT>
   class VWiseAMG : public BaseMatrix
@@ -259,6 +259,7 @@ namespace amg
 						     shared_ptr<ParallelDofs> par_dofs,
 						     shared_ptr<BitArray> free_dofs) = 0;
     virtual void SmoothProlongation (shared_ptr<ProlMap<TSPMAT>> pmap, shared_ptr<TMESH> mesh) const;
+    virtual shared_ptr<TSPMAT> RegularizeMatrix (shared_ptr<TSPMAT> mat, shared_ptr<ParallelDofs> & pardofs) { return mat; }
     void Setup ();
     
     shared_ptr<ParallelDofs> BuildParDofs (shared_ptr<TMESH> amesh);

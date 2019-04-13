@@ -471,31 +471,11 @@ namespace amg
   CoarseMap<TMESH> :: CoarseMap (shared_ptr<TMESH> _mesh, VWCoarseningData::CollapseTracker &coll)
     : BaseCoarseMap(), GridMapStep<TMESH>(_mesh)
   {
-    // cout << "coarse map, V" << endl;
     BuildVertexMap(coll);
-    // cout << "coarse map, E?" << _mesh->template HasNodes<NT_EDGE>()<< endl;
     if (_mesh->template HasNodes<NT_EDGE>()) BuildEdgeMap(coll);
     // if (_mesh->template HasNodes<NT_FACE>()) BuildMap<NT_FACE>(coll);
     // if (_mesh->template HasNodes<NT_CELL>()) BuildMap<NT_CELL>(coll);
-    // cout << " make mapped mesh " << endl;
-    // cout << " mm:  " << mm << endl;
-    // cout << " mm id:  " << typeid(*mm).name() << endl;
-    auto mapped_btm = mesh->MapBTM(*this);
-    if constexpr(std::is_same<TMESH, BlockTM>::value==1) {
-	mapped_mesh.reset(mapped_btm);
-      }
-    else {
-      // this->mapped_mesh = std::apply( [&mapped_btm](auto& ...x) { return make_shared<TMESH> ( move(*mapped_btm), x...); }, mesh->MapData(*this));
-      // cout << "make coarse alg-mesh, mesh now is " << endl << *mesh << endl;
-      this->mapped_mesh = make_shared<TMESH> ( move(*mapped_btm), mesh->MapData(*this) );
-    }
-		  
-    // if constexpr(std::is_base_of<BlockAlgMesh<>, TMESH>::value == 1) {
-    // 	this->mapped_mesh = make_shared<TMESH> ( move(*mapped_btm), mesh->MapData(*this) );
-    //   }
-    // else {
-    //   mapped_mesh = move(mapped_btm);
-    // }
+    mapped_mesh = _mesh->Map(*this);
   }
 
   template<class TMESH>

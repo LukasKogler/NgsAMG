@@ -28,15 +28,16 @@ namespace amg
 
 	(public BC it is called from AND<...>, can I find a way to make this protected??)
      **/
-    INLINE PARALLEL_STATUS map_data (const BaseCoarseMap & cmap, Array<double> & cdata) const
+    INLINE void map_data (const BaseCoarseMap & cmap, H1VData & ch1v) const
     {
+      auto & cdata = ch1v.data;
       cdata.SetSize(cmap.GetMappedNN<NT_VERTEX>()); cdata = 0.0;
       auto map = cmap.GetMap<NT_VERTEX>();
       auto lam_v = [&](const AMG_Node<NT_VERTEX> & v)
     	{ auto cv = map[v]; if (cv != -1) cdata[cv] += data[v]; };
       bool master_only = (GetParallelStatus()==CUMULATED);
       mesh->Apply<NT_VERTEX>(lam_v, master_only);
-      return DISTRIBUTED;
+      ch1v.SetParallelStatus(DISTRIBUTED);
     }
   };
   /** data which we attach to each edge in the mesh **/
@@ -45,15 +46,16 @@ namespace amg
   public:
     using AttachedNodeData<NT_EDGE, double, H1EData>::map_data;
     H1EData (Array<double> && _data, PARALLEL_STATUS _stat) : AttachedNodeData<NT_EDGE, double, H1EData>(move(_data), _stat) {}
-    INLINE PARALLEL_STATUS map_data (const BaseCoarseMap & cmap, Array<double> & cdata) const
+    INLINE void map_data (const BaseCoarseMap & cmap, H1EData & ch1e) const
     {
+      auto & cdata = ch1e.data;
       cdata.SetSize(cmap.GetMappedNN<NT_EDGE>()); cdata = 0.0;
       auto map = cmap.GetMap<NT_EDGE>();
       auto lam_e = [&](const AMG_Node<NT_EDGE>& e)
 	{ auto cid = map[e.id]; if ( cid != decltype(cid)(-1)) { cdata[cid] += data[e.id]; } };
       bool master_only = (GetParallelStatus()==CUMULATED);
       mesh->Apply<NT_EDGE>(lam_e, master_only);
-      return DISTRIBUTED;
+      ch1e.SetParallelStatus(DISTRIBUTED);
     }
   };
   using H1Mesh = BlockAlgMesh<H1VData, H1EData>;

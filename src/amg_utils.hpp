@@ -84,6 +84,15 @@ namespace amg
     else return a[4]<b[4];
   }
 
+  template<int N, class T> INLINE INT<N,T> & operator += (INT<N,T> & a, const INT<N,T> & b)
+  { Iterate<N>([&](auto i) { a[i.value] += b[i.value]; }); return a; }
+
+  /** size of a parameter pack **/
+  template<typename... T> struct count_ppack;
+  template<> struct count_ppack<> { static constexpr int value = 0; };
+  template<class T, typename... V> struct count_ppack<T, V...> { static constexpr int value = 1 + count_ppack<V...>::value;};
+    
+  
   auto hack_eval_tab = [](const auto &x) { return x[0][0]; };
   template<class T> struct tab_scal_trait {
     typedef typename std::remove_reference<typename std::result_of<decltype(hack_eval_tab)(T)>::type>::type type;
@@ -466,6 +475,12 @@ namespace amg
     }
   }
 
+  // INLINE double calc_pow_det (FlatMatrixFixWidth<1,double> x) {
+  //   return x(0,0);
+  // }
+  // INLINE double calc_pow_det (FlatMatrixFixWidth<2,double> x) {
+  //   return sqrt(x(0,0)*x(1,1)-x(0,1)*x(1,0));
+  // }
   template<int A, class B> INLINE double calc_trace (FlatMatrixFixWidth<A,B> x) {
     double sum = 0; for (auto k : Range(A)) sum += x(k,k); return sum;
   }
@@ -495,7 +510,76 @@ namespace amg
     }
   };
 
+  auto is_invalid = [](auto val) -> bool
+  {return val == typename remove_reference<decltype(val)>::type(-1); };
+  auto is_valid = [](auto val) -> bool
+  {return val != typename remove_reference<decltype(val)>::type(-1); };
+
+  template<int IMINI, int IMINJ, int A, int B, int C, int D>
+  void GetTMBlock (Mat<A,B> & a, const Mat<C,D> & b) {
+    static_assert( ((IMINI+A<=C) && (IMINJ+B<=D)), "GET ILLEGAL BLOCK!!");
+    Iterate<A>([&](auto i) {
+	Iterate<B> ([&](auto j) {
+	    a(i.value, j.value) = b(IMINI+i.value, IMINJ+j.value);
+	  });
+      });
+  }
+
+  template<int IMINI, int IMINJ, int A, int B, int C, int D>
+  void AddTMBlock (Mat<C,D> & a, const Mat<A,B> & b) {
+    static_assert( ((IMINI+A<=C) && (IMINJ+B<=D)), "ADD ILLEGAL BLOCK!!");
+    Iterate<A>([&](auto i) {
+	Iterate<B> ([&](auto j) {
+	    a(IMINI+i.value, IMINJ+j.value) += b(i.value, j.value);
+	  });
+      });
+  }
+
   
+  template<int N> INLINE double CalcDet (Mat<N,N,double> & m)
+  { throw Exception(string("CalcDet<")+to_string(N)+string(",")+to_string(N)+string("> not implemented")); }
+  template<> INLINE double CalcDet (Mat<2,2,double> & m)
+  { return m(0,0)*m(1,1)-m(1,0)*m(0,1); }
+
+  template<int N> INLINE void CalcPseudoInv (Mat<N,N,double> & m)
+  { throw Exception(string("CalcPseudoInv<")+to_string(N)+string(",")+to_string(N)+string("> not implemented")); }
+
+  template<> INLINE void CalcPseudoInv (Mat<2,2,double> & m)
+  {
+    cout << "m " << endl; print_tm(cout, m);
+    double avg = 0.5 * calc_trace(m); double tol = 1e-14 * avg;
+    if ( CalcDet(m) > tol ) {
+      cout << "case 1 " << endl;
+      CalcInverse(m);
+    }
+    else if ( fabs(m(0,0)) < tol ) {
+      if ( fabs(m(1,1)) < tol )
+	{ cout << "case 2 " << endl; m = 0; }
+      else
+	{ cout << "case 3 " << endl; m(0,0) = m(1,0) = m(0,1) = 0; m(1,1) = 1/m(1,1); }
+    }
+    else if ( fabs(m(1,1)) < tol )
+      { cout << "case 4 " << endl; m(1,1) = m(1,0) = m(0,1) = 0; m(0,0) = 1/m(0,0); }
+    else {
+      cout << "case 5 " << endl;
+      // add kv-projector, invert, substract it again
+      static Vec<2,double> kv; kv(0) = m(0,1); kv(1) = -m(0,0);
+      double kvn = L2Norm(kv);
+      Iterate<2>([&](auto i) {
+	  Iterate<2>([&](auto j) {
+	      m(i.value,j.value) += kv(i.value)*kv(j.value);
+	    });
+	});
+      CalcInverse(m);
+      kv /= kvn; kv /= kvn;
+      Iterate<2>([&](auto i) {
+	  Iterate<2>([&](auto j) {
+	      m(i.value,j.value) -= kv(i.value)*kv(j.value);
+	    });
+	});
+    }
+    cout << "m pseudo inv: " << endl; print_tm(cout, m); cout << endl;
+  }
 } // namespace amg
 
 #endif

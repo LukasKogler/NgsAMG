@@ -84,6 +84,8 @@ namespace amg
 
     INLINE shared_ptr<EQCHierarchy> GetEQCHierarchy () const { return eqc_h; }
     INLINE shared_ptr<EQCHierarchy> GetMappedEQCHierarchy () const { return c_eqc_h; }
+
+    template<NODE_TYPE NT> INLINE size_t GetMappedNN () const { return (is_gm) ? mapped_NN[NT] : 0; }
     
   protected:
     using GridMapStep<TMESH>::mesh, GridMapStep<TMESH>::mapped_mesh;

@@ -199,7 +199,7 @@ namespace amg
     template<NODE_TYPE NT> FlatArray<size_t> GetMappedEqcFirsti () const { return mapped_eqc_firsti[NT]; }
     template<NODE_TYPE NT> FlatArray<size_t> GetMappedCrossFirsti () const { return mapped_cross_firsti[NT]; }
     INLINE FlatArray<decltype(AMG_Node<NT_EDGE>::v)> GetMappedEdges () const { return mapped_E; }
-  protected:
+    protected:
     Array<Array<int>> node_maps = Array<Array<int>> (4);
     // Array<size_t> NN = Array<size_t>(4);
     size_t NN[4] = {0,0,0,0};

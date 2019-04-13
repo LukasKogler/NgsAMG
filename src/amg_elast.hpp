@@ -35,8 +35,9 @@ namespace amg
   public:
     using AttachedNodeData<NT_VERTEX, PosWV, ElVData>::map_data;
     ElVData (Array<PosWV> && _data, PARALLEL_STATUS _stat) : AttachedNodeData<NT_VERTEX, PosWV, ElVData>(move(_data), _stat) {}
-    INLINE PARALLEL_STATUS map_data (const BaseCoarseMap & cmap, Array<PosWV> & cdata) const
+    INLINE void map_data (const BaseCoarseMap & cmap, ElVData & celvd) const
     {
+      auto & cdata = celvd.data;
       Cumulate();
       cdata.SetSize(cmap.GetMappedNN<NT_VERTEX>()); cdata = 0.0;
       auto map = cmap.GetMap<NT_VERTEX>();
@@ -57,7 +58,7 @@ namespace amg
       // cout << "(distr) c-pos: " << endl;
       // for (auto CV : Range(cmap.GetMappedNN<NT_VERTEX>())) cout << cdata[CV].pos << endl;
       // cout << endl;
-      return DISTRIBUTED;
+      celvd.SetParallelStatus(DISTRIBUTED);
     }
   };
 
@@ -80,27 +81,19 @@ namespace amg
     INLINE FlatMatrixFixWidth<disppv(D), double> wigg_mat ()
     { return FlatMatrixFixWidth<disppv(D), double>(disppv(D), &wt_data[OFFSET]); }
   };
-  template struct ElEW<2>;
-  template struct ElEW<3>;
+  // template struct ElEW<2>;
+  // template struct ElEW<3>;
+
+  template<int D> using STABEW = Mat<dofpv(D), dofpv(D), double>;
+
   template<int D>
-  class ElEData : public AttachedNodeData<NT_EDGE, ElEW<D>, ElEData<D>>
+  class ElEData : public AttachedNodeData<NT_EDGE, STABEW<D>, ElEData<D>>
   {
   public:
-    using AttachedNodeData<NT_EDGE, ElEW<D>, ElEData<D>>::map_data;
-    using AttachedNodeData<NT_EDGE, ElEW<D>, ElEData<D>>::mesh;
-    using AttachedNodeData<NT_EDGE, ElEW<D>, ElEData<D>>::stat;
-    using AttachedNodeData<NT_EDGE, ElEW<D>, ElEData<D>>::data; // ?? why do I need all of this> ??
-    ElEData (Array<ElEW<D>> && _data, PARALLEL_STATUS _stat) : AttachedNodeData<NT_EDGE, ElEW<D>, ElEData>(move(_data), _stat) {}
-    PARALLEL_STATUS map_data (const BaseCoarseMap & cmap, Array<ElEW<D>> & cdata) const;
-    // {
-    //   cdata.SetSize(cmap.GetMappedNN<NT_EDGE>()); cdata = 0.0;
-    //   auto map = cmap.GetMap<NT_EDGE>();
-    //   mesh->template Apply<NT_EDGE>([&](const auto & e) {
-    //   	  auto CE = map[e.id];
-    //   	  if (CE != -1) cdata[CE] += data[e.id];
-    //   	}, stat==CUMULATED);
-    //   return DISTRIBUTED;
-    // }
+    using BASE = AttachedNodeData<NT_EDGE, STABEW<D>, ElEData<D>>;
+    using BASE::map_data, BASE::mesh, BASE::stat, BASE::data;
+    ElEData (Array<STABEW<D>> && _data, PARALLEL_STATUS _stat) : AttachedNodeData<NT_EDGE, STABEW<D>, ElEData>(move(_data), _stat) {}
+    template<class TMESH> void map_data (const CoarseMap<TMESH> & cmap, ElEData<D> & cdata) const;
   };
 
   template<int D>
@@ -114,6 +107,7 @@ namespace amg
     using TMESH = ElasticityMesh<D>;
     using TMAT = Mat<dofpv(D), dofpv(D), double>;
     using BASE = VWiseAMG<ElasticityAMG<D>, ElasticityMesh<D>, TMAT>;
+    using TSPMAT = typename BASE::TSPMAT;
     struct Options : BASE::Options
     {
       bool regularize = false;
@@ -127,9 +121,12 @@ namespace amg
     template<NODE_TYPE NT> INLINE double GetWeight (const TMESH & mesh, const AMG_Node<NT> & node) const
     { // TODO: should this be in BlockAlgMesh instead???
       if constexpr(NT==NT_VERTEX) { return get<0>(mesh.Data())->Data()[node].wt; }
-      else if constexpr(NT==NT_EDGE) { return get<1>(mesh.Data())->Data()[node.id].get_wt(); }
+      else if constexpr(NT==NT_EDGE) { return calc_trace(get<1>(mesh.Data())->Data()[node.id]); }
       else return 0;
     }
+    virtual void SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts,
+				       INT<3> level, shared_ptr<TMESH> mesh) override;
+    virtual shared_ptr<TSPMAT> RegularizeMatrix (shared_ptr<TSPMAT> mat, shared_ptr<ParallelDofs> & pardofs) override;
     INLINE void CalcPWPBlock (const TMESH & fmesh, const TMESH & cmesh, const CoarseMap<TMESH> & map,
 			      AMG_Node<NT_VERTEX> v, AMG_Node<NT_VERTEX> cv, TMAT & mat) const
     {
@@ -149,60 +146,61 @@ namespace amg
       }
     }
     INLINE void CalcRMBlock (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge, FlatMatrix<TMAT> mat) const
-    {
-      // mat = -42; // TODO: do I need this?
-      auto & edata = get<1>(fmesh.Data())->Data()[edge.id];
-      // [r]
-      auto bend_mat = edata.bend_mat();
-      mat(0,0).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) =   bend_mat;
-      mat(1,0).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) = - bend_mat;
-      mat(0,1).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) = - bend_mat;
-      mat(1,1).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) =   bend_mat;
-      // S x == t \cross {r}
-      Vec<3,double> tang = get<0>(fmesh.Data())->Data()[edge.v[1]].pos;
-      tang -= get<0>(fmesh.Data())->Data()[edge.v[0]].pos;
-      Mat<disppv(D), rotpv(D), double> S;
-      if constexpr(D==2) {
-	  S(0,0) = 0.5 * tang(1);
-	  S(1,0) = -0.5 * tang(0);
-	}
-      else {
-	S(0,0) = S(1,1) = S(2,2) = 0;
-	S(1,2) = - (S(2,1) = 0.5 * tang(0));
-	S(2,0) = - (S(0,2) = 0.5 * tang(1));
-	S(0,1) = - (S(1,0) = 0.5 * tang(2));
-      }
-      // [u] - t \cross {r}
-      auto M = edata.wigg_mat();
-      // Mat<disppv(D), rotpv(D), double> MS = M * S;
-      Matrix<double> MS(disppv(D), rotpv(D)); MS = M * S; // TODO: use localheap?
-      // Mat<rotpv(D), rotpv(D), double> StMS = Trans(S) * MS;
-      Matrix<double> StMS(rotpv(D), rotpv(D)); StMS = Trans(S) * MS;
-      //   M  -MS
-      // -STM STMS
-      mat(0,0).Rows(0, disppv(D)).Cols(0, disppv(D))                =   M;
-      mat(0,0).Rows(0, disppv(D)).Cols(disppv(D), dofpv(D))         = - MS;
-      mat(0,0).Rows(disppv(D), dofpv(D)).Cols(0, disppv(D))         = - Trans(MS);
-      mat(0,0).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) +=   StMS;
-      //   M  -MS
-      // -STM STMS
-      mat(1,1).Rows(0, disppv(D)).Cols(0, disppv(D))                =   M;
-      mat(1,1).Rows(0, disppv(D)).Cols(disppv(D), dofpv(D))         =   MS;
-      mat(1,1).Rows(disppv(D), dofpv(D)).Cols(0, disppv(D))         =   Trans(MS);
-      mat(1,1).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) +=   StMS;
-      // -M  -MS
-      // STM STMS
-      mat(0,1).Rows(0, disppv(D)).Cols(0, disppv(D))                = - M;
-      mat(0,1).Rows(0, disppv(D)).Cols(disppv(D), dofpv(D))         = - MS;
-      mat(0,1).Rows(disppv(D), dofpv(D)).Cols(0, disppv(D))         =   Trans(MS);
-      mat(0,1).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) +=   StMS;
-      // -M    MS
-      // -STM STMS
-      mat(1,0).Rows(0, disppv(D)).Cols(0, disppv(D))                = - M;
-      mat(1,0).Rows(0, disppv(D)).Cols(disppv(D), dofpv(D))         =   MS;
-      mat(1,0).Rows(disppv(D), dofpv(D)).Cols(0, disppv(D))         = - Trans(MS);
-      mat(1,0).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) +=   StMS;
-    }
+    { return; }
+    // {
+    //   // mat = -42; // TODO: do I need this?
+    //   auto & edata = get<1>(fmesh.Data())->Data()[edge.id];
+    //   // [r]
+    //   auto bend_mat = edata.bend_mat();
+    //   mat(0,0).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) =   bend_mat;
+    //   mat(1,0).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) = - bend_mat;
+    //   mat(0,1).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) = - bend_mat;
+    //   mat(1,1).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) =   bend_mat;
+    //   // S x == t \cross {r}
+    //   Vec<3,double> tang = get<0>(fmesh.Data())->Data()[edge.v[1]].pos;
+    //   tang -= get<0>(fmesh.Data())->Data()[edge.v[0]].pos;
+    //   Mat<disppv(D), rotpv(D), double> S;
+    //   if constexpr(D==2) {
+    // 	  S(0,0) = 0.5 * tang(1);
+    // 	  S(1,0) = -0.5 * tang(0);
+    // 	}
+    //   else {
+    // 	S(0,0) = S(1,1) = S(2,2) = 0;
+    // 	S(1,2) = - (S(2,1) = 0.5 * tang(0));
+    // 	S(2,0) = - (S(0,2) = 0.5 * tang(1));
+    // 	S(0,1) = - (S(1,0) = 0.5 * tang(2));
+    //   }
+    //   // [u] - t \cross {r}
+    //   auto M = edata.wigg_mat();
+    //   // Mat<disppv(D), rotpv(D), double> MS = M * S;
+    //   Matrix<double> MS(disppv(D), rotpv(D)); MS = M * S; // TODO: use localheap?
+    //   // Mat<rotpv(D), rotpv(D), double> StMS = Trans(S) * MS;
+    //   Matrix<double> StMS(rotpv(D), rotpv(D)); StMS = Trans(S) * MS;
+    //   //   M  -MS
+    //   // -STM STMS
+    //   mat(0,0).Rows(0, disppv(D)).Cols(0, disppv(D))                =   M;
+    //   mat(0,0).Rows(0, disppv(D)).Cols(disppv(D), dofpv(D))         = - MS;
+    //   mat(0,0).Rows(disppv(D), dofpv(D)).Cols(0, disppv(D))         = - Trans(MS);
+    //   mat(0,0).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) +=   StMS;
+    //   //   M  -MS
+    //   // -STM STMS
+    //   mat(1,1).Rows(0, disppv(D)).Cols(0, disppv(D))                =   M;
+    //   mat(1,1).Rows(0, disppv(D)).Cols(disppv(D), dofpv(D))         =   MS;
+    //   mat(1,1).Rows(disppv(D), dofpv(D)).Cols(0, disppv(D))         =   Trans(MS);
+    //   mat(1,1).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) +=   StMS;
+    //   // -M  -MS
+    //   // STM STMS
+    //   mat(0,1).Rows(0, disppv(D)).Cols(0, disppv(D))                = - M;
+    //   mat(0,1).Rows(0, disppv(D)).Cols(disppv(D), dofpv(D))         = - MS;
+    //   mat(0,1).Rows(disppv(D), dofpv(D)).Cols(0, disppv(D))         =   Trans(MS);
+    //   mat(0,1).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) +=   StMS;
+    //   // -M    MS
+    //   // -STM STMS
+    //   mat(1,0).Rows(0, disppv(D)).Cols(0, disppv(D))                = - M;
+    //   mat(1,0).Rows(0, disppv(D)).Cols(disppv(D), dofpv(D))         =   MS;
+    //   mat(1,0).Rows(disppv(D), dofpv(D)).Cols(0, disppv(D))         = - Trans(MS);
+    //   mat(1,0).Rows(disppv(D), dofpv(D)).Cols(disppv(D), dofpv(D)) +=   StMS;
+    // }
   protected:
     using BASE::options;
   };

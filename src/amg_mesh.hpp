@@ -118,7 +118,9 @@ namespace amg
     const FlatTM GetBlock (size_t eqc_num) const;
     /** Creates new(!!) block-tm! **/
     // BlockTM* Map (CoarseMap & cmap) const;
-    BlockTM* MapBTM (const BaseCoarseMap & cmap) const; // TODO: get rid of this
+    BlockTM* MapBTM (const BaseCoarseMap & cmap) const;
+    shared_ptr<BlockTM> Map (const BaseCoarseMap & cmap) const
+    { return shared_ptr<BlockTM>(MapBTM(cmap)); }
   protected:
     shared_ptr<EQCHierarchy> eqc_h;
     /** eqc-block-views of data **/
@@ -158,17 +160,27 @@ namespace amg
       else { for (const auto & node : GetNodes<NT>()) lam(node); }
     }
     // Apply a lambda-function to each eqc/node - pair
-    template<NODE_TYPE NT, class TLAM>
-    INLINE void ApplyEQ (TLAM lam, bool master_only = false) const {
-      for (auto eqc : Range(GetNEqcs()))
+    template<NODE_TYPE NT, class TX, class TLAM>
+    INLINE void ApplyEQ (TX&& eqcs, TLAM lam, bool master_only = false) const {
+      for (auto eqc : eqcs)
 	if ( !master_only || eqc_h->IsMasterOfEQC(eqc) ) {
 	  for (const auto& node : GetENodes<NT>(eqc)) lam(eqc, node);
 	  if constexpr(NT!=NT_VERTEX) for (const auto& node : GetCNodes<NT>(eqc)) lam(eqc, node);
 	}
     }
+    template<NODE_TYPE NT, class TLAM>
+    INLINE void ApplyEQ (TLAM lam, bool master_only = false) const {
+      ApplyEQ(Range(GetNEqcs()), lam, master_only);
+      // for (auto eqc : Range(GetNEqcs()))
+      // 	if ( !master_only || eqc_h->IsMasterOfEQC(eqc) ) {
+      // 	  for (const auto& node : GetENodes<NT>(eqc)) lam(eqc, node);
+      // 	  if constexpr(NT!=NT_VERTEX) for (const auto& node : GetCNodes<NT>(eqc)) lam(eqc, node);
+      // 	}
+    }
     // ugly stuff
     template<NODE_TYPE NT, class T, class TRED>
     void AllreduceNodalData (Array<T> & avdata, TRED red, bool apply_loc = false) const {
+      // TODO: this should be much easier - data is already in eqc-wise form (since nodes are ordered that way now)!
       // cout << "alred. nodal data, NT=" << NT << ", NN " << GetNN<NT>() << " ndata " << avdata.Size() << " appl loc " << apply_loc << endl;
       // cout << "data in: " << endl; prow2(avdata); cout << endl;
       int neqcs = eqc_h->GetNEQCS();
@@ -486,22 +498,24 @@ namespace amg
     Array<T> data;
     PARALLEL_STATUS stat;
   public:
+    static constexpr NODE_TYPE TNODE = NT;
+    using TDATA = T;
+    using TCRTP = CRTP;
     AttachedNodeData (Array<T> && _data, PARALLEL_STATUS _stat) : data(move(_data)), stat(_stat) {}
     virtual ~AttachedNodeData () { ; }
     void SetMesh (BlockTM * _mesh) { mesh = _mesh; }
     PARALLEL_STATUS GetParallelStatus () const { return stat; }
     void SetParallelStatus (PARALLEL_STATUS astat) { stat = astat; }
     FlatArray<T> Data () const { return data; }
-    // INLINE void map_data (const CoarseMap & cmap, FlatArray<T> fdata, FlatArray<T> cdata); 
     template<class TMESH>
-    INLINE PARALLEL_STATUS map_data (const GridContractMap<TMESH> & map, Array<T> & cdata) const
-    { map.template MapNodeData<NT, T>(data, stat, &cdata); return stat; }
+    INLINE void map_data (const GridContractMap<TMESH> & map, CRTP & cdata) const
+    { map.template MapNodeData<NT, T>(data, stat, &cdata.data); cdata.SetParallelStatus(stat); }
     template<class TMAP>
     CRTP* Map (const TMAP & map) const
     {
-      Array<T> cdata;
-      PARALLEL_STATUS cstat = static_cast<const CRTP&>(*this).map_data(map, cdata);
-      return new CRTP(move(cdata), cstat);
+      CRTP* cdata = new CRTP(Array<T>(map.template GetMappedNN<NT>()), NOT_PARALLEL);
+      static_cast<const CRTP&>(*this).map_data(map, *cdata);
+      return cdata;
     };
     virtual void Cumulate () const {
       if (stat == DISTRIBUTED) {
@@ -532,10 +546,9 @@ namespace amg
     }
   };
 
-
-
   /** Mesh topology + various attached nodal data **/
   template<class TMESH> class GridMapStep;
+  template<class TMESH> class CoarseMap;
   template<class... T>
   class BlockAlgMesh : public BlockTM
   {
@@ -546,15 +559,29 @@ namespace amg
     BlockAlgMesh (BlockTM && _mesh, T*... _data)
       : BlockAlgMesh (move(_mesh), std::tuple<T*...>(_data...))
     { ; }
-    INLINE void CumulateData () const { std::apply([&](auto&& ...x){ (x->Cumulate(),...); }, node_data); }
-    INLINE void DistributeData () const { std::apply([&](auto&& ...x){ (x->Distribute(),...); }, node_data); }
+    ~BlockAlgMesh () { std::apply([](auto& ...x){ (...,delete x); }, node_data);}
+
+    const std::tuple<T*...>& Data () const { return node_data; }
+
+    INLINE void CumulateData () const { std::apply([&](auto& ...x){ (x->Cumulate(),...); }, node_data); }
+    INLINE void DistributeData () const { std::apply([&](auto& ...x){ (x->Distribute(),...); }, node_data); }
+
     template<class TMAP,
 	     typename T_ENABLE = typename std::enable_if<std::is_base_of<GridMapStep<BlockAlgMesh<T...>>, TMAP>::value==1>::type>
     std::tuple<T*...> MapData (const TMAP & map) const
-    { return std::apply([&](auto&& ...x){ return make_tuple<T*...>(x->Map(map)...); }, node_data); };
-    const std::tuple<T*...>& Data () const { return node_data; }
+    { return std::apply([&](auto& ...x){ return make_tuple<T*...>(x->Map(map)...); }, node_data); };
+
+
+    shared_ptr<BlockAlgMesh<T...>> Map (CoarseMap<BlockAlgMesh<T...>> & map) {
+      auto crs_btm = BlockTM::MapBTM(map);
+      auto cdata = std::apply([&](auto& ...x){ return make_tuple<T*...>(new T(Array<typename T::TDATA>(map.template GetMappedNN<T::TNODE>()), NOT_PARALLEL)...); }, node_data);
+      auto cmesh = make_shared<BlockAlgMesh<T...>> (move(*crs_btm), move(cdata));
+      auto & cm_data = cmesh->Data();
+      Iterate<count_ppack<T...>::value>([&](auto i){ get<i.value>(node_data)->map_data(map, *get<i.value>(cm_data)); });
+      return cmesh;
+    };
+    
     template<typename... T2> friend std::ostream & operator<<(std::ostream &os, BlockAlgMesh<T2...> & m);
-    ~BlockAlgMesh () { std::apply([](auto& ...x){ (...,delete x); }, node_data);}
   protected:
     std::tuple<T*...> node_data;
   };

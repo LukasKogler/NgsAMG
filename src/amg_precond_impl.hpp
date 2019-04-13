@@ -217,16 +217,18 @@ namespace amg
     {
       static Timer t(timer_name + string("-CLevel")); RegionTimer rt(t);
       if (options->clev_type=="INV") {
-	if (mats.Last()!=nullptr) {
+    	if (mats.Last()!=nullptr) {
 	  // cout << "COARSE MAT: " << endl << *mats.Last() << endl;
 	  auto cpds = dof_map->GetMappedParDofs();
 	  auto comm = cpds->GetCommunicator();
+	  shared_ptr<TSPMAT> cspm = static_pointer_cast<TSPMAT>(mats.Last());
+	  cspm = RegularizeMatrix(cspm, cpds);
 	  if (comm.Size()>0) {
 	    // cout << "coarse inv " << endl;
-	    auto cpm = make_shared<ParallelMatrix>(mats.Last(), cpds);
+	    auto cpm = make_shared<ParallelMatrix>(cspm, cpds);
 	    cpm->SetInverseType(options->clev_inv_type);
 	    auto cinv = cpm->InverseMatrix();
-	    // cout << "coarse inv done" << endl;
+	    cout << *cinv << endl;
 	    amg_mat->AddFinalLevel(cinv);
 	  }
 	  // else {
@@ -464,8 +466,6 @@ namespace amg
 
     
     /** Find Graph for Prolongation **/
-    auto is_invalid = [](auto val)->bool {return val==decltype(val)(-1); };
-    auto is_valid = [](auto val)->bool {return val!=decltype(val)(-1); };
     Table<int> graph(NFV, MAX_PER_ROW); graph.AsArray() = -1; // has to stay
     Array<int> perow(NFV); perow = 0; // 
     {
