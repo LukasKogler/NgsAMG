@@ -128,8 +128,9 @@ namespace amg
 
 	cout << "min_w, min_b: " << mev_w << " " << mev_b << endl;
 	cout << "edge_mev_w/b: " << edge_mev_w << " " << edge_mev_b << endl;
-
-	ecw[edge.id] = min2(edge_mev_w/mev_w, ( (mev_b*edge_mev_b==0) ? 1 : mev_b/edge_mev_b));
+	
+	cout << "min of " << edge_mev_w/mev_w << " " << (mev_b*edge_mev_b==0) << " " << 1 << " " << mev_b/edge_mev_b << endl;
+	ecw[edge.id] = min2(edge_mev_w/mev_w, ( (mev_b*edge_mev_b==0) ? 1 : edge_mev_b/mev_b));
 	
 	// emat = vstr[edge.v[0]];
 	// cout << "mat v0 : " << endl; print_tm(cout, vstr[edge.v[0]]); cout << endl;
