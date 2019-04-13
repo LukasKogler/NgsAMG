@@ -69,11 +69,6 @@ namespace amg
     auto edata = get<1>(mesh.Data())->Data();
     double tol = 1e-8;
     Array<STABEW<D>> vstr(NV); vstr = 0;
-    mesh.template Apply<NT_EDGE>([&](const auto & edge) {
-  	vstr[edge.v[0]] += edata[edge.id];
-  	vstr[edge.v[1]] += edata[edge.id];
-      }, true);
-    mesh.template AllreduceNodalData<NT_VERTEX>(vstr, [](auto & in) { return sum_table(in); }, false);
     Array<double> ecw(NE);
     Matrix<double> emat(dofpv(D), dofpv(D)), evecs(dofpv(D), dofpv(D));
     Vector<double> evals(dofpv(D));
@@ -82,33 +77,62 @@ namespace amg
     Mat<rotpv(D), rotpv(D)> rrm;
     Matrix<double> ddemat(disppv(D), disppv(D)), ddevecs(disppv(D), disppv(D)),
       rremat(rotpv(D), rotpv(D)), rrevecs(rotpv(D), rotpv(D));
-    Vector<double> ddevals(disppv(D)), rrevals(rotpv(D));
+    Vector<double> ddevals(disppv(D)), rrevals(rotpv(D)); // using the dd-block and the rr-block only..
+    mesh.template Apply<NT_EDGE>([&](const auto & edge) {
+	auto & emat = edata[edge.id];
+	GetTMBlock<0,0>(ddm, emat);
+	GetTMBlock<disppv(D),0>(rdm, emat);
+	GetTMBlock<disppv(D),disppv(D)>(rrm, emat);
+	CalcPseudoInv(ddm);
+	rrm -= rdm * ddm * Trans(rdm);
+	GetTMBlock<0,0>(ddm, emat);
+	AddTMBlock<0,0>(vstr[edge.v[0]],ddm);
+	AddTMBlock<disppv(D),disppv(D)>(vstr[edge.v[0]],rrm);
+	AddTMBlock<0,0>(vstr[edge.v[1]],ddm);
+	AddTMBlock<disppv(D),disppv(D)>(vstr[edge.v[1]],rrm);
+      }, true);
+    mesh.template AllreduceNodalData<NT_VERTEX>(vstr, [](auto & in) { return sum_table(in); }, false);
     mesh.template Apply<NT_EDGE>([&](const auto & edge) {
 	cout << "---------------------------" << endl << "ECW FOR EDGE " << edge << endl;
-
 	double mev_w = 1e42, mev_b = 1e42;
 	Iterate<2> ([&](auto i) {
 	    cout << "VERTEX " << i.value << endl;
 	    auto & vmat = vstr[edge.v[i.value]];
 	    GetTMBlock<0,0>(ddm, vmat);
-	    cout << "full V mat : " << endl << vmat << endl;
 	    ddemat = ddm; LapackEigenValuesSymmetric(ddemat, ddevals, ddevecs);
 	    cout << "dd-mat: " << endl << ddemat << endl;
 	    cout << "dd evals: "; prow2(ddevals); cout << endl;
 	    for (auto v : ddevals) if (v != 0.0) { mev_w = min2(mev_w, v); break; }
-	    GetTMBlock<disppv(D),0>(rdm, vmat);
-	    cout << "rd-mat: " << endl; print_tm(cout, rdm); cout << endl;
 	    GetTMBlock<disppv(D),disppv(D)>(rrm, vmat);
-	    cout << "rr-mat: " << endl; print_tm(cout, rrm); cout << endl;
-	    CalcPseudoInv(ddm);
-	    rrm -= rdm * ddm * Trans(rdm);
 	    rremat = rrm; LapackEigenValuesSymmetric(rremat, rrevals, rrevecs);
 	    cout << "rr-SC: " << endl << rremat << endl;
 	    cout << "rr evals: "; prow2(rrevals); cout << endl;
 	    for (auto v : rrevals) if (v != 0.0) { mev_b = min2(mev_b, v); break; }
 	  });
 
+	// Iterate<2> ([&](auto i) {
+	//     cout << "VERTEX " << i.value << endl;
+	//     auto & vmat = vstr[edge.v[i.value]];
+	//     GetTMBlock<0,0>(ddm, vmat);
+	//     cout << "full V mat : " << endl << vmat << endl;
+	//     ddemat = ddm; LapackEigenValuesSymmetric(ddemat, ddevals, ddevecs);
+	//     cout << "dd-mat: " << endl << ddemat << endl;
+	//     cout << "dd evals: "; prow2(ddevals); cout << endl;
+	//     for (auto v : ddevals) if (v != 0.0) { mev_w = min2(mev_w, v); break; }
+	//     GetTMBlock<disppv(D),0>(rdm, vmat);
+	//     cout << "rd-mat: " << endl; print_tm(cout, rdm); cout << endl;
+	//     GetTMBlock<disppv(D),disppv(D)>(rrm, vmat);
+	//     cout << "rr-mat: " << endl; print_tm(cout, rrm); cout << endl;
+	//     CalcPseudoInv(ddm);
+	//     rrm -= rdm * ddm * Trans(rdm);
+	//     rremat = rrm; LapackEigenValuesSymmetric(rremat, rrevals, rrevecs);
+	//     cout << "rr-SC: " << endl << rremat << endl;
+	//     cout << "rr evals: "; prow2(rrevals); cout << endl;
+	//     for (auto v : rrevals) if (v != 0.0) { mev_b = min2(mev_b, v); break; }
+	//   });
+
 	auto & emat = edata[edge.id];
+	cout << "FULL EMAT: " << endl << emat << endl;
 	double edge_mev_w = 1e42, edge_mev_b = 1e42;
 	GetTMBlock<0,0>(ddm, emat);
 	ddemat = ddm; LapackEigenValuesSymmetric(ddemat, ddevals, ddevecs);
@@ -131,30 +155,6 @@ namespace amg
 	
 	cout << "min of " << edge_mev_w/mev_w << " " << (mev_b*edge_mev_b==0) << " " << 1 << " " << mev_b/edge_mev_b << endl;
 	ecw[edge.id] = min2(edge_mev_w/mev_w, ( (mev_b*edge_mev_b==0) ? 1 : edge_mev_b/mev_b));
-	
-	// emat = vstr[edge.v[0]];
-	// cout << "mat v0 : " << endl; print_tm(cout, vstr[edge.v[0]]); cout << endl;
-	// LapackEigenValuesSymmetric(emat, evals, evecs);
-	// cout << "evals "; prow2(evals); cout << endl;
-	// cout << "evecs " << endl << evecs << endl;
-	// double tr0 = calc_trace(vstr[edge.v[0]])/dofpv(D);
-	// double mev0 = 0; for (auto v : evals) if (v!=0.0) { mev0 = v; break; }
-	// emat = vstr[edge.v[1]];
-	// cout << "mat v1 : " << endl; print_tm(cout, vstr[edge.v[1]]); cout << endl;
-	// LapackEigenValuesSymmetric(emat, evals, evecs);
-	// cout << "evals "; prow2(evals); cout << endl;
-	// cout << "evecs " << endl << evecs << endl;
-	// double tr1 = calc_trace(vstr[edge.v[1]])/dofpv(D);
-	// double mev1 = 0; for (auto v : evals) if (v!=0.0) { mev1 = v; break; }
-	// emat = edata[edge.id];
-	// cout << "mat edge : " << endl; print_tm(cout, edata[edge.id]); cout << endl;
-	// LapackEigenValuesSymmetric(emat, evals, evecs);
-	// cout << "evals "; prow2(evals); cout << endl;
-	// cout << "evecs " << endl << evecs << endl;
-	// double minev = 0; for(auto v : evals) if (v != 0.0) { minev = v; break; }
-	// cout << "trces, minev: " << tr0 << " " << tr1 << " " << minev;
-	// ecw[edge.id] = minev / min2(tr0, tr1);
-	// ecw[edge.id] = minev / min2(mev0, mev1);
 
 	cout << ", -> ecw " << ecw[edge.id] << endl;
       }, false);
