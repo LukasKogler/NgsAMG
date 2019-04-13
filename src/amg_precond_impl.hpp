@@ -598,10 +598,11 @@ namespace amg
 	  mat(0,l) = block(brow,1-brow); // off-diag entry
 	  mat(0,posV) += block(brow,brow); // diag-entry
 	}
-
+	cout << "repl mat row: " << endl; print_tm_mat(cout, mat); cout << endl;
 	TMAT diag = mat(0, posV);
-	// cout << "diag: " << endl; print_tm(cout, diag); cout << endl;
+	cout << "diag: " << endl; print_tm(cout, diag); cout << endl;
 	CalcInverse(diag); // TODO: can this be singular (with embedding?)
+	cout << "inv diag: " << endl; print_tm(cout, diag); cout << endl;
 	// for ( auto l : Range(unv)) {
 	//   TMAT diag2 = mat(0, l);
 	//   TMAT diag3 = diag * diag2;

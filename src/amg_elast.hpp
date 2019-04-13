@@ -146,7 +146,36 @@ namespace amg
       }
     }
     INLINE void CalcRMBlock (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge, FlatMatrix<TMAT> mat) const
-    { return; }
+    {
+      /**
+	 I |  0.5 * sk(t)| -I |  0.5 * sk(t) 
+	 0 |      I      |  0 |     -I
+       **/
+      Vec<3,double> tang = get<0>(fmesh.Data())->Data()[edge.v[1]].pos
+	- get<0>(fmesh.Data())->Data()[edge.v[0]].pos;
+      static Matrix<TMAT> M(1,1);
+      static Matrix<TMAT> T(1,2);
+      static Matrix<TMAT> TTM(2,1);
+      SetIdentity(T(0,0));
+      if constexpr(D==2) {
+    	  T(0,0)(0,2) = -0.5 * tang(1);
+    	  T(0,0)(1,2) =  0.5 * tang(0);
+    	}
+      else {
+    	T(0,0)(0,4) = - (T(0,0)(1,3) = 0.5 * tang(2));
+    	T(0,0)(1,5) = - (T(0,0)(2,4) = 0.5 * tang(0));
+    	T(0,0)(2,3) = - (T(0,0)(0,5) = 0.5 * tang(1));
+      }
+      T(0,1) = T(0,0);
+      Iterate<dofpv(D)>([&](auto i) {
+	  T(0,1)(i.value, i.value) = -1.0;
+	});
+      cout << "T: " << endl; print_tm_mat(cout, T); cout << endl;
+      M(0,0) = get<1>(fmesh.Data())->Data()[edge.id]; // cant do Matrix<TM> * TM
+      TTM = Trans(T) * M;
+      mat = TTM * T;
+      cout << "emat: " << endl; print_tm_mat(cout, mat); cout << endl;
+    }
     // {
     //   // mat = -42; // TODO: do I need this?
     //   auto & edata = get<1>(fmesh.Data())->Data()[edge.id];
