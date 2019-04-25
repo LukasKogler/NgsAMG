@@ -194,6 +194,7 @@ namespace ngbla
 }
 
 #ifdef ELASTICITY
+#include "mumpsinverse.hpp"
 #include "sparsematrix_impl.hpp"
 #endif
 

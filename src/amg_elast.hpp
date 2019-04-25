@@ -153,8 +153,12 @@ namespace amg
        **/
       Vec<3,double> tang = get<0>(fmesh.Data())->Data()[edge.v[1]].pos
 	- get<0>(fmesh.Data())->Data()[edge.v[0]].pos;
+      // cout << "v0: " << get<0>(fmesh.Data())->Data()[edge.v[0]].pos << endl;
+      // cout << "v1: " << get<0>(fmesh.Data())->Data()[edge.v[1]].pos << endl;
+      // cout << "tang: " << tang << endl;
       static Matrix<TMAT> M(1,1);
       static Matrix<TMAT> T(1,2);
+      static Matrix<TMAT> TT(2,1);
       static Matrix<TMAT> TTM(2,1);
       SetIdentity(T(0,0));
       if constexpr(D==2) {
@@ -170,11 +174,21 @@ namespace amg
       Iterate<dofpv(D)>([&](auto i) {
 	  T(0,1)(i.value, i.value) = -1.0;
 	});
-      cout << "T: " << endl; print_tm_mat(cout, T); cout << endl;
       M(0,0) = get<1>(fmesh.Data())->Data()[edge.id]; // cant do Matrix<TM> * TM
-      TTM = Trans(T) * M;
+      Iterate<2>([&](auto i) {
+	  TT(i.value,0) = Trans(T(0,i.value));
+	});
+      TT = Trans(T);
+      Iterate<2>([&](auto i) {
+	  TTM(i.value,0) = TT(i.value,0) * M(0,0);
+	});
+      // TTM = TT * M;
       mat = TTM * T;
-      cout << "emat: " << endl; print_tm_mat(cout, mat); cout << endl;
+      // cout << "M: " << endl; print_tm_mat(cout, M); cout << endl;
+      // cout << "T: " << endl; print_tm_mat(cout, T); cout << endl;
+      // cout << "TT: " << endl; print_tm_mat(cout, TT); cout << endl;
+      // cout << "TTM: " << endl; print_tm_mat(cout, TTM); cout << endl;
+      // cout << "emat: " << endl; print_tm_mat(cout, mat); cout << endl;
     }
     // {
     //   // mat = -42; // TODO: do I need this?
