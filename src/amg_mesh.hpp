@@ -94,11 +94,9 @@ namespace amg
     template<NODE_TYPE NT> INLINE FlatArray<AMG_Node<NT>> GetCNodes (size_t eqc_num) const;
     template<NODE_TYPE NT> INLINE size_t GetEqcOfNode (size_t node_num) const {
       // array[pos-1] <= elem < array[pos]
-      return merge_pos_in_sorted_array(node_num, disp_eqc[NT]) - 1;
-      // size_t eq = 0; // TODO: binary search??
-      // if (node_num < disp_eqc[NT].Last()) while(disp_eqc[NT][eq+1] <= node_num ) eq++;
-      // else while(disp_cross[NT][eq+1] <= node_num ) eq++;
-      // return eq;
+      // return merge_pos_in_sorted_array(node_num, disp_eqc[NT]) - 1;
+      return (node_num < GetENN<NT>()) ? merge_pos_in_sorted_array(node_num, disp_eqc[NT]) - 1 :
+	merge_pos_in_sorted_array(node_num - GetENN<NT>(), disp_cross[NT]) - 1;
     }
     template<NODE_TYPE NT> INLINE int MapENodeToEQC (size_t node_num) const 
     { auto eq = GetEqcOfNode<NT>(node_num); return node_num - disp_eqc[NT][eq]; }
@@ -574,7 +572,9 @@ namespace amg
 
     shared_ptr<BlockAlgMesh<T...>> Map (CoarseMap<BlockAlgMesh<T...>> & map) {
       auto crs_btm = BlockTM::MapBTM(map);
-      auto cdata = std::apply([&](auto& ...x){ return make_tuple<T*...>(new T(Array<typename T::TDATA>(map.template GetMappedNN<T::TNODE>()), NOT_PARALLEL)...); }, node_data);
+      auto cdata = std::apply([&](auto& ...x) {
+	  return make_tuple<T*...>(new T(Array<typename T::TDATA>(map.template GetMappedNN<T::TNODE>()), DISTRIBUTED)...);
+	}, node_data);
       auto cmesh = make_shared<BlockAlgMesh<T...>> (move(*crs_btm), move(cdata));
       auto & cm_data = cmesh->Data();
       Iterate<count_ppack<T...>::value>([&](auto i){ get<i.value>(node_data)->map_data(map, *get<i.value>(cm_data)); });

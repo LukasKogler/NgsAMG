@@ -70,9 +70,9 @@ namespace amg
   EXTERN template class BlockVWC<ElasticityMesh<2>>;
   EXTERN template class HierarchicVWC<ElasticityMesh<2>>;
   EXTERN template class CoarseMap<ElasticityMesh<2>>;
-  // EXTERN template class BlockVWC<ElasticityMesh<3>>;
-  // EXTERN template class HierarchicVWC<ElasticityMesh<3>>;
-  // EXTERN template class CoarseMap<ElasticityMesh<3>>;
+  EXTERN template class BlockVWC<ElasticityMesh<3>>;
+  EXTERN template class HierarchicVWC<ElasticityMesh<3>>;
+  EXTERN template class CoarseMap<ElasticityMesh<3>>;
 #endif
 #endif
 
@@ -86,7 +86,7 @@ namespace amg
   EXTERN template class GridContractMap<H1Mesh>;
 #ifdef ELASTICITY
   EXTERN template class GridContractMap<ElasticityMesh<2>>;
-  // EXTERN template class GridContractMap<ElasticityMesh<3>>;
+  EXTERN template class GridContractMap<ElasticityMesh<3>>;
 #endif
 #endif
 
@@ -98,10 +98,10 @@ namespace amg
 #ifdef ELASTICITY
   //#ifndef FILE_AMGELAST_CPP
   EXTERN template class ElasticityAMG<2>;
-  // EXTERN template class ElasticityAMG<3>;
+  EXTERN template class ElasticityAMG<3>;
   //#endif
   EXTERN template class EmbedVAMG<ElasticityAMG<2>, double, STABEW<2>>;
-  // EXTERN template class EmbedVAMG<ElasticityAMG<3>, double, ElEW<3>>;
+  EXTERN template class EmbedVAMG<ElasticityAMG<3>, double, STABEW<3>>;
 #endif
 #endif
 

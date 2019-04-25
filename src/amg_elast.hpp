@@ -39,8 +39,12 @@ namespace amg
     {
       auto & cdata = celvd.data;
       Cumulate();
+      // cout << "(cumul) f-pos: " << endl;
+      // for (auto V : Range(data.Size())) cout << V << ": " << data[V].pos << endl;
+      // cout << endl;
       cdata.SetSize(cmap.GetMappedNN<NT_VERTEX>()); cdata = 0.0;
       auto map = cmap.GetMap<NT_VERTEX>();
+      // cout << "v_map: " << endl; prow2(map); cout << endl << endl;
       Array<int> touched(map.Size()); touched = 0;
       mesh->Apply<NT_EDGE>([&](const auto & e) { // set coarse data for all coll. vertices
 	  auto CV = map[e.v[0]];
@@ -56,7 +60,7 @@ namespace amg
 	    { cdata[CV] = data[v]; }
 	}, true);
       // cout << "(distr) c-pos: " << endl;
-      // for (auto CV : Range(cmap.GetMappedNN<NT_VERTEX>())) cout << cdata[CV].pos << endl;
+      // for (auto CV : Range(cmap.GetMappedNN<NT_VERTEX>())) cout << CV << ": " << cdata[CV].pos << endl;
       // cout << endl;
       celvd.SetParallelStatus(DISTRIBUTED);
     }

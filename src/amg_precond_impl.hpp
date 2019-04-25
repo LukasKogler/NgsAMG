@@ -693,12 +693,12 @@ namespace amg
       ht_vertex = new HashTable<int, HTVD>(NV);
       //TODO: is this ok??
       ht_edge = new HashTable<INT<2,int>, HTED>(8*NV);
-      // TODO: this is a super dirty hack!
+      // TODO: this is a super dirty hack! (need for elmats..)
       if (options->keep_vp) {
-	auto & vpos(node_pos[NT_VERTEX]); vpos.SetSize(ma->GetNV());
-	for (auto k : Range(vpos.Size()))
-	  ma->GetPoint(k,vpos[k]);
-	// cout << "vpos init: " << endl; prow2(vpos); cout << endl;
+      	auto & vpos(node_pos[NT_VERTEX]); vpos.SetSize(ma->GetNV());
+      	for (auto k : Range(vpos.Size()))
+      	  ma->GetPoint(k,vpos[k]);
+      	// cout << "vpos init: " << endl; prow2(vpos); cout << endl;
       }
     }
   }

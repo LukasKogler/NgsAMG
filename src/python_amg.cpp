@@ -150,14 +150,15 @@ PYBIND11_MODULE (ngs_amg, m) {
 
 #ifdef ELASTICITY
   amg::Export1<amg::EmbedVAMG<amg::ElasticityAMG<2>, double, amg::STABEW<2>>>(m, "AMG_EL2", "Ngs-AMG for 2d elasticity", [](auto & o) { o->keep_vp = true; });
+  amg::Export1<amg::EmbedVAMG<amg::ElasticityAMG<3>, double, amg::STABEW<3>>>(m, "AMG_EL3", "Ngs-AMG for 2d elasticity", [](auto & o) { o->keep_vp = true; });
 #else
   m.def("AMG_EL2", [&] (shared_ptr<BilinearForm> blf, py::kwargs kwa) {
       throw Exception("Elasticity AMG not available.");
       return py::none();      
     }, py::arg("blf") = nullptr);
-#endif  
   m.def("AMG_EL3", [&] (shared_ptr<BilinearForm> blf, py::kwargs kwa) {
       throw Exception("Elasticity AMG not available.");
       return py::none();      
     }, py::arg("blf") = nullptr);
+#endif  
 }
