@@ -7,6 +7,14 @@ using namespace ngsolve;
 #include "amg.hpp"
 
 namespace amg {
+
+  INLINE string capitalize_it (string in)
+  {
+    string out; std::locale loc;
+    for (auto x : in) out += std::toupper(x, loc);
+    return out;
+  };
+
   template <class TOPTS>
   void opts_from_kwa (shared_ptr<TOPTS> opts, py::kwargs & kwa)
   {
@@ -16,11 +24,6 @@ namespace amg {
       if (in==2) return DETAILED;
       if (in==3) return EXTRA;
       return NONE;
-    };
-    auto capitalize_it = [](string in) -> string {
-      string out; std::locale loc;
-      for (auto x : in) out += std::toupper(x, loc);
-      return out;
     };
     for (auto item : kwa) {
       string name = item.first.cast<string>();
@@ -57,7 +60,7 @@ namespace amg {
       else if (name == "crs_v_thresh") { opts->min_vcw = item.second.cast<double>(); }
       else if (name == "crs_e_thresh") { opts->min_ecw = item.second.cast<double>(); }
       else if (name == "dpv") { opts->block_s.SetSize(1); opts->block_s[0] = item.second.cast<int>(); }
-      else { throw Exception(string("warning, invalid AMG option: ")+name); }
+      // else { throw Exception(string("warning, invalid AMG option: ")+name); }
     }
     // opts->v_pos = "VERTEX";
   }
@@ -124,7 +127,7 @@ namespace amg {
 	     auto opts = make_shared<typename AMG_CLASS::Options>();
 	     opts->v_pos = "VERTEX";
 	     opts_from_kwa(opts, kwa);
-	     lam_opts(opts);
+	     lam_opts(opts, kwa);
 	     return new AMG_CLASS(blf, opts);
 	   }), py::arg("blf") = nullptr)
       .def ("GetLogs", [dict_from_info](AMG_CLASS &pre) { return dict_from_info(pre.GetInfo()); } )
@@ -146,20 +149,24 @@ namespace amg {
 PYBIND11_MODULE (ngs_amg, m) {
   m.attr("__name__") = "ngs_amg";
 
-  amg::Export1<amg::EmbedVAMG<amg::H1AMG>>(m, "AMG_H1", "Ngs-AMG for scalar H1-problems", [](auto & o) {});
+  amg::Export1<amg::EmbedVAMG<amg::H1AMG>>(m, "AMG_H1", "Ngs-AMG for scalar H1-problems", [](auto & o, auto & kwa) {});
 
 #ifdef ELASTICITY
   amg::Export1<amg::EmbedVAMG<amg::ElasticityAMG<2>, double, amg::STABEW<2>>>
     (m, "AMG_EL2", "Ngs-AMG for 2d elasticity",
-     [](auto & o) {
+     [](auto & o, auto & kwa) {
       o->keep_vp = true;
       o->singular_diag = true;
+      if (kwa.contains("soc"))
+	o->soc = amg::capitalize_it(kwa["soc"].template cast<string>());
     });
   amg::Export1<amg::EmbedVAMG<amg::ElasticityAMG<3>, double, amg::STABEW<3>>>
     (m, "AMG_EL3", "Ngs-AMG for 2d elasticity",
-     [](auto & o) {
+     [](auto & o, auto & kwa) {
       o->keep_vp = true;
       o->singular_diag = true;
+      if (kwa.contains("soc"))
+	o->soc = amg::capitalize_it(kwa["soc"].template cast<string>());
     });
 #else
   m.def("AMG_EL2", [&] (shared_ptr<BilinearForm> blf, py::kwargs kwa) {

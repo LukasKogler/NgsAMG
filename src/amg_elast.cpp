@@ -106,9 +106,23 @@ namespace amg
     // cerr << "B is " << endl << B << endl;
     // cerr << "A is " << endl << A << endl;
     // cerr << "calc inv for Ar " << endl << Ar << endl;
-    CalcInverse(Ar, Ar_inv);
-    C = Ar_inv * Br;
-    return 1/sqrt(CalcMaxEV<N>(C, Ar));
+    {
+      static Timer t("CalcMinGenEV - inv");
+      RegionTimer rt(t);
+      CalcInverse(Ar, Ar_inv);
+    }
+    {
+      static Timer t("CalcMinGenEV - mult");
+      RegionTimer rt(t);
+      C = Ar_inv * Br;
+    }
+    double maxev = 0;
+    {
+      static Timer t("CalcMinGenEV - maxev");
+      RegionTimer rt(t);
+      maxev = CalcMaxEV<N>(C, Ar);
+    }
+    return 1/sqrt(maxev);
   }
 
   template<int N> INLINE double CalcMinGenEV2 (const Matrix<double> & A, const Matrix<double> & B)
@@ -162,33 +176,59 @@ namespace amg
     // return evals(0);
   };
 
-  template<int D> void
-  ElasticityAMG<D> :: SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts,
-  					    INT<3> level, shared_ptr<TMESH> _mesh)
+
+  template<int D> Array<double> 
+  ElasticityAMG<D> :: CalcECWSimple (shared_ptr<TMESH> _mesh)
   {
-    static Timer t(this->name+string("::SetCoarseningOptions")); RegionTimer rt(t);
     const ElasticityMesh<D> & mesh(*_mesh);
     auto NV = mesh.template GetNN<NT_VERTEX>();
     auto NE = mesh.template GetNN<NT_EDGE>();
-    mesh.CumulateData();
     auto vdata = get<0>(mesh.Data())->Data();
     auto edata = get<1>(mesh.Data())->Data();
     const auto& econ(*mesh.GetEdgeCM());
-    // cout << "level " << level << " fine mesh: " << endl << mesh << endl;
-    // cout << "level " << level << " fine econ: " << endl << econ << endl;
+    Array<double> ecw(NE);
+    Array<double> vcw(NV); vcw = 0;
+    mesh.template Apply<NT_EDGE>([&](const auto & edge) {
+	auto tr = calc_trace(edata[edge.id]);
+	vcw[edge.v[0]] += tr;
+	vcw[edge.v[1]] += tr;
+      }, true);
+    mesh.template AllreduceNodalData<NT_VERTEX>(vcw, [](auto & in) { return sum_table(in); }, false);
+    mesh.template Apply<NT_EDGE>([&](const auto & edge) {
+	auto tr = calc_trace(edata[edge.id]);
+	double vw = min(vcw[edge.v[0]], vcw[edge.v[1]]);
+	ecw[edge.id] = tr / vw;
+      }, false);
+    return move(ecw);
+  }
+  
+  template<int D> Array<double> 
+  ElasticityAMG<D> :: CalcECWRobust (shared_ptr<TMESH> _mesh)
+  {
+    const ElasticityMesh<D> & mesh(*_mesh);
+    auto NV = mesh.template GetNN<NT_VERTEX>();
+    auto NE = mesh.template GetNN<NT_EDGE>();
+    auto vdata = get<0>(mesh.Data())->Data();
+    auto edata = get<1>(mesh.Data())->Data();
+    const auto& econ(*mesh.GetEdgeCM());
     Array<double> ecw(NE);
     // TODO: only works "sequential" for now ...
     Matrix<TMAT> emat(2,2);
     Matrix<double> schur(dofpv(D), dofpv(D)), emoo(dofpv(D), dofpv(D));
     Array<TMAT> vblocks(NV); vblocks = 0;
     auto edges = mesh.template GetNodes<NT_EDGE>();
-    mesh.template Apply<NT_EDGE>([&](const auto & edge) {
-	CalcRMBlock(mesh, edge, emat);
-	vblocks[edge.v[0]] += emat(0,0);
-	vblocks[edge.v[1]] += emat(1,1);
-      }, true);
+    {
+      static Timer t(this->name+string("::SetCoarseningOptions - Collect")); RegionTimer rt(t);
+      mesh.template Apply<NT_EDGE>([&](const auto & edge) {
+	  CalcRMBlock(mesh, edge, emat);
+	  vblocks[edge.v[0]] += emat(0,0);
+	  vblocks[edge.v[1]] += emat(1,1);
+	}, true);
+    }
     mesh.template AllreduceNodalData<NT_VERTEX, TMAT>(vblocks, [](auto & tab){ return move(sum_table(tab)); });
-    mesh.template Apply<NT_EDGE>([&](const auto & edge) {
+    {
+      static Timer t(this->name+string("::SetCoarseningOptions - Calc")); RegionTimer rt(t);
+      mesh.template Apply<NT_EDGE>([&](const auto & edge) {
 	double cws[2] = {0,0};
   	CalcRMBlock(mesh, edge, emat);
 	double tr = 0; Iterate<dofpv(D)>([&](auto i) { tr += emat(0,0)(i.value,i.value); } );
@@ -208,16 +248,34 @@ namespace amg
 	    emoo = emat(j, j);
 	    // cout << "j-block: " << endl << emoo << endl;
 	    // cout << "schur: " << endl << schur << endl;
-	    cws[i.value] = 1 - CalcMinGenEV<dofpv(D)>(schur, emoo);
+	    cws[i.value] = sqrt(1 - CalcMinGenEV<dofpv(D)>(schur, emoo));
 	  });
 	// ecw[edge.id] = sqrt(cws[0]*cws[1]);
 	ecw[edge.id] = cws[0] + cws[1];
 	// cout << "okj, next edge " << endl;
       }, false);
-    opts->ecw = move(ecw);
-    opts->min_ecw = options->min_ecw;
+    }
+    return move(ecw);
+  }
+    
+  template<int D> void
+  ElasticityAMG<D> :: SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts,
+  					    INT<3> level, shared_ptr<TMESH> _mesh)
+  {
+    static Timer t(this->name+string("::SetCoarseningOptions")); RegionTimer rt(t);
+    auto &options = static_cast<ElasticityAMG<D>::Options&>(*this->options);
+    const ElasticityMesh<D> & mesh(*_mesh);
+    mesh.CumulateData();
+    auto NV = mesh.template GetNN<NT_VERTEX>();
+    opts->min_vcw = options.min_vcw;
     opts->vcw = Array<double>(NV); opts->vcw = 0;
-    opts->min_vcw = options->min_vcw;
+    opts->min_ecw = options.min_ecw;
+    if (options.soc == "SIMPLE")
+      { opts->ecw = CalcECWSimple(_mesh); }
+    else if (options.soc == "ROBUST")
+      { opts->ecw = CalcECWRobust(_mesh); }
+    else
+      { throw Exception("INVALID SOC!"); }
   }
   
   INLINE Timer & timer_hack_Hack_BuildAlgMesh () { static Timer t("ElasticityAMG::BuildAlgMesh"); return t; }
