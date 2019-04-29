@@ -233,7 +233,7 @@ namespace amg
     block_opts->vcw = Array<double>(options->vcw.Size(), &(options->vcw[0])); block_opts->vcw.NothingToDelete();
     block_opts->ecw = Array<double>(options->ecw.Size(), &(options->ecw[0])); block_opts->ecw.NothingToDelete();
     BlockVWC<TMESH> block_crs (block_opts);
-    
+
     const auto & eqc_h = *mesh.GetEQCHierarchy();
     auto neqcs = eqc_h.GetNEQCS();
     auto comm = eqc_h.GetCommunicator();
@@ -652,30 +652,30 @@ namespace amg
 
     // cout << endl << "have vertex map: " << endl; prow2(vmap); cout << endl;
 
-    // Array<int> ones(eqcs.Size()); ones = 1;
-    // Table<int> cnt(ones);
-    // for (auto k : Range(eqcs.Size()))
-    //   { cnt[k][0] = mapped_eqc_firsti[NT_VERTEX][k+1] - mapped_eqc_firsti[NT_VERTEX][k]; }
-    // int cntcs = 0;
-    // bool isok = true;
-    // auto dontcare = ReduceTable<int, int> (cnt, eqcs, sp_eqc_h,
-    // 					   [&](auto & tab) {
-    // 					     int nrows = tab.Size();
-    // 					     Array<int> out(nrows);
-    // 					     cntcs++;
-    // 					     if (!nrows) return out;
-    // 					     if (nrows==1) { out[0] = tab[0][0]; return out; }
-    // 					     bool this_isok = true;
-    // 					     for (auto k : Range(size_t(1), tab.Size()))
-    // 					       if (tab[k][0] != tab[0][0]) { this_isok = false; }
-    // 					     if (!this_isok) {
-    // 					       isok = this_isok;
-    // 					       cout << "NOT OK CHECK EQC S nr : " << cntcs-1 << endl;
-    // 					       print_ft(cout, tab); cout << endl;
-    // 					     }
-    // 					     return out;
-    // 					   });
-    // if (!isok) throw Exception("INVALID V SIZES");
+    Array<int> ones(eqcs.Size()); ones = 1;
+    Table<int> cnt(ones);
+    for (auto k : Range(eqcs.Size()))
+      { cnt[k][0] = mapped_eqc_firsti[NT_VERTEX][k+1] - mapped_eqc_firsti[NT_VERTEX][k]; }
+    int cntcs = 0;
+    bool isok = true;
+    auto dontcare = ReduceTable<int, int> (cnt, eqcs, sp_eqc_h,
+    					   [&](auto & tab) {
+    					     int nrows = tab.Size();
+    					     Array<int> out(nrows);
+    					     cntcs++;
+    					     if (!nrows) return out;
+    					     if (nrows==1) { out[0] = tab[0][0]; return out; }
+    					     bool this_isok = true;
+    					     for (auto k : Range(size_t(1), tab.Size()))
+    					       if (tab[k][0] != tab[0][0]) { this_isok = false; }
+    					     if (!this_isok) {
+    					       isok = this_isok;
+    					       cout << "NOT OK CHECK EQC S nr : " << cntcs-1 << endl;
+    					       print_ft(cout, tab); cout << endl;
+    					     }
+    					     return out;
+    					   });
+    if (!isok) throw Exception("INVALID V SIZES");
   } // CoarseMap :: BuildVertexMap
 
   template<class TMESH>
@@ -689,7 +689,7 @@ namespace amg
        - Two HashTables per eqc (one eqc, one cross)
        This gives map to local-per-eqc-and-type enumeration.
        Add offstes to get the final map!
-     **/
+    **/
     // cout << "CoarseMap - map edges" << endl;
     static Timer t("CoarseMap - map edges");
     RegionTimer rt(t);

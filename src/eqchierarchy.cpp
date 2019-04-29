@@ -400,8 +400,7 @@ namespace amg {
        0..np-1 are local eqc-ids
        rest of blocks ordered by lowest rank
     **/
-    int nblocks_loc;
-    nblocks_loc = 0;
+    int nblocks_loc = 0;
     for (auto k:Range(dist_procs.Size()))
       if( (dist_procs[k].Size()) && (rank<dist_procs[k][0]) )
   	nblocks_loc++;
@@ -443,7 +442,7 @@ namespace amg {
     for (auto k:Range(dist_procs.Size()))
       idf_2_ind[eqc_ids[k]] = k;
 
-    neqcs_glob -= tagbase_loc;
+    neqcs_glob -= AMG_TAG_BASE; // this is actually one too much usually (rank 0 has no loc eq-class)
     
     /** sub-comms; not needed currently!!  **/
     // MPI_Group g_ngs;

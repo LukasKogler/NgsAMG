@@ -63,6 +63,7 @@ namespace amg
       size_t ctr_seq_nv = 500;             // re-distribute to sequential once NV reached this threshhold
       /** Prolongation smoothing **/
       bool enable_sm = true;               // emable prolongation-smoothing
+      bool singular_diag = false;          // if yes, regularize diagonals
       double min_prol_frac = 0.1;          // min. (relative) wt to include an edge
       int max_per_row = 3;                 // maximum entries per row (should be >= 2!)
       double sp_omega = 0.5;               // relaxation parameter for prol-smoothing

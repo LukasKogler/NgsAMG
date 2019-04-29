@@ -140,8 +140,8 @@ namespace amg
       for (auto k : Range(dofpv(D)))
 	{ mat(k,k) = 1.0; }
       if constexpr(D==2) {
-	  mat(0,2) = tang(1);
 	  mat(1,2) = -tang(0);
+	  mat(0,2) =  tang(1);
 	}
       else {
 	mat(1,5) = - (mat(2,4) = tang(0));
@@ -162,17 +162,16 @@ namespace amg
       // cout << "tang: " << tang << endl;
       static Matrix<TMAT> M(1,1);
       static Matrix<TMAT> T(1,2);
-      static Matrix<TMAT> TT(2,1);
       static Matrix<TMAT> TTM(2,1);
       SetIdentity(T(0,0));
       if constexpr(D==2) {
-    	  T(0,0)(0,2) = -0.5 * tang(1);
     	  T(0,0)(1,2) =  0.5 * tang(0);
+    	  T(0,0)(0,2) = -0.5 * tang(1);
     	}
       else {
-    	T(0,0)(0,4) = - (T(0,0)(1,3) = 0.5 * tang(2));
-    	T(0,0)(1,5) = - (T(0,0)(2,4) = 0.5 * tang(0));
-    	T(0,0)(2,3) = - (T(0,0)(0,5) = 0.5 * tang(1));
+    	T(0,0)(2,4) = - (T(0,0)(1,5) = 0.5 * tang(0));
+    	T(0,0)(0,5) = - (T(0,0)(2,3) = 0.5 * tang(1));
+    	T(0,0)(1,3) = - (T(0,0)(0,4) = 0.5 * tang(2));
       }
       T(0,1) = T(0,0);
       Iterate<dofpv(D)>([&](auto i) {
@@ -180,11 +179,7 @@ namespace amg
 	});
       M(0,0) = get<1>(fmesh.Data())->Data()[edge.id]; // cant do Matrix<TM> * TM
       Iterate<2>([&](auto i) {
-	  TT(i.value,0) = Trans(T(0,i.value));
-	});
-      TT = Trans(T);
-      Iterate<2>([&](auto i) {
-	  TTM(i.value,0) = TT(i.value,0) * M(0,0);
+	  TTM(i.value,0) = Trans(T(0,i.value)) * M(0,0);
 	});
       // TTM = TT * M;
       mat = TTM * T;

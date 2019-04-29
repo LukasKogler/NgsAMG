@@ -462,7 +462,9 @@ namespace amg {
 	  if(reged) nr2++;
 	  else nnr++;
 	}
+	// cerr << "stab inv block " << endl; print_tm(cerr, block); cerr << endl;
 	CalcInverse(block);
+	// cerr << "stab inved block " << endl; print_tm(cerr, block); cerr << endl;
       }
     }
     // cout << "REGED " << nr1+nr2 << " OF " << nr1+nr2+nnr << endl;

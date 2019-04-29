@@ -535,6 +535,55 @@ namespace amg
       });
   }
 
+  template<int N, class T> INLINE void CalcPseudoInverse (T & m)
+  {
+    static Matrix<double> M(N,N), evecs(N,N);
+    static Vector<double> evals(N);
+    M = m;
+    LapackEigenValuesSymmetric(M, evals, evecs);
+    // cout << "pseudo inv evals: "; prow(evals); cout << endl;
+    double tol = 0; for(auto v : evals) tol += v;
+    tol = max(1e-8 * tol / N, 1e-12);
+    for (auto & v : evals)
+      v = (v > tol) ? 1/sqrt(v) : 0;
+    // cout << "rescaled evals: "; prow(evals); cout << endl;
+    Iterate<N>([&](auto i) {
+	Iterate<N>([&](auto j) {
+	    evecs(i.value,j.value) *= evals(i.value);
+	  });
+      });
+    // cout << "rescaled evecs: " << endl << evecs << endl;
+    m = Trans(evecs) * evecs;
+  }
+
+  template<int IMIN, int N, int NN> INLINE void RegTM (Mat<NN,NN,double> & m)
+  {
+    static_assert( (IMIN + N <= NN) , "ILLEGAL RegTM!!");
+    static Matrix<double> M(N,N), evecs(N,N);
+    static Vector<double> evals(N);
+    Iterate<N>([&](auto i) {
+	Iterate<N>([&](auto j) {
+	    M(i.value, j.value) = m(IMIN+i.value, IMIN+j.value);
+	  });
+      });
+    LapackEigenValuesSymmetric(M, evals, evecs);
+    double trace = 0; for (auto k : Range(NN)) trace += m(k,k);
+    trace /= N; trace = (trace == 0) ? 1.0 : max(trace, 1e-10);
+    double evmax = max(evals(N-1), 1e-2 * trace);
+    // cerr << "M: " << endl << M << endl;
+    // cerr << "trace evm " << trace << " " << evmax << endl;
+    Iterate<N>([&](auto l) {
+	if (fabs(evals(l)/evmax) < 1e-12) {
+	  // cerr << "reg evec " << l << endl;
+	  Iterate<N>([&](auto i) {
+	      Iterate<N>([&](auto j) {
+		  m(IMIN+i.value, IMIN+j.value) += trace * evecs(l.value, i.value) * evecs(l.value, j.value);
+		});
+	    });
+	}
+      });
+  }
+
   
   template<int N> INLINE double CalcDet (Mat<N,N,double> & m)
   { throw Exception(string("CalcDet<")+to_string(N)+string(",")+to_string(N)+string("> not implemented")); }
@@ -546,22 +595,22 @@ namespace amg
 
   template<> INLINE void CalcPseudoInv (Mat<2,2,double> & m)
   {
-    cout << "m " << endl; print_tm(cout, m);
+    // cout << "m " << endl; print_tm(cout, m);
     double avg = 0.5 * calc_trace(m); double tol = 1e-14 * avg;
     if ( CalcDet(m) > tol ) {
-      cout << "case 1 " << endl;
+      // cout << "case 1 " << endl;
       CalcInverse(m);
     }
     else if ( fabs(m(0,0)) < tol ) {
       if ( fabs(m(1,1)) < tol )
-	{ cout << "case 2 " << endl; m = 0; }
+	{ /*cout << "case 2 " << endl;*/ m = 0; }
       else
-	{ cout << "case 3 " << endl; m(0,0) = m(1,0) = m(0,1) = 0; m(1,1) = 1/m(1,1); }
+	{ /*cout << "case 3 " << endl; */ m(0,0) = m(1,0) = m(0,1) = 0; m(1,1) = 1/m(1,1); }
     }
     else if ( fabs(m(1,1)) < tol )
-      { cout << "case 4 " << endl; m(1,1) = m(1,0) = m(0,1) = 0; m(0,0) = 1/m(0,0); }
+      { /*cout << "case 4 " << endl;*/ m(1,1) = m(1,0) = m(0,1) = 0; m(0,0) = 1/m(0,0); }
     else {
-      cout << "case 5 " << endl;
+      /*cout << "case 5 " << endl;*/
       // add kv-projector, invert, substract it again
       static Vec<2,double> kv; kv(0) = m(0,1); kv(1) = -m(0,0);
       double kvn = L2Norm(kv);
@@ -578,7 +627,7 @@ namespace amg
 	    });
 	});
     }
-    cout << "m pseudo inv: " << endl; print_tm(cout, m); cout << endl;
+    // cout << "m pseudo inv: " << endl; print_tm(cout, m); cout << endl;
   }
 } // namespace amg
 

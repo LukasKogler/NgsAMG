@@ -394,7 +394,7 @@ namespace amg
     input_notok = comm.AllReduce(input_notok, MPI_MAX);
     if (input_notok) return -1;
 #ifdef ELASTICITY
-    if (arank==0) return map->GetParDofs(level)->GetNDofGlobal() * map->GetParDofs(level)->GetEntrySize();
+    if (arank==0) return comm.AllReduce((rank==arank) ? map->GetParDofs(level)->GetNDofGlobal() * map->GetParDofs(level)->GetEntrySize() : 0, MPI_SUM);
 #else
     if (arank==0) return map->GetParDofs(level)->GetNDofGlobal();
 #endif

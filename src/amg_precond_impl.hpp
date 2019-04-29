@@ -82,7 +82,9 @@ namespace amg
 	}
        	else if ( (grid_step = (gstep_coarse = TryCoarsen(level, fm))) != nullptr ) {
 	  cnt_lc++;
+	  // cout << "crs dms " << endl;
 	  auto prol_step = BuildDOFMapStep(gstep_coarse, fm_pd);
+	  // cout << "crs dms ok" << endl;
 	  bool smoothit = true;
 	  // Smooth prol?
 	  // cout << "CRS-step, smooth? "; 
@@ -228,7 +230,6 @@ namespace amg
 	    auto cpm = make_shared<ParallelMatrix>(cspm, cpds);
 	    cpm->SetInverseType(options->clev_inv_type);
 	    auto cinv = cpm->InverseMatrix();
-	    cout << *cinv << endl;
 	    amg_mat->AddFinalLevel(cinv);
 	  }
 	  // else {
@@ -417,7 +418,8 @@ namespace amg
     const double MIN_PROL_FRAC = options->min_prol_frac;
     const int MAX_PER_ROW = options->max_per_row;
     const double omega = options->sp_omega;
-
+    const bool sing_diags = options->singular_diag;
+    
     // Construct vertex-map from prol (can be concatenated)
     size_t NFV = fmesh.template GetNN<NT_VERTEX>();
     Array<size_t> vmap (NFV); vmap = -1;
@@ -592,7 +594,10 @@ namespace amg
 	for (auto l:Range(unv)) {
 	  if (l==posV) continue;
 	  // get_repl(edges[used_edges[l]], block);
+	  // cout << "edge: " << all_fedges[used_edges[l]] << endl;
 	  self.CalcRMBlock (fmesh, all_fedges[used_edges[l]], block);
+	  // cout << "block " << l << ": " << endl;
+	  // print_tm_mat(cout, block); cout << endl;
 	  int brow = (V < used_verts[l]) ? 0 : 1;
 	  // int brow = (V == all_fedges[used_edges[l]].v[0]) ? 0 : 1;
 	  mat(0,l) = block(brow,1-brow); // off-diag entry
@@ -600,9 +605,25 @@ namespace amg
 	}
 	// cout << "repl mat row: " << endl; print_tm_mat(cout, mat); cout << endl;
 	TMAT diag = mat(0, posV);
-	// cout << "diag: " << endl; print_tm(cout, diag); cout << endl;
-	CalcInverse(diag); // TODO: can this be singular (with embedding?)
-	// cout << "inv diag: " << endl; print_tm(cout, diag); cout << endl;
+	// cout << "inv diag V = " << V << endl; print_tm(cout, diag); cout << endl;
+	double tr = 0;
+	if constexpr(mat_traits<TMAT>::HEIGHT == 1) {
+	    tr = 1;
+	    CalcInverse(diag);
+	  }
+	else {
+	  if (sing_diags) {
+	    Iterate<mat_traits<TMAT>::HEIGHT>([&](auto i) { tr += diag(i.value,i.value); });
+	    tr /= mat_traits<TMAT>::HEIGHT;
+	    diag /= tr;
+	    CalcPseudoInverse<mat_traits<TMAT>::HEIGHT>(diag);
+	  }
+	  else {
+	    tr = 1;
+	    CalcInverse(diag);
+	  }
+	}
+	// cout << "inved diag V = " << V << endl; print_tm(cout, diag); cout << endl;
 	// for ( auto l : Range(unv)) {
 	//   TMAT diag2 = mat(0, l);
 	//   TMAT diag3 = diag * diag2;
@@ -632,18 +653,22 @@ namespace amg
 	  // cout << "pos is " << pos << endl;
 	  // sp_rv[pos] += row(0,l) * pw_rv[0];
 	  // cout << " before "; print_tm(cout, sp_rv[pos]); cout << endl;
-	  if (l==posV) {
-	    sp_rv[pos] += (1-omega) * pw_rv[0];
-	    // cout << " mid "; print_tm(cout, sp_rv[pos]); cout << endl;
-	  }
-	  else {
-	    // TMAT m1 = mat(0,l);
-	    // TMAT m2 = diag * m1;
-	    // TMAT m3 = m2 * pw_rv[0];
-	    // cout << " should add " << omega << " * "; print_tm(cout, m3); cout << endl;
-	    sp_rv[pos] += - omega * diag * mat(0,l) * pw_rv[0];
-	    // cout << " after "; print_tm(cout, sp_rv[pos]); cout << endl;
-	  }
+	  if (l==posV)
+	    { sp_rv[pos] += pw_rv[0]; }
+	  sp_rv[pos] -= omega/tr * (diag * mat(0,l)) * pw_rv[0];
+	  
+	  // if (l==posV) {
+	  //   sp_rv[pos] += (1-omega) * pw_rv[0];
+	  //   // cout << " mid "; print_tm(cout, sp_rv[pos]); cout << endl;
+	  // }
+	  // else {
+	  //   // TMAT m1 = mat(0,l);
+	  //   // TMAT m2 = diag * m1;
+	  //   // TMAT m3 = m2 * pw_rv[0];
+	  //   // cout << " should add " << omega << " * "; print_tm(cout, m3); cout << endl;
+	  //   sp_rv[pos] += - omega * diag * mat(0,l) * pw_rv[0];
+	  //   // cout << " after "; print_tm(cout, sp_rv[pos]); cout << endl;
+	  // }
 	}
       }
     }
@@ -796,6 +821,7 @@ namespace amg
     auto fvs = make_shared<BitArray>(top_mesh->GetNN<NT_VERTEX>()); fvs->Clear();
     auto & vsort = node_sort[NT_VERTEX];
     for (auto k : Range(top_mesh->GetNN<NT_VERTEX>())) if (fes_fds->Test(k)) { fvs->Set(vsort[k]); }
+    // cout << "vertex sort: " << endl; prow2(vsort); cout << endl;
     options->free_verts = fvs;
     options->finest_free_dofs = fes_fds;
     return top_mesh;

@@ -569,7 +569,6 @@ namespace amg
     std::tuple<T*...> MapData (const TMAP & map) const
     { return std::apply([&](auto& ...x){ return make_tuple<T*...>(x->Map(map)...); }, node_data); };
 
-
     shared_ptr<BlockAlgMesh<T...>> Map (CoarseMap<BlockAlgMesh<T...>> & map) {
       auto crs_btm = BlockTM::MapBTM(map);
       auto cdata = std::apply([&](auto& ...x) {
