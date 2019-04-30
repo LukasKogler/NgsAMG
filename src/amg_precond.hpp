@@ -150,7 +150,8 @@ namespace amg
       void LogMatSm (shared_ptr<BaseSparseMatrix> & amat, shared_ptr<BaseSmoother> & sm) {
 	if (ilev == NONE) return;
 	auto comm = sm->GetParallelDofs()->GetCommunicator();
-	size_t ocmat_l = amat->NZE()*mat_traits<TMAT>::HEIGHT*mat_traits<TMAT>::WIDTH;
+	int mes = GetEntrySize(amat.get());
+	size_t ocmat_l = amat->NZE()*mes;
 	size_t ocmat_g = comm.Reduce(ocmat_l, MPI_SUM, 0);
 	if (comm.Rank()==0) occ.Append(ocmat_g);
 	if (ilev <= BASIC) return;

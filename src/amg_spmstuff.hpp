@@ -33,6 +33,18 @@ namespace amg
   }
   template<> INLINE void print_tm_spmat (ostream &os, const SparseMatrix<double> & mat) { os << mat << endl; }
 
+  INLINE int GetEntrySize (BaseSparseMatrix* mat)
+  {
+    if (auto m = dynamic_cast<SparseMatrixTM<double>*>(mat)) { return 1; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<2,2,double>>*>(mat)) { return 4; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<3,3,double>>*>(mat)) { return 9; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<4,4,double>>*>(mat)) { return 16; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<5,5,double>>*>(mat)) { return 25; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<6,6,double>>*>(mat)) { return 36; }
+    return -1;
+  }
+	
+  
   // Strip Mat<1,1,double> and Vec<1,double> -> double
   template<class T> struct strip_mat { typedef T type; };
   template<> struct strip_mat<Mat<1,1,double>> { typedef double type; };

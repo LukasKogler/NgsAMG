@@ -471,6 +471,7 @@ namespace amg
   CoarseMap<TMESH> :: CoarseMap (shared_ptr<TMESH> _mesh, VWCoarseningData::CollapseTracker &coll)
     : BaseCoarseMap(), GridMapStep<TMESH>(_mesh)
   {
+    static Timer t("CoarseMap"); RegionTimer rt(t);
     BuildVertexMap(coll);
     if (_mesh->template HasNodes<NT_EDGE>()) BuildEdgeMap(coll);
     // if (_mesh->template HasNodes<NT_FACE>()) BuildMap<NT_FACE>(coll);

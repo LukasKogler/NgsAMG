@@ -235,6 +235,7 @@ namespace amg
 
   BlockTM* BlockTM :: MapBTM (const BaseCoarseMap & cmap) const
   {
+    static Timer t("MapBTM"); RegionTimer rt(t);
     // cout << "map mesh " << *this << endl;
     auto coarse_mesh = new BlockTM(this->eqc_h);
     const auto & eqc_h = *this->eqc_h;

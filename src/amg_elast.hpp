@@ -37,6 +37,7 @@ namespace amg
     ElVData (Array<PosWV> && _data, PARALLEL_STATUS _stat) : AttachedNodeData<NT_VERTEX, PosWV, ElVData>(move(_data), _stat) {}
     INLINE void map_data (const BaseCoarseMap & cmap, ElVData & celvd) const
     {
+      static Timer t("ElVData::map_data"); RegionTimer rt(t);
       auto & cdata = celvd.data;
       Cumulate();
       // cout << "(cumul) f-pos: " << endl;

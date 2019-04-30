@@ -567,16 +567,26 @@ namespace amg
     template<class TMAP,
 	     typename T_ENABLE = typename std::enable_if<std::is_base_of<GridMapStep<BlockAlgMesh<T...>>, TMAP>::value==1>::type>
     std::tuple<T*...> MapData (const TMAP & map) const
-    { return std::apply([&](auto& ...x){ return make_tuple<T*...>(x->Map(map)...); }, node_data); };
+    {
+      static Timer t("BlockAlgMesh::MapData"); RegionTimer rt(t);
+      return std::apply([&](auto& ...x){ return make_tuple<T*...>(x->Map(map)...); }, node_data);
+    };
 
     shared_ptr<BlockAlgMesh<T...>> Map (CoarseMap<BlockAlgMesh<T...>> & map) {
+      static Timer t("BlockAlgMesh::Map (coarse)"); RegionTimer rt(t);
       auto crs_btm = BlockTM::MapBTM(map);
+      static Timer ttup("tuple"); ttup.Start();
       auto cdata = std::apply([&](auto& ...x) {
 	  return make_tuple<T*...>(new T(Array<typename T::TDATA>(map.template GetMappedNN<T::TNODE>()), DISTRIBUTED)...);
 	}, node_data);
+      ttup.Stop();
+      static Timer tmesh("alg-mesh"); tmesh.Start();
       auto cmesh = make_shared<BlockAlgMesh<T...>> (move(*crs_btm), move(cdata));
+      tmesh.Stop();
       auto & cm_data = cmesh->Data();
+      static Timer tmd("map data"); tmd.Start();
       Iterate<count_ppack<T...>::value>([&](auto i){ get<i.value>(node_data)->map_data(map, *get<i.value>(cm_data)); });
+      tmd.Stop();
       return cmesh;
     };
     

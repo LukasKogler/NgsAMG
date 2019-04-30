@@ -505,14 +505,18 @@ namespace amg
 	  double lam = 0; for (auto k : Range(disppv(D))) lam += schur(k,k);
 	  lam /= disppv(D);
 	  Vec<3,double> tang = vpos[dnums[i]] - vpos[dnums[j]];
+	  tang /= L2Norm(tang);
 	  // cout << "lam: " << lam << endl;
 	  // cout << "ELEW bef: " << endl; print_tm(cout, elew); cout << endl;
 	  Iterate<disppv(D)>([&](auto i) {
-	      Iterate<disppv(D)>([&](auto j) {
-		  // elew(i.value, j.value) += lam * lam * tang(i.value) * tang(j.value); // ??why lam**2??
-		  elew(i.value, j.value) += lam * tang(i.value) * tang(j.value);
-		});
+	      elew(i.value, i.value) += lam;
 	    });
+	  // Iterate<disppv(D)>([&](auto i) {
+	  //     Iterate<disppv(D)>([&](auto j) {
+	  // 	  // elew(i.value, j.value) += lam * lam * tang(i.value) * tang(j.value); // ??why lam**2??
+	  // 	  elew(i.value, j.value) += lam * tang(i.value) * tang(j.value);
+	  // 	});
+	  //   });
 	  // cout << "ELEW after: " << endl; print_tm(cout, elew); cout << endl;
 	  Iterate<rotpv(D)>([&](auto i) {
 	      elew(disppv(D)+i.value, disppv(D)+i.value) += 1e-10 * lam;
@@ -532,8 +536,9 @@ namespace amg
   template<int D> template<class TMESH>
   void ElEData<D> :: map_data (const CoarseMap<TMESH> & cmap, ElEData<D> & celed) const
   {
-    // cerr << " map edges " << endl;
     static_assert(std::is_same<TMESH,ElasticityMesh<D>>::value==1, "ElEData with wrong map?!");
+    // cerr << " map edges " << endl;
+    static Timer t(string("ElEData<")+to_string(D)+string(">::map_data")); RegionTimer rt(t);
     auto & mesh = static_cast<ElasticityMesh<D>&>(*this->mesh);
     mesh.CumulateData();
     auto sp_eqc_h = mesh.GetEQCHierarchy();

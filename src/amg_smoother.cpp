@@ -547,7 +547,7 @@ namespace amg {
       FlatArray<TV> p_buffer (sz, &(buffer[buf_os[kp]]));
       // cout << "scatter, send update to " << p << ", kp " << kp << " " << p_buffer.Size() << ": "; prow(p_buffer); cout << endl;
       MPI_Request reqs = MyMPI_ISend(p_buffer, p, MPI_TAG_AMG, comm);
-      MPI_Request_free(&reqs);
+      MPI_Request_free(&reqs); // TODO: am i SURE that this is OK??
     }
     if (nexp_smaller==0) return;
     for (int kp : Range(nexp_smaller)) {

@@ -73,6 +73,7 @@ namespace amg
       size_t last_nv_ass = nvs[0], last_nv_smo = nvs[0], last_nv_ctr = nvs[0];
       size_t step_cnt = 0;
       while ( level[0] < MAX_NL-1 && ( (level[0]==0) || (fm->template GetNNGlobal<NT_VERTEX>() > MAX_NV) ) ) {
+	// cout << "level " << level << endl;
 	size_t curr_nv = fm->template GetNNGlobal<NT_VERTEX>();
 	if ( (!contr_locked) && (grid_step = (gstep_contr = TryContract(level, fm))) != nullptr ) {
 	  contr_locked = true;
@@ -98,6 +99,7 @@ namespace amg
 	  if (smoothit)
 	    {
 	      last_nv_smo = curr_nv;
+	      // cout << "smooth prol on level " << level << endl;
 	      SmoothProlongation(prol_step, static_pointer_cast<TMESH>(gstep_coarse->GetMesh()));
 	    }
 	  if ( (level[0] == 0) && (embed_step != nullptr) ) {
@@ -126,7 +128,8 @@ namespace amg
 	bool assit = false;
 	// Assemble next level ?
 	// cout << "level " << level << ", assemble? ";
-	if (options->force_ass) { assit = options->ass_levels.Contains(level[0]); }
+	if ( (level[1] != 0) || (level[2] != 0) ) { assit = false; } 
+	else if (options->force_ass) { assit = options->ass_levels.Contains(level[0]); }
 	else if (options->ass_levels.Contains(level[0]) ) { /*cout << "1Y";*/ assit = true; }
 	else if (options->ass_skip_levels.Contains(level[0])) { /*cout << "2F";*/ assit = false; }
 	else if (level[0] < options->skip_ass_first) { /*cout << "3F";*/ assit = false; }
@@ -292,7 +295,7 @@ namespace amg
 	}
       }
     }
-    // cout << "have pw-prol: " << endl;
+    // cout << "have pw-prol: " << prol->Height() << " x " << prol->Width() << endl;
     // print_tm_spmat(cout, *prol); cout << endl;
 
     auto pmap = make_shared<ProlMap<TSPMAT>> (fpd, cpd);
@@ -370,20 +373,28 @@ namespace amg
   template<class AMG_CLASS, class TMESH, class TMAT> shared_ptr<CoarseMap<TMESH>>
   VWiseAMG<AMG_CLASS, TMESH, TMAT> :: TryCoarsen  (INT<3> level, shared_ptr<TMESH> mesh)
   {
+    static Timer t(this->name+string("::Coarsening")); RegionTimer rt(t);
     auto coarsen_opts = make_shared<typename HierarchicVWC<TMESH>::Options>();
     shared_ptr<VWCoarseningData::Options> basos = coarsen_opts;
     // auto coarsen_opts = make_shared<VWCoarseningData::Options>();
     if (level[0]==0) { coarsen_opts->free_verts = options->free_verts; }
-    SetCoarseningOptions(basos, level, mesh);
+    {
+      static Timer t(this->name+string("::SetCoarseningOptions")); RegionTimer rt(t);
+      SetCoarseningOptions(basos, level, mesh);
+    }
     // BlockVWC<TMESH> bvwc (coarsen_opts);
     // return bvwc.Coarsen(mesh);
-    HierarchicVWC<TMESH> hvwc (coarsen_opts);
-    return hvwc.Coarsen(mesh);
+    shared_ptr<VWiseCoarsening<TMESH>> calg;
+    // if (level[0] % 3 == 0) calg = make_shared<HierarchicVWC<TMESH>> (coarsen_opts);
+    // else calg = make_shared<BlockVWC<TMESH>> (coarsen_opts);
+    calg = make_shared<BlockVWC<TMESH>> (coarsen_opts);
+    return calg->Coarsen(mesh);
   }
 
   template<class AMG_CLASS, class TMESH, class TMAT> shared_ptr<GridContractMap<TMESH>>
   VWiseAMG<AMG_CLASS, TMESH, TMAT> :: TryContract (INT<3> level, shared_ptr<TMESH> mesh)
   {
+    static Timer t(this->name+string("::Redistribute")); RegionTimer rt(t);
     if (options->enable_ctr == false) return nullptr;
     if (level[0] == 0) return nullptr; // TODO: if I remove this, take care of contracting free vertices!
     if (level[1] != 0) return nullptr; // dont contract twice in a row
@@ -612,18 +623,20 @@ namespace amg
 	    CalcInverse(diag);
 	  }
 	else {
+	  Iterate<mat_traits<TMAT>::HEIGHT>([&](auto i) { tr += diag(i.value,i.value); });
+	  tr /= mat_traits<TMAT>::HEIGHT;
+	  mat /= tr;
+	  diag /= tr;
+	  // cout << "invert (rescaled) diag V = " << V << endl; print_tm(cout, diag); cout << endl;
 	  if (sing_diags) {
-	    Iterate<mat_traits<TMAT>::HEIGHT>([&](auto i) { tr += diag(i.value,i.value); });
-	    tr /= mat_traits<TMAT>::HEIGHT;
-	    diag /= tr;
+	    // cout << "pseudoinv" << endl;
 	    CalcPseudoInverse<mat_traits<TMAT>::HEIGHT>(diag);
 	  }
 	  else {
-	    tr = 1;
+	    // cout << "normal inv" << endl;
 	    CalcInverse(diag);
 	  }
 	}
-	// cout << "inved diag V = " << V << endl; print_tm(cout, diag); cout << endl;
 	// for ( auto l : Range(unv)) {
 	//   TMAT diag2 = mat(0, l);
 	//   TMAT diag3 = diag * diag2;
@@ -648,14 +661,15 @@ namespace amg
 	  auto pw_rv = pwprol.GetRowValues(vl);
 	  int cvl = vmap[vl];
 	  // cout << "v " << l << ", " << vl << " maps to " << cvl << endl;
-	  // cout << "pw-row for vl: " << endl; prow_tm(cout, pw_rv); cout << endl;
+	  // cout << "pw-row for vl: " << endl; print_tm(cout, pw_rv[0]); cout << endl;
 	  auto pos = find_in_sorted_array(cvl, sp_ri);
 	  // cout << "pos is " << pos << endl;
 	  // sp_rv[pos] += row(0,l) * pw_rv[0];
-	  // cout << " before "; print_tm(cout, sp_rv[pos]); cout << endl;
+	  // cout << " before " << endl; print_tm(cout, sp_rv[pos]); cout << endl;
 	  if (l==posV)
 	    { sp_rv[pos] += pw_rv[0]; }
-	  sp_rv[pos] -= omega/tr * (diag * mat(0,l)) * pw_rv[0];
+	  sp_rv[pos] -= omega * (diag * mat(0,l)) * pw_rv[0];
+	  // cout << " after "; print_tm(cout, sp_rv[pos]); cout << endl;
 	  
 	  // if (l==posV) {
 	  //   sp_rv[pos] += (1-omega) * pw_rv[0];

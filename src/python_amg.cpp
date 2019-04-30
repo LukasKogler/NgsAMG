@@ -156,7 +156,7 @@ PYBIND11_MODULE (ngs_amg, m) {
     (m, "AMG_EL2", "Ngs-AMG for 2d elasticity",
      [](auto & o, auto & kwa) {
       o->keep_vp = true;
-      o->singular_diag = true;
+      o->singular_diag = ( (kwa.contains("sing_diag")) && (kwa["sing_diag"].template cast<bool>()) == false) ? false : true;
       if (kwa.contains("soc"))
 	o->soc = amg::capitalize_it(kwa["soc"].template cast<string>());
     });
@@ -164,7 +164,7 @@ PYBIND11_MODULE (ngs_amg, m) {
     (m, "AMG_EL3", "Ngs-AMG for 2d elasticity",
      [](auto & o, auto & kwa) {
       o->keep_vp = true;
-      o->singular_diag = true;
+      o->singular_diag = ( (kwa.contains("sing_diag")) && (kwa["sing_diag"].template cast<bool>()) == false) ? false : true;
       if (kwa.contains("soc"))
 	o->soc = amg::capitalize_it(kwa["soc"].template cast<string>());
     });
