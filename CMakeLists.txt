@@ -23,4 +23,8 @@ if (ELASTICITY)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DELASTICITY")
 endif (ELASTICITY)
 
+if (USE_BOOMER)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUSE_BOOMER")
+endif (USE_BOOMER)
+
 add_subdirectory(src)

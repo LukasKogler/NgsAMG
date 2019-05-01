@@ -320,8 +320,8 @@ namespace amg
     }
     else if (options->energy == "ALG")
       {
-	if ( (options->block_s.Size() != 1) || (options->block_s[0] != disppv(C::DIM)) )
-	  throw Exception("ALG WTS for elasticity only mit multidim+disp only (rest TODO).");
+	// if ( (options->block_s.Size() != 1) || (options->block_s[0] != disppv(C::DIM)) )
+	//   throw Exception("ALG WTS for elasticity only mit multidim+disp only (rest TODO).");
 	shared_ptr<BaseMatrix> fseqmat = finest_mat;
 	if (auto fpm = dynamic_pointer_cast<ParallelMatrix>(finest_mat))
 	  fseqmat = fpm->GetMatrix();
@@ -333,8 +333,10 @@ namespace amg
 	  rvsort[vsort[k]] = k;
 	auto edges = top_mesh->GetNodes<NT_EDGE>();
 	for (auto & e : edges) {
-	  double fc = fabsum(cspm(rvsort[e.v[0]], rvsort[e.v[1]]));
-	  SetScalIdentity(disppv(C::DIM) * fc / dofpv(C::DIM), we[e.id]);
+	  double fc = fabsum(cspm(rvsort[e.v[0]], rvsort[e.v[1]])) / dofpv(C::DIM);;
+	  auto& emat = we[e.id]; emat = 0;
+	  Iterate<disppv(C::DIM)>([&](auto i) { emat(i.value, i.value) = fc; });
+	  Iterate<rotpv(C::DIM)>([&](auto i) { emat(disppv(C::DIM)+i.value, disppv(C::DIM)+i.value) = 1e-10 * fc; });
 	}
       }
     else

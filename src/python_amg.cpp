@@ -143,7 +143,11 @@ namespace amg {
 	     pre.GetBF(level, rank, dof, *vec);
 	   });
   }
-  
+
+#ifdef USE_BOOMER
+  extern void ExportBoomer (py::module & m);
+#endif
+
 } // namespace amg
 
 PYBIND11_MODULE (ngs_amg, m) {
@@ -178,4 +182,9 @@ PYBIND11_MODULE (ngs_amg, m) {
       return py::none();      
     }, py::arg("blf") = nullptr);
 #endif  
+
+#ifdef USE_BOOMER
+  amg::ExportBoomer(m);
+#endif
+
 }
