@@ -6,18 +6,26 @@ namespace amg {
   EQCHierarchy :: EQCHierarchy (const shared_ptr<MeshAccess> & ma, Array<NODE_TYPE> nts, bool do_cutunion)
     : comm(ma->GetCommunicator())
   {
+    static Timer t("EQCHierarchy::Constructor 1"); comm.Barrier(); RegionTimer rt(t);
     Table<int> vanilla_dps;
-    Array<int> size_of_dps(100); size_of_dps.SetSize(0);
-    Array<int> index_of_block(100); index_of_block.SetSize(0);
-    Array<NODE_TYPE> nt_of_block(100); nt_of_block.SetSize(0);
+    Array<int> size_of_dps(100); size_of_dps.SetSize0();
+    Array<int> index_of_block(100); index_of_block.SetSize0();
+    Array<NODE_TYPE> nt_of_block(100); nt_of_block.SetSize0();
     this->rank = comm.Rank(); this->np = comm.Size();
     neqcs = 0;	neqcs_glob = 0;
+    bool has_any = false;
+    for (NODE_TYPE NT : nts) {
+      auto nnodes = ma->GetNNodes(NT);
+      if (nnodes) has_any = true;
+    }
+    if (has_any) { size_of_dps.Append(0); index_of_block.Append(0); nt_of_block.Append(NT_VERTEX); neqcs++; }
     for (NODE_TYPE NT : nts) {
       auto nnodes = ma->GetNNodes(NT);
       for (auto k : Range(nnodes)) {
 	auto dps = ma->GetDistantProcs(NodeId(NT, k));
+	if (!dps.Size()) continue;
 	int pos = -1;
-	for (size_t l = 0; l < index_of_block.Size() && (pos==-1);l++)
+	for (size_t l = 1; l < index_of_block.Size() && (pos==-1);l++) // 0 is seperate
 	  if (ma->GetDistantProcs(NodeId(NT, index_of_block[l]))==dps)
 	    pos = l;
 	if (pos>=0) continue;
@@ -28,8 +36,8 @@ namespace amg {
       }
     }
     vanilla_dps = Table<int>(size_of_dps);
-    for (auto k : Range(neqcs))
-      if (vanilla_dps[k].Size())
+    if(neqcs > 1)
+      for (auto k : Range(size_t(1), neqcs))
 	{ vanilla_dps[k] = ma->GetDistantProcs(NodeId(nt_of_block[k], index_of_block[k])); }
     if (do_cutunion)
       this->SetupFromInitialDPs(std::move(vanilla_dps));
@@ -42,6 +50,7 @@ namespace amg {
 				bool do_cutunion)
     : comm(apd->GetCommunicator())
   {
+    static Timer t("EQCHierarchy::Constructor 2"); RegionTimer rt(t);
     // if(apd==nullptr) {
     //   this->comm = ngs_comm;
     //   if(MyMPI_GetNTasks()>1) throw Exception("EQCHierarchy with no paralleldofs in non-seq environ!");
@@ -95,6 +104,8 @@ namespace amg {
   EQCHierarchy :: EQCHierarchy (Table<int> && eqcs, NgsAMG_Comm acomm, bool do_cutunion)
     : comm(acomm)
   {
+    static Timer t("EQCHierarchy::Constructor 3"); RegionTimer rt(t);
+
     this->rank = comm.Rank();
     this->np = comm.Size();
 
@@ -106,20 +117,35 @@ namespace amg {
     return;
   } // end EQCHierarchy(dps,...)
 
-
-  void EQCHierarchy :: SetupFromInitialDPs(Table<int> && vanilla_dps) {
-
+  void EQCHierarchy :: SetupFromInitialDPs (Table<int> && _vanilla_dps)
+  {
+    comm.Barrier();
     static Timer t("EQCHierarchy::SetupFromInitialDPs");
     RegionTimer rt(t);
+
+    auto vanilla_dps = move(_vanilla_dps);
+
+    // cout << "vanilla_dps: " << endl << vanilla_dps << endl;
     
     //nr of vanilla eqcs
     size_t nveqcs = vanilla_dps.Size(); 
+    Array<int> v_exps(50); v_exps.SetSize0(); // all neighbours
+    for (auto row : vanilla_dps) {
+      for (auto p : row) {
+	auto ind = find_in_sorted_array(p, v_exps);
+	if (ind == decltype(ind)(-1)) {
+	  v_exps.Append(p); QuickSort(v_exps);
+	}
+      }
+    }
     
     /** do (local) pairwise merge of dps, add eqc if there is already one that is a superset **/
     Array<Array<int> > new_dps;
     {
+      static Timer tm("merge loc"); RegionTimer rt(tm);
       auto merge = [](auto & a, auto & b, auto & c)
 	{
+	  c.SetSize0();
 	  size_t k = 0;
 	  size_t j = 0;
 	  while( (k<a.Size()) && (j<b.Size()) )
@@ -144,7 +170,6 @@ namespace amg {
       for (size_t e1=0;e1<n1;e1++)
 	for (size_t e2=0;e2<e1;e2++)
 	  {
-	    mdp.SetSize(0);
 	    merge(new_dps[e1], new_dps[e2], mdp);
 	    bool valid = false;
 	    bool seq = true;
@@ -168,184 +193,131 @@ namespace amg {
 		n1++;
 	      }
 	  }
+      // cout << "new_dps: " << endl;
+      // for (auto & row : new_dps) { prow(row); cout << endl; }
     }
 
-        /** communicate newly created eqcs **/
+    /** communicate newly created eqcs **/
     {
-      //communicate nr of eqcs
-      //data to send
-      Table<int> eqc_inds; //each row: indices of eqcs shared with proc
-      auto n1 = new_dps.Size();
-      TableCreator<int> create_eqc_inds(np);
-      while(!create_eqc_inds.Done())
-	{
-	  for (auto k:Range(n1))
-	    for (auto j:Range(new_dps[k]))
-	      create_eqc_inds.Add(new_dps[k][j],k);
-	  create_eqc_inds++;
+      static Timer tex("exchange"); RegionTimer rt(tex);
+      int n_v_exp = v_exps.Size();
+      // msg for each exp:     n_eqs | sizeeq1, eq1 | sizeeq2, eq2 | ...
+      Array<int> msg_sz(n_v_exp); msg_sz = 1;
+      for (int k = nveqcs; k < new_dps.Size(); k++) {
+	auto& row = new_dps[k];
+	for (auto p : row) {
+	  auto ind = find_in_sorted_array(p, v_exps);
+	  msg_sz[ind] += 1 + row.Size();
 	}
-      eqc_inds = create_eqc_inds.MoveTable();
-      //send nr of eqcs
-      Array<int> eqc_counts(np); //data to send
-      for (auto k:Range(np))
-	eqc_counts[k] = eqc_inds[k].Size();
-      Array<int> n_rec(np); //data to recv
-      n_rec = -10;
-      MPI_Alltoall(&(eqc_counts[0]), 1, MPI_INT, &(n_rec[0]), 1, MPI_INT, comm);
-      
-      //communicate sizes of eqcs
-      //data to send 
-      Table<int> eqc_sizes(eqc_counts);
-      for (auto k:Range(np))
-	for (auto j:Range(eqc_inds[k].Size()))
-	  eqc_sizes[k][j] = new_dps[eqc_inds[k][j]].Size();
-      Array<int> s_displs_1(np);
-      s_displs_1[0] =0;
-      for (auto k:Range(1,np))
-	s_displs_1[k] = s_displs_1[k-1]+eqc_counts[k-1];
-      //buffer to recv
-      Table<int> rec_sizes(n_rec);
-      if(rec_sizes.Size())
-	rec_sizes.AsArray() = -10;
-      Array<int> r_displs_1(np);
-      r_displs_1[0] = 0;
-      for (auto k:Range(1, np))
-	r_displs_1[k] = r_displs_1[k-1]+n_rec[k-1];     
-      MPI_Alltoallv(&(eqc_sizes[0][0]), &(eqc_counts[0]), &(s_displs_1[0]), MPI_INT,
-		    &(rec_sizes[0][0]), &(n_rec[0]), &(r_displs_1[0]), MPI_INT,
-		    comm);
-
-      //communicate eqc-members
-      //send-data
-      Array<int> s1(np);
-      s1 = 0;
-      for (auto k:Range(np))
-	for (auto j:Range(eqc_sizes[k].Size()))
-	  s1[k] += eqc_sizes[k][j];
-      Table<int> s_tot(s1);
-      if(s_tot.Size())
-	s_tot.AsArray() = 0;
-      s1 = 0;
-      for (auto k:Range(np))
-	for (auto j:Range(eqc_sizes[k].Size()))
-	  for (auto l:Range(eqc_sizes[k][j]))
-	    s_tot[k][s1[k]++] = new_dps[eqc_inds[k][j]][l];
-      Array<int> s_displs_2(np);
-      s_displs_2[0] = 0;
-      for (auto k:Range(1,np))
-	s_displs_2[k] = s_displs_2[k-1] + s_tot[k-1].Size();
-      //recv-data
-      Array<int> s2(np);
-      s2 = 0;
-      for (auto k:Range(np))
-	for (auto j:Range(n_rec[k]))
-	  s2[k] += rec_sizes[k][j];
-      Table<int> r_tot(s2);
-      if(r_tot.Size())
-	r_tot.AsArray() = -1;
-      Array<int> r_displs_2(np);
-      r_displs_2[0] = 0;
-      for (auto k:Range(1,np))
-	r_displs_2[k] = r_displs_2[k-1] + r_tot[k-1].Size();
-      
-      MPI_Alltoallv(&(s_tot[0][0]), &(s1[0]), &(s_displs_2[0]), MPI_INT,
-		    &(r_tot[0][0]), &(s2[0]), &(r_displs_2[0]), MPI_INT,
-		    comm);
-
-      //build flat-arrays      
-      Table<FlatArray<int> > r_eqcs(n_rec);
-      bool found = false;
-      for (auto k:Range(np))
-	{
-	  auto d = r_displs_2[k];
-	  for (auto j:Range(r_eqcs[k].Size()))
-	    {
-	      r_eqcs[k][j].Assign(FlatArray<int>(rec_sizes[k][j], &r_tot.AsArray()[d]));
-	      d += rec_sizes[k][j];
-	      //replace rank by k, sort
-	      found = false;
-	      for (size_t l=0;l<r_eqcs[k][j].Size()&&!found; l++)
-		if(r_eqcs[k][j][l]==rank)
-		  r_eqcs[k][j][l] = k;
-	      QuickSort(r_eqcs[k][j]);
-	    }
+      }
+      Table<int> buffer(msg_sz);
+      for (auto row : buffer) row[0] = 0;
+      msg_sz = 1;
+      for (int nneq = nveqcs; nneq < new_dps.Size(); nneq++) {
+	auto& dps = new_dps[nneq];
+	for (auto p : dps) {
+	  auto ind = find_in_sorted_array(p, v_exps);
+	  auto buf_row = buffer[ind];
+	  buf_row[0]++;
+	  int sz = dps.Size();
+	  buf_row[msg_sz[ind]++] = sz;
+	  FlatArray<int> buf_chunk(sz, &buf_row[msg_sz[ind]]);
+	  buf_chunk = dps;
+	  // cout << "add "; prow(buf_chunk); cout << " to " << ind << " (proc " << p << ")" << endl;
+	  msg_sz[ind] += sz;
 	}
+      }
+      // cout << "send-buf: " << endl << buffer << endl;
+      Array<MPI_Request> reqs(n_v_exp);
+      Array<Array<int>> rbuf(n_v_exp);
+      for (auto k : Range(n_v_exp))
+	{ reqs[k] = MyMPI_ISend(buffer[k], v_exps[k], MPI_TAG_AMG, comm); }
+      for (auto k : Range(n_v_exp))
+       	{ comm.Recv(rbuf[k], v_exps[k], MPI_TAG_AMG); }
+      // cout << "rbuf: " << endl;
+      // for (auto & row : rbuf)
+      // 	{ prow(row); cout << endl; }
+      MyMPI_WaitAll(reqs);
 
-      //add eqc-dps i don't already have
-      int ne1 = new_dps.Size();
-      for (auto k:Range(np))
-	{
-	  for (auto j:Range(r_eqcs[k].Size()))
-	    {
-	      bool found = false;
-	      for (size_t l=0;l<new_dps.Size()&&!found;l++)
-		if(new_dps[l]==r_eqcs[k][j])
-		  found = true;
-	      if(found)
-		continue;
-	      new_dps.Append(Array<int>(r_eqcs[k][j].Size()));
-	      for (auto l:Range(r_eqcs[k][j].Size()))
-		new_dps[ne1][l] = r_eqcs[k][j][l];
-	      ne1++;	
-	    }
+
+      for (auto k : Range(n_v_exp)) {
+	int cnt = 1;
+	auto & brow = rbuf[k];
+	auto pk = v_exps[k];
+	for (auto j : Range(brow[0])) {
+	  int sz = brow[cnt++];
+	  FlatArray<int> chunk (sz, &brow[cnt]);
+	  chunk[find_in_sorted_array(comm.Rank(), chunk)] = pk;
+	  QuickSort(chunk);
+	  int ind = -1;
+	  for (int l = 0; (l < new_dps.Size()) && (ind == -1) ; l++) {
+	    if (new_dps[l] == chunk) ind = l;
+	  }
+	  if (ind == -1) {
+	    new_dps.Append(Array<int>(chunk.Size()));
+	    new_dps.Last() = chunk;
+	    // cout << "added dps: "; prow(new_dps.Last()); cout << endl;
+	  }
+	  cnt += sz;
 	}
+      }
     }
-    
     //do pairwise intersect (local operation)
     Array<int> common_dist_procs(this->np);    
     bool changed = true;
-    while(changed)
-      {
-  	changed = false;
-  	//for (auto k:Range(new_dps.Size()))
-	for (size_t k=0;k<new_dps.Size();k++)
-	  {
-  	    //auto & rowk = new_dps[k];
-	    //changed loops - range would keep old range (?)
-  	    //for (auto j:Range(new_dps.Size()))
-	    for (size_t j=0;j<new_dps.Size();j++)
-	      {
-		//moved this inside bc. if resize still ref to old one!
-		auto & rowk = new_dps[k];
-		auto & rowj = new_dps[j];
-  		common_dist_procs.SetSize(0);
-  		for (auto p:rowk)
-  		  if(rowj.Contains(p))
-  		    common_dist_procs.Append(p);
-  		QuickSort(common_dist_procs);	      
-  		int pos = -1;
-  		for (size_t l=0;l<new_dps.Size() && (pos==-1);l++)
-  		  if(new_dps[l]==common_dist_procs)
-  		    pos = l;
-  		if(pos==-1) //we have a new eqc!!
-  		  {
-  		    new_dps.Append(Array<int>(common_dist_procs.Size()));
-  		    for (auto j:Range(common_dist_procs.Size()))
-  		      new_dps[new_dps.Size()-1][j] = common_dist_procs[j];
-  		    changed = true;
-  		  }
-	      }
-  	  }
-      }    
-  
+    {
+      static Timer ti("intersect"); RegionTimer rt(ti);
+      while(changed)
+	{
+	  changed = false;
+	  //for (auto k:Range(new_dps.Size()))
+	  for (size_t k=0;k<new_dps.Size();k++)
+	    {
+	      //auto & rowk = new_dps[k];
+	      //changed loops - range would keep old range (?)
+	      //for (auto j:Range(new_dps.Size()))
+	      for (size_t j=0;j<new_dps.Size();j++)
+		{
+		  //moved this inside bc. if resize still ref to old one!
+		  auto & rowk = new_dps[k];
+		  auto & rowj = new_dps[j];
+		  common_dist_procs.SetSize(0);
+		  for (auto p:rowk)
+		    if(rowj.Contains(p))
+		      common_dist_procs.Append(p);
+		  QuickSort(common_dist_procs);	      
+		  int pos = -1;
+		  for (size_t l=0;l<new_dps.Size() && (pos==-1);l++)
+		    if(new_dps[l]==common_dist_procs)
+		      pos = l;
+		  if(pos==-1) //we have a new eqc!!
+		    {
+		      new_dps.Append(Array<int>(common_dist_procs.Size()));
+		      for (auto j:Range(common_dist_procs.Size()))
+			new_dps[new_dps.Size()-1][j] = common_dist_procs[j];
+		      changed = true;
+		    }
+		}
+	    }
+	}    
+    }
+    
     TableCreator<int> ct1(new_dps.Size());
-    while(!ct1.Done()) {
+    for (; !ct1.Done(); ct1++) {
       for (auto k:Range(new_dps.Size()))
     	for (auto j:Range(new_dps[k].Size()))
     	  ct1.Add(k,new_dps[k][j]);
-      ct1++;
     }
     Table<int> t1 = ct1.MoveTable();
 
     this->SetupFromDPs(std::move(t1));
-    return;
-  } // end SetupFromInitialDPs(Table<int> && vanilla_dps)
+    comm.Barrier();
+  } // end SetupFromInitialDPs
 
-
+  
   void EQCHierarchy :: SetupFromDPs(Table<int> && anew_dps)
   {
-    static Timer t("EQCHierarchy::SetupFromDPs");
-    RegionTimer rt(t);
+    static Timer t("EQCHierarchy::SetupFromDPs"); RegionTimer rt(t);
     Table<int> new_dps = move(anew_dps);
     Array<int> perm(new_dps.Size());
     for (auto k : Range(new_dps.Size())) perm[k] = k;

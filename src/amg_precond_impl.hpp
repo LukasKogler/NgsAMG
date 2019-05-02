@@ -788,6 +788,7 @@ namespace amg
 	auto & vsort = node_sort[0];
 	/** Vertex positions **/
 	if (options->keep_vp) {
+	  static Timer t(this->name + string("::BuildTopMesh - VPOS")); RegionTimer rt(t);
 	  auto & vpos(node_pos[NT_VERTEX]); vpos.SetSize(top_mesh->template GetNN<NT_VERTEX>());
 	  for (auto k : Range(vpos.Size()))
 	    ma->GetPoint(k,vpos[vsort[k]]);
@@ -831,6 +832,7 @@ namespace amg
       throw Exception("Sorry, have not implemented this case yet either.");
     }
     /** Convert FreeDofs **/
+    static Timer tfd(this->name + string("::BuildTopMesh - FDS")); RegionTimer rtfd(tfd);
     auto fes_fds = fes->GetFreeDofs();
     auto fvs = make_shared<BitArray>(top_mesh->GetNN<NT_VERTEX>()); fvs->Clear();
     auto & vsort = node_sort[NT_VERTEX];

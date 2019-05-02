@@ -133,6 +133,7 @@ namespace amg {
   private:
 
     void SetupFromInitialDPs (Table<int> && vanilla_dps);
+    void SetupFromInitialDPs2 (Table<int> && vanilla_dps);
     void SetupFromDPs (Table<int> && new_dps);
 
     NgsAMG_Comm comm;
