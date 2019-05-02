@@ -38,6 +38,7 @@ namespace amg {
 	  if (opts->energy == "ELMAT") opts->edges = "ELMAT";
 	// else if (opts->energy == "ALG") opts->edges = "ALG"; // not implemented yet
       }
+      else if (name == "sync") { opts->sync = item.second.cast<bool>(); }
       else if (name == "edges") { edges_set = true; opts->edges = capitalize_it(item.second.cast<string>()); }
       else if (name == "clev") { opts->clev_type = capitalize_it(item.second.cast<string>()); }
       else if (name == "clev_inv") { opts->clev_type = item.second.cast<string>(); }

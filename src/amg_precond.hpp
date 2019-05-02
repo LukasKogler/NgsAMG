@@ -78,6 +78,7 @@ namespace amg
       string clev_inv_type = "masterinverse";
       /** Wether we keep track of info **/
       INFO_LEVEL info_level = NONE;
+      bool sync = true;
     };
 
     

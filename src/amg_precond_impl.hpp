@@ -752,11 +752,19 @@ namespace amg
   template<class AMG_CLASS, class HTVD, class HTED>
   void EmbedVAMG<AMG_CLASS, HTVD, HTED> :: FinalizeLevel (const BaseMatrix * mat)
   {
-    static Timer t(this->name+string("::FinalizeLevel")); RegionTimer rt(t);
+    static Timer t(string("EmbedVAMG::FinalizeLevel")); RegionTimer rt(t);
     if (mat != nullptr)
       { finest_mat = shared_ptr<BaseMatrix>(const_cast<BaseMatrix*>(mat), NOOP_Deleter); }
     else
       { finest_mat = bfa->GetMatrixPtr(); }
+
+    if (options->sync)
+      {
+	if (auto pmat = dynamic_pointer_cast<ParallelMatrix>(finest_mat)) {
+	  static Timer t(string("EmbedVAMG::FinalizeLevel - Sync")); RegionTimer rt(t);
+	  pmat->GetParallelDofs()->GetCommunicator().Barrier();
+	}
+      }
 
     auto mesh = BuildInitialMesh();
     amg_pc = make_shared<AMG_CLASS>(mesh, options);
@@ -773,11 +781,18 @@ namespace amg
   shared_ptr<BlockTM> EmbedVAMG<AMG_CLASS, HTVD, HTED> :: BuildTopMesh ()
   {
     static Timer t(this->name + string("::BuildTopMesh")); RegionTimer rt(t);
+    static Timer t1(this->name + string("::BuildTopMesh part 1"));
+    static Timer t2(this->name + string("::BuildTopMesh part 1"));
+    static Timer t3(this->name + string("::BuildTopMesh part 1"));
+
+    t1.Start();
     auto & O(*options);
     shared_ptr<BlockTM> top_mesh = nullptr;
     auto fpd = finest_mat->GetParallelDofs();
     // auto eqc_h = make_shared<EQCHierarchy>(fpd, true); // TODO: this could be more efficient
     auto eqc_h = make_shared<EQCHierarchy>(ma, Array<NODE_TYPE>({NT_VERTEX}), true); // TODO: this could be more efficient
+    t1.Stop();
+    t2.Start();
     if (O.edges == "MESH") { // convert Netgen-mesh to AMG-Mesh
       if (O.v_pos == "VERTEX") {
 	/** edges to edges **/
@@ -831,6 +846,8 @@ namespace amg
     else { // vertices/edges from matrix (is this even relevant??)
       throw Exception("Sorry, have not implemented this case yet either.");
     }
+    t2.Stop();
+    t3.Start();
     /** Convert FreeDofs **/
     static Timer tfd(this->name + string("::BuildTopMesh - FDS")); RegionTimer rtfd(tfd);
     auto fes_fds = fes->GetFreeDofs();
@@ -840,6 +857,7 @@ namespace amg
     // cout << "vertex sort: " << endl; prow2(vsort); cout << endl;
     options->free_verts = fvs;
     options->finest_free_dofs = fes_fds;
+    t3.Stop();
     return top_mesh;
   }
 

@@ -6,7 +6,7 @@ namespace amg {
   EQCHierarchy :: EQCHierarchy (const shared_ptr<MeshAccess> & ma, Array<NODE_TYPE> nts, bool do_cutunion)
     : comm(ma->GetCommunicator())
   {
-    static Timer t("EQCHierarchy::Constructor 1"); comm.Barrier(); RegionTimer rt(t);
+    static Timer t("EQCHierarchy::Constructor 1"); RegionTimer rt(t);
     Table<int> vanilla_dps;
     Array<int> size_of_dps(100); size_of_dps.SetSize0();
     Array<int> index_of_block(100); index_of_block.SetSize0();
@@ -119,7 +119,6 @@ namespace amg {
 
   void EQCHierarchy :: SetupFromInitialDPs (Table<int> && _vanilla_dps)
   {
-    comm.Barrier();
     static Timer t("EQCHierarchy::SetupFromInitialDPs");
     RegionTimer rt(t);
 
@@ -311,7 +310,6 @@ namespace amg {
     Table<int> t1 = ct1.MoveTable();
 
     this->SetupFromDPs(std::move(t1));
-    comm.Barrier();
   } // end SetupFromInitialDPs
 
   
