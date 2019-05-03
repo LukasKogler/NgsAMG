@@ -629,16 +629,15 @@ namespace amg
     /** ex-edge matrices:  calc & reduce full cmats **/
     if (neqcs>1) {
       Array<int> perow(neqcs);
-      perow[0] = 0;
       for (auto k : Range(neqcs))
 	perow[k] = cmesh.template GetENN<NT_EDGE>(k) + cmesh.template GetCNN<NT_EDGE>(k);
+      perow[0] = 0;
       Table<TM> tcemats(perow); perow = 0;
       cmesh.template ApplyEQ<NT_EDGE>(Range(size_t(1), neqcs), [&](auto eqc, const auto & cedge){
 	  calc_cemat(cedge, tcemats[eqc][perow[eqc]++],
 		     [&](auto fenr) { return eqc_h.IsMasterOfEQC(mesh.template GetEqcOfNode<NT_EDGE>(fenr)); } );
 	}, false); // def, false!
       Table<TM> cemats = ReduceTable<TM,TM> (tcemats, sp_eqc_h, [&](auto & tab) { return sum_table(tab); });
-      /** ex-edge matrices:  split to bend + wigg-mats **/
       perow = 0;
       cmesh.template ApplyEQ<NT_EDGE>(Range(size_t(1), neqcs), [&](auto eqc, const auto & cedge){
 	  ced[cedge.id] = cemats[eqc][perow[eqc]++];
