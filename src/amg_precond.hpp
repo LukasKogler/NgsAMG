@@ -56,6 +56,7 @@ namespace amg
       double disc_fac_ok     = 0.95;       // accept discard map if we reduce by at least this
       /** Contract (Re-Distribute) **/
       bool enable_ctr = true;              // enable re-distributing
+      int skip_ctr_first = 3;                    // skip for contract
       double ctr_after_frac = 0.05;        // re-distribute after we have reduced the NV by this factor
       double ctr_crs_thresh = 0.7;         // if coarsening slows down more than this, ctract
       double ctr_pfac = 0.25;              // contract proc-factor (overruled by min NV per proc)
@@ -86,7 +87,7 @@ namespace amg
       /** Only values on rank 0 are true, others can be garbage !! **/
       INFO_LEVEL ilev;
       // BASIC+ // summary values
-      Array<INT<3>> lvs;                   // levels [CRS,CTR,DISC]
+      Array<INT<4>> lvs;                   // levels [CRS,CTR,DISC, SMOOTH]
       Array<int> isass;                    // is level assembled?
       Array<size_t> NVs;                   // NR of vertices per level
       double v_comp;                       // vertex-complexity: \frac{sum_l NV_l}{NV_0}
@@ -100,6 +101,7 @@ namespace amg
       Array<double> mcc1;                  // ...
       double mem_comp2;                    // memory-complexity, V1:  \frac{sum_l MSM_l}{ MMAT_0 }
       Array<double> mcc2;                  // ...
+      Array<double> rpp;                   // avg prol-per-row entries
       // EXTRA+ // per-level local info
       double v_comp_l;                     // max. local v-comp
       Array<double> vcc_l;                 // ...
@@ -120,7 +122,7 @@ namespace amg
 	  array.SetSize(asize); array.SetSize0();
 	};
 	if (ilev >= BASIC)
-	  { alloc(lvs); alloc(isass); alloc(NVs); alloc(vcc); alloc(occ); }
+	  { alloc(lvs); alloc(isass); alloc(NVs); alloc(vcc); alloc(occ); alloc(rpp); }
 	if (ilev >= DETAILED)
 	  { alloc(mcc1); alloc(mcc2); alloc(NEs); alloc(NPs); }
 	if (ilev >= EXTRA)
@@ -132,7 +134,7 @@ namespace amg
 	auto comm = amesh->GetEQCHierarchy()->GetCommunicator();
 	if(!has_comm) { has_comm = true; glob_comm = comm; }
 	if (comm.Rank() == 0) {
-	  lvs.Append(level);
+	  lvs.Append(INT<4>(level[0], level[1], level[2], -1));
 	  isass.Append(assit?1:0);
 	  NVs.Append(amesh->template GetNNGlobal<NT_VERTEX>());
 	}
@@ -146,6 +148,14 @@ namespace amg
 	size_t locnv_l = amesh->template GetENN<NT_VERTEX>(0);
 	size_t locnv_g = comm.Reduce(locnv_l, MPI_SUM, 0);
 	if (comm.Rank()==0) fvloc.Append( locnv_g/double(NVs.Last()) );
+      }
+
+      void LogProl (INT<3> level, shared_ptr<BaseSparseMatrix> prol, bool smoothed)
+      {
+	if (ilev == NONE) return;
+	if (glob_comm.Rank() == 0) { lvs.Last()[3] = smoothed ? 1 : 0; }
+	int mes = sqrt(GetEntrySize(prol.get()));
+	rpp.Append( (prol->Height() ? mes * (double(prol->NZE()) / prol->Height()) : 0));
       }
       
       void LogMatSm (shared_ptr<BaseSparseMatrix> & amat, shared_ptr<BaseSmoother> & sm) {
@@ -203,7 +213,10 @@ namespace amg
 	v_comp_l = 0; double vcl0 = max2(1.0, vcc_l[0]);
 	for (auto k : Range(n_meshes))
 	  if (isass[k]==1) { double val = vcc_l[k]/vcl0; v_comp_l += val; vcc_l[k] = val; }
+	double cpvc = v_comp_l;
 	lam_max(v_comp_l, vcc_l);
+	// RPP (get RPP of rank with max. loc OC)
+	lam_max(cpvc, rpp);
 	// OC-L
 	op_comp_l = 0; double ocl0 = max2(1.0, occ_l[0]);
 	for (auto k : Range(n_mats))

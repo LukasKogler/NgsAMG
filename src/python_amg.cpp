@@ -57,6 +57,8 @@ namespace amg {
       else if (name == "ctr_min_nv") { opts->ctr_min_nv = item.second.cast<size_t>(); }
       else if (name == "ctr_seq_nv") { opts->ctr_seq_nv = item.second.cast<size_t>(); }
       else if (name == "ctr_frac") { opts->ctr_after_frac = item.second.cast<double>(); }
+      else if (name == "ctr_crs_thresh") { opts->ctr_crs_thresh = item.second.cast<double>(); }
+      else if (name == "skip_ctr") { opts->skip_ctr_first = item.second.cast<int>(); }
       else if (name == "log_level") { opts->info_level = int_to_il(item.second.cast<int>()); }
       else if (name == "crs_v_thresh") { opts->min_vcw = item.second.cast<double>(); }
       else if (name == "crs_e_thresh") { opts->min_ecw = item.second.cast<double>(); }
@@ -75,6 +77,16 @@ namespace amg {
     return pl;
   }
 
+  py::list py_list_int4p1 (Array<INT<4>> & ar, Array<int> & ar2) {
+    py::list pl(ar.Size());
+    for (auto k : Range(ar.Size())) {
+      auto v = ar[k]; auto v2 = ar2[k];
+      pl[k] = py::make_tuple(v[0], v[1], v[2], v2, v[3]);
+    }
+    return pl;
+  }
+
+  
   template<class T>
   py::list py_list (Array<T> & ar) {
     py::list pl(ar.Size());
@@ -98,7 +110,7 @@ namespace amg {
       pd["log_level"] = il_to_str(spi->ilev);
       if ( spi->has_comm && spi->glob_comm.Rank() !=0 ) return py::none();
       if (spi->ilev >= BASIC) {
-	pd["levels"] = py_list_int3p1(spi->lvs, spi->isass);
+	pd["levels"] = py_list_int4p1(spi->lvs, spi->isass);
 	pd["VC"] = spi->v_comp;
 	pd["VCcs"] = py_list(spi->vcc);
 	pd["OC"] = spi->op_comp;
@@ -116,6 +128,7 @@ namespace amg {
 	pd["OC_LOCcs"] = py_list(spi->occ_l);
 	pd["VC_LOC"] = spi->v_comp_l;
 	pd["VC_LOCcs"] = py_list(spi->vcc_l);
+	pd["RPP"] = py_list(spi->rpp);
       }
       if (spi->ilev >= EXTRA) {
       }

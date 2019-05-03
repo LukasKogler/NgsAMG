@@ -108,6 +108,7 @@ namespace amg
 	    // cout << " initial coned step: " << dof_step << " " << typeid(dof_step).name() << endl;
 	  }
 	  else { dof_step = prol_step; }
+	  infos->LogProl(level, prol_step->GetProl(), smoothit);
        	  level[0]++; level[1] = level[2] = 0;
        	}
 	else if ( !disc_locked ) {throw Exception("Discard-Map not yet ported to new Version!"); }
@@ -139,7 +140,8 @@ namespace amg
 	if (assit) { ass_levels.Append(level); cutoffs.Append(step_cnt); last_nv_ass = next_nv; }
 	// Unlock contract ?
 	if ( (level[1] == 0) && (level[2]==0) ) {
-	  if ( options->ctr_after_frac * last_nv_ctr > next_nv) { contr_locked = false; }
+	  if (level[0] < options->skip_ctr_first) { contr_locked = true; }
+	  else if ( options->ctr_after_frac * last_nv_ctr > next_nv) { contr_locked = false; }
 	  else if ( frac_crs > options->ctr_crs_thresh) { contr_locked = false; }
 	  if (!contr_locked) {
 	    if (next_nv <= options->ctr_seq_nv) { /*cout << "redis to 1 rank" << endl;*/ this->ctr_factor = -1; }
