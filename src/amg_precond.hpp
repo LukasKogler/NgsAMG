@@ -257,6 +257,20 @@ namespace amg
     { return this->amg_mat->GetNDof(level, rank); }
     shared_ptr<Info> GetInfo () const { return infos; }
 
+    // temporary (!!) hack
+    // INLINE void SmoothProlongation_hack (ProlMap<ASPM>* pmap, shared_ptr<TopologicMesh> mesh) const
+    template<class ASPM>
+    INLINE void SmoothProlongation_hack (ProlMap<ASPM>* pmap, shared_ptr<TMESH> mesh) const
+    {
+      if constexpr(is_same<ASPM,TSPMAT>::value) {
+	  // SmoothProlongation (shared_ptr<ProlMap<TSPMAT>>(pmap, NOOP_Deleter), const_pointer_cast<TMESH>(mesh));
+	  SmoothProlongation (shared_ptr<ProlMap<TSPMAT>>(pmap, NOOP_Deleter), mesh);
+	}
+      else {
+	throw Exception(string("Cannot smooth this prol: ") + typeid(ASPM).name());
+      }
+    }
+
   protected:
     string name = "VWiseAMG";
     shared_ptr<Options> options;
@@ -328,7 +342,7 @@ namespace amg
       bool keep_vp = false; // save vertex position
       /** energy: 
 	    "ELMAT" -> calc from elmats, use ext_blf if given, else blf (not back yet)
-	    "ALGEB" -> determine algebraically (not implemented)
+	    "ALG" -> determine algebraically (not implemented)
 	    "TRIV" -> use 1 weights everywhere **/
       string energy = "TRIV"; shared_ptr<BilinearForm> ext_blf = nullptr; shared_ptr<BitArray> elmat_dofs = nullptr;
       /** kvecs: 

@@ -100,7 +100,7 @@ namespace amg
       }
       // cout << "elmat edge weights: " << endl; prow2(bd); cout << endl;
     }
-    else { // "ALGEB"
+    else { // "ALG"
       // provisional for now, will probably only work on actually nodal mats
       FlatArray<int> vsort = node_sort[NT_VERTEX];
       Array<int> rvsort(vsort.Size());
@@ -135,9 +135,9 @@ namespace amg
   {
     auto & vsort = node_sort[NT_VERTEX];
     shared_ptr<ParallelDofs> fpds = finest_mat->GetParallelDofs();
-    auto pmap = make_shared<ProlMap<SparseMatrix<double>>>(fpds, nullptr);
-    pmap->SetProl(BuildPermutationMatrix<double>(vsort));
-    return pmap;
+    // auto pmap = make_shared<ProlMap<SparseMatrix<double>>>(fpds, nullptr);
+    // pmap->SetProl(BuildPermutationMatrix<double>(vsort));
+    return make_shared<ProlMap<SparseMatrix<double>>>(BuildPermutationMatrix<double>(vsort), fpds, nullptr);
   }
 
   

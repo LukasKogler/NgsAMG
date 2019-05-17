@@ -94,6 +94,22 @@ namespace amg
   EXTERN template class EmbedVAMG<H1AMG>;
 #endif
 
+#if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGMAP_CPP)
+#define InstProlMap(A,B) \
+  EXTERN template class ProlMap<stripped_spm<Mat<A,B,double>>>;
+
+  InstProlMap(1,1);
+#ifdef ELASTICITY
+  InstProlMap(1,3);
+  InstProlMap(2,3);
+  InstProlMap(3,3);
+  InstProlMap(1,6);
+  InstProlMap(3,6);
+  InstProlMap(6,6);
+#endif
+#undef InstProLMap  
+#endif
+  
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGELAST_CPP)
 #ifdef ELASTICITY
   //#ifndef FILE_AMGELAST_CPP

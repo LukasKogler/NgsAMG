@@ -100,7 +100,11 @@ namespace amg
 	    {
 	      last_nv_smo = curr_nv;
 	      // cout << "smooth prol on level " << level << endl;
-	      SmoothProlongation(prol_step, static_pointer_cast<TMESH>(gstep_coarse->GetMesh()));
+	      // prol_step->SetSmoothed (this, static_pointer_cast<TMESH>(gstep_coarse->GetMesh()));
+	      // prol_step->SetSmoothed (&this->SmoothProlongation_hack<TSPMAT>, static_pointer_cast<TMESH>(gstep_coarse->GetMesh()));
+	      // prol_step->SetSmoothed ([this, gstep_coarse](auto x) { SmoothProlongation_hack(x, static_pointer_cast<TMESH>(gstep_coarse->GetMesh())); });
+	      prol_step->SetSmoothed ([this, fm](auto x) { SmoothProlongation_hack(x, fm); });
+	      // SmoothProlongation(prol_step, static_pointer_cast<TMESH>(gstep_coarse->GetMesh()));
 	    }
 	  if ( (level[0] == 0) && (embed_step != nullptr) ) {
 	    // cout << " conc embed step! " << endl;
@@ -300,8 +304,7 @@ namespace amg
     // cout << "have pw-prol: " << prol->Height() << " x " << prol->Width() << endl;
     // print_tm_spmat(cout, *prol); cout << endl;
 
-    auto pmap = make_shared<ProlMap<TSPMAT>> (fpd, cpd);
-    pmap->SetProl(prol);
+    auto pmap = make_shared<ProlMap<TSPMAT>> (prol, fpd, cpd);
 	
     // if (options->do_smooth==true)
     //   SmoothProlongation(pmap, static_pointer_cast<TMESH>(cmap.GetMesh()));

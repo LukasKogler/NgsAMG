@@ -1,3 +1,4 @@
+#define FILE_AMGMAP_CPP
 
 #include "amg.hpp"
 
@@ -81,6 +82,126 @@ namespace amg
     return mats;
   }
 
+  // template<class TMAT>
+  // shared_ptr<BaseVector> ProlMap<TMAT>  :: CreateVector() const
+  // {
+  //   return make_shared<S_ParallelBaseVectorPtr<typename TMAT::TSCAL>>
+  //     (pardofs->GetNDofLocal(), pardofs->GetEntrySize(), pardofs, DISTRIBUTED);
+  // }
+
+  // template<class TMAT>
+  // shared_ptr<BaseVector> ProlMap<TMAT>  :: CreateMappedVector() const
+  // {
+  //   return make_shared<S_ParallelBaseVectorPtr<typename TMAT::TSCAL>>
+  //     (mapped_pardofs->GetNDofLocal(), mapped_pardofs->GetEntrySize(), mapped_pardofs, DISTRIBUTED);
+  // }
+
+
+  template<class TMAT>
+  void ProlMap<TMAT> :: TransferF2C (const shared_ptr<const BaseVector> & x_fine,
+				     const shared_ptr<BaseVector> & x_coarse) const
+  {
+    RegionTimer rt(timer_hack_prol_f2c());
+    x_coarse->FVDouble() = 0.0;
+    prol->MultTransAdd(1.0, *x_fine, *x_coarse);
+    x_coarse->SetParallelStatus(DISTRIBUTED);
+  }
+
+  template<class TMAT>
+  void ProlMap<TMAT> :: TransferC2F (const shared_ptr<BaseVector> & x_fine,
+				     const shared_ptr<const BaseVector> & x_coarse) const
+  {
+    RegionTimer rt(timer_hack_prol_c2f());
+    x_coarse->Cumulate();
+    prol->Mult(*x_coarse, *x_fine);
+    x_fine->SetParallelStatus(CUMULATED);
+  }
   
+  template<class TMAT>
+  shared_ptr<BaseDOFMapStep> ProlMap<TMAT> :: Concatenate (shared_ptr<BaseDOFMapStep> other)
+
+  {
+    if (auto opmap = dynamic_pointer_cast<ProlMap<TCMAT>>(other)) {
+      if ( (!opmap->IsPW()) && opmap->WantSM()) {
+	throw Exception("Right ProlMap should always be final!!");
+	return nullptr;
+      }
+      // P - S(...)    -> return TPM [P, S(..)]
+      if ( (IsPW()) && (!WantSM()) && (!opmap->IsPW()) ) {
+	return make_shared<TwoProlMap<TMAT, TCMAT>> (make_shared<ProlMap<TMAT>> (GetProl(), GetParDofs(), GetMappedParDofs()), opmap);
+      }
+      // P - P         -> mult, return PMAP
+      // (S)P - P      -> mult, smooth, return PMAP
+      // (S)P - S(...) -> smooth, mult, returm PMAP
+      if ( IsPW() && WantSM() && (!opmap->IsPW()) )
+	{ // (S)P - S(...)
+	  Smooth();
+	}
+      auto comp_prol = MatMultAB<TMAT, TCMAT> (*prol, *opmap->GetProl());
+      auto comp_map = make_shared<ProlMap<mult_spm<TMAT, TCMAT>>> (comp_prol, GetParDofs(), opmap->GetMappedParDofs(),
+								   (IsPW() && opmap->IsPW()) );
+      comp_map->SetSmoothed(SMFUNC);
+      if ( comp_map->WantSM() )
+	{ // (S)P - P
+	  comp_map->Smooth();
+	}
+      return comp_map;
+    }
+    else if (auto otmp = dynamic_pointer_cast<TwoProlMap<TCMAT, TCMAT>>(other)) {
+      auto comp_map = static_pointer_cast<ProlMap<mult_spm<TMAT, TCMAT>>>(Concatenate (otmp->GetLMap()));
+      // P - [P.., S(..)]
+      if (comp_map->IsPW()) { // [PP.., S(..)]
+	return make_shared<TwoProlMap<mult_spm<TMAT, TCMAT>, TCMAT>> (comp_map, otmp->GetRMap());
+      }
+      else { // S(PP..), S(...)
+	auto comp_comp_prol = MatMultAB<mult_spm<TMAT, TCMAT>, TCMAT> (*comp_map->GetProl(), *otmp->GetRMap()->GetProl());
+	return make_shared<ProlMap<mult_spm<TMAT, TCMAT>>> (comp_comp_prol, GetParDofs(), otmp->GetMappedParDofs(), false);
+      }
+    }
+    else {
+      return nullptr;
+    }
+  }
+
   
+  // template<class TMAT>
+  // void ProlMap<TMAT> :: SetSmoothed (const VWiseAMG* aamg, shared_ptr<TopologicMesh> amesh)
+  // {
+  //   if (!IsPW()) { throw Exception("Cannot set smoothed (Already smoothed)."); }
+  //   amg = aamg; mesh = amgesh;
+  // }
+
+  template<class TMAT>
+  void ProlMap<TMAT> :: SetSmoothed ( std::function<void(ProlMap<TMAT> * map)> ASMFUNC)
+  {
+    if (!IsPW()) { throw Exception("Cannot set smoothed (Already smoothed)."); }
+    SMFUNC = ASMFUNC; has_smf = true; // mesh = amesh;
+  }
+
+  
+  template<class TMAT>
+  void ProlMap<TMAT> :: Smooth ()
+  {
+    if (!IsPW()) { throw Exception("Cannot smooth twice."); }
+    if (!WantSM()) { throw Exception("Cannot smooth (not set)."); }
+    //amg->SmoothProlongation_hack (this, mesh);
+    SMFUNC(this);
+    SMFUNC = [](auto x) { ; };
+    has_smf = false;
+    ispw = false;
+  }
+  
+  template<class TMAT>
+  shared_ptr<BaseSparseMatrix> ProlMap<TMAT> :: AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const
+  {
+    auto tfmat = dynamic_pointer_cast<TFMAT>(mat);
+    if (tfmat==nullptr) {
+      throw Exception(string("Cannot cast to ") + typeid(TFMAT).name() + string("!!") );
+      return nullptr;
+    }
+    return RestrictMatrix<TFMAT, TMAT> (*tfmat, *prol);
+  }
+
 } // namespace amg
+
+#include "amg_tcs.hpp"
