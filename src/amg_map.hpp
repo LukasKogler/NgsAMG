@@ -86,7 +86,7 @@ namespace amg {
   public:
     void AddStep(const shared_ptr<BaseDOFMapStep> step) { steps.Append(step); }
     shared_ptr<BaseDOFMapStep> GetStep (int k) { return steps[k]; }
-    void SetCutoffs (FlatArray<size_t> acutoffs);
+    void Finalize (FlatArray<size_t> acutoffs, shared_ptr<BaseDOFMapStep> embed_step);
     INLINE void TransferF2C (size_t lev_start, const shared_ptr<const BaseVector> & x_fine,
 			     const shared_ptr<BaseVector> & x_coarse) const
     { steps[lev_start]->TransferF2C(x_fine, x_coarse);}
@@ -170,8 +170,8 @@ namespace amg {
     using TFMAT = typename amg_spm_traits<TMAT>::T_LEFT;
     using TCMAT = typename amg_spm_traits<TMAT>::T_RIGHT;
 
-    ProlMap (shared_ptr<TMAT> aprol, shared_ptr<ParallelDofs> fpd, shared_ptr<ParallelDofs> cpd, bool apw = false)
-      : BaseDOFMapStep(fpd, cpd), prol(aprol), ispw(apw), has_smf(false), SMFUNC([](auto x) { ; })
+    ProlMap (shared_ptr<TMAT> aprol, shared_ptr<ParallelDofs> fpd, shared_ptr<ParallelDofs> cpd, bool apw = true)
+      : BaseDOFMapStep(fpd, cpd), prol(aprol), ispw(apw), has_smf(false), SMFUNC([](auto x) { ; }), LOGFUNC([](auto x) { ; })
     { ; }
 
     virtual void TransferF2C (const shared_ptr<const BaseVector> & x_fine,
@@ -190,17 +190,29 @@ namespace amg {
     INLINE void SetProl (shared_ptr<TMAT> aprol) { prol = aprol; }
 
     INLINE bool IsPW () const { return ispw; }
-    INLINE bool WantSM () const { return has_smf; }
+    INLINE bool CanSM () const { return has_smf; }
+    INLINE bool WantSM () const { return has_smf && force_smf; }
     // void SetSmoothed (const VWiseAMG* aamg, shared_ptr<TopologicMesh> amesh);
     // void SetSmoothed (void (*SMFUNC) (ProlMap<TMAT> * map, shared_ptr<TopologicMesh> mesh), shared_ptr<TopologicMesh> amesh);
-    void SetSmoothed ( std::function<void(ProlMap<TMAT> * map)> ASMFUNC);
+    void SetSmoothed ( std::function<void(ProlMap<TMAT> * map)> ASMFUNC, bool force = true);
+    void SetLog ( std::function<void(shared_ptr<BaseSparseMatrix> prol)> ALOGFUNC);
+    std::function<void(shared_ptr<BaseSparseMatrix>)> GetLog () { return LOGFUNC; }
+    void ClearSmoothed ( );
     void Smooth (); 
-    
+
+    void SetCnt (int acnt) const { cnt = acnt; }
+    int GetCnt () const { return cnt; }
+
   protected:
     shared_ptr<TMAT> prol;
-    bool ispw; bool has_smf;
-
+    mutable bool ispw = true;
+    mutable bool has_smf = false;
+    mutable bool force_smf = false;
+    mutable bool has_lf = false;
+    mutable int cnt = 0;
+    
     std::function<void(ProlMap<TMAT> * map)> SMFUNC;
+    std::function<void(shared_ptr<BaseSparseMatrix> prol)> LOGFUNC;
     // shared_ptr<TopologicMesh> mesh;
   };
 
@@ -227,6 +239,8 @@ namespace amg {
     { // can only happen for [PP, S(..)] case with first map
       // AAAARGH MORE HACKS AAAAAAA
       const_cast<shared_ptr<SPM>&>(prol) = MatMultAB<SPML, SPMR>(*lmap->GetProl(), *rmap->GetProl());
+      this->SetCnt(lmap->GetCnt() + rmap->GetCnt());
+      this->ispw = rmap->IsPW() && lmap->IsPW();
       const_cast<shared_ptr<ProlMap<SPML>>&>(lmap) = nullptr;
       const_cast<shared_ptr<ProlMap<SPMR>>&>(rmap) = nullptr;
       return ProlMap<SPM> :: AssembleMatrix(mat);      

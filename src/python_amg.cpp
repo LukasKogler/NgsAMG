@@ -53,6 +53,7 @@ namespace amg {
       else if (name == "sm_skip_lev") { py::list py_list = item.second.cast<py::list>(); opts->sm_skip_levels = move(makeCArray<int>(py_list)); }
       else if (name == "force_sm") { py::list py_list = item.second.cast<py::list>(); opts->force_sm = true; opts->sm_levels = move(makeCArray<int>(py_list)); }
       else if (name == "sm_frac") { opts->smooth_after_frac = item.second.cast<double>(); }
+      else if (name == "comp_sm") { opts->composite_smooth = item.second.cast<bool>(); }
       else if (name == "enable_redist") { opts->enable_ctr = item.second.cast<bool>(); }
       else if (name == "ctr_min_nv") { opts->ctr_min_nv = item.second.cast<size_t>(); }
       else if (name == "ctr_seq_nv") { opts->ctr_seq_nv = item.second.cast<size_t>(); }

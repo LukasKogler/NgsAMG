@@ -73,6 +73,7 @@ namespace amg
       Array<int> sm_levels;                // force prol-smoothing on these levels
       Array<int> sm_skip_levels;           // forbid prol-smoothing on these levels
       bool force_sm = false;               // force smoothing on exactyle sm_levels
+      bool composite_smooth = true;        // concatenate prols before or after smoothing
       /** Smoothers - haha, you have no choice  **/
       /** Coarsest level opts **/
       string clev_type = "INV"; // available: "INV", "NOTHING"
@@ -133,9 +134,9 @@ namespace amg
 	if (ilev == NONE) return;
 	auto comm = amesh->GetEQCHierarchy()->GetCommunicator();
 	if(!has_comm) { has_comm = true; glob_comm = comm; }
+	isass.Append(assit?1:0);
 	if (comm.Rank() == 0) {
 	  lvs.Append(INT<4>(level[0], level[1], level[2], -1));
-	  isass.Append(assit?1:0);
 	  NVs.Append(amesh->template GetNNGlobal<NT_VERTEX>());
 	}
 	if (ilev <= BASIC) return;
@@ -144,16 +145,22 @@ namespace amg
 	  NPs.Append(comm.Size());
 	}
 	if (ilev <= DETAILED) return;
-	vcc_l.Append(amesh->template GetNN<NT_EDGE>());
+	vcc_l.Append(amesh->template GetNN<NT_VERTEX>());
 	size_t locnv_l = amesh->template GetENN<NT_VERTEX>(0);
 	size_t locnv_g = comm.Reduce(locnv_l, MPI_SUM, 0);
 	if (comm.Rank()==0) fvloc.Append( locnv_g/double(NVs.Last()) );
       }
 
-      void LogProl (INT<3> level, shared_ptr<BaseSparseMatrix> prol, bool smoothed)
+      void LogSMP (INT<3> level, bool smoothed)
       {
 	if (ilev == NONE) return;
 	if (glob_comm.Rank() == 0) { lvs.Last()[3] = smoothed ? 1 : 0; }
+      }
+      
+      void LogProl (shared_ptr<BaseSparseMatrix> prol)
+      {
+	if (ilev == NONE) return;
+	// if (glob_comm.Rank() == 0) { lvs.Last()[3] = smoothed ? 1 : 0; }
 	int mes = sqrt(GetEntrySize(prol.get()));
 	rpp.Append( (prol->Height() ? mes * (double(prol->NZE()) / prol->Height()) : 0));
       }

@@ -85,6 +85,8 @@ namespace amg
 	  cnt_lc++;
 	  // cout << "crs dms " << endl;
 	  auto prol_step = BuildDOFMapStep(gstep_coarse, fm_pd);
+	  prol_step->SetCnt(1);
+	  cout << "prol level " << level << " " << prol_step->GetProl()->Height() << " x " << prol_step->GetProl()->Width() << endl;
 	  // cout << "crs dms ok" << endl;
 	  bool smoothit = true;
 	  // Smooth prol?
@@ -103,19 +105,30 @@ namespace amg
 	      // prol_step->SetSmoothed (this, static_pointer_cast<TMESH>(gstep_coarse->GetMesh()));
 	      // prol_step->SetSmoothed (&this->SmoothProlongation_hack<TSPMAT>, static_pointer_cast<TMESH>(gstep_coarse->GetMesh()));
 	      // prol_step->SetSmoothed ([this, gstep_coarse](auto x) { SmoothProlongation_hack(x, static_pointer_cast<TMESH>(gstep_coarse->GetMesh())); });
-	      prol_step->SetSmoothed ([this, fm](auto x) { SmoothProlongation_hack(x, fm); });
-	      // SmoothProlongation(prol_step, static_pointer_cast<TMESH>(gstep_coarse->GetMesh()));
+	      cout << "SET SMOOTHED!" << endl;
+	      prol_step->SetSmoothed ([this, fm](auto x) { SmoothProlongation_hack(x, fm); }, false);
+	      if (!options->composite_smooth)
+		{ prol_step->Smooth(); }
+		// SmoothProlongation(prol_step, static_pointer_cast<TMESH>(gstep_coarse->GetMesh()));
 	    }
-	  if ( (level[0] == 0) && (embed_step != nullptr) ) {
-	    // cout << " conc embed step! " << endl;
-	    dof_step = embed_step->Concatenate(prol_step);
-	    // cout << " initial coned step: " << dof_step << " " << typeid(dof_step).name() << endl;
+	  else {
+	    prol_step->SetSmoothed ([this, fm](auto x) { SmoothProlongation_hack(x, fm); }, false);
 	  }
-	  else { dof_step = prol_step; }
-	  infos->LogProl(level, prol_step->GetProl(), smoothit);
+	  // move this to later
+	  // if ( (level[0] == 0) && (embed_step != nullptr) ) {
+	  //   // cout << " conc embed step! " << endl;
+	  //   dof_step = embed_step->Concatenate(prol_step);
+	  //   // cout << " initial coned step: " << dof_step << " " << typeid(dof_step).name() << endl;
+	  // }
+	  // else { dof_step = prol_step; }
+	  dof_step = prol_step;
+	  cout << "log smoothed " << level << " " << smoothit << endl;
+	  infos->LogSMP(level, smoothit);
+	  prol_step->SetLog([this] (auto x) { infos->LogProl(x); });
+	  // infos->LogProl(level, prol_step->GetProl(), smoothit);
        	  level[0]++; level[1] = level[2] = 0;
        	}
-	else if ( !disc_locked ) {throw Exception("Discard-Map not yet ported to new Version!"); }
+	else if ( !disc_locked ) { throw Exception("Discard-Map not yet ported to new Version!"); }
        	else { throw Exception("No map variant worked!"); break; } // all maps failed
 	fm = dynamic_pointer_cast<TMESH>(grid_step->GetMappedMesh());
 	if (fm != nullptr && fm->template GetNNGlobal<NT_VERTEX>()==0) { // can happen due to discard/vertex ground
@@ -168,8 +181,8 @@ namespace amg
     // cout << " cutoffs are: " << endl; prow2(cutoffs, cout); cout << endl;
     
     {
-      static Timer t(timer_name + string("-ConcDofMaps")); RegionTimer rt(t);
-      dof_map->SetCutoffs(cutoffs);
+      static Timer t(timer_name + string("-FinalizeDOFMaps")); RegionTimer rt(t);
+      dof_map->Finalize(cutoffs, embed_step);
     }
 
     static Timer tmats(timer_name + string("-AssembleMats"));

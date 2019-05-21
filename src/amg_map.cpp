@@ -5,11 +5,15 @@
 namespace amg
 {
 
-  void DOFMap :: SetCutoffs (FlatArray<size_t> acutoffs)
+  void DOFMap :: Finalize (FlatArray<size_t> acutoffs, shared_ptr<BaseDOFMapStep> embed_step)
   {
     cutoffs.SetSize(acutoffs.Size());
     cutoffs = acutoffs;
     ConcSteps();
+    if (embed_step != nullptr) {
+      cout << "CONC with embed-step!" << endl;
+      steps[0] = embed_step->Concatenate(steps[0]);
+    }
   }
     
   void DOFMap :: ConcSteps ()
@@ -119,44 +123,66 @@ namespace amg
   
   template<class TMAT>
   shared_ptr<BaseDOFMapStep> ProlMap<TMAT> :: Concatenate (shared_ptr<BaseDOFMapStep> other)
-
   {
-    if (auto opmap = dynamic_pointer_cast<ProlMap<TCMAT>>(other)) {
+    if (auto otmp = dynamic_pointer_cast<TwoProlMap<TCMAT, TCMAT>>(other)) {
+      cout << "conc, am dim " << GetProl()->Height() << " x " << GetProl()->Width()  << endl;
+      cout << "TPM, left is dim " << otmp->GetLMap()->GetProl()->Height() << " x " << otmp->GetLMap()->GetProl()->Width()  << endl;
+      cout << "TPM, right is dim " << otmp->GetRMap()->GetProl()->Height() << " x " << otmp->GetRMap()->GetProl()->Width()  << endl;
+      auto comp_map = static_pointer_cast<ProlMap<mult_spm<TMAT, TCMAT>>>(Concatenate (otmp->GetLMap()));
+      // P - [P.., S(..)]
+      if (comp_map->IsPW()) { // [PP.., S(..)]
+	auto tpm = make_shared<TwoProlMap<mult_spm<TMAT, TCMAT>, TCMAT>> (comp_map, otmp->GetRMap());
+	tpm->SetLog(LOGFUNC);
+	return tpm;
+      }
+      else { // S(PP..), S(...)
+	auto comp_comp_prol = MatMultAB<mult_spm<TMAT, TCMAT>, TCMAT> (*comp_map->GetProl(), *otmp->GetRMap()->GetProl());
+	auto comp_comp_pmap = make_shared<ProlMap<mult_spm<TMAT, TCMAT>>> (comp_comp_prol, GetParDofs(), otmp->GetMappedParDofs(), false);
+	comp_comp_pmap->SetCnt(comp_map->GetCnt() + GetCnt());
+	comp_comp_pmap->SetLog(LOGFUNC);
+	return comp_comp_pmap;
+      }
+    }
+    else if (auto opmap = dynamic_pointer_cast<ProlMap<TCMAT>>(other)) {
+      // hack
+      if (!has_lf) SetLog(opmap->GetLog());
+      cout << "conc, am dim " << GetProl()->Height() << " x " << GetProl()->Width()  << endl;
+      cout << "other is dim " << opmap->GetProl()->Height() << " x " << opmap->GetProl()->Width()  << endl;
       if ( (!opmap->IsPW()) && opmap->WantSM()) {
 	throw Exception("Right ProlMap should always be final!!");
 	return nullptr;
       }
       // P - S(...)    -> return TPM [P, S(..)]
       if ( (IsPW()) && (!WantSM()) && (!opmap->IsPW()) ) {
-	return make_shared<TwoProlMap<TMAT, TCMAT>> (make_shared<ProlMap<TMAT>> (GetProl(), GetParDofs(), GetMappedParDofs()), opmap);
+	cout << "MAKE TPM 1" << endl;
+	auto tpm = make_shared<TwoProlMap<TMAT, TCMAT>> (make_shared<ProlMap<TMAT>> (GetProl(), GetParDofs(), GetMappedParDofs()), opmap);
+	tpm->GetLMap()->SetCnt(GetCnt());
+	tpm->SetLog(LOGFUNC);
+	return tpm;
       }
       // P - P         -> mult, return PMAP
       // (S)P - P      -> mult, smooth, return PMAP
       // (S)P - S(...) -> smooth, mult, returm PMAP
-      if ( IsPW() && WantSM() && (!opmap->IsPW()) )
+      bool smooth_now = IsPW() && WantSM();
+      if ( smooth_now && (!opmap->IsPW()) )
 	{ // (S)P - S(...)
+	  smooth_now = false;
 	  Smooth();
 	}
       auto comp_prol = MatMultAB<TMAT, TCMAT> (*prol, *opmap->GetProl());
       auto comp_map = make_shared<ProlMap<mult_spm<TMAT, TCMAT>>> (comp_prol, GetParDofs(), opmap->GetMappedParDofs(),
-								   (IsPW() && opmap->IsPW()) );
-      comp_map->SetSmoothed(SMFUNC);
-      if ( comp_map->WantSM() )
+								   ( IsPW() && opmap->IsPW() ) );
+      comp_map->SetCnt(GetCnt() + opmap->GetCnt());
+      comp_map->SetLog(LOGFUNC);
+      if ( smooth_now )
 	{ // (S)P - P
+	  cout << "CALL COMP SM!" << endl;
+	  comp_map->SetSmoothed(SMFUNC);
 	  comp_map->Smooth();
+	  ClearSmoothed();
 	}
+      cout << "resulting prol sm? " << !comp_map->IsPW() << endl;
       return comp_map;
-    }
-    else if (auto otmp = dynamic_pointer_cast<TwoProlMap<TCMAT, TCMAT>>(other)) {
-      auto comp_map = static_pointer_cast<ProlMap<mult_spm<TMAT, TCMAT>>>(Concatenate (otmp->GetLMap()));
-      // P - [P.., S(..)]
-      if (comp_map->IsPW()) { // [PP.., S(..)]
-	return make_shared<TwoProlMap<mult_spm<TMAT, TCMAT>, TCMAT>> (comp_map, otmp->GetRMap());
-      }
-      else { // S(PP..), S(...)
-	auto comp_comp_prol = MatMultAB<mult_spm<TMAT, TCMAT>, TCMAT> (*comp_map->GetProl(), *otmp->GetRMap()->GetProl());
-	return make_shared<ProlMap<mult_spm<TMAT, TCMAT>>> (comp_comp_prol, GetParDofs(), otmp->GetMappedParDofs(), false);
-      }
     }
     else {
       return nullptr;
@@ -172,18 +198,34 @@ namespace amg
   // }
 
   template<class TMAT>
-  void ProlMap<TMAT> :: SetSmoothed ( std::function<void(ProlMap<TMAT> * map)> ASMFUNC)
+  void ProlMap<TMAT> :: SetSmoothed ( std::function<void(ProlMap<TMAT> * map)> ASMFUNC, bool forced)
   {
     if (!IsPW()) { throw Exception("Cannot set smoothed (Already smoothed)."); }
-    SMFUNC = ASMFUNC; has_smf = true; // mesh = amesh;
+    cout << "set smoothed, am dim " << GetProl()->Height() << " x " << GetProl()->Width()  << endl;
+    SMFUNC = ASMFUNC; has_smf = true; forced = forced; // mesh = amesh;
   }
 
+  template<class TMAT>
+  void ProlMap<TMAT> :: SetLog ( std::function<void(shared_ptr<BaseSparseMatrix> prol)> ALOGFUNC)
+  {
+    has_lf = true;
+    LOGFUNC = ALOGFUNC;
+  }
+
+  template<class TMAT>
+  void ProlMap<TMAT> :: ClearSmoothed ( )
+  {
+    cout << "clear smoothed, am dim " << GetProl()->Height() << " x " << GetProl()->Width()  << endl;
+    SMFUNC = [](auto x){ ; }; has_smf = false; // mesh = amesh;
+  }
   
   template<class TMAT>
   void ProlMap<TMAT> :: Smooth ()
   {
     if (!IsPW()) { throw Exception("Cannot smooth twice."); }
-    if (!WantSM()) { throw Exception("Cannot smooth (not set)."); }
+    // if (!WantSM()) { throw Exception("Cannot smooth (not set)."); }
+    cout << "call smooth, am dim " << GetProl()->Height() << " x " << GetProl()->Width()  << ", cnt is " << GetCnt() << endl;
+    // cout << "call smooted with cnt " << GetCnt() << endl;
     //amg->SmoothProlongation_hack (this, mesh);
     SMFUNC(this);
     SMFUNC = [](auto x) { ; };
@@ -194,11 +236,21 @@ namespace amg
   template<class TMAT>
   shared_ptr<BaseSparseMatrix> ProlMap<TMAT> :: AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const
   {
+    // if (WantSM()) {
+      // if (!IsPW()) {
+      // 	throw Exception("Ass mat with smoothed prol with smooth func?? wtf .. ");
+      // }
+    if (IsPW() && canSM() ) {
+      cout << "Call smooth before assmat!" << endl;
+      const_cast<ProlMap<TMAT>&>(*this).Smooth();
+    }
     auto tfmat = dynamic_pointer_cast<TFMAT>(mat);
+    cout << "ass with cnt " << GetCnt() << ", am sm? " << !IsPW() << " dims " << GetProl()->Height() << " x " << GetProl()->Width() << endl;
     if (tfmat==nullptr) {
       throw Exception(string("Cannot cast to ") + typeid(TFMAT).name() + string("!!") );
       return nullptr;
     }
+    LOGFUNC(GetProl());
     return RestrictMatrix<TFMAT, TMAT> (*tfmat, *prol);
   }
 
