@@ -276,7 +276,7 @@ namespace amg
 						     shared_ptr<ParallelDofs> par_dofs,
 						     shared_ptr<BitArray> free_dofs) = 0;
     virtual void SmoothProlongation (shared_ptr<ProlMap<TSPM_TM>> pmap, shared_ptr<TMESH> mesh) const;
-    virtual shared_ptr<TSPM_TM> RegularizeMatrix (shared_ptr<TSPM_TM> mat, shared_ptr<ParallelDofs> & pardofs) { return mat; }
+    virtual shared_ptr<TSPM> RegularizeMatrix (shared_ptr<TSPM> mat, shared_ptr<ParallelDofs> & pardofs) { return mat; }
     void Setup ();
     
     shared_ptr<ParallelDofs> BuildParDofs (shared_ptr<TMESH> amesh);

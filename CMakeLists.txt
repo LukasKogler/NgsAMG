@@ -27,4 +27,10 @@ if (USE_BOOMER)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUSE_BOOMER")
 endif (USE_BOOMER)
 
+if ( "${NGSOLVE_MAX_SYS_DIM}" LESS "6")
+   message(WARNING "WARNING, MAX_SYS_DIM = ${NGSOLVE_MAX_SYS_DIM}, need at least 6 for Inverse Matrix!!")
+else ( "${NGSOLVE_MAX_SYS_DIM}" LESS "6")
+   message(STATUS "MAX_SYS_DIM = ${NGSOLVE_MAX_SYS_DIM}, ok, large enough.")
+endif ( "${NGSOLVE_MAX_SYS_DIM}" LESS "6")
+
 add_subdirectory(src)

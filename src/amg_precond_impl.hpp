@@ -228,14 +228,20 @@ namespace amg
 	  // cout << "COARSE MAT: " << endl << *mats.Last() << endl;
 	  auto cpds = dof_map->GetMappedParDofs();
 	  auto comm = cpds->GetCommunicator();
-	  shared_ptr<TSPM_TM> cspm = static_pointer_cast<TSPM_TM>(mats.Last());
+	  shared_ptr<TSPM> cspm = static_pointer_cast<TSPM>(mats.Last());
 	  cspm = RegularizeMatrix(cspm, cpds);
 	  if (comm.Size()>0) {
 	    // cout << "coarse inv " << endl;
-	    auto cpm = make_shared<ParallelMatrix>(cspm, cpds);
-	    cpm->SetInverseType(options->clev_inv_type);
-	    auto cinv = cpm->InverseMatrix();
-	    amg_mat->AddFinalLevel(cinv);
+	    if constexpr(MAX_SYS_DIM < mat_traits<TMAT>::HEIGHT) {
+		throw Exception(string("MAX_SYS_DIM = ") + to_string(MAX_SYS_DIM) + string(", need at least ") +
+				to_string(mat_traits<TMAT>::HEIGHT) + string(" for coarsest level exact Inverse!"));
+	      }
+	    else {
+	      auto cpm = make_shared<ParallelMatrix>(cspm, cpds);
+	      cpm->SetInverseType(options->clev_inv_type);
+	      auto cinv = cpm->InverseMatrix();
+	      amg_mat->AddFinalLevel(cinv);
+	    }
 	  }
 	  // else {
 	  //   auto cinv = mats.Last().Inverse("sparsecholesky");
