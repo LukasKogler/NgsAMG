@@ -106,14 +106,12 @@ namespace amg
 #endif
 
 #define InstTransMat(N,M) \
-  template shared_ptr<trans_spm<stripped_spm<Mat<N,M,double>>>>	\
-  TransposeSPM<stripped_spm<Mat<N,M,double>>> (const stripped_spm<Mat<N,M,double>> & mat);
-  // template shared_ptr<trans_spm<SparseMatrix<Mat<N,M,double>>>>	\
-  // TransposeSPM<SparseMatrix<typename strip_mat<Mat<N,M,double>>::type>> (const SparseMatrix<typename strip_mat<Mat<N,M,double>>::type> & mat);
+  template shared_ptr<trans_spm_tm<stripped_spm_tm<Mat<N,M,double>>>>	\
+  TransposeSPM<stripped_spm_tm<Mat<N,M,double>>> (const stripped_spm_tm<Mat<N,M,double>> & mat);
 
-#define InstMultMat(A,B,C) \
-  template shared_ptr<stripped_spm<Mat<A,C,double>>>			\
-  MatMultAB<stripped_spm<Mat<A,B,double>>, stripped_spm<Mat<B,C,double>>> (const stripped_spm<Mat<A,B,double>> & mata, const stripped_spm<Mat<B,C,double>> & matb);
+#define InstMultMat(A,B,C)						\
+  template shared_ptr<stripped_spm_tm<Mat<A,C,double>>>			\
+  MatMultAB<stripped_spm_tm<Mat<A,B,double>>> (const stripped_spm_tm<Mat<A,B,double>> & mata, const stripped_spm_tm<Mat<B,C,double>> & matb);
   
 #define InstEmbedMults(N,M) /* embedding NxN to MxM */	\
   InstMultMat(N,M,M); /* conctenate prols */		\

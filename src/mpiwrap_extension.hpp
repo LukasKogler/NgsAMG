@@ -94,7 +94,7 @@ namespace amg
     INLINE Timer& thack_isend_spm () const { static Timer t("ISend SPM"); return t; }
   public:
     template<typename T, typename T2 = decltype(GetMPIType<T>())>
-    MPI_Request ISend (const ngla::SparseMatrix<T> & spm, int dest, int tag) const {
+    MPI_Request ISend (const ngla::SparseMatrixTM<T> & spm, int dest, int tag) const {
       RegionTimer rt(thack_isend_spm());
       size_t H = spm.Height(); size_t W = spm.Width();
       if (H!=W) throw Exception("cant rly deal with H!=W ISend"); // need to send W, need temporary mem
@@ -118,7 +118,7 @@ namespace amg
     INLINE Timer& thack_send_spm () const { static Timer t("Send SPM"); return t; }
   public:
     template<typename T, typename T2 = decltype(GetMPIType<T>())>
-    void Send (const ngla::SparseMatrix<T> & spm, int dest, int tag) const {
+    void Send (const ngla::SparseMatrixTM<T> & spm, int dest, int tag) const {
       RegionTimer rt(thack_send_spm());
       MPI_Request req = ISend(spm, dest, tag); // well this is just lazy ...
       MPI_Wait(&req, MPI_STATUS_IGNORE);
@@ -128,14 +128,14 @@ namespace amg
     INLINE Timer& thack_recv_spm () const { static Timer t("Recv SPM"); return t; }
   public:
     template<typename T, typename T2 = decltype(GetMPIType<T>())>
-    void Recv (shared_ptr<ngla::SparseMatrix<T> >& spm, int src, int tag) const {
+    void Recv (shared_ptr<ngla::SparseMatrixTM<T> >& spm, int src, int tag) const {
       RegionTimer rt(thack_recv_spm());
       Array<size_t> firstia;
       Recv(firstia, src, tag);
       size_t H = firstia.Size()-1; size_t W = H;
       Array<int> nperow(H);
       for (auto k:Range(H)) nperow[k] = firstia[k+1]-firstia[k];
-      spm = make_shared<ngla::SparseMatrix<T>>(nperow, W);
+      spm = make_shared<ngla::SparseMatrixTM<T>>(nperow, W);
       if (H==0 || W==0) return;
       int* cp = &spm->GetRowIndices(0)[0];
       size_t nzes = 0; for (auto k:Range(H)) nzes += nperow[k];
@@ -173,7 +173,7 @@ namespace ngstd
   
   // this doesnt work!!
   template<typename T>
-  inline MPI_Request MyMPI_ISend(const ngla::SparseMatrix<T> & spm, int dest, int tag, NgsMPI_Comm comm)
+  inline MPI_Request MyMPI_ISend(const ngla::SparseMatrixTM<T> & spm, int dest, int tag, NgsMPI_Comm comm)
   {
     MPI_Request req;
     /** send height, width & NZE **/

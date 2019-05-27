@@ -33,8 +33,9 @@ namespace amg
     using TMESH = ATMESH;
     using TV = typename mat_traits<TMAT>::TV_ROW;
     using TSCAL = typename mat_traits<TMAT>::TSCAL;
-    using TSPMAT = SparseMatrix<TMAT, TV, TV>;
-
+    using TSPM_TM = stripped_spm_tm<TMAT>;
+    using TSPM = stripped_spm<TMAT>;
+    
     struct Options
     {
       /** Dirichlet conditions for finest level **/
@@ -166,8 +167,8 @@ namespace amg
 	size_t ocmat_g = comm.Reduce(ocmat_l, MPI_SUM, 0);
 	if (comm.Rank()==0) occ.Append(ocmat_g);
 	if (ilev <= BASIC) return;
-	// cast to TSPMAT because "error: member 'GetMemoryUsage' found in multiple base classes of different types"
-	size_t nbts_mat_l = 0; for (auto & mu : static_cast<TSPMAT*>(amat.get())->GetMemoryUsage()) nbts_mat_l += mu.NBytes();
+	// cast to TSPM_TM because "error: member 'GetMemoryUsage' found in multiple base classes of different types"
+	size_t nbts_mat_l = 0; for (auto & mu : static_cast<TSPM_TM*>(amat.get())->GetMemoryUsage()) nbts_mat_l += mu.NBytes();
 	size_t nbts_mat_g = comm.Reduce(nbts_mat_l, MPI_SUM, 0);
 	size_t nbts_sm_l = 0; for (auto & mu : sm->GetMemoryUsage()) nbts_sm_l += mu.NBytes();
 	size_t nbts_sm_g = comm.Reduce(nbts_sm_l, MPI_SUM, 0);
@@ -274,12 +275,12 @@ namespace amg
     virtual shared_ptr<BaseSmoother> BuildSmoother  (INT<3> level, shared_ptr<BaseSparseMatrix> mat,
 						     shared_ptr<ParallelDofs> par_dofs,
 						     shared_ptr<BitArray> free_dofs) = 0;
-    virtual void SmoothProlongation (shared_ptr<ProlMap<TSPMAT>> pmap, shared_ptr<TMESH> mesh) const;
-    virtual shared_ptr<TSPMAT> RegularizeMatrix (shared_ptr<TSPMAT> mat, shared_ptr<ParallelDofs> & pardofs) { return mat; }
+    virtual void SmoothProlongation (shared_ptr<ProlMap<TSPM_TM>> pmap, shared_ptr<TMESH> mesh) const;
+    virtual shared_ptr<TSPM_TM> RegularizeMatrix (shared_ptr<TSPM_TM> mat, shared_ptr<ParallelDofs> & pardofs) { return mat; }
     void Setup ();
     
     shared_ptr<ParallelDofs> BuildParDofs (shared_ptr<TMESH> amesh);
-    shared_ptr<ProlMap<TSPMAT>> BuildDOFMapStep (shared_ptr<CoarseMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd);
+    shared_ptr<ProlMap<TSPM_TM>> BuildDOFMapStep (shared_ptr<CoarseMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd);
     shared_ptr<CtrMap<TV>> BuildDOFMapStep (shared_ptr<GridContractMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd);
 
   };

@@ -1,4 +1,5 @@
 
+
 #ifndef FILE_AMG_MAP
 #define FILE_AMG_MAP
 
@@ -57,10 +58,10 @@ namespace amg {
 			     const shared_ptr<BaseVector> & x_coarse) const = 0;
     virtual void TransferC2F(const shared_ptr<BaseVector> & x_fine,
 			     const shared_ptr<const BaseVector> & x_coarse) const = 0;
-    virtual shared_ptr<BaseVector> CreateVector() const = 0;
-    //{ return make_shared<ParallelVVector<double>>(pardofs->GetNDofLocal(), pardofs, CUMULATED); }
-    virtual shared_ptr<BaseVector> CreateMappedVector() const = 0;
-    //{ return (mapped_pardofs!=nullptr) ? make_shared<ParallelVVector<double>>(mapped_pardofs->GetNDofLocal(), mapped_pardofs, CUMULATED) : nullptr; }
+    shared_ptr<BaseVector> CreateVector() const
+    { return make_shared<S_ParallelBaseVectorPtr<double>> (pardofs->GetNDofLocal(), pardofs->GetEntrySize(), pardofs, DISTRIBUTED); }
+    shared_ptr<BaseVector> CreateMappedVector() const
+    { return (mapped_pardofs!=nullptr) ? make_shared<S_ParallelBaseVectorPtr<double>> (mapped_pardofs->GetNDofLocal(), mapped_pardofs->GetEntrySize(), mapped_pardofs, DISTRIBUTED) : nullptr; }
     virtual shared_ptr<BaseDOFMapStep> Concatenate (shared_ptr<BaseDOFMapStep> other) { return nullptr; }
     shared_ptr<ParallelDofs> GetParDofs() const { return pardofs; }
     shared_ptr<ParallelDofs> GetMappedParDofs() const { return mapped_pardofs; }
@@ -116,8 +117,6 @@ namespace amg {
 	for(auto k:Range(size_t(1),sub_steps.Size()))
 	  vecs[k-1] = sub_steps[k]->CreateVector();
     }
-    virtual shared_ptr<BaseVector> CreateVector() const override { return sub_steps[0]->CreateVector(); }
-    virtual shared_ptr<BaseVector> CreateMappedVector() const override { return sub_steps.Last()->CreateMappedVector(); }
     virtual void TransferF2C (const shared_ptr<const BaseVector> & x_fine,
 			      const shared_ptr<BaseVector> & x_coarse) const override
     {
@@ -162,20 +161,24 @@ namespace amg {
   class ProlMap : public BaseDOFMapStep
   {
   public:
-    using TFMAT = typename amg_spm_traits<TMAT>::T_LEFT;
-    using TCMAT = typename amg_spm_traits<TMAT>::T_RIGHT;
 
+    using SPM_TM_F = stripped_spm_tm<Mat<mat_traits<typename TMAT::TENTRY>::HEIGHT, mat_traits<typename TMAT::TENTRY>::WIDTH, double>>;
+    using SPM_TM_P = stripped_spm_tm<Mat<mat_traits<typename TMAT::TENTRY>::HEIGHT, mat_traits<typename TMAT::TENTRY>::WIDTH, double>>;
+    using SPM_TM_C = stripped_spm_tm<Mat<mat_traits<typename TMAT::TENTRY>::HEIGHT, mat_traits<typename TMAT::TENTRY>::WIDTH, double>>;
+
+    using SPM_F = stripped_spm<Mat<mat_traits<typename TMAT::TENTRY>::HEIGHT, mat_traits<typename TMAT::TENTRY>::HEIGHT, double>>;
+    using SPM_P = stripped_spm<Mat<mat_traits<typename TMAT::TENTRY>::HEIGHT, mat_traits<typename TMAT::TENTRY>::WIDTH, double>>;
+    using SPM_C = stripped_spm<Mat<mat_traits<typename TMAT::TENTRY>::WIDTH, mat_traits<typename TMAT::TENTRY>::WIDTH, double>>;
+
+    static_assert(std::is_same<SPM_TM_P, TMAT>::value, "Use SPM_TM for ProlMap!!");
+    
     ProlMap (shared_ptr<ParallelDofs> fpd, shared_ptr<ParallelDofs> cpd)
       : BaseDOFMapStep(fpd, cpd), prol(nullptr)
     { ; }
-    virtual shared_ptr<BaseVector> CreateVector() const override
-    { return make_shared<ParallelVVector<typename TMAT::TVY>>(pardofs->GetNDofLocal(), pardofs, CUMULATED); }
-    virtual shared_ptr<BaseVector> CreateMappedVector() const override
-    { return (mapped_pardofs!=nullptr) ? make_shared<ParallelVVector<typename TMAT::TVX>>(mapped_pardofs->GetNDofLocal(), mapped_pardofs, CUMULATED) : nullptr; }
     // me left -- other right
     virtual shared_ptr<BaseDOFMapStep> Concatenate (shared_ptr<BaseDOFMapStep> other) override
     {
-      auto pmother = dynamic_pointer_cast<ProlMap<TCMAT>>(other);
+      auto pmother = dynamic_pointer_cast<ProlMap<SPM_TM_C>>(other);
       if (pmother==nullptr) { return nullptr; }
       return pmother->ConcBack(*this);
     }
@@ -183,8 +186,8 @@ namespace amg {
     template<class TMATO>
     shared_ptr<BaseDOFMapStep> ConcBack (ProlMap<TMATO> & other) {
       auto oprol = other.GetProl();
-      auto pstep = make_shared<ProlMap<mult_spm<TMATO, TMAT>>> (other.GetParDofs(), this->GetMappedParDofs());
-      shared_ptr<mult_spm<TMATO, TMAT>> pp = MatMultAB (*oprol, *prol);
+      auto pstep = make_shared<ProlMap<mult_spm_tm<TMATO, TMAT>>> (other.GetParDofs(), this->GetMappedParDofs());
+      shared_ptr<mult_spm_tm<TMATO, TMAT>> pp = MatMultAB (*oprol, *prol);
       pstep->SetProl(pp);
       return pstep;
     }
@@ -206,18 +209,20 @@ namespace amg {
     }
     virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const override
     {
-      auto tfmat = dynamic_pointer_cast<TFMAT>(mat);
+      auto tfmat = dynamic_pointer_cast<SPM_F>(mat);
       if (tfmat==nullptr) {
-	string exname = "Cannot cast ";
-	exname += " to "; ;
-	exname += typeid(TFMAT).name();
-	exname += "!!";
-	throw Exception(exname);
+	throw Exception(string("Cannot cast to ") + typeid(SPM_F).name());
       }
       return DoAssembleMatrix (tfmat);
     }
-    shared_ptr<TCMAT> DoAssembleMatrix (shared_ptr<TFMAT> mat) const
-    { return RestrictMatrix<TFMAT, TMAT> (*mat, *prol); }
+    shared_ptr<SPM_C> DoAssembleMatrix (shared_ptr<SPM_F> mat) const
+    {
+      auto & ncp = const_cast<shared_ptr<SPM_TM_P>&>(prol);
+      ncp = make_shared<SPM_P>(move(*ncp));
+
+      auto rm = RestrictMatrixTM<SPM_TM_F, SPM_TM_P> (*mat, *prol);
+      return make_shared<SPM_C>(move(*rm));
+    }
     shared_ptr<TMAT> GetProl () const { return prol; }
     void SetProl (shared_ptr<TMAT> aprol) { prol = aprol; }
   protected:

@@ -13,7 +13,7 @@ namespace amg
   shared_ptr<BaseSmoother> H1AMG :: BuildSmoother  (INT<3> level, shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs> par_dofs,
 						    shared_ptr<BitArray> free_dofs)
   {
-    shared_ptr<const TSPMAT> spmat = dynamic_pointer_cast<TSPMAT> (mat);
+    shared_ptr<const TSPM> spmat = dynamic_pointer_cast<TSPM> (mat);
     return make_shared<HybridGSS<1>> (spmat, par_dofs, free_dofs);
   }
 
@@ -135,7 +135,7 @@ namespace amg
   {
     auto & vsort = node_sort[NT_VERTEX];
     shared_ptr<ParallelDofs> fpds = finest_mat->GetParallelDofs();
-    auto pmap = make_shared<ProlMap<SparseMatrix<double>>>(fpds, nullptr);
+    auto pmap = make_shared<ProlMap<SparseMatrixTM<double>>>(fpds, nullptr);
     pmap->SetProl(BuildPermutationMatrix<double>(vsort));
     return pmap;
   }
