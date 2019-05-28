@@ -112,7 +112,8 @@ namespace amg
     using TMESH = ElasticityMesh<D>;
     using TMAT = Mat<dofpv(D), dofpv(D), double>;
     using BASE = VWiseAMG<ElasticityAMG<D>, ElasticityMesh<D>, TMAT>;
-    using TSPMAT = typename BASE::TSPMAT;
+    using TSPM_TM = typename BASE::TSPM_TM;
+    using TSPM = typename BASE::TSPM;
     struct Options : BASE::Options
     {
       bool regularize = false;
@@ -135,7 +136,7 @@ namespace amg
 				       INT<3> level, shared_ptr<TMESH> mesh) override;
     Array<double> CalcECWSimple (shared_ptr<TMESH> mesh);
     Array<double> CalcECWRobust (shared_ptr<TMESH> mesh);
-    virtual shared_ptr<TSPMAT> RegularizeMatrix (shared_ptr<TSPMAT> mat, shared_ptr<ParallelDofs> & pardofs) override;
+    virtual shared_ptr<TSPM> RegularizeMatrix (shared_ptr<TSPM> mat, shared_ptr<ParallelDofs> & pardofs) override;
     INLINE void CalcPWPBlock (const TMESH & fmesh, const TMESH & cmesh, const CoarseMap<TMESH> & map,
 			      AMG_Node<NT_VERTEX> v, AMG_Node<NT_VERTEX> cv, TMAT & mat) const
     {

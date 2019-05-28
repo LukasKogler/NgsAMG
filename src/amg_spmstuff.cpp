@@ -17,7 +17,7 @@ namespace amg
     default: { static Timer t("TIMERERR"); return t; }
     }
   };
-  template <typename TMA> shared_ptr<trans_spm<TMA>> TransposeSPM (const TMA & mat)
+  template <class TMA> shared_ptr<trans_spm_tm<TMA>> TransposeSPM (const TMA & mat)
   {
     Timer & t1 = timer_hack_TransposeSPM(0);
     Timer & t2 = timer_hack_TransposeSPM(1);
@@ -28,7 +28,7 @@ namespace amg
 	cnt[c]++;
     t1.Stop();
     t2.Start();
-    auto trans = make_shared<trans_spm<TMA>>(cnt, mat.Height());
+    auto trans = make_shared<trans_spm_tm<TMA>>(cnt, mat.Height());
     cnt = 0;
     for (int i : Range(mat.Height())) {
       for (int ci : Range(mat.GetRowIndices(i))) {
@@ -41,7 +41,7 @@ namespace amg
     for (int r : Range(trans->Height())) {
       auto rowvals = trans->GetRowValues(r);
       BubbleSort (trans->GetRowIndices(r),
-		  FlatArray<typename TM_OF_SPM<trans_spm<TMA>>::type> (rowvals.Size(), &rowvals(0)));
+		  FlatArray<typename TM_OF_SPM<trans_spm_tm<TMA>>::type> (rowvals.Size(), &rowvals(0)));
     }
     t2.Stop();
     return trans;
@@ -58,7 +58,7 @@ namespace amg
     default: { static Timer t("TIMERERR"); return t; }
     }
   }
-  template <typename TMA, typename TMB> shared_ptr<mult_spm<TMA,TMB>>
+  template <typename TMA, typename TMB> shared_ptr<mult_spm_tm<TMA,TMB>>
   MatMultAB (const TMA & mata, const TMB & matb)
   {
     Timer & t = timer_hack_MatMultAB(0);
@@ -95,7 +95,7 @@ namespace amg
     t1a.Stop();
     t1b.Start();
     t1b1.Start();
-    auto prod = make_shared<mult_spm<TMA,TMB>>(cnt, matb.Width());
+    auto prod = make_shared<mult_spm_tm<TMA,TMB>>(cnt, matb.Width());
     prod->AsVector() = 0.0;
     t1b1.Stop();
     // fill col-indices

@@ -106,14 +106,14 @@ namespace amg
 	      // prol_step->SetSmoothed (&this->SmoothProlongation_hack<TSPMAT>, static_pointer_cast<TMESH>(gstep_coarse->GetMesh()));
 	      // prol_step->SetSmoothed ([this, gstep_coarse](auto x) { SmoothProlongation_hack(x, static_pointer_cast<TMESH>(gstep_coarse->GetMesh())); });
 	      cout << "SET SMOOTHED!" << endl;
-	      prol_step->SetSmoothed ([this, fm](auto x) { SmoothProlongation_hack(x, fm); }, false);
+	      prol_step->SetSMF ([this, fm](auto x) { SmoothProlongation_hack(x, fm); });
 	      if (!options->composite_smooth)
 		{ prol_step->Smooth(); }
 		// SmoothProlongation(prol_step, static_pointer_cast<TMESH>(gstep_coarse->GetMesh()));
 	    }
-	  else {
-	    prol_step->SetSmoothed ([this, fm](auto x) { SmoothProlongation_hack(x, fm); }, false);
-	  }
+	  // else {
+	  //   prol_step->SetSmoothed ([this, fm](auto x) { SmoothProlongation_hack(x, fm); }, false);
+	  // }
 	  // move this to later
 	  // if ( (level[0] == 0) && (embed_step != nullptr) ) {
 	  //   // cout << " conc embed step! " << endl;
@@ -207,7 +207,7 @@ namespace amg
     //   for (auto k : Range(mats.Size()-1)) {
     // 	cout << "make smoother " << k << "!!" << endl;
     // 	auto pds = dof_map->GetParDofs(k);
-    // 	shared_ptr<const TSPMAT> mat = dynamic_pointer_cast<TSPMAT>(mats[k]);
+    // 	shared_ptr<const TSPM_TM> mat = dynamic_pointer_cast<TSPM_TM>(mats[k]);
     // 	cout << "mat: " << mat << endl;
     // 	cout << mat->Height() << " x " << mat->Width() << endl;
     // 	cout << "ndglob: " << pds->GetNDofGlobal() << endl;
@@ -245,14 +245,20 @@ namespace amg
 	  // cout << "COARSE MAT: " << endl << *mats.Last() << endl;
 	  auto cpds = dof_map->GetMappedParDofs();
 	  auto comm = cpds->GetCommunicator();
-	  shared_ptr<TSPMAT> cspm = static_pointer_cast<TSPMAT>(mats.Last());
+	  shared_ptr<TSPM> cspm = static_pointer_cast<TSPM>(mats.Last());
 	  cspm = RegularizeMatrix(cspm, cpds);
 	  if (comm.Size()>0) {
 	    // cout << "coarse inv " << endl;
-	    auto cpm = make_shared<ParallelMatrix>(cspm, cpds);
-	    cpm->SetInverseType(options->clev_inv_type);
-	    auto cinv = cpm->InverseMatrix();
-	    amg_mat->AddFinalLevel(cinv);
+	    if constexpr(MAX_SYS_DIM < mat_traits<TMAT>::HEIGHT) {
+		throw Exception(string("MAX_SYS_DIM = ") + to_string(MAX_SYS_DIM) + string(", need at least ") +
+				to_string(mat_traits<TMAT>::HEIGHT) + string(" for coarsest level exact Inverse!"));
+	      }
+	    else {
+	      auto cpm = make_shared<ParallelMatrix>(cspm, cpds);
+	      cpm->SetInverseType(options->clev_inv_type);
+	      auto cinv = cpm->InverseMatrix();
+	      amg_mat->AddFinalLevel(cinv);
+	    }
 	  }
 	  // else {
 	  //   auto cinv = mats.Last().Inverse("sparsecholesky");
@@ -270,7 +276,7 @@ namespace amg
   }
 
   template<class AMG_CLASS, class TMESH, class TMAT>
-  shared_ptr<ProlMap<typename VWiseAMG<AMG_CLASS, TMESH, TMAT>::TSPMAT>>
+  shared_ptr<ProlMap<typename VWiseAMG<AMG_CLASS, TMESH, TMAT>::TSPM_TM>>
   VWiseAMG<AMG_CLASS, TMESH, TMAT> :: BuildDOFMapStep (shared_ptr<CoarseMap<TMESH>> _cmap, shared_ptr<ParallelDofs> fpd)
   {
     // coarse ParallelDofs
@@ -297,7 +303,7 @@ namespace amg
     cmesh.template AllreduceNodalData<NT_VERTEX, int>(has_partner, [](auto & tab){ return move(sum_table(tab)); });
     // cout << "partner synced" << endl;
     for (auto vnr : Range(NV)) { if (vmap[vnr]!=-1) perow[vnr] = 1; }
-    auto prol = make_shared<TSPMAT>(perow, NCV);
+    auto prol = make_shared<TSPM_TM>(perow, NCV);
     for (auto vnr : Range(NV)) {
       if (vmap[vnr]!=-1) {
 	auto ri = prol->GetRowIndices(vnr);
@@ -317,7 +323,7 @@ namespace amg
     // cout << "have pw-prol: " << prol->Height() << " x " << prol->Width() << endl;
     // print_tm_spmat(cout, *prol); cout << endl;
 
-    auto pmap = make_shared<ProlMap<TSPMAT>> (prol, fpd, cpd);
+    auto pmap = make_shared<ProlMap<TSPM_TM>> (prol, fpd, cpd, true);
 	
     // if (options->do_smooth==true)
     //   SmoothProlongation(pmap, static_pointer_cast<TMESH>(cmap.GetMesh()));
@@ -427,7 +433,7 @@ namespace amg
   }
 
   template<class AMG_CLASS, class TMESH, class TMAT> void
-  VWiseAMG<AMG_CLASS, TMESH, TMAT> :: SmoothProlongation (shared_ptr<ProlMap<TSPMAT>> pmap, shared_ptr<TMESH> afmesh) const
+  VWiseAMG<AMG_CLASS, TMESH, TMAT> :: SmoothProlongation (shared_ptr<ProlMap<TSPM_TM>> pmap, shared_ptr<TMESH> afmesh) const
   {
     static Timer t(this->name+string("::SmoothProlongation")); RegionTimer rt(t);
     // cout << "SmoothProlongation" << endl;
@@ -437,7 +443,7 @@ namespace amg
     const TMESH & fmesh(*afmesh);
     const auto & fecon = *fmesh.GetEdgeCM();
     const auto & eqc_h(*fmesh.GetEQCHierarchy()); // coarse eqch==fine eqch !!
-    const TSPMAT & pwprol = *pmap->GetProl();
+    const TSPM_TM & pwprol = *pmap->GetProl();
 
     // cout << "fmesh: " << endl << fmesh << endl;
 
@@ -571,7 +577,7 @@ namespace amg
     }
     
     /** Create Prolongation **/
-    auto sprol = make_shared<TSPMAT>(perow, NCV);
+    auto sprol = make_shared<TSPM_TM>(perow, NCV);
 
     /** Fill Prolongation **/
     LocalHeap lh(2000000, "Tobias", false); // ~2 MB LocalHeap

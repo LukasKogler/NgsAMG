@@ -282,7 +282,7 @@ namespace amg
     }
 
     timer_hack_ctrmat(1).Start();
-    Array<shared_ptr<TSPM> > dist_mats(group.Size());
+    Array<shared_ptr<TSPM_TM> > dist_mats(group.Size());
     dist_mats[0] = mat;
     for(auto k:Range((size_t)1, group.Size())) {
       // cout << " get mat from " << k << " of " << group.Size() << endl;

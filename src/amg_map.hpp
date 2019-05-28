@@ -1,4 +1,5 @@
 
+
 #ifndef FILE_AMG_MAP
 #define FILE_AMG_MAP
 
@@ -121,8 +122,6 @@ namespace amg {
 	for(auto k:Range(size_t(1),sub_steps.Size()))
 	  vecs[k-1] = sub_steps[k]->CreateVector();
     }
-    // virtual shared_ptr<BaseVector> CreateVector() const override { return sub_steps[0]->CreateVector(); }
-    // virtual shared_ptr<BaseVector> CreateMappedVector() const override { return sub_steps.Last()->CreateMappedVector(); }
     virtual void TransferF2C (const shared_ptr<const BaseVector> & x_fine,
 			      const shared_ptr<BaseVector> & x_coarse) const override
     {
@@ -167,21 +166,29 @@ namespace amg {
   class ProlMap : public BaseDOFMapStep
   {
   public:
-    using TFMAT = typename amg_spm_traits<TMAT>::T_LEFT;
-    using TCMAT = typename amg_spm_traits<TMAT>::T_RIGHT;
+    using SPM_TM_F = stripped_spm_tm<Mat<mat_traits<typename TMAT::TENTRY>::HEIGHT, mat_traits<typename TMAT::TENTRY>::HEIGHT, double>>;
+    using SPM_TM_P = stripped_spm_tm<Mat<mat_traits<typename TMAT::TENTRY>::HEIGHT, mat_traits<typename TMAT::TENTRY>::WIDTH, double>>;
+    using SPM_TM_C = stripped_spm_tm<Mat<mat_traits<typename TMAT::TENTRY>::WIDTH, mat_traits<typename TMAT::TENTRY>::WIDTH, double>>;
+
+    using SPM_F = SparseMatrix<typename strip_mat<Mat<mat_traits<typename TMAT::TENTRY>::HEIGHT, mat_traits<typename TMAT::TENTRY>::HEIGHT, double>>::type>;
+    using SPM_P = SparseMatrix<typename strip_mat<Mat<mat_traits<typename TMAT::TENTRY>::HEIGHT, mat_traits<typename TMAT::TENTRY>::WIDTH, double>>::type>;
+    using SPM_C = SparseMatrix<typename strip_mat<Mat<mat_traits<typename TMAT::TENTRY>::WIDTH, mat_traits<typename TMAT::TENTRY>::WIDTH, double>>::type>;
+
+    static_assert(std::is_same<SPM_TM_P, TMAT>::value, "Use SPM_TM for ProlMap!!");
 
     ProlMap (shared_ptr<TMAT> aprol, shared_ptr<ParallelDofs> fpd, shared_ptr<ParallelDofs> cpd, bool apw = true)
-      : BaseDOFMapStep(fpd, cpd), prol(aprol), ispw(apw), has_smf(false), SMFUNC([](auto x) { ; }), LOGFUNC([](auto x) { ; })
+      : BaseDOFMapStep(fpd, cpd), prol(aprol), prol_trans(nullptr),
+	ispw(apw), has_smf(false), cnt(1), has_lf(false),
+	SMFUNC([](auto x) { ; }), LOGFUNC([](auto x) { ; })
     { ; }
 
+  public:
     virtual void TransferF2C (const shared_ptr<const BaseVector> & x_fine,
 			      const shared_ptr<BaseVector> & x_coarse) const override;
     
     virtual void TransferC2F (const shared_ptr<BaseVector> & x_fine,
 			      const shared_ptr<const BaseVector> & x_coarse) const override;
 
-    // virtual shared_ptr<BaseVector> CreateVector () const override;
-    // virtual shared_ptr<BaseVector> CreateMappedVector () const override;
     virtual shared_ptr<BaseDOFMapStep> Concatenate (shared_ptr<BaseDOFMapStep> other) override;
 
     virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const override;
@@ -191,37 +198,35 @@ namespace amg {
 
     INLINE bool IsPW () const { return ispw; }
     INLINE bool CanSM () const { return has_smf; }
-    INLINE bool WantSM () const { return has_smf && force_smf; }
-    // void SetSmoothed (const VWiseAMG* aamg, shared_ptr<TopologicMesh> amesh);
-    // void SetSmoothed (void (*SMFUNC) (ProlMap<TMAT> * map, shared_ptr<TopologicMesh> mesh), shared_ptr<TopologicMesh> amesh);
-    void SetSmoothed ( std::function<void(ProlMap<TMAT> * map)> ASMFUNC, bool force = true);
-    void SetLog ( std::function<void(shared_ptr<BaseSparseMatrix> prol)> ALOGFUNC);
-    std::function<void(shared_ptr<BaseSparseMatrix>)> GetLog () { return LOGFUNC; }
-    void ClearSmoothed ( );
+    INLINE bool HasLog () const { return has_lf; }
+
+    void SetSMF ( std::function<void(ProlMap<TMAT> * map)> ASMFUNC, bool force = true);
+    std::function<void(ProlMap<TMAT> * map)> GetSMF () const { return SMFUNC; }
+    void ClearSMF ();
     void Smooth (); 
 
-    void SetCnt (int acnt) const { cnt = acnt; }
+    void SetLog ( std::function<void(shared_ptr<BaseSparseMatrix> prol)> ALOGFUNC);
+    std::function<void(shared_ptr<BaseSparseMatrix>)> GetLog () { return LOGFUNC; }
+    void ClearLog ();
+    
+    void SetCnt (int acnt) { cnt = acnt; }
     int GetCnt () const { return cnt; }
-
   protected:
     shared_ptr<TMAT> prol;
-    mutable bool ispw = true;
-    mutable bool has_smf = false;
-    mutable bool force_smf = false;
-    mutable bool has_lf = false;
-    mutable int cnt = 0;
-    
+    shared_ptr<trans_spm_tm<TMAT>> prol_trans;
+
+    bool ispw, has_smf, has_lf;
+    int cnt;
     std::function<void(ProlMap<TMAT> * map)> SMFUNC;
     std::function<void(shared_ptr<BaseSparseMatrix> prol)> LOGFUNC;
-    // shared_ptr<TopologicMesh> mesh;
   };
 
 
   template <class SPML, class SPMR>
-  class TwoProlMap : public ProlMap<mult_spm<SPML, SPMR>>
+  class TwoProlMap : public ProlMap<mult_spm_tm<SPML, SPMR>>
   {
   public:    
-    using SPM = mult_spm<SPML, SPMR>;
+    using SPM = mult_spm_tm<SPML, SPMR>;
 
     TwoProlMap (shared_ptr<ProlMap<SPML>> pml, shared_ptr<ProlMap<SPMR>> pmr)
       : ProlMap<SPM>(nullptr, pml->GetParDofs(), pmr->GetMappedParDofs()),
@@ -238,14 +243,15 @@ namespace amg {
     virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const override
     { // can only happen for [PP, S(..)] case with first map
       // AAAARGH MORE HACKS AAAAAAA
-      const_cast<shared_ptr<SPM>&>(prol) = MatMultAB<SPML, SPMR>(*lmap->GetProl(), *rmap->GetProl());
-      this->SetCnt(lmap->GetCnt() + rmap->GetCnt());
-      this->ispw = rmap->IsPW() && lmap->IsPW();
+      auto& self = const_cast<TwoProlMap<SPML, SPMR>&>(*this);
+      self.prol = MatMultAB<SPML, SPMR>(*lmap->GetProl(), *rmap->GetProl());
+      self.SetCnt(lmap->GetCnt() + rmap->GetCnt());
+      self.ispw = rmap->IsPW() && lmap->IsPW();
       const_cast<shared_ptr<ProlMap<SPML>>&>(lmap) = nullptr;
       const_cast<shared_ptr<ProlMap<SPMR>>&>(rmap) = nullptr;
       return ProlMap<SPM> :: AssembleMatrix(mat);      
     }
-    
+
   protected:
     using ProlMap<SPM>::prol;
     shared_ptr<ProlMap<SPML>> lmap;

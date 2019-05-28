@@ -23,22 +23,26 @@ namespace ngla
    **/
 #ifdef ELASTICITY
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMG_SPMSTUFF_CPP)
+
+#define InstSPMS(N,M)				  \
+  EXTERN template class SparseMatrixTM<Mat<N,M,double>>; \
+  EXTERN template class SparseMatrix<Mat<N,M,double>>; \
+  
 #if MAX_SYS_DIM < 3
-  EXTERN template class SparseMatrixTM<Mat<3,3,double>>;
-  EXTERN template class SparseMatrix<Mat<3,3,double>>;
+  InstSPMS(3,3);
 #endif
-  EXTERN template class SparseMatrixTM<Mat<1,3,double>>;
-  EXTERN template class SparseMatrix<Mat<1,3,double>>;
-  EXTERN template class SparseMatrixTM<Mat<2,3,double>>;
-  EXTERN template class SparseMatrix<Mat<2,3,double>>;
+  InstSPMS(1,3);
+  InstSPMS(3,1);
+  InstSPMS(2,3);
+  InstSPMS(3,2);
 #if MAX_SYS_DIM < 6
-  EXTERN template class SparseMatrixTM<Mat<6,6,double>>;
-  EXTERN template class SparseMatrix<Mat<6,6,double>>;
+  InstSPMS(6,6);
 #endif
-  EXTERN template class SparseMatrixTM<Mat<1,6,double>>;
-  EXTERN template class SparseMatrix<Mat<1,6,double>>;
-  EXTERN template class SparseMatrixTM<Mat<3,6,double>>;
-  EXTERN template class SparseMatrix<Mat<3,6,double>>;
+  InstSPMS(1,6);
+  InstSPMS(6,1);
+  InstSPMS(3,6);
+  InstSPMS(6,3);
+#undef InstSPMS
 #endif
 #endif
   
@@ -96,7 +100,7 @@ namespace amg
 
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGMAP_CPP)
 #define InstProlMap(A,B) \
-  EXTERN template class ProlMap<stripped_spm<Mat<A,B,double>>>;
+  EXTERN template class ProlMap<stripped_spm_tm<Mat<A,B,double>>>;
 
   InstProlMap(1,1);
 #ifdef ELASTICITY
@@ -107,9 +111,9 @@ namespace amg
   InstProlMap(3,6);
   InstProlMap(6,6);
 #endif
-#undef InstProLMap  
+#undef InstProLMap
 #endif
-  
+
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGELAST_CPP)
 #ifdef ELASTICITY
   //#ifndef FILE_AMGELAST_CPP
@@ -122,14 +126,12 @@ namespace amg
 #endif
 
 #define InstTransMat(N,M) \
-  template shared_ptr<trans_spm<stripped_spm<Mat<N,M,double>>>>	\
-  TransposeSPM<stripped_spm<Mat<N,M,double>>> (const stripped_spm<Mat<N,M,double>> & mat);
-  // template shared_ptr<trans_spm<SparseMatrix<Mat<N,M,double>>>>	\
-  // TransposeSPM<SparseMatrix<typename strip_mat<Mat<N,M,double>>::type>> (const SparseMatrix<typename strip_mat<Mat<N,M,double>>::type> & mat);
+  template shared_ptr<trans_spm_tm<stripped_spm_tm<Mat<N,M,double>>>>	\
+  TransposeSPM<stripped_spm_tm<Mat<N,M,double>>> (const stripped_spm_tm<Mat<N,M,double>> & mat);
 
-#define InstMultMat(A,B,C) \
-  template shared_ptr<stripped_spm<Mat<A,C,double>>>			\
-  MatMultAB<stripped_spm<Mat<A,B,double>>, stripped_spm<Mat<B,C,double>>> (const stripped_spm<Mat<A,B,double>> & mata, const stripped_spm<Mat<B,C,double>> & matb);
+#define InstMultMat(A,B,C)						\
+  template shared_ptr<stripped_spm_tm<Mat<A,C,double>>>			\
+  MatMultAB<stripped_spm_tm<Mat<A,B,double>>> (const stripped_spm_tm<Mat<A,B,double>> & mata, const stripped_spm_tm<Mat<B,C,double>> & matb);
   
 #define InstEmbedMults(N,M) /* embedding NxN to MxM */	\
   InstMultMat(N,M,M); /* conctenate prols */		\

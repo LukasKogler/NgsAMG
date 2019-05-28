@@ -10,8 +10,11 @@ namespace amg
   class CtrMap : public BaseDOFMapStep
   {
   public:
+
     using TM = typename strip_mat<Mat<mat_traits<TV>::HEIGHT, mat_traits<TV>::HEIGHT, typename mat_traits<TV>::TSCAL>>::type;
-    using TSPM = SparseMatrix<TM,TV,TV>;
+    using TSPM = stripped_spm<TM>;
+    using TSPM_TM = stripped_spm_tm<TM>;
+
     CtrMap (shared_ptr<ParallelDofs> pardofs, shared_ptr<ParallelDofs> mapped_pardofs,
 	    Array<int> && group, Table<int> && dof_maps);
     ~CtrMap ();
@@ -20,11 +23,6 @@ namespace amg
 			     const shared_ptr<BaseVector> & x_coarse) const override;
     virtual void TransferC2F(const shared_ptr<BaseVector> & x_fine,
 			     const shared_ptr<const BaseVector> & x_coarse) const override;
-
-    // virtual shared_ptr<BaseVector> CreateVector() const override
-    // { return make_shared<ParallelVVector<TV>>(pardofs->GetNDofLocal(), pardofs, CUMULATED); }
-    // virtual shared_ptr<BaseVector> CreateMappedVector() const override
-    // { return (mapped_pardofs!=nullptr) ? make_shared<ParallelVVector<TV>>(mapped_pardofs->GetNDofLocal(), mapped_pardofs, CUMULATED) : nullptr; }
 
     virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const override
     {

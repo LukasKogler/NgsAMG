@@ -446,10 +446,10 @@ namespace amg
   { mat = 0; for (auto k : Range(D)) SetScalIdentity(scal, mat(k,k)); }
   
   template<class TM>
-  shared_ptr<stripped_spm<TM>> BuildPermutationMatrix (FlatArray<int> sort) {
+  shared_ptr<stripped_spm_tm<TM>> BuildPermutationMatrix (FlatArray<int> sort) {
     size_t N = sort.Size();
     Array<int> epr(N); epr = 1.0;
-    auto embed_mat = make_shared<stripped_spm<TM>>(epr, N);
+    auto embed_mat = make_shared<stripped_spm_tm<TM>>(epr, N);
     const auto & em = *embed_mat;
     for (auto k : Range(N)) {
       em.GetRowIndices(k)[0] = sort[k];

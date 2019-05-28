@@ -28,8 +28,8 @@ namespace amg
   }
 
 
-  template<> shared_ptr<ElasticityAMG<3>::TSPMAT>
-  ElasticityAMG<3> :: RegularizeMatrix (shared_ptr<ElasticityAMG<3>::TSPMAT> mat, shared_ptr<ParallelDofs> & pardofs)
+  template<> shared_ptr<ElasticityAMG<3>::TSPM>
+  ElasticityAMG<3> :: RegularizeMatrix (shared_ptr<ElasticityAMG<3>::TSPM> mat, shared_ptr<ParallelDofs> & pardofs)
   {
     // cerr << "reg. mat " << mat->Height() << " x " << mat->Width() << endl;
     // print_tm_spmat(cerr, *mat);
@@ -60,8 +60,8 @@ namespace amg
     return mat;
   }
 
-  template<> shared_ptr<ElasticityAMG<2>::TSPMAT>
-  ElasticityAMG<2> :: RegularizeMatrix (shared_ptr<ElasticityAMG<2>::TSPMAT> mat, shared_ptr<ParallelDofs> & pardofs)
+  template<> shared_ptr<ElasticityAMG<2>::TSPM>
+  ElasticityAMG<2> :: RegularizeMatrix (shared_ptr<ElasticityAMG<2>::TSPM> mat, shared_ptr<ParallelDofs> & pardofs)
   {
     for(auto k : Range(mat->Height())) {
       auto& diag = (*mat)(k,k);
@@ -359,16 +359,13 @@ namespace amg
 	}
 	using TESM = Mat<disppv(C::DIM), dofpv(C::DIM)>;
 	options->regularize = true;
-	// auto pmap = make_shared<ProlMap<SparseMatrix<TESM>>> (fpardofs, nullptr);
-	// pmap->SetProl(BuildPermutationMatrix<TESM>(vsort));
-	return make_shared<ProlMap<SparseMatrix<TESM>>> (BuildPermutationMatrix<TESM>(vsort), fpardofs, nullptr);
+	auto pmap = make_shared<ProlMap<SparseMatrixTM<TESM>>> (BuildPermutationMatrix<TESM>(vsort), fpardofs, nullptr);
+	return pmap;
       }
       else if (options->block_s.Size() > 1) {
 	using TESM = Mat<1, dofpv(C::DIM)>;
 	// NOT CORRECT!! just for template insantiation so we get compile time checks
-	// auto pmap = make_shared<ProlMap<stripped_spm<TESM>>> (fpardofs, nullptr);
-	// pmap->SetProl(BuildPermutationMatrix<TESM>(vsort));
-	auto pmap = make_shared<ProlMap<stripped_spm<TESM>>> (BuildPermutationMatrix<TESM>(vsort), fpardofs, nullptr);
+	auto pmap = make_shared<ProlMap<SparseMatrixTM<TESM>>> (BuildPermutationMatrix<TESM>(vsort), fpardofs, nullptr);
 	throw Exception("Compound FES embedding not implemented, sorry!");
 	return nullptr;
       }
@@ -377,9 +374,8 @@ namespace amg
 	for (int k : Range(vsort.Size()))
 	  if (vsort[k]!=k) { need_mat = true; break; }
 	if (need_mat == false) return nullptr;
-	// auto pmap = make_shared<ProlMap<SparseMatrix<typename C::TMAT>>>(fpardofs, nullptr);
-	// pmap->SetProl(BuildPermutationMatrix<typename C::TMAT>(vsort));
-	return make_shared<ProlMap<SparseMatrix<typename C::TMAT>>>(BuildPermutationMatrix<typename C::TMAT>(vsort), fpardofs, nullptr);
+	auto pmap = make_shared<ProlMap<SparseMatrixTM<typename C::TMAT>>>(BuildPermutationMatrix<typename C::TMAT>(vsort), fpardofs, nullptr);
+	return pmap;
       }
     }
     else {
@@ -511,16 +507,15 @@ namespace amg
 	  tang /= L2Norm(tang);
 	  // cout << "lam: " << lam << endl;
 	  // cout << "ELEW bef: " << endl; print_tm(cout, elew); cout << endl;
-	  // Iterate<disppv(D)>([&](auto i) {
-	  //     elew(i.value, i.value) += lam;
-	  //   });
 	  Iterate<disppv(D)>([&](auto i) {
-	      Iterate<disppv(D)>([&](auto j) {
-	  	  // elew(i.value, j.value) += lam * lam * tang(i.value) * tang(j.value); // ??why lam**2??
-	  	  // elew(i.value, j.value) += lam * tang(i.value) * tang(j.value);
-	  	  elew(i.value, j.value) += schur(i.value, j.value);
-	  	});
+	      elew(i.value, i.value) += lam;
 	    });
+	  // Iterate<disppv(D)>([&](auto i) {
+	  //     Iterate<disppv(D)>([&](auto j) {
+	  // 	  // elew(i.value, j.value) += lam * lam * tang(i.value) * tang(j.value); // ??why lam**2??
+	  // 	  elew(i.value, j.value) += lam * tang(i.value) * tang(j.value);
+	  // 	});
+	  //   });
 	  // cout << "ELEW after: " << endl; print_tm(cout, elew); cout << endl;
 	  Iterate<rotpv(D)>([&](auto i) {
 	      elew(disppv(D)+i.value, disppv(D)+i.value) += 1e-10 * lam;

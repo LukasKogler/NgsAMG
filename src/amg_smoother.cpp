@@ -136,7 +136,7 @@ namespace amg {
 	}
     }
     // recv diag-mats
-    Array<shared_ptr<TSPMAT>> recv_mats(nexp_larger);
+    Array<shared_ptr<TSPMAT_TM>> recv_mats(nexp_larger);
     for (auto kkp : Range(nexp_larger)) {
       auto kp = nexp_smaller+kkp;
       auto p = ex_procs[kp];
