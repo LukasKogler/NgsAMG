@@ -233,6 +233,11 @@ namespace amg
 
     virtual string GetName () const { return string("NodeWiseAMG"); }
 
+    virtual void Mult (const BaseVector & b, BaseVector & x) const override
+    { amg_mat->Mult(b, x); }
+    virtual void MultAdd (double s, const BaseVector & b, BaseVector & x) const override
+    { amg_mat->MultAdd(s, b, x); }
+
     size_t GetNLevels(int rank) const
     {return this->amg_mat->GetNLevels(rank); }
     void GetBF(size_t level, int rank, size_t dof, BaseVector & vec) const
@@ -399,6 +404,9 @@ namespace amg
 
     virtual void Mult (const BaseVector & b, BaseVector & x) const override
     { amg_pc->Mult(b, x); }
+    virtual void MultAdd (double s, const BaseVector & b, BaseVector & x) const override
+    { amg_pc->MultAdd(s, b, x); }
+
     virtual const BaseMatrix & GetAMatrix() const override
     { return *finest_mat; }
     virtual int VHeight() const override { return finest_mat->VHeight(); }

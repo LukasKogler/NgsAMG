@@ -71,6 +71,11 @@ namespace amg
       shared_ptr<const BaseVector> sb(const_cast<BaseVector*>(&b), NOOP_Deleter);
       this->SmoothV(sx, sb);
     }
+    virtual void MultAdd (double s, const BaseVector & b, BaseVector & x) const override {
+      shared_ptr<const BaseVector> sb(const_cast<BaseVector*>(&b), NOOP_Deleter);
+      this->SmoothV(x_level[0], sb);
+      x += s * *x_level[0];
+    }
     void AddFinalLevel (const shared_ptr<const BaseMatrix> & _crs_inv)
     { crs_inv = _crs_inv; has_crs_inv = true; }
     // void AddFinalLevel (const shared_ptr<const BaseSmoother> & crs_smoother_)
