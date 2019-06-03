@@ -102,6 +102,24 @@ namespace amg
     return RestrictMatrixTM(*PT, A, P);
   }
 
+  // workaround for sparse-matrix memory usage
+  // cast to TSPM_TM because "error: member 'GetMemoryUsage' found in multiple base classes of different types"
+  INLINE Array<MemoryUsage> GetMUHack (const BaseSparseMatrix & mat)
+  {
+    if (auto p = dynamic_cast<const SparseMatrixTM<double>*>(&mat)) { return p->GetMemoryUsage(); }
+    else if (auto p = dynamic_cast<const SparseMatrixTM<Mat<1,1,double>>*>(&mat)) { return p->GetMemoryUsage(); }
+    else if (auto p = dynamic_cast<const SparseMatrixTM<Mat<1,2,double>>*>(&mat)) { return p->GetMemoryUsage(); }
+    else if (auto p = dynamic_cast<const SparseMatrixTM<Mat<1,3,double>>*>(&mat)) { return p->GetMemoryUsage(); }
+    else if (auto p = dynamic_cast<const SparseMatrixTM<Mat<1,6,double>>*>(&mat)) { return p->GetMemoryUsage(); }
+    else if (auto p = dynamic_cast<const SparseMatrixTM<Mat<2,3,double>>*>(&mat)) { return p->GetMemoryUsage(); }
+    else if (auto p = dynamic_cast<const SparseMatrixTM<Mat<3,3,double>>*>(&mat)) { return p->GetMemoryUsage(); }
+    else if (auto p = dynamic_cast<const SparseMatrixTM<Mat<3,6,double>>*>(&mat)) { return p->GetMemoryUsage(); }
+    else if (auto p = dynamic_cast<const SparseMatrixTM<Mat<6,6,double>>*>(&mat)) { return p->GetMemoryUsage(); }
+    else {
+      throw Exception("GetMemoryUsage for weird matrix!");
+      return Array<MemoryUsage>();
+    }
+  }
 
 } // namespace amg
 

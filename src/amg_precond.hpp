@@ -3,39 +3,25 @@
 
 namespace amg
 {
+  /** 
+      (abstract)
+      AMG with DPN DOFs associated to each (coarse) mesh.
 
-  /**
-     Vertex-wise AMG preconditioner. Abstract base-class.
-
-     This class is used when DOF-numbering is 0..ndof-1, 
-     with one DOF per "vertex" (so multidim-fespace style).
-     
-     This is per construction always the case for coarse levels. For the finest
-     level we have to make a difference. See EmbeddedAMGPC for that!
-
-     Implements:
-       - coarse-level-loop
-       - assembly loop for tentative & smoothed prolongations
-     CRTP for:
-       - scalar/block-scalar types
-       - prolongation-kernels
-       - replacement-matrix kernels
-     Virtual methods:
-       - set coarsening options
-       - regularize matrix
+      Implements:
+        - Setup-loop
+	- ParallelDofs
+	- Contract-Maps
+	- select coarsening (?)
+      TODO: this should not need TMESH
    **/
-  template<class AMG_CLASS, class ATMESH, class TMAT>
-  class VWiseAMG : public BaseMatrix
+  template<class ATMESH, NODE_TYPE ANT, int ADPN>
+  class NodeWiseAMG : public BaseMatrix
   {
-    // TODO: do I need ATMESH? could take that from AMG_CLASS
   public:
-
     using TMESH = ATMESH;
-    using TV = typename mat_traits<TMAT>::TV_ROW;
-    using TSCAL = typename mat_traits<TMAT>::TSCAL;
-    using TSPM_TM = stripped_spm_tm<TMAT>;
-    using TSPM = stripped_spm<TMAT>;
-    
+    static constexpr NODE_TYPE NT = ANT;
+    static constexpr int DPN = ADPN;
+
     struct Options
     {
       /** Dirichlet conditions for finest level **/
@@ -84,8 +70,8 @@ namespace amg
       bool sync = true;
     };
 
-    
-    struct Info {
+    struct Info
+    {
       /** Only values on rank 0 are true, others can be garbage !! **/
       INFO_LEVEL ilev;
       // BASIC+ // summary values
@@ -119,143 +105,133 @@ namespace amg
       NgsAMG_Comm glob_comm;
     public:
       Info (INFO_LEVEL ailev, size_t asize) : ilev(ailev) {
-	has_comm = false;
-	auto alloc = [asize](auto & array) {
-	  array.SetSize(asize); array.SetSize0();
-	};
-	if (ilev >= BASIC)
-	  { alloc(lvs); alloc(isass); alloc(NVs); alloc(vcc); alloc(occ); alloc(rpp); }
-	if (ilev >= DETAILED)
-	  { alloc(mcc1); alloc(mcc2); alloc(NEs); alloc(NPs); }
-	if (ilev >= EXTRA)
-	  { alloc(vcc_l); alloc(occ_l); alloc(mcc1_l); alloc(mcc2_l); }
+  	has_comm = false;
+  	auto alloc = [asize](auto & array) {
+  	  array.SetSize(asize); array.SetSize0();
+  	};
+  	if (ilev >= BASIC)
+  	  { alloc(lvs); alloc(isass); alloc(NVs); alloc(vcc); alloc(occ); alloc(rpp); }
+  	if (ilev >= DETAILED)
+  	  { alloc(mcc1); alloc(mcc2); alloc(NEs); alloc(NPs); }
+  	if (ilev >= EXTRA)
+  	  { alloc(vcc_l); alloc(occ_l); alloc(mcc1_l); alloc(mcc2_l); }
       }
 
       void LogMesh (INT<3> level, shared_ptr<TMESH> & amesh, bool assit) {
-	if (ilev == NONE) return;
-	auto comm = amesh->GetEQCHierarchy()->GetCommunicator();
-	if(!has_comm) { has_comm = true; glob_comm = comm; }
-	isass.Append(assit?1:0);
-	if (comm.Rank() == 0) {
-	  lvs.Append(INT<4>(level[0], level[1], level[2], -1));
-	  NVs.Append(amesh->template GetNNGlobal<NT_VERTEX>());
-	}
-	if (ilev <= BASIC) return;
-	if (comm.Rank() == 0) {
-	  NEs.Append(amesh->template GetNNGlobal<NT_EDGE>());
-	  NPs.Append(comm.Size());
-	}
-	if (ilev <= DETAILED) return;
-	vcc_l.Append(amesh->template GetNN<NT_VERTEX>());
-	size_t locnv_l = amesh->template GetENN<NT_VERTEX>(0);
-	size_t locnv_g = comm.Reduce(locnv_l, MPI_SUM, 0);
-	if (comm.Rank()==0) fvloc.Append( locnv_g/double(NVs.Last()) );
+  	if (ilev == NONE) return;
+  	auto comm = amesh->GetEQCHierarchy()->GetCommunicator();
+  	if(!has_comm) { has_comm = true; glob_comm = comm; }
+  	isass.Append(assit?1:0);
+  	if (comm.Rank() == 0) {
+  	  lvs.Append(INT<4>(level[0], level[1], level[2], -1));
+  	  NVs.Append(amesh->template GetNNGlobal<NT_VERTEX>());
+  	}
+  	if (ilev <= BASIC) return;
+  	if (comm.Rank() == 0) {
+  	  NEs.Append(amesh->template GetNNGlobal<NT_EDGE>());
+  	  NPs.Append(comm.Size());
+  	}
+  	if (ilev <= DETAILED) return;
+  	vcc_l.Append(amesh->template GetNN<NT_VERTEX>());
+  	size_t locnv_l = amesh->template GetENN<NT_VERTEX>(0);
+  	size_t locnv_g = comm.Reduce(locnv_l, MPI_SUM, 0);
+  	if (comm.Rank()==0) fvloc.Append( locnv_g/double(NVs.Last()) );
       }
 
       void LogSMP (INT<3> level, bool smoothed)
       {
-	if (ilev == NONE) return;
-	if (glob_comm.Rank() == 0) { lvs.Last()[3] = smoothed ? 1 : 0; }
+  	if (ilev == NONE) return;
+  	if (glob_comm.Rank() == 0) { lvs.Last()[3] = smoothed ? 1 : 0; }
       }
       
       void LogProl (shared_ptr<BaseSparseMatrix> prol)
       {
-	if (ilev == NONE) return;
-	// if (glob_comm.Rank() == 0) { lvs.Last()[3] = smoothed ? 1 : 0; }
-	int mes = sqrt(GetEntrySize(prol.get()));
-	rpp.Append( (prol->Height() ? mes * (double(prol->NZE()) / prol->Height()) : 0));
+  	if (ilev == NONE) return;
+  	// if (glob_comm.Rank() == 0) { lvs.Last()[3] = smoothed ? 1 : 0; }
+  	int mes = sqrt(GetEntrySize(prol.get()));
+  	rpp.Append( (prol->Height() ? mes * (double(prol->NZE()) / prol->Height()) : 0));
       }
       
       void LogMatSm (shared_ptr<BaseSparseMatrix> & amat, shared_ptr<BaseSmoother> & sm) {
-	if (ilev == NONE) return;
-	auto comm = sm->GetParallelDofs()->GetCommunicator();
-	int mes = GetEntrySize(amat.get());
-	size_t ocmat_l = amat->NZE()*mes;
-	size_t ocmat_g = comm.Reduce(ocmat_l, MPI_SUM, 0);
-	if (comm.Rank()==0) occ.Append(ocmat_g);
-	if (ilev <= BASIC) return;
-	// cast to TSPM_TM because "error: member 'GetMemoryUsage' found in multiple base classes of different types"
-	size_t nbts_mat_l = 0; for (auto & mu : static_cast<TSPM_TM*>(amat.get())->GetMemoryUsage()) nbts_mat_l += mu.NBytes();
-	size_t nbts_mat_g = comm.Reduce(nbts_mat_l, MPI_SUM, 0);
-	size_t nbts_sm_l = 0; for (auto & mu : sm->GetMemoryUsage()) nbts_sm_l += mu.NBytes();
-	size_t nbts_sm_g = comm.Reduce(nbts_sm_l, MPI_SUM, 0);
-	if (comm.Rank()==0) { mcc1.Append(nbts_mat_g); mcc2.Append(nbts_sm_g); }
-	if (ilev <= DETAILED ) return;
-	occ_l.Append(ocmat_l);
-	mcc1_l.Append(nbts_mat_l);
-	mcc2_l.Append(nbts_sm_l);
+  	if (ilev == NONE) return;
+  	auto comm = sm->GetParallelDofs()->GetCommunicator();
+  	int mes = GetEntrySize(amat.get());
+  	size_t ocmat_l = amat->NZE()*mes;
+  	size_t ocmat_g = comm.Reduce(ocmat_l, MPI_SUM, 0);
+  	if (comm.Rank()==0) occ.Append(ocmat_g);
+  	if (ilev <= BASIC) return;
+  	// cast to TSPM_TM because "error: member 'GetMemoryUsage' found in multiple base classes of different types"
+  	// size_t nbts_mat_l = 0; for (auto & mu : static_cast<TSPM_TM*>(amat.get())->GetMemoryUsage()) nbts_mat_l += mu.NBytes();
+  	size_t nbts_mat_l = 0; auto mus = GetMUHack(*amat); for (auto & mu : mus) nbts_mat_l += mu.NBytes();
+  	size_t nbts_mat_g = comm.Reduce(nbts_mat_l, MPI_SUM, 0);
+  	size_t nbts_sm_l = 0; for (auto & mu : sm->GetMemoryUsage()) nbts_sm_l += mu.NBytes();
+  	size_t nbts_sm_g = comm.Reduce(nbts_sm_l, MPI_SUM, 0);
+  	if (comm.Rank()==0) { mcc1.Append(nbts_mat_g); mcc2.Append(nbts_sm_g); }
+  	if (ilev <= DETAILED ) return;
+  	occ_l.Append(ocmat_l);
+  	mcc1_l.Append(nbts_mat_l);
+  	mcc2_l.Append(nbts_sm_l);
       }
       
       void Finalize() {
-	if (ilev == NONE) return;
-	static Timer t("Info::Finalize"); RegionTimer rt(t);
-	int n_meshes = NVs.Size(), n_mats = occ.Size(); // == 0 if not master
-	auto lam_max = [&](auto & val, auto & arr) {
-	  auto val2 = glob_comm.AllReduce(val, MPI_MAX);
-	  int mrk = (val==val2) ? glob_comm.Rank() : glob_comm.Size()+1;
-	  int sender = glob_comm.AllReduce(mrk, MPI_MIN);
-	  if (sender != 0) {
-	    if (glob_comm.Rank()==sender) { glob_comm.Send(arr, 0, MPI_TAG_AMG); }
-	    else if (glob_comm.Rank()==0) { val = val2; glob_comm.Recv(arr, sender, MPI_TAG_AMG); }
-	  }
-	};
-	// VC
-	v_comp = 0;
-	for (auto k : Range(n_meshes))
-	  if (isass[k]==1) { double val = double(NVs[k])/NVs[0]; v_comp += val; vcc.Append(val); }
-	// OC
-	op_comp = 0; double oc0 = occ[0];
-	for (auto k : Range(n_mats))
-	  { auto v = occ[k]/oc0; op_comp += v; occ[k] = v; }
-	if (ilev <= BASIC) return;
-	// MC-1 & MC-2
-	mem_comp1 = 0; mem_comp2 = 0; double mm0 = mcc1[0];
-	for (auto k : Range(n_mats))
-	  {
-	    auto v1 = mcc1[k]/mm0; mem_comp1 += v1; mcc1[k] = v1;
-	    auto v2 = mcc2[k]/mm0; mem_comp2 += v2; mcc2[k] = v2;
-	  }
-	if (ilev <= DETAILED ) return;
-	n_meshes = vcc_l.Size(); n_mats = occ_l.Size();
-	// VC-L
-	v_comp_l = 0; double vcl0 = max2(1.0, vcc_l[0]);
-	for (auto k : Range(n_meshes))
-	  if (isass[k]==1) { double val = vcc_l[k]/vcl0; v_comp_l += val; vcc_l[k] = val; }
-	double cpvc = v_comp_l;
-	lam_max(v_comp_l, vcc_l);
-	// RPP (get RPP of rank with max. loc OC)
-	lam_max(cpvc, rpp);
-	// OC-L
-	op_comp_l = 0; double ocl0 = max2(1.0, occ_l[0]);
-	for (auto k : Range(n_mats))
-	  { auto v = occ_l[k]/ocl0; op_comp_l += v; occ_l[k] = v; }
-	lam_max(op_comp_l, occ_l);
-	// MC-1-L & MC-2-L
-	mem_comp1_l = 0; mem_comp2_l = 0; double mml0 = max2(1.0, mcc1_l[0]);
-	for (auto k : Range(n_mats))
-	  {
-	    auto v1 = mcc1_l[k]/mml0; mem_comp1_l += v1; mcc1_l[k] = v1;
-	    auto v2 = mcc2_l[k]/mml0; mem_comp2_l += v2; mcc2_l[k] = v2;
-	  }
-	lam_max(mem_comp1_l, mcc1_l);
-	lam_max(mem_comp2_l, mcc2_l);
+  	if (ilev == NONE) return;
+  	static Timer t("Info::Finalize"); RegionTimer rt(t);
+  	int n_meshes = NVs.Size(), n_mats = occ.Size(); // == 0 if not master
+  	auto lam_max = [&](auto & val, auto & arr) {
+  	  auto val2 = glob_comm.AllReduce(val, MPI_MAX);
+  	  int mrk = (val==val2) ? glob_comm.Rank() : glob_comm.Size()+1;
+  	  int sender = glob_comm.AllReduce(mrk, MPI_MIN);
+  	  if (sender != 0) {
+  	    if (glob_comm.Rank()==sender) { glob_comm.Send(arr, 0, MPI_TAG_AMG); }
+  	    else if (glob_comm.Rank()==0) { val = val2; glob_comm.Recv(arr, sender, MPI_TAG_AMG); }
+  	  }
+  	};
+  	// VC
+  	v_comp = 0;
+  	for (auto k : Range(n_meshes))
+  	  if (isass[k]==1) { double val = double(NVs[k])/NVs[0]; v_comp += val; vcc.Append(val); }
+  	// OC
+  	op_comp = 0; double oc0 = occ[0];
+  	for (auto k : Range(n_mats))
+  	  { auto v = occ[k]/oc0; op_comp += v; occ[k] = v; }
+  	if (ilev <= BASIC) return;
+  	// MC-1 & MC-2
+  	mem_comp1 = 0; mem_comp2 = 0; double mm0 = mcc1[0];
+  	for (auto k : Range(n_mats))
+  	  {
+  	    auto v1 = mcc1[k]/mm0; mem_comp1 += v1; mcc1[k] = v1;
+  	    auto v2 = mcc2[k]/mm0; mem_comp2 += v2; mcc2[k] = v2;
+  	  }
+  	if (ilev <= DETAILED ) return;
+  	n_meshes = vcc_l.Size(); n_mats = occ_l.Size();
+  	// VC-L
+  	v_comp_l = 0; double vcl0 = max2(1.0, vcc_l[0]);
+  	for (auto k : Range(n_meshes))
+  	  if (isass[k]==1) { double val = vcc_l[k]/vcl0; v_comp_l += val; vcc_l[k] = val; }
+  	double cpvc = v_comp_l;
+  	lam_max(v_comp_l, vcc_l);
+  	// RPP (get RPP of rank with max. loc OC)
+  	lam_max(cpvc, rpp);
+  	// OC-L
+  	op_comp_l = 0; double ocl0 = max2(1.0, occ_l[0]);
+  	for (auto k : Range(n_mats))
+  	  { auto v = occ_l[k]/ocl0; op_comp_l += v; occ_l[k] = v; }
+  	lam_max(op_comp_l, occ_l);
+  	// MC-1-L & MC-2-L
+  	mem_comp1_l = 0; mem_comp2_l = 0; double mml0 = max2(1.0, mcc1_l[0]);
+  	for (auto k : Range(n_mats))
+  	  {
+  	    auto v1 = mcc1_l[k]/mml0; mem_comp1_l += v1; mcc1_l[k] = v1;
+  	    auto v2 = mcc2_l[k]/mml0; mem_comp2_l += v2; mcc2_l[k] = v2;
+  	  }
+  	lam_max(mem_comp1_l, mcc1_l);
+  	lam_max(mem_comp2_l, mcc2_l);
       }
-
     };
+    
+    NodeWiseAMG (shared_ptr<TMESH> finest_mesh, shared_ptr<Options> opts) : options(opts), mesh(finest_mesh) { ; };
 
-    VWiseAMG (shared_ptr<TMESH> finest_mesh, shared_ptr<Options> opts) : options(opts), mesh(finest_mesh) { ; };
-    /** the first prolongation is concatenated with embed_step (it should be provided by EmbedAMGPC) **/
-    void Finalize (shared_ptr<BaseMatrix> fine_mat, shared_ptr<BaseDOFMapStep> embed_step = nullptr);
-
-    INLINE void Mult (const BaseVector & b, BaseVector & x) const { amg_mat->Mult(b,x); }
-
-    // CRTP FOR THIS //
-    // INLINE void CalcPWPBlock (const TMESH & fmesh, const TMESH & cmesh, const CoarseMap & map,
-    // 			      AMG_Node<NT_VERTEX> v, AMG_Node<NT_VERTEX> cv, TMAT & mat);
-    // CRTP FOR THIS // calculate an edge-contribution to the replacement matrix
-    // INLINE void CalcRMBlock (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge, FlatMatrix<double> mat) const { mat = -1; }
-    // CRTP FOR THIS // get weight for edge (used for s-prol)
-    // template<NODE_TYPE NT> INLINE double GetWeight (const TMESH & mesh, const AMG_Node<NT> * edge) const
+    virtual string GetName () const { return string("NodeWiseAMG"); }
 
     size_t GetNLevels(int rank) const
     {return this->amg_mat->GetNLevels(rank); }
@@ -264,51 +240,101 @@ namespace amg
     size_t GetNDof(size_t level, int rank) const
     { return this->amg_mat->GetNDof(level, rank); }
     shared_ptr<Info> GetInfo () const { return infos; }
+    shared_ptr<Options> GetOptions () const { return options; }
 
-    // temporary (!!) hack
-    // INLINE void SmoothProlongation_hack (ProlMap<ASPM>* pmap, shared_ptr<TopologicMesh> mesh) const
-    template<class ASPM>
-    INLINE void SmoothProlongation_hack (ProlMap<ASPM>* pmap, shared_ptr<TMESH> mesh) const
-    {
-      static_assert(is_same<ASPM,TSPM_TM>::value, "INVALID PROL-TYPE TO SMOOTH!");
-      SmoothProlongation (shared_ptr<ProlMap<TSPM_TM>>(pmap, NOOP_Deleter), mesh);
-      // if constexpr(is_same<ASPM,TSPM_TM>::value) {
-      // 	  // SmoothProlongation (shared_ptr<ProlMap<TSPMAT>>(pmap, NOOP_Deleter), const_pointer_cast<TMESH>(mesh));
-      // 	  SmoothProlongation (shared_ptr<ProlMap<TSPM_TM>>(pmap, NOOP_Deleter), mesh);
-      // 	}
-      // else {
-      // 	throw Exception(string("Cannot smooth this prol: ") + typeid(ASPM).name());
-      // }
-    }
+    void Finalize (shared_ptr<BaseMatrix> fine_mat, shared_ptr<BaseDOFMapStep> embed_step = nullptr);
+    void Setup ();
+    
+  protected:
+
+    // Probably don't need to overload this
+    virtual shared_ptr<GridContractMap<TMESH>> TryContract (INT<3> level, shared_ptr<TMESH> mesh) const;
+
+    virtual shared_ptr<BaseDOFMapStep> BuildDOFMapStep (INT<3> level, shared_ptr<GridContractMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd) const;
+
+
+    virtual shared_ptr<ParallelDofs> BuildParDofs (shared_ptr<TMESH> amesh) const;
+
+    // HAVE TO overload this
+    virtual shared_ptr<CoarseMap<TMESH>> TryCoarsen  (INT<3> level, shared_ptr<TMESH> mesh) const = 0;
+
+    virtual shared_ptr<BaseDOFMapStep> BuildDOFMapStep (INT<3> level, shared_ptr<CoarseMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd,
+							bool smoothed_prol = false) const = 0;
+
+    virtual void SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts, INT<3> level, shared_ptr<TMESH> mesh) const = 0;
+
+    virtual shared_ptr<BaseSmoother> BuildSmoother  (INT<3> level, shared_ptr<BaseSparseMatrix> mat,
+  						     shared_ptr<ParallelDofs> par_dofs,
+  						     shared_ptr<BitArray> free_dofs) = 0;
+
+    // does nothing if not overloaded
+    virtual shared_ptr<BaseSparseMatrix> RegularizeMatrix (shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs> & pardofs) const { return mat; }
+
 
   protected:
-    string name = "VWiseAMG";
     shared_ptr<Options> options;
     shared_ptr<AMGMatrix> amg_mat;
     shared_ptr<TMESH> mesh;
     shared_ptr<BaseMatrix> finest_mat;
     shared_ptr<BaseDOFMapStep> embed_step;
     double ctr_factor = -1;
-    shared_ptr<Info> infos = nullptr;
-    
-    virtual void SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts, INT<3> level, shared_ptr<TMESH> mesh);
-    virtual shared_ptr<CoarseMap<TMESH>> TryCoarsen  (INT<3> level, shared_ptr<TMESH> mesh);
-    virtual shared_ptr<GridContractMap<TMESH>> TryContract (INT<3> level, shared_ptr<TMESH> mesh);
-    virtual shared_ptr<BaseGridMapStep> TryDiscard  (INT<3> level, shared_ptr<TMESH> mesh) { return nullptr; }
-    virtual shared_ptr<BaseSmoother> BuildSmoother  (INT<3> level, shared_ptr<BaseSparseMatrix> mat,
-						     shared_ptr<ParallelDofs> par_dofs,
-						     shared_ptr<BitArray> free_dofs) = 0;
-    virtual void SmoothProlongation (shared_ptr<ProlMap<TSPM_TM>> pmap, shared_ptr<TMESH> mesh) const;
-    virtual shared_ptr<TSPM> RegularizeMatrix (shared_ptr<TSPM> mat, shared_ptr<ParallelDofs> & pardofs) { return mat; }
-    void Setup ();
-    
-    shared_ptr<ParallelDofs> BuildParDofs (shared_ptr<TMESH> amesh);
-    shared_ptr<ProlMap<TSPM_TM>> BuildDOFMapStep (shared_ptr<CoarseMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd);
-    shared_ptr<CtrMap<TV>> BuildDOFMapStep (shared_ptr<GridContractMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd);
-
+    shared_ptr<Info> infos;
   };
 
 
+  /**
+     (abstract)
+     
+     Implements:
+       - PW-prol (kernel via CRTP)
+       - S-prol (kernel via CRTP)
+     TODO: should this need TMESH ??
+   **/
+  template<class AMG_CLASS, class ATMESH, int ADPN>
+  class VWiseAMG : public NodeWiseAMG<ATMESH, NT_VERTEX, ADPN>
+  {
+  public:
+    using BASE = NodeWiseAMG<ATMESH, NT_VERTEX, ADPN>;
+    using TMESH = typename BASE::TMESH;
+    using BASE::NT;
+    using BASE::DPN;
+
+    using TMAT = typename strip_mat<Mat<DPN, DPN, double>>::type;
+    using TSPM_TM = SparseMatrixTM<TMAT>;
+    using TSPM    = SparseMatrix<TMAT>;
+    using TV = typename strip_vec<Vec<DPN, double>>::type;
+    
+    struct Options : BASE::Options
+    {
+
+    };
+
+    VWiseAMG (shared_ptr<TMESH> finest_mesh, shared_ptr<Options> opts) :
+      BASE(finest_mesh, opts) { ; }
+
+    virtual string GetName () const override { return string("VWiseAMG"); }
+
+  protected:
+    // CAN overload this
+    virtual void SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts, INT<3> level, shared_ptr<TMESH> mesh) const override;
+
+    // should not need to overload this
+    virtual shared_ptr<CoarseMap<TMESH>> TryCoarsen  (INT<3> level, shared_ptr<TMESH> mesh) const override;
+    virtual shared_ptr<BaseDOFMapStep> BuildDOFMapStep (INT<3> level, shared_ptr<CoarseMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd,
+							bool smoothed_prol) const override;
+    shared_ptr<TSPM_TM> BuildPWProl (shared_ptr<CoarseMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd) const;
+    void SmoothProlongation (shared_ptr<ProlMap<TSPM_TM>> pmap, shared_ptr<TMESH> mesh) const;
+
+    template<class ASPM>
+    INLINE void SmoothProlongation_hack (ProlMap<ASPM>* pmap, shared_ptr<TMESH> mesh) const
+    {
+      static_assert(is_same<ASPM,TSPM_TM>::value, "INVALID PROL-TYPE TO SMOOTH!");
+      SmoothProlongation (shared_ptr<ProlMap<TSPM_TM>>(pmap, NOOP_Deleter), mesh);
+    }
+
+  };
+  
+  
 
   /**
      This class handles the conversion from the original FESpace
@@ -412,10 +438,10 @@ namespace amg
     size_t GetNLevels(int rank) const {return this->amg_pc->GetNLevels(rank); }
     void GetBF(size_t level, int rank, size_t dof, BaseVector & vec) const {this->amg_pc->GetBF(level, rank, dof, vec); }
     size_t GetNDof(size_t level, int rank) const { return this->amg_pc->GetNDof(level, rank); }
+    // virtual string GetName () const override { return AMG_CLASS::GetName(); }
     
     shared_ptr<Options> options;
   protected:
-    string name = "EmbedVAMG";
     shared_ptr<BilinearForm> bfa;
     shared_ptr<FESpace> fes;
     shared_ptr<AMG_CLASS> amg_pc;

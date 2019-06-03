@@ -7,8 +7,8 @@ namespace amg
 {
 
   H1AMG :: H1AMG (shared_ptr<H1AMG::TMESH> mesh,  shared_ptr<H1AMG::Options> opts)
-    : VWiseAMG<H1AMG, H1AMG::TMESH, double>(mesh, opts)
-  { name = "H1AMG"; }
+    : VWiseAMG<H1AMG, H1AMG::TMESH, 1>(mesh, opts)
+  { }
 
   shared_ptr<BaseSmoother> H1AMG :: BuildSmoother  (INT<3> level, shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs> par_dofs,
 						    shared_ptr<BitArray> free_dofs)

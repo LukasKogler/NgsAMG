@@ -59,29 +59,37 @@ namespace amg
     }
   };
   using H1Mesh = BlockAlgMesh<H1VData, H1EData>;
-  class H1AMG : public VWiseAMG<H1AMG, H1Mesh, double>
+  class H1AMG : public VWiseAMG<H1AMG, H1Mesh, 1>
   {
   public:
     using TMESH = H1Mesh;
-    using VWiseAMG<H1AMG, H1Mesh, double>::Options;
+    using VWiseAMG<H1AMG, H1Mesh, 1>::Options;
+
     H1AMG (shared_ptr<TMESH> mesh,  shared_ptr<Options> opts);
+
+    virtual string GetName () const override { return string("H1AMG"); }
+    
     virtual shared_ptr<BaseSmoother> BuildSmoother  (INT<3> level, shared_ptr<BaseSparseMatrix> mat,
 						     shared_ptr<ParallelDofs> par_dofs,
 						     shared_ptr<BitArray> free_dofs) override;
+
     template<NODE_TYPE NT> INLINE double GetWeight (const TMESH & mesh, const AMG_Node<NT> & node) const
     { // TODO: should this be in BlockAlgMesh instead???
       if constexpr(NT==NT_VERTEX) { return get<0>(mesh.Data())->Data()[node]; }
       else if constexpr(NT==NT_EDGE) { return get<1>(mesh.Data())->Data()[node.id]; }
       else return 0;
     }
+
     INLINE void CalcPWPBlock (const TMESH & fmesh, const TMESH & cmesh, const CoarseMap<TMESH> & map,
 			      AMG_Node<NT_VERTEX> v, AMG_Node<NT_VERTEX> cv, double & mat) const
     { SetIdentity(mat); }
+
     INLINE void CalcRMBlock (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge, FlatMatrix<double> mat) const
     {
       auto w = GetWeight<NT_EDGE>(fmesh, edge);
       mat(0,1) = mat(1,0) = - (mat(0,0) = mat(1,1) = w);
     }
+
   };
 
 

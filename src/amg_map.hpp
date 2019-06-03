@@ -155,6 +155,10 @@ namespace amg {
     }
   };
 
+  class BaseProlMap : public BaseDOFMapStep
+  {
+
+  };
 
   /**
      This maps DOFs via a prolongation matrix (which is assumed to be hierarchic).

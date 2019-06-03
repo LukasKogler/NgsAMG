@@ -6,43 +6,22 @@
 namespace amg
 {
 
-  template<class AMG_CLASS, class TMESH, class TMAT>
-  void VWiseAMG<AMG_CLASS, TMESH, TMAT> :: Finalize (shared_ptr<BaseMatrix> fine_mat, shared_ptr<BaseDOFMapStep> aembed_step)
+
+  /** NodeWiseAMG **/
+  
+  template<class TMESH, NODE_TYPE NT, int DPN>
+  void NodeWiseAMG<TMESH, NT, DPN> :: Finalize (shared_ptr<BaseMatrix> fine_mat, shared_ptr<BaseDOFMapStep> aembed_step)
   {
-    static Timer t(this->name+string("::Finalize")); RegionTimer rt(t);
+    static Timer t(this->GetName()+string("::Finalize")); RegionTimer rt(t);
     finest_mat = fine_mat;
     embed_step = aembed_step;
     Setup();
   }
 
-  template<class AMG_CLASS, class TMESH, class TMAT> shared_ptr<ParallelDofs> 
-  VWiseAMG<AMG_CLASS, TMESH, TMAT> :: BuildParDofs (shared_ptr<TMESH> amesh)
+  template<class TMESH, NODE_TYPE NT, int DPN>
+  void NodeWiseAMG<TMESH, NT, DPN> :: Setup ()
   {
-    static Timer t(this->name+string("::BuildParDofs")); RegionTimer rt(t);
-    const auto & mesh = *amesh;
-    const auto & eqc_h = *mesh.GetEQCHierarchy();
-    size_t neqcs = eqc_h.GetNEQCS();
-    size_t ndof = mesh.template GetNN<NT_VERTEX>();
-    TableCreator<int> cdps(ndof);
-    // TODO: this can be done a bit more efficiently
-    for (; !cdps.Done(); cdps++) {
-      for (auto eq : Range(neqcs)) {
-	auto dps = eqc_h.GetDistantProcs(eq);
-	auto verts = mesh.template GetENodes<NT_VERTEX>(eq);
-	for (auto vnr : verts) {
-	  for (auto p:dps) cdps.Add(vnr, p);
-	}
-      }
-    }
-    // auto pdt = cdps.MoveTable()
-    // cout << "pd-tab: " << endl << pdt << endl;
-    return make_shared<ParallelDofs> (eqc_h.GetCommunicator(), cdps.MoveTable(), /*move(pdt), */mat_traits<TV>::HEIGHT, false);
-  }
-
-  template<class AMG_CLASS, class TMESH, class TMAT>
-  void VWiseAMG<AMG_CLASS, TMESH, TMAT> :: Setup ()
-  {
-    string timer_name = this->name + "::Setup";
+    string timer_name = GetName() + string("::Setup");
     static Timer t(timer_name);
     RegionTimer rt(t);
     shared_ptr<TMESH> fm = mesh;
@@ -53,7 +32,6 @@ namespace amg
     Array<INT<3>> ass_levels;
     auto MAX_NL = options->max_n_levels;
     auto MAX_NV = options->max_n_verts;
-    int cnt_lc = 0;
     Array<size_t> nvs;
     nvs.Append(fm->template GetNNGlobal<NT_VERTEX>());
     
@@ -77,54 +55,27 @@ namespace amg
 	size_t curr_nv = fm->template GetNNGlobal<NT_VERTEX>();
 	if ( (!contr_locked) && (grid_step = (gstep_contr = TryContract(level, fm))) != nullptr ) {
 	  contr_locked = true;
-	  dof_step = BuildDOFMapStep(gstep_contr, fm_pd);
+	  dof_step = BuildDOFMapStep(level, gstep_contr, fm_pd);
 	  last_nv_ctr = curr_nv;
 	  level[1]++;
 	}
        	else if ( (grid_step = (gstep_coarse = TryCoarsen(level, fm))) != nullptr ) {
-	  cnt_lc++;
-	  // cout << "crs dms " << endl;
-	  auto prol_step = BuildDOFMapStep(gstep_coarse, fm_pd);
-	  prol_step->SetCnt(1);
-	  cout << "prol level " << level << " " << prol_step->GetProl()->Height() << " x " << prol_step->GetProl()->Width() << endl;
-	  // cout << "crs dms ok" << endl;
+
 	  bool smoothit = true;
-	  // Smooth prol?
-	  // cout << "CRS-step, smooth? "; 
 	  if (options->enable_sm == false) { /*cout << "1F";*/ smoothit = false; }
 	  else if (options->force_sm) { /*cout << "2";*/ smoothit = options->sm_levels.Contains(level[0]); }
 	  else if (options->sm_levels.Contains(level[0])) { /*cout << "3T";*/ smoothit = true; }
 	  else if (options->sm_skip_levels.Contains(level[0])) { /*cout << "4F";*/ smoothit = false; }
 	  else if (level[0] < options->skip_smooth_first) { /*cout << "5F";*/ smoothit = false; }
 	  else if (curr_nv > options->smooth_after_frac * last_nv_smo) { /*cout << "6F";*/ smoothit = false; }
-	  // cout << smoothit << endl;
-	  if (smoothit)
-	    {
-	      last_nv_smo = curr_nv;
-	      // cout << "smooth prol on level " << level << endl;
-	      // prol_step->SetSmoothed (this, static_pointer_cast<TMESH>(gstep_coarse->GetMesh()));
-	      // prol_step->SetSmoothed (&this->SmoothProlongation_hack<TSPMAT>, static_pointer_cast<TMESH>(gstep_coarse->GetMesh()));
-	      // prol_step->SetSmoothed ([this, gstep_coarse](auto x) { SmoothProlongation_hack(x, static_pointer_cast<TMESH>(gstep_coarse->GetMesh())); });
-	      cout << "SET SMOOTHED!" << endl;
-	      prol_step->SetSMF ([this, fm](auto x) { SmoothProlongation_hack(x, fm); });
-	      if (!options->composite_smooth)
-		{ prol_step->Smooth(); }
-		// SmoothProlongation(prol_step, static_pointer_cast<TMESH>(gstep_coarse->GetMesh()));
-	    }
-	  // else {
-	  //   prol_step->SetSmoothed ([this, fm](auto x) { SmoothProlongation_hack(x, fm); }, false);
-	  // }
-	  // move this to later
-	  // if ( (level[0] == 0) && (embed_step != nullptr) ) {
-	  //   // cout << " conc embed step! " << endl;
-	  //   dof_step = embed_step->Concatenate(prol_step);
-	  //   // cout << " initial coned step: " << dof_step << " " << typeid(dof_step).name() << endl;
-	  // }
-	  // else { dof_step = prol_step; }
+
+	  if (smoothit) { last_nv_smo = curr_nv; }
+
+	  cout << "level " << level;
+	  
+	  auto prol_step = BuildDOFMapStep(level, gstep_coarse, fm_pd, smoothit);
+
 	  dof_step = prol_step;
-	  cout << "log smoothed " << level << " " << smoothit << endl;
-	  infos->LogSMP(level, smoothit);
-	  prol_step->SetLog([this] (auto x) { infos->LogProl(x); });
 	  // infos->LogProl(level, prol_step->GetProl(), smoothit);
        	  level[0]++; level[1] = level[2] = 0;
        	}
@@ -245,13 +196,13 @@ namespace amg
 	  // cout << "COARSE MAT: " << endl << *mats.Last() << endl;
 	  auto cpds = dof_map->GetMappedParDofs();
 	  auto comm = cpds->GetCommunicator();
-	  shared_ptr<TSPM> cspm = static_pointer_cast<TSPM>(mats.Last());
+	  shared_ptr<BaseSparseMatrix> cspm = static_pointer_cast<BaseSparseMatrix>(mats.Last());
 	  cspm = RegularizeMatrix(cspm, cpds);
 	  if (comm.Size()>0) {
 	    // cout << "coarse inv " << endl;
-	    if constexpr(MAX_SYS_DIM < mat_traits<TMAT>::HEIGHT) {
+	    if constexpr(MAX_SYS_DIM < DPN) {
 		throw Exception(string("MAX_SYS_DIM = ") + to_string(MAX_SYS_DIM) + string(", need at least ") +
-				to_string(mat_traits<TMAT>::HEIGHT) + string(" for coarsest level exact Inverse!"));
+				to_string(DPN) + string(" for coarsest level exact Inverse!"));
 	      }
 	    else {
 	      auto cpm = make_shared<ParallelMatrix>(cspm, cpds);
@@ -275,150 +226,10 @@ namespace amg
     }
   }
 
-  template<class AMG_CLASS, class TMESH, class TMAT>
-  shared_ptr<ProlMap<typename VWiseAMG<AMG_CLASS, TMESH, TMAT>::TSPM_TM>>
-  VWiseAMG<AMG_CLASS, TMESH, TMAT> :: BuildDOFMapStep (shared_ptr<CoarseMap<TMESH>> _cmap, shared_ptr<ParallelDofs> fpd)
+  template<class TMESH, NODE_TYPE NT, int DPN> shared_ptr<GridContractMap<TMESH>>
+  NodeWiseAMG<TMESH, NT, DPN> :: TryContract (INT<3> level, shared_ptr<TMESH> mesh) const
   {
-    // coarse ParallelDofs
-    const CoarseMap<TMESH> & cmap(*_cmap);
-    const TMESH & fmesh = static_cast<TMESH&>(*cmap.GetMesh()); fmesh.CumulateData();
-    const TMESH & cmesh = static_cast<TMESH&>(*cmap.GetMappedMesh()); cmesh.CumulateData();
-    const AMG_CLASS& self = static_cast<const AMG_CLASS&>(*this);
-    auto cpd = BuildParDofs(static_pointer_cast<TMESH>(cmap.GetMappedMesh()));
-    // prolongation Matrix
-    size_t NV = fmesh.template GetNN<NT_VERTEX>();
-    size_t NCV = cmesh.template GetNN<NT_VERTEX>();
-    // cout << "DOF STEP, fmesh " << fmesh << endl;
-    // cout << "DOF STEP, cmesh " << cmesh << endl;
-    auto vmap = cmap.template GetMap<NT_VERTEX>();
-    Array<int> perow (NV); perow = 0;
-    // -1 .. cant happen, 0 .. locally single, 1..locally merged
-    // -> cumulated: 0..single, 1+..merged
-    Array<int> has_partner (NCV); has_partner = -1;
-    for (auto vnr : Range(NV)) {
-      auto cvnr = vmap[vnr];
-      if (cvnr!=-1) has_partner[cvnr]++;
-    }
-    // cout << "sync partner" << endl; prow2(has_partner); cout << endl;
-    cmesh.template AllreduceNodalData<NT_VERTEX, int>(has_partner, [](auto & tab){ return move(sum_table(tab)); });
-    // cout << "partner synced" << endl;
-    for (auto vnr : Range(NV)) { if (vmap[vnr]!=-1) perow[vnr] = 1; }
-    auto prol = make_shared<TSPM_TM>(perow, NCV);
-    for (auto vnr : Range(NV)) {
-      if (vmap[vnr]!=-1) {
-	auto ri = prol->GetRowIndices(vnr);
-	auto rv = prol->GetRowValues(vnr);
-	auto cvnr = vmap[vnr];
-	ri[0] = cvnr;
-	if (has_partner[cvnr]==0) {
-	  // single vertex
-	  SetIdentity(rv[0]);
-	}
-	else {
-	  // merged vertex
-	  self.CalcPWPBlock (fmesh, cmesh, cmap, vnr, cvnr, rv[0]); 
-	}
-      }
-    }
-    // cout << "have pw-prol: " << prol->Height() << " x " << prol->Width() << endl;
-    // print_tm_spmat(cout, *prol); cout << endl;
-
-    auto pmap = make_shared<ProlMap<TSPM_TM>> (prol, fpd, cpd, true);
-	
-    // if (options->do_smooth==true)
-    //   SmoothProlongation(pmap, static_pointer_cast<TMESH>(cmap.GetMesh()));
-    // cout << "smooth prol done!" << endl;
-    
-    return pmap;
-  } // VWiseAMG<...> :: BuildDOFMapStep ( CoarseMap )
-
-  template<class AMG_CLASS, class TMESH, class TMAT> shared_ptr<CtrMap<typename VWiseAMG<AMG_CLASS, TMESH, TMAT>::TV>>
-  VWiseAMG<AMG_CLASS, TMESH, TMAT> :: BuildDOFMapStep (shared_ptr<GridContractMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd)
-  {
-    auto fg = cmap->GetGroup();
-    Array<int> group(fg.Size()); group = fg;
-    Table<int> dof_maps;
-    shared_ptr<ParallelDofs> cpd = nullptr;
-    if (cmap->IsMaster()) {
-      // const TMESH& cmesh(*static_cast<const TMESH&>(*grid_step->GetMappedMesh()));
-      shared_ptr<TMESH> cmesh = static_pointer_cast<TMESH>(cmap->GetMappedMesh());
-      cpd = BuildParDofs(cmesh);
-      Array<int> perow (group.Size()); perow = 0;
-      for (auto k : Range(group.Size())) perow[k] = cmap->template GetNodeMap<NT_VERTEX>(k).Size();
-      dof_maps = Table<int>(perow);
-      for (auto k : Range(group.Size())) dof_maps[k] = cmap->template GetNodeMap<NT_VERTEX>(k);
-    }
-    auto ctr_map = make_shared<CtrMap<TV>> (fpd, cpd, move(group), move(dof_maps));
-    if (cmap->IsMaster()) {
-      ctr_map->_comm_keepalive_hack = cmap->GetMappedEQCHierarchy()->GetCommunicator();
-    }
-    return move(ctr_map);
-  } // VWiseAMG<...> :: BuildDOFMapStep ( GridContractMap )
-
-  
-  template<class AMG_CLASS, class TMESH, class TMAT> void 
-  VWiseAMG<AMG_CLASS, TMESH, TMAT> :: SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts,
-							    INT<3> level, shared_ptr<TMESH> _mesh)
-  {
-    static Timer t(this->name+string("::SetCoarseningOptions")); RegionTimer rt(t);
-    const TMESH & mesh(*_mesh);
-    const AMG_CLASS & self = static_cast<const AMG_CLASS&>(*this);
-    auto NV = mesh.template GetNN<NT_VERTEX>();
-    auto NE = mesh.template GetNN<NT_EDGE>();
-    mesh.CumulateData();
-    Array<double> vcw(NV); vcw = 0;
-    mesh.template Apply<NT_EDGE>([&](const auto & edge) {
-	auto ew = self.template GetWeight<NT_EDGE>(mesh, edge);
-	vcw[edge.v[0]] += ew;
-	vcw[edge.v[1]] += ew;
-      }, true);
-    // mesh.template ApplyEQ<NT_EDGE>([&](auto eqc, const auto & edge) {
-    // 	auto ew = self.template GetWeight<NT_EDGE>(mesh, edge);
-    // 	vcw[edge.v[0]] += ew;
-    // 	vcw[edge.v[1]] += ew;
-    //   }, true);
-    mesh.template AllreduceNodalData<NT_VERTEX>(vcw, [](auto & in) { return sum_table(in); }, false);
-    mesh.template Apply<NT_VERTEX>([&](auto v) { vcw[v] += self.template GetWeight<NT_VERTEX>(mesh, v); });
-    Array<double> ecw(NE);
-    mesh.template Apply<NT_EDGE>([&](const auto & edge) {
-	double vw = min(vcw[edge.v[0]], vcw[edge.v[1]]);
-	ecw[edge.id] = self.template GetWeight<NT_EDGE>(mesh, edge) / vw;
-      }, false);
-    for (auto v : Range(NV))
-      vcw[v] = self.template GetWeight<NT_VERTEX>(mesh, v)/vcw[v];
-    // cout << "VCWS: " << endl; prow2(vcw); cout << endl << endl;
-    // cout << "ECWS: " << endl; prow2(ecw); cout << endl << endl;
-    opts->vcw = move(vcw);
-    opts->min_vcw = options->min_vcw;
-    opts->ecw = move(ecw);
-    opts->min_ecw = options->min_ecw;
-  }
-
-  template<class AMG_CLASS, class TMESH, class TMAT> shared_ptr<CoarseMap<TMESH>>
-  VWiseAMG<AMG_CLASS, TMESH, TMAT> :: TryCoarsen  (INT<3> level, shared_ptr<TMESH> mesh)
-  {
-    static Timer t(this->name+string("::Coarsening")); RegionTimer rt(t);
-    auto coarsen_opts = make_shared<typename HierarchicVWC<TMESH>::Options>();
-    shared_ptr<VWCoarseningData::Options> basos = coarsen_opts;
-    // auto coarsen_opts = make_shared<VWCoarseningData::Options>();
-    if (level[0]==0) { coarsen_opts->free_verts = options->free_verts; }
-    {
-      static Timer t(this->name+string("::SetCoarseningOptions")); RegionTimer rt(t);
-      SetCoarseningOptions(basos, level, mesh);
-    }
-    // BlockVWC<TMESH> bvwc (coarsen_opts);
-    // return bvwc.Coarsen(mesh);
-    shared_ptr<VWiseCoarsening<TMESH>> calg;
-    // if (level[0] % 3 == 0) calg = make_shared<HierarchicVWC<TMESH>> (coarsen_opts);
-    // else calg = make_shared<BlockVWC<TMESH>> (coarsen_opts);
-    calg = make_shared<BlockVWC<TMESH>> (coarsen_opts);
-    return calg->Coarsen(mesh);
-  }
-
-  template<class AMG_CLASS, class TMESH, class TMAT> shared_ptr<GridContractMap<TMESH>>
-  VWiseAMG<AMG_CLASS, TMESH, TMAT> :: TryContract (INT<3> level, shared_ptr<TMESH> mesh)
-  {
-    static Timer t(this->name+string("::Redistribute")); RegionTimer rt(t);
+    static Timer t(GetName()+string("::Redistribute")); RegionTimer rt(t);
     if (options->enable_ctr == false) return nullptr;
     if (level[0] == 0) return nullptr; // TODO: if I remove this, take care of contracting free vertices!
     if (level[1] != 0) return nullptr; // dont contract twice in a row
@@ -432,29 +243,184 @@ namespace amg
     return make_shared<GridContractMap<TMESH>>(move(groups), mesh);
   }
 
-  template<class AMG_CLASS, class TMESH, class TMAT> void
-  VWiseAMG<AMG_CLASS, TMESH, TMAT> :: SmoothProlongation (shared_ptr<ProlMap<TSPM_TM>> pmap, shared_ptr<TMESH> afmesh) const
+  template<class TMESH, NODE_TYPE NT, int DPN> shared_ptr<BaseDOFMapStep>
+  NodeWiseAMG<TMESH, NT, DPN> :: BuildDOFMapStep (INT<3> level, shared_ptr<GridContractMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd) const
   {
-    static Timer t(this->name+string("::SmoothProlongation")); RegionTimer rt(t);
-    // cout << "SmoothProlongation" << endl;
-    // cout << "fecon-ptr: " << afmesh->GetEdgeCM() << endl;
-    // cout << "mesh at " << afmesh << endl;
+    auto fg = cmap->GetGroup();
+    Array<int> group(fg.Size()); group = fg;
+    Table<int> dof_maps;
+    shared_ptr<ParallelDofs> cpd = nullptr;
+    if (cmap->IsMaster()) {
+      // const TMESH& cmesh(*static_cast<const TMESH&>(*grid_step->GetMappedMesh()));
+      shared_ptr<TMESH> cmesh = static_pointer_cast<TMESH>(cmap->GetMappedMesh());
+      cpd = BuildParDofs(cmesh);
+      Array<int> perow (group.Size()); perow = 0;
+      for (auto k : Range(group.Size())) perow[k] = cmap->template GetNodeMap<NT>(k).Size();
+      dof_maps = Table<int>(perow);
+      for (auto k : Range(group.Size())) dof_maps[k] = cmap->template GetNodeMap<NT>(k);
+    }
+    auto ctr_map = make_shared<CtrMap<typename strip_vec<Vec<DPN, double>>::type>> (fpd, cpd, move(group), move(dof_maps));
+    if (cmap->IsMaster()) {
+      ctr_map->_comm_keepalive_hack = cmap->GetMappedEQCHierarchy()->GetCommunicator();
+    }
+    return move(ctr_map);
+  }
+
+  template<class TMESH, NODE_TYPE NT, int DPN> shared_ptr<ParallelDofs>
+  NodeWiseAMG<TMESH, NT, DPN> :: BuildParDofs (shared_ptr<TMESH> amesh) const
+  {
+    static Timer t(this->GetName()+string("::BuildParDofs")); RegionTimer rt(t);
+    const auto & mesh = *amesh;
+    const auto & eqc_h = *mesh.GetEQCHierarchy();
+    size_t neqcs = eqc_h.GetNEQCS();
+    size_t ndof = mesh.template GetNN<NT_VERTEX>();
+    TableCreator<int> cdps(ndof);
+    for (; !cdps.Done(); cdps++) {
+      for (auto eq : Range(neqcs)) {
+	auto dps = eqc_h.GetDistantProcs(eq);
+	auto verts = mesh.template GetENodes<NT>(eq);
+	for (auto vnr : verts) {
+	  for (auto p:dps) cdps.Add(vnr, p);
+	}
+      }
+    }
+    return make_shared<ParallelDofs> (eqc_h.GetCommunicator(), cdps.MoveTable(), DPN, false);
+  }
+
+  /** VWiseAMG **/
+
+  template<class AMG_CLASS, class TMESH, int DPN>
+  void VWiseAMG<AMG_CLASS, TMESH, DPN> :: SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts,
+								INT<3> level, shared_ptr<TMESH> _mesh) const
+  {
+    static Timer t(this->GetName()+string("::SetCoarseningOptions")); RegionTimer rt(t);
+    const TMESH & mesh(*_mesh);
     const AMG_CLASS & self = static_cast<const AMG_CLASS&>(*this);
-    const TMESH & fmesh(*afmesh);
+    const auto & options = static_cast<const Options&>(*this->options);
+    auto NV = mesh.template GetNN<NT_VERTEX>();
+    auto NE = mesh.template GetNN<NT_EDGE>();
+    mesh.CumulateData();
+    Array<double> vcw(NV); vcw = 0;
+    mesh.template Apply<NT_EDGE>([&](const auto & edge) {
+	auto ew = self.template GetWeight<NT_EDGE>(mesh, edge);
+	vcw[edge.v[0]] += ew;
+	vcw[edge.v[1]] += ew;
+      }, true);
+    mesh.template AllreduceNodalData<NT_VERTEX>(vcw, [](auto & in) { return sum_table(in); }, false);
+    mesh.template Apply<NT_VERTEX>([&](auto v) { vcw[v] += self.template GetWeight<NT_VERTEX>(mesh, v); });
+    Array<double> ecw(NE);
+    mesh.template Apply<NT_EDGE>([&](const auto & edge) {
+	double vw = min(vcw[edge.v[0]], vcw[edge.v[1]]);
+	ecw[edge.id] = self.template GetWeight<NT_EDGE>(mesh, edge) / vw;
+      }, false);
+    for (auto v : Range(NV))
+      vcw[v] = self.template GetWeight<NT_VERTEX>(mesh, v)/vcw[v];
+    opts->vcw = move(vcw);
+    opts->min_vcw = options.min_vcw;
+    opts->ecw = move(ecw);
+    opts->min_ecw = options.min_ecw;
+  }
+
+  template<class AMG_CLASS, class TMESH, int DPN> shared_ptr<BaseDOFMapStep>
+  VWiseAMG<AMG_CLASS, TMESH, DPN> :: BuildDOFMapStep (INT<3> level, shared_ptr<CoarseMap<TMESH>> _cmap, shared_ptr<ParallelDofs> fpd,
+						      bool smoothed_prol) const
+  {
+    const AMG_CLASS & self = static_cast<const AMG_CLASS&>(*this);
+    const CoarseMap<TMESH> & cmap(*_cmap);
+    const auto & options = static_cast<const Options&>(*this->GetOptions());
+
+    const TMESH & cmesh = static_cast<TMESH&>(*cmap.GetMappedMesh());
+    auto cpd = this->BuildParDofs(static_pointer_cast<TMESH>(cmap.GetMappedMesh()));
+
+    auto pwp = this->BuildPWProl (_cmap, fpd);
+
+    cout << "built a PW prol: " << " " << pwp->Height() << " x " << pwp->Width() << endl;
+
+    bool ispw = (!smoothed_prol) || options.composite_smooth;
+    auto pmap = make_shared<ProlMap<TSPM_TM>> (pwp, fpd, cpd, ispw);
+    pmap->SetCnt(1);
+    cout << "log smoothed " << smoothed_prol << endl;
+    this->GetInfo()->LogSMP(level, smoothed_prol);
+    pmap->SetLog([this] (auto x) { this->GetInfo()->LogProl(x); });
+
+
+    if (smoothed_prol) {
+      auto fm = static_pointer_cast<TMESH>(_cmap->GetMesh());
+      if (options.composite_smooth) {
+	pmap->SetSMF ([this, fm](auto x) { SmoothProlongation_hack(x, fm); });
+      }
+      else {
+	SmoothProlongation(pmap, fm); 
+      }
+    }
+
+    return pmap;
+  }
+
+  template<class AMG_CLASS, class TMESH, int DPN> shared_ptr<typename VWiseAMG<AMG_CLASS, TMESH, DPN>::TSPM_TM>
+  VWiseAMG<AMG_CLASS, TMESH, DPN> :: BuildPWProl (shared_ptr<CoarseMap<TMESH>> _cmap, shared_ptr<ParallelDofs> fpd) const
+  {
+    const AMG_CLASS & self = static_cast<const AMG_CLASS&>(*this);
+    const CoarseMap<TMESH> & cmap(*_cmap);
+    const auto & options = static_cast<const Options&>(*this->GetOptions());
+    const TMESH & fmesh = static_cast<TMESH&>(*cmap.GetMesh()); fmesh.CumulateData();
+    const TMESH & cmesh = static_cast<TMESH&>(*cmap.GetMappedMesh()); cmesh.CumulateData();
+    auto cpd = this->BuildParDofs(static_pointer_cast<TMESH>(cmap.GetMappedMesh()));
+
+    size_t NV = fmesh.template GetNN<NT_VERTEX>();
+    size_t NCV = cmesh.template GetNN<NT_VERTEX>();
+
+    // Alloc Matrix
+    auto vmap = cmap.template GetMap<NT_VERTEX>();
+    Array<int> perow (NV); perow = 0;
+    // -1 .. cant happen, 0 .. locally single, 1..locally merged
+    // -> cumulated: 0..single, 1+..merged
+    Array<int> has_partner (NCV); has_partner = -1;
+    for (auto vnr : Range(NV)) {
+      auto cvnr = vmap[vnr];
+      if (cvnr!=-1) has_partner[cvnr]++;
+    }
+    cmesh.template AllreduceNodalData<NT_VERTEX, int>(has_partner, [](auto & tab){ return move(sum_table(tab)); });
+    for (auto vnr : Range(NV)) { if (vmap[vnr]!=-1) perow[vnr] = 1; }
+    auto prol = make_shared<TSPM_TM>(perow, NCV);
+
+    // Fill Matrix
+    for (auto vnr : Range(NV)) {
+      if (vmap[vnr]!=-1) {
+	auto ri = prol->GetRowIndices(vnr);
+	auto rv = prol->GetRowValues(vnr);
+	auto cvnr = vmap[vnr];
+	ri[0] = cvnr;
+	if (has_partner[cvnr]==0) { // single vertex
+	  SetIdentity(rv[0]);
+	}
+	else { // merged vertex
+	  self.CalcPWPBlock (fmesh, cmesh, cmap, vnr, cvnr, rv[0]); 
+	}
+      }
+    }
+
+    return prol;
+  }
+
+
+  template<class AMG_CLASS, class TMESH, int DPN> void 
+  VWiseAMG<AMG_CLASS, TMESH, DPN> :: SmoothProlongation (shared_ptr<ProlMap<TSPM_TM>> pmap, shared_ptr<TMESH> afmesh) const
+  {
+    static Timer t(GetName()+string("::SmoothProlongation")); RegionTimer rt(t);
+    const auto & options = static_cast<const Options&>(*this->GetOptions());
+
+    const AMG_CLASS & self = static_cast<const AMG_CLASS&>(*this);
+    const TMESH & fmesh(*afmesh); fmesh.CumulateData();
     const auto & fecon = *fmesh.GetEdgeCM();
     const auto & eqc_h(*fmesh.GetEQCHierarchy()); // coarse eqch==fine eqch !!
     const TSPM_TM & pwprol = *pmap->GetProl();
 
-    // cout << "fmesh: " << endl << fmesh << endl;
+    const double MIN_PROL_FRAC = options.min_prol_frac;
+    const int MAX_PER_ROW = options.max_per_row;
+    const double omega = options.sp_omega;
+    const bool sing_diags = options.singular_diag;
 
-    // cout << "fecon: " << endl << fecon << endl;
-    
-    // const double MIN_PROL_WT = options->min_prol_wt;
-    const double MIN_PROL_FRAC = options->min_prol_frac;
-    const int MAX_PER_ROW = options->max_per_row;
-    const double omega = options->sp_omega;
-    const bool sing_diags = options->singular_diag;
-    
     // Construct vertex-map from prol (can be concatenated)
     size_t NFV = fmesh.template GetNN<NT_VERTEX>();
     Array<size_t> vmap (NFV); vmap = -1;
@@ -469,7 +435,6 @@ namespace amg
 	NCV = max2(NCV, size_t(ri[0]+1));
       }
     }
-    // cout << "vmap" << endl; prow2(vmap); cout << endl;
 
     // For each fine vertex, sum up weights of edges that connect to the same CV
     //  (can be more than one edge, if the pw-prol is concatenated)
@@ -482,8 +447,8 @@ namespace amg
       auto doit = [&](auto the_edges) {
 	for (const auto & edge : the_edges) {
 	  if ( ((cv[0]=vmap[edge.v[0]]) != -1 ) &&
-	      ((cv[1]=vmap[edge.v[1]]) != -1 ) &&
-	      (cv[0]==cv[1]) ) {
+	       ((cv[1]=vmap[edge.v[1]]) != -1 ) &&
+	       (cv[0]==cv[1]) ) {
 	    // auto com_wt = max2(get_wt(edge.id, edge.v[0]),get_wt(edge.id, edge.v[1]));
 	    auto com_wt = self.template GetWeight<NT_EDGE>(fmesh, edge);
 	    vw[edge.v[0]] += com_wt;
@@ -715,10 +680,32 @@ namespace amg
     // print_tm_spmat(cout, *sprol); cout << endl;
 
     pmap->SetProl(sprol);
-    
   }
 
+  template<class AMG_CLASS, class TMESH, int DPN> shared_ptr<CoarseMap<typename VWiseAMG<AMG_CLASS, TMESH, DPN>::TMESH>>
+  VWiseAMG<AMG_CLASS, TMESH, DPN> :: TryCoarsen  (INT<3> level, shared_ptr<TMESH> mesh) const
+  {
+    static Timer t(this->GetName()+string("::Coarsening")); RegionTimer rt(t);
+    const auto& options = static_cast<const Options&> (*this->GetOptions());
+    auto coarsen_opts = make_shared<typename HierarchicVWC<TMESH>::Options>();
+    shared_ptr<VWCoarseningData::Options> basos = coarsen_opts;
+    // auto coarsen_opts = make_shared<VWCoarseningData::Options>();
+    if (level[0]==0) { coarsen_opts->free_verts = options.free_verts; }
+    {
+      static Timer t(this->GetName()+string("::SetCoarseningOptions")); RegionTimer rt(t);
+      SetCoarseningOptions(basos, level, mesh);
+    }
+    // BlockVWC<TMESH> bvwc (coarsen_opts);
+    // return bvwc.Coarsen(mesh);
+    shared_ptr<VWiseCoarsening<TMESH>> calg;
+    // if (level[0] % 3 == 0) calg = make_shared<HierarchicVWC<TMESH>> (coarsen_opts);
+    // else calg = make_shared<BlockVWC<TMESH>> (coarsen_opts);
+    calg = make_shared<BlockVWC<TMESH>> (coarsen_opts);
+    return calg->Coarsen(mesh);
+  }
 
+  /** EmbedVAMG **/
+  
   template<class AMG_CLASS, class HTVD, class HTED>
   EmbedVAMG<AMG_CLASS, HTVD, HTED> :: EmbedVAMG (shared_ptr<BilinearForm> blf, shared_ptr<EmbedVAMG<AMG_CLASS, HTVD, HTED>::Options> opts)
     : Preconditioner(blf, Flags() /*(opts->energy=="ELMAT" ? Flags() : Flags({"not_register_for_auto_update"}))*/), options(opts), bfa(blf), fes(blf->GetFESpace()),
@@ -804,10 +791,10 @@ namespace amg
   template<class AMG_CLASS, class HTVD, class HTED>
   shared_ptr<BlockTM> EmbedVAMG<AMG_CLASS, HTVD, HTED> :: BuildTopMesh ()
   {
-    static Timer t(this->name + string("::BuildTopMesh")); RegionTimer rt(t);
-    static Timer t1(this->name + string("::BuildTopMesh part 1"));
-    static Timer t2(this->name + string("::BuildTopMesh part 1"));
-    static Timer t3(this->name + string("::BuildTopMesh part 1"));
+    static Timer t(this->GetName() + string("::BuildTopMesh")); RegionTimer rt(t);
+    static Timer t1(this->GetName() + string("::BuildTopMesh part 1"));
+    static Timer t2(this->GetName() + string("::BuildTopMesh part 1"));
+    static Timer t3(this->GetName() + string("::BuildTopMesh part 1"));
 
     t1.Start();
     auto & O(*options);
@@ -827,7 +814,7 @@ namespace amg
 	auto & vsort = node_sort[0];
 	/** Vertex positions **/
 	if (options->keep_vp) {
-	  static Timer t(this->name + string("::BuildTopMesh - VPOS")); RegionTimer rt(t);
+	  static Timer t(this->GetName() + string("::BuildTopMesh - VPOS")); RegionTimer rt(t);
 	  auto & vpos(node_pos[NT_VERTEX]); vpos.SetSize(top_mesh->template GetNN<NT_VERTEX>());
 	  for (auto k : Range(vpos.Size()))
 	    ma->GetPoint(k,vpos[vsort[k]]);
@@ -873,7 +860,7 @@ namespace amg
     t2.Stop();
     t3.Start();
     /** Convert FreeDofs **/
-    static Timer tfd(this->name + string("::BuildTopMesh - FDS")); RegionTimer rtfd(tfd);
+    static Timer tfd(this->GetName() + string("::BuildTopMesh - FDS")); RegionTimer rtfd(tfd);
     auto fes_fds = fes->GetFreeDofs();
     auto fvs = make_shared<BitArray>(top_mesh->GetNN<NT_VERTEX>()); fvs->Clear();
     auto & vsort = node_sort[NT_VERTEX];
