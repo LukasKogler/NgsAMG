@@ -10,7 +10,7 @@ namespace amg
   ElasticityAMG<D> :: BuildSmoother  (INT<3> level, shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs> par_dofs,
 				      shared_ptr<BitArray> free_dofs)
   {
-    auto options = static_pointer_cast<Options>(this->options);
+    auto options = static_pointer_cast<Options>(this->GetOptions());
     if (shared_ptr<const SparseMatrix<Mat<dofpv(D), dofpv(D), double>>> spmat = dynamic_pointer_cast<SparseMatrix<Mat<dofpv(D), dofpv(D), double>>> (mat)) {
       if (options->regularize)
 	{ return make_shared<StabHGSS<dofpv(D), disppv(D), dofpv(D)>> (spmat, par_dofs, free_dofs); }
@@ -28,9 +28,10 @@ namespace amg
   }
 
 
-  template<> shared_ptr<ElasticityAMG<3>::TSPM>
-  ElasticityAMG<3> :: RegularizeMatrix (shared_ptr<ElasticityAMG<3>::TSPM> mat, shared_ptr<ParallelDofs> & pardofs)
+  template<> shared_ptr<BaseSparseMatrix>
+  ElasticityAMG<3> :: RegularizeMatrix (shared_ptr<BaseSparseMatrix> bspmat, shared_ptr<ParallelDofs> & pardofs) const
   {
+    auto mat = static_pointer_cast<ElasticityAMG<3>::TSPM>(bspmat);
     // cerr << "reg. mat " << mat->Height() << " x " << mat->Width() << endl;
     // print_tm_spmat(cerr, *mat);
     // cerr << "reg diags: " << endl;
@@ -60,9 +61,10 @@ namespace amg
     return mat;
   }
 
-  template<> shared_ptr<ElasticityAMG<2>::TSPM>
-  ElasticityAMG<2> :: RegularizeMatrix (shared_ptr<ElasticityAMG<2>::TSPM> mat, shared_ptr<ParallelDofs> & pardofs)
+  template<> shared_ptr<BaseSparseMatrix>
+  ElasticityAMG<2> :: RegularizeMatrix (shared_ptr<BaseSparseMatrix> bspmat, shared_ptr<ParallelDofs> & pardofs) const
   {
+    auto mat = static_pointer_cast<ElasticityAMG<2>::TSPM>(bspmat);
     for(auto k : Range(mat->Height())) {
       auto& diag = (*mat)(k,k);
       if (diag(2,2) == 0.0) {
@@ -178,7 +180,7 @@ namespace amg
 
 
   template<int D> Array<double> 
-  ElasticityAMG<D> :: CalcECWSimple (shared_ptr<TMESH> _mesh)
+  ElasticityAMG<D> :: CalcECWSimple (shared_ptr<TMESH> _mesh) const
   {
     const ElasticityMesh<D> & mesh(*_mesh);
     auto NV = mesh.template GetNN<NT_VERTEX>();
@@ -203,7 +205,7 @@ namespace amg
   }
   
   template<int D> Array<double> 
-  ElasticityAMG<D> :: CalcECWRobust (shared_ptr<TMESH> _mesh)
+  ElasticityAMG<D> :: CalcECWRobust (shared_ptr<TMESH> _mesh) const
   {
     const ElasticityMesh<D> & mesh(*_mesh);
     auto NV = mesh.template GetNN<NT_VERTEX>();
@@ -218,7 +220,7 @@ namespace amg
     Array<TMAT> vblocks(NV); vblocks = 0;
     auto edges = mesh.template GetNodes<NT_EDGE>();
     {
-      static Timer t(this->name+string("::SetCoarseningOptions - Collect")); RegionTimer rt(t);
+      static Timer t(this->GetName()+string("::SetCoarseningOptions - Collect")); RegionTimer rt(t);
       mesh.template Apply<NT_EDGE>([&](const auto & edge) {
 	  CalcRMBlock(mesh, edge, emat);
 	  vblocks[edge.v[0]] += emat(0,0);
@@ -227,7 +229,7 @@ namespace amg
     }
     mesh.template AllreduceNodalData<NT_VERTEX, TMAT>(vblocks, [](auto & tab){ return move(sum_table(tab)); });
     {
-      static Timer t(this->name+string("::SetCoarseningOptions - Calc")); RegionTimer rt(t);
+      static Timer t(this->GetName()+string("::SetCoarseningOptions - Calc")); RegionTimer rt(t);
       mesh.template Apply<NT_EDGE>([&](const auto & edge) {
 	double cws[2] = {0,0};
   	CalcRMBlock(mesh, edge, emat);
@@ -258,12 +260,12 @@ namespace amg
     return move(ecw);
   }
     
-  template<int D> void
-  ElasticityAMG<D> :: SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts,
-  					    INT<3> level, shared_ptr<TMESH> _mesh)
+  template<int D>
+  void ElasticityAMG<D> :: SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts,
+						 INT<3> level, shared_ptr<TMESH> _mesh) const
   {
-    static Timer t(this->name+string("::SetCoarseningOptions")); RegionTimer rt(t);
-    auto &options = static_cast<ElasticityAMG<D>::Options&>(*this->options);
+    static Timer t(this->GetName()+string("::SetCoarseningOptions")); RegionTimer rt(t);
+    auto &options = static_cast<ElasticityAMG<D>::Options&>(*this->GetOptions());
     const ElasticityMesh<D> & mesh(*_mesh);
     mesh.CumulateData();
     auto NV = mesh.template GetNN<NT_VERTEX>();
@@ -348,7 +350,7 @@ namespace amg
   template<class C, class D, class E> shared_ptr<BaseDOFMapStep>
   EmbedVAMG<C, D, E> :: BuildEmbedding ()
   {
-    static Timer t(this->name+string("::BuildEmbedding")); RegionTimer rt(t);
+    static Timer t(this->GetName()+string("::BuildEmbedding")); RegionTimer rt(t);
     auto fpardofs = finest_mat->GetParallelDofs();
     auto & vsort = node_sort[NT_VERTEX];
     if (options->v_dofs == "NODAL") {

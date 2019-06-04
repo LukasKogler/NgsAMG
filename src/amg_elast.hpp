@@ -105,13 +105,13 @@ namespace amg
   using ElasticityMesh = BlockAlgMesh<ElVData, ElEData<D>>;
 
   template<int D>
-  class ElasticityAMG : public VWiseAMG<ElasticityAMG<D>, ElasticityMesh<D>, Mat<dofpv(D), dofpv(D), double>>
+  class ElasticityAMG : public VWiseAMG<ElasticityAMG<D>, ElasticityMesh<D>, dofpv(D)>
   {
   public:
     enum { DIM = D };
     using TMESH = ElasticityMesh<D>;
     using TMAT = Mat<dofpv(D), dofpv(D), double>;
-    using BASE = VWiseAMG<ElasticityAMG<D>, ElasticityMesh<D>, TMAT>;
+    using BASE = VWiseAMG<ElasticityAMG<D>, ElasticityMesh<D>, dofpv(D)>;
     using TSPM_TM = typename BASE::TSPM_TM;
     using TSPM = typename BASE::TSPM;
     struct Options : BASE::Options
@@ -120,9 +120,13 @@ namespace amg
       // SIMPLE or ROBUST
       string soc = "SIMPLE";
     };
+
     ElasticityAMG (shared_ptr<ElasticityMesh<D>> mesh, shared_ptr<Options> opts)
-      : VWiseAMG<ElasticityAMG<D>, ElasticityMesh<D>, Mat<dofpv(D), dofpv(D), double>>(mesh, opts)
-    { this->name = string("ElastAMG") + to_string(D) + string("D"); }
+      : VWiseAMG<ElasticityAMG<D>, ElasticityMesh<D>, dofpv(D)>(mesh, opts)
+    { ; }
+
+    virtual string GetName() const override { return string("ElastAMG") + to_string(D) + string("D"); }
+    
     virtual shared_ptr<BaseSmoother> BuildSmoother  (INT<3> level, shared_ptr<BaseSparseMatrix> mat,
 						     shared_ptr<ParallelDofs> par_dofs,
 						     shared_ptr<BitArray> free_dofs) override;
@@ -132,11 +136,10 @@ namespace amg
       else if constexpr(NT==NT_EDGE) { return calc_trace(get<1>(mesh.Data())->Data()[node.id]); }
       else return 0;
     }
-    virtual void SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts,
-				       INT<3> level, shared_ptr<TMESH> mesh) override;
-    Array<double> CalcECWSimple (shared_ptr<TMESH> mesh);
-    Array<double> CalcECWRobust (shared_ptr<TMESH> mesh);
-    virtual shared_ptr<TSPM> RegularizeMatrix (shared_ptr<TSPM> mat, shared_ptr<ParallelDofs> & pardofs) override;
+    virtual void SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts, INT<3> level, shared_ptr<TMESH> mesh) const override;
+    Array<double> CalcECWSimple (shared_ptr<TMESH> mesh) const;
+    Array<double> CalcECWRobust (shared_ptr<TMESH> mesh) const;
+    virtual shared_ptr<BaseSparseMatrix> RegularizeMatrix (shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs> & pardofs) const override;
     INLINE void CalcPWPBlock (const TMESH & fmesh, const TMESH & cmesh, const CoarseMap<TMESH> & map,
 			      AMG_Node<NT_VERTEX> v, AMG_Node<NT_VERTEX> cv, TMAT & mat) const
     {
