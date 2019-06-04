@@ -33,17 +33,43 @@ namespace amg
   }
   template<> INLINE void print_tm_spmat (ostream &os, const SparseMatrix<double> & mat) { os << mat << endl; }
 
-  INLINE int GetEntrySize (BaseSparseMatrix* mat)
+  INLINE int GetEntryHeight (BaseMatrix* mat)
   {
     if (auto m = dynamic_cast<SparseMatrixTM<double>*>(mat)) { return 1; }
-    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<2,2,double>>*>(mat)) { return 4; }
-    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<3,3,double>>*>(mat)) { return 9; }
-    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<4,4,double>>*>(mat)) { return 16; }
-    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<5,5,double>>*>(mat)) { return 25; }
-    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<6,6,double>>*>(mat)) { return 36; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<1,3,double>>*>(mat)) { return 1; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<1,6,double>>*>(mat)) { return 1; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<2,2,double>>*>(mat)) { return 2; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<2,3,double>>*>(mat)) { return 2; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<3,3,double>>*>(mat)) { return 3; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<3,6,double>>*>(mat)) { return 3; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<6,6,double>>*>(mat)) { return 6; }
     return -1;
   }
-	
+
+  INLINE int GetEntryWidth (BaseMatrix* mat)
+  {
+    if (auto m = dynamic_cast<SparseMatrixTM<double>*>(mat)) { return 1; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<1,3,double>>*>(mat)) { return 3; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<1,6,double>>*>(mat)) { return 6; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<2,2,double>>*>(mat)) { return 2; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<2,3,double>>*>(mat)) { return 3; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<3,3,double>>*>(mat)) { return 3; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<3,6,double>>*>(mat)) { return 6; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<6,6,double>>*>(mat)) { return 6; }
+    return -1;
+  }
+
+  INLINE int GetEntrySize (BaseMatrix* mat)
+  {
+    int h = GetEntryHeight(mat), w = GetEntryWidth(mat);
+    return (h>0 && w>0) ? h*w : -1;
+  }
+  
+  INLINE int GetEntryDim (BaseMatrix* mat)
+  {
+    int h = GetEntryHeight(mat), w = GetEntryWidth(mat);
+    return h == w ? h : -1;
+  }
   
   // Strip Mat<1,1,double> and Vec<1,double> -> double
   template<class T> struct strip_mat { typedef T type; };

@@ -326,8 +326,30 @@ namespace amg
     if(build_faces && (eqc_h->GetCommunicator().Rank()==0))
       cout << "Faces probably don't work consistently yet!!" << endl;
     auto mesh = make_shared<BlockTM>(eqc_h);
-    mesh->SetVs (ma->GetNV(), [&](auto vnr)->FlatArray<int>{ return ma->GetDistantProcs(NodeId(NT_VERTEX, vnr)); },
-		 [vert_sort](auto i, auto j){ vert_sort[i] = j; });
+    if (ma->GetCommunicator().Size() > 1)
+      mesh->SetVs (ma->GetNV(), [&](auto vnr)->FlatArray<int>{ return ma->GetDistantProcs(NodeId(NT_VERTEX, vnr)); },
+		   [vert_sort](auto i, auto j){ vert_sort[i] = j; });
+    else {
+      auto & M(*mesh);
+      M.has_nodes[NT_VERTEX] = true;
+      auto nv = ma->GetNV();
+      M.nnodes[NT_VERTEX] = nv;
+      M.verts.SetSize(nv);
+      for (auto k:Range(nv)) {
+	M.verts[k] = k;
+	vert_sort[k] = k;
+      }
+      Array<size_t> & disp(M.disp_eqc[NT_VERTEX]);
+      disp.SetSize(2);
+      disp[0] = 0; disp[1] = nv;
+      Array<int> dummy;
+      mesh->SetVs (ma->GetNV(), [&](auto vnr)->FlatArray<int>{ return dummy; },
+		   [vert_sort](auto i, auto j){ vert_sort[i] = j; });
+      M.eqc_verts = FlatTable<AMG_Node<NT_VERTEX>>(1, &(M.disp_eqc[NT_VERTEX][0]), &(M.verts[0]));
+      M.nnodes_eqc[NT_VERTEX].SetSize(1); M.nnodes_eqc[NT_VERTEX][0] = nv;
+      M.nnodes_cross[NT_VERTEX].SetSize(1); M.nnodes_cross[NT_VERTEX][0] = 0;
+      M.nnodes_glob[NT_VERTEX] = M.nnodes[NT_VERTEX];
+    }
     const MeshAccess & mar = *ma;
     if (build_edges) {
       size_t num_edges_total = ma->GetNEdges();

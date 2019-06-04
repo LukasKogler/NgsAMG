@@ -205,9 +205,16 @@ namespace amg
 				to_string(DPN) + string(" for coarsest level exact Inverse!"));
 	      }
 	    else {
-	      auto cpm = make_shared<ParallelMatrix>(cspm, cpds);
-	      cpm->SetInverseType(options->clev_inv_type);
-	      auto cinv = cpm->InverseMatrix();
+	      shared_ptr<BaseMatrix> cinv;
+	      if (cpds->GetCommunicator().Size() <= 2) { // <= 1 if i remove dummy master
+		cspm->SetInverseType(SPARSECHOLESKY);
+		cinv = cspm->InverseMatrix();
+	      }
+	      else {
+		auto cpm = make_shared<ParallelMatrix>(cspm, cpds);
+		cpm->SetInverseType(options->clev_inv_type);
+		cinv = cpm->InverseMatrix();
+	      }
 	      amg_mat->AddFinalLevel(cinv);
 	    }
 	  }
@@ -764,10 +771,6 @@ namespace amg
   void EmbedVAMG<AMG_CLASS, HTVD, HTED> :: FinalizeLevel (const BaseMatrix * mat)
   {
     static Timer t(string("EmbedVAMG::FinalizeLevel")); RegionTimer rt(t);
-    if (mat != nullptr)
-      { finest_mat = shared_ptr<BaseMatrix>(const_cast<BaseMatrix*>(mat), NOOP_Deleter); }
-    else
-      { finest_mat = bfa->GetMatrixPtr(); }
 
     if (options->sync)
       {
@@ -777,15 +780,31 @@ namespace amg
 	}
       }
 
+    shared_ptr<BaseMatrix> fine_spm;
+    if (mat != nullptr)
+      { fine_spm = shared_ptr<BaseMatrix>(const_cast<BaseMatrix*>(mat), NOOP_Deleter); }
+    else
+      { fine_spm = bfa->GetMatrixPtr(); }
+
+    finest_mat = fine_spm; // embed-amg finest mat - need parallel matrix!
+
+    if (auto pmat = dynamic_pointer_cast<ParallelMatrix>(fine_spm)) {
+      fine_spm = pmat->GetMatrix();
+    }
+    else {
+      cout << "SHOULD BE NULLPTR: " << fine_spm->GetParallelDofs() << endl;
+      Array<int> perow (fine_spm->Height()); perow = 0;
+      Table<int> pds (perow);
+      fine_spm->SetParallelDofs(make_shared<ParallelDofs> (MPI_COMM_WORLD, move(pds), GetEntryDim(fine_spm.get()), false));
+    }
+
+    
     auto mesh = BuildInitialMesh();
     amg_pc = make_shared<AMG_CLASS>(mesh, options);
 
     auto embed_step = BuildEmbedding();
 
-    auto fine_spm = finest_mat;
-    if (auto pmat = dynamic_pointer_cast<ParallelMatrix>(finest_mat))
-      fine_spm = pmat->GetMatrix();
-    amg_pc->Finalize(fine_spm, embed_step);
+    amg_pc->Finalize(fine_spm, embed_step); // VAMG finest mat
   }
 
   template<class AMG_CLASS, class HTVD, class HTED>
@@ -800,8 +819,11 @@ namespace amg
     auto & O(*options);
     shared_ptr<BlockTM> top_mesh = nullptr;
     auto fpd = finest_mat->GetParallelDofs();
-    // auto eqc_h = make_shared<EQCHierarchy>(fpd, true); // TODO: this could be more efficient
-    auto eqc_h = make_shared<EQCHierarchy>(ma, Array<NODE_TYPE>({NT_VERTEX}), true); // TODO: this could be more efficient
+    shared_ptr<EQCHierarchy> eqc_h;
+    if (ma->GetCommunicator().Size() == 1) // second version has an optimization the first does not have!
+      { eqc_h = make_shared<EQCHierarchy>(fpd, true); }
+    else
+      { eqc_h = make_shared<EQCHierarchy>(ma, Array<NODE_TYPE>({NT_VERTEX}), true); }
     t1.Stop();
     t2.Start();
     if (O.edges == "MESH") { // convert Netgen-mesh to AMG-Mesh

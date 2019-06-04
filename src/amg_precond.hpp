@@ -147,9 +147,8 @@ namespace amg
       void LogProl (shared_ptr<BaseSparseMatrix> prol)
       {
   	if (ilev == NONE) return;
-  	// if (glob_comm.Rank() == 0) { lvs.Last()[3] = smoothed ? 1 : 0; }
-  	int mes = sqrt(GetEntrySize(prol.get()));
-  	rpp.Append( (prol->Height() ? mes * (double(prol->NZE()) / prol->Height()) : 0));
+	int ew = GetEntryWidth(prol.get());
+  	rpp.Append( (prol->Height() ? ((double(prol->NZE()) * ew) / (prol->Height())) : 0));
       }
       
       void LogMatSm (shared_ptr<BaseSparseMatrix> & amat, shared_ptr<BaseSmoother> & sm) {
@@ -178,6 +177,7 @@ namespace amg
   	static Timer t("Info::Finalize"); RegionTimer rt(t);
   	int n_meshes = NVs.Size(), n_mats = occ.Size(); // == 0 if not master
   	auto lam_max = [&](auto & val, auto & arr) {
+	  if (glob_comm.Size() == 1 ) return;
   	  auto val2 = glob_comm.AllReduce(val, MPI_MAX);
   	  int mrk = (val==val2) ? glob_comm.Rank() : glob_comm.Size()+1;
   	  int sender = glob_comm.AllReduce(mrk, MPI_MIN);
@@ -207,16 +207,20 @@ namespace amg
   	// VC-L
   	v_comp_l = 0; double vcl0 = max2(1.0, vcc_l[0]);
   	for (auto k : Range(n_meshes))
-  	  if (isass[k]==1) { double val = vcc_l[k]/vcl0; v_comp_l += val; vcc_l[k] = val; }
-  	double cpvc = v_comp_l;
+  	  {
+	    double val = vcc_l[k]/vcl0;
+	    if (isass[k]==1) { v_comp_l += val; vcc_l[k] = val; }
+	    else { vcc_l[k] = -val; }
+	  }
   	lam_max(v_comp_l, vcc_l);
-  	// RPP (get RPP of rank with max. loc OC)
-  	lam_max(cpvc, rpp);
   	// OC-L
   	op_comp_l = 0; double ocl0 = max2(1.0, occ_l[0]);
   	for (auto k : Range(n_mats))
   	  { auto v = occ_l[k]/ocl0; op_comp_l += v; occ_l[k] = v; }
+	double rppkey = op_comp_l;
   	lam_max(op_comp_l, occ_l);
+  	// RPP (get RPP from a rank with max. OPC)
+	lam_max(rppkey, rpp);
   	// MC-1-L & MC-2-L
   	mem_comp1_l = 0; mem_comp2_l = 0; double mml0 = max2(1.0, mcc1_l[0]);
   	for (auto k : Range(n_mats))
@@ -233,6 +237,7 @@ namespace amg
 
     virtual string GetName () const { return string("NodeWiseAMG"); }
 
+    virtual AutoVector CreateVector () const override { return amg_mat->CreateVector(); }
     virtual void Mult (const BaseVector & b, BaseVector & x) const override
     { amg_mat->Mult(b, x); }
     virtual void MultAdd (double s, const BaseVector & b, BaseVector & x) const override

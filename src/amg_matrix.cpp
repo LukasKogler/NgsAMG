@@ -193,11 +193,6 @@ namespace amg
 	  tlev.Stop();
 	}
       }
-    // TODO: remove this
-    // mats[0]->Mult(*x_level[0], *tmp2);
-    // double ip = InnerProduct(*x_level[0], *tmp2);
-    // if(ip < 0)
-    //    cout << " ---------- IP: " << ip << endl;
     x_level[0] = tmp;
     rhs_level[0] = tmp2;
     return;
