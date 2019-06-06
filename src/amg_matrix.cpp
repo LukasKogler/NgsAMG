@@ -3,7 +3,7 @@
 
 namespace amg
 {
-  void AMGMatrix :: CINV(shared_ptr<BaseVector> x, shared_ptr<BaseVector> b)
+  void AMGMatrix :: CINV(shared_ptr<BaseVector> x, shared_ptr<BaseVector> b) const
   {
     auto tmp = x_level[0];
     x_level[0] = x;
@@ -125,7 +125,10 @@ namespace amg
       if (has_crs_inv) { /** exact solve on coarsest level **/
 	t4.Start();
 	// cout << "crs inv " << endl;
-	// cout << "crs rhs " << endl << *rhs_level[n_levels-1] << endl;
+	// cout << "crs rhs " << endl;
+	// for(auto k:Range(rhs_level[n_levels-1]->FVDouble().Size()))
+	//   cout << k << ": " << rhs_level[n_levels-1]->FVDouble()[k] << endl;
+	// cout << endl;
 	if (crs_inv==nullptr)
 	  x_level[n_levels-1]->FVDouble() = 0;
 	else
@@ -193,6 +196,16 @@ namespace amg
 	  tlev.Stop();
 	}
       }
+    // TODO: remove this
+
+    // cout << "stats 1 " << x_level[0]->GetParallelStatus() << " " << tmp2->GetParallelStatus() << endl;
+    // mats[0]->Mult(*x_level[0], *tmp2);
+    // cout << "stats 2 " << x_level[0]->GetParallelStatus() << " " << tmp2->GetParallelStatus() << endl;
+    // double ip = InnerProduct(*x_level[0], *tmp2);
+    // cout << "stats 3 " << x_level[0]->GetParallelStatus() << " " << tmp2->GetParallelStatus() << endl;
+    // if(ip < 0)
+    //   cout << " ---------- IP: " << ip << endl;
+
     x_level[0] = tmp;
     rhs_level[0] = tmp2;
     return;

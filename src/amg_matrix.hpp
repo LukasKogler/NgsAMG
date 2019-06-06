@@ -59,7 +59,7 @@ namespace amg
 	std_levels[k] = k;
     }
     virtual AutoVector CreateVector () const override { return x_level[0]->CreateVector(); };
-    void CINV(shared_ptr<BaseVector> x, shared_ptr<BaseVector> b);
+    void CINV(shared_ptr<BaseVector> x, shared_ptr<BaseVector> b) const;
     void SmoothV(const shared_ptr<BaseVector> & x,
   		 const shared_ptr<const BaseVector> & b) const
     { this->SmoothV(x, b, this->std_levels); };

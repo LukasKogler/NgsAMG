@@ -684,7 +684,8 @@ namespace amg
 
     Iterate<3>([&](auto i) {
   	Iterate<3>([&](auto j) {
-  	    m(i.value, j.value) += atr * kv(i.value) * kv(j.value);
+  	    // m(3+i.value, 3+j.value) += atr * kv(i.value) * kv(j.value);
+  	    m(3+i.value, 3+j.value) += kv(i.value) * kv(j.value);
   	  });
       });
   }

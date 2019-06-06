@@ -31,6 +31,7 @@ namespace amg
       else { os << "Row " << setw(6) << k << ": (empty)" << endl; }
     }
   }
+  template<> INLINE void print_tm_spmat (ostream &os, const SparseMatrixTM<double> & mat) { os << mat << endl; }
   template<> INLINE void print_tm_spmat (ostream &os, const SparseMatrix<double> & mat) { os << mat << endl; }
 
   INLINE int GetEntryHeight (BaseMatrix* mat)

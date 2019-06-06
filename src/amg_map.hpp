@@ -122,6 +122,10 @@ namespace amg {
 	for(auto k:Range(size_t(1),sub_steps.Size()))
 	  vecs[k-1] = sub_steps[k]->CreateVector();
     }
+
+    void hacky_replace_first_step (shared_ptr<BaseDOFMapStep> astep) { sub_steps[0] = astep; }
+    shared_ptr<BaseDOFMapStep> hacky_get_first_step () { return sub_steps[0]; }
+    
     virtual void TransferF2C (const shared_ptr<const BaseVector> & x_fine,
 			      const shared_ptr<BaseVector> & x_coarse) const override
     {
@@ -155,10 +159,6 @@ namespace amg {
     }
   };
 
-  class BaseProlMap : public BaseDOFMapStep
-  {
-
-  };
 
   /**
      This maps DOFs via a prolongation matrix (which is assumed to be hierarchic).
@@ -182,7 +182,7 @@ namespace amg {
 
     ProlMap (shared_ptr<TMAT> aprol, shared_ptr<ParallelDofs> fpd, shared_ptr<ParallelDofs> cpd, bool apw = true)
       : BaseDOFMapStep(fpd, cpd), prol(aprol), prol_trans(nullptr),
-	ispw(apw), has_smf(false), cnt(1), has_lf(false),
+	ispw(apw), has_smf(false), cnt(1), has_lf(false), force_sm(false),
 	SMFUNC([](auto x) { ; }), LOGFUNC([](auto x) { ; })
     { ; }
 
@@ -202,6 +202,7 @@ namespace amg {
 
     INLINE bool IsPW () const { return ispw; }
     INLINE bool CanSM () const { return has_smf; }
+    INLINE bool MustSM () const { return force_sm; }
     INLINE bool HasLog () const { return has_lf; }
 
     void SetSMF ( std::function<void(ProlMap<TMAT> * map)> ASMFUNC, bool force = true);
@@ -219,7 +220,7 @@ namespace amg {
     shared_ptr<TMAT> prol;
     shared_ptr<trans_spm_tm<TMAT>> prol_trans;
 
-    bool ispw, has_smf, has_lf;
+    bool ispw, has_smf, has_lf, force_sm;
     int cnt;
     std::function<void(ProlMap<TMAT> * map)> SMFUNC;
     std::function<void(shared_ptr<BaseSparseMatrix> prol)> LOGFUNC;
@@ -248,6 +249,8 @@ namespace amg {
     { // can only happen for [PP, S(..)] case with first map
       // AAAARGH MORE HACKS AAAAAAA
       auto& self = const_cast<TwoProlMap<SPML, SPMR>&>(*this);
+      cout << "TPM, mult mats at assemble, cnt = " << lmap->GetCnt() << " + " << rmap->GetCnt() << endl;
+      cout << lmap->GetProl()->Height() << " x " << lmap->GetProl()->Width() << " WITH " << rmap->GetProl()->Height() << " x " << rmap->GetProl()->Width() << endl;
       self.prol = MatMultAB<SPML, SPMR>(*lmap->GetProl(), *rmap->GetProl());
       self.SetCnt(lmap->GetCnt() + rmap->GetCnt());
       self.ispw = rmap->IsPW() && lmap->IsPW();

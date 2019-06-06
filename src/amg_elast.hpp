@@ -29,6 +29,10 @@ namespace amg
     INLINE bool operator == (const PosWV & other) {
       return wt==other.wt && pos(0)==other.pos(0) && pos(1)==other.pos(1) && pos(2)==other.pos(2); } 
   };
+  INLINE std::ostream & operator<<(std::ostream &os, PosWV& V)
+  { os << "[" << V.wt << " | " << V.pos << "]"; return os; }
+  INLINE bool is_zero (const PosWV & m) { return is_zero(m.wt) && is_zero(m.pos); }
+
   // INLINE void operator + (PosWV & a, const PosWV & b) { a.wt += b.wt; }; // for Cumulate
   class ElVData : public AttachedNodeData<NT_VERTEX, PosWV, ElVData>
   {
@@ -88,6 +92,9 @@ namespace amg
   };
   // template struct ElEW<2>;
   // template struct ElEW<3>;
+  template<int D>
+  INLINE std::ostream & operator<<(std::ostream &os, ElEW<D>& V)
+  { os << "[an ElEW]"; return os; }
 
   template<int D> using STABEW = Mat<dofpv(D), dofpv(D), double>;
 
@@ -187,6 +194,10 @@ namespace amg
 	  T(0,1)(i.value, i.value) = -1.0;
 	});
       M(0,0) = get<1>(fmesh.Data())->Data()[edge.id]; // cant do Matrix<TM> * TM
+      // cout << "(unreged) M: " << endl; print_tm_mat(cout, M); cout << endl;
+      if (options->singular_diag) { // not so sure if this is the right way to do it...
+	RegTM<disppv(D), rotpv(D), dofpv(D)>(M(0,0));
+      }
       Iterate<2>([&](auto i) {
 	  TTM(i.value,0) = Trans(T(0,i.value)) * M(0,0);
 	});
@@ -194,10 +205,21 @@ namespace amg
       mat = TTM * T;
       // cout << "M: " << endl; print_tm_mat(cout, M); cout << endl;
       // cout << "T: " << endl; print_tm_mat(cout, T); cout << endl;
-      // cout << "TT: " << endl; print_tm_mat(cout, TT); cout << endl;
       // cout << "TTM: " << endl; print_tm_mat(cout, TTM); cout << endl;
       // cout << "emat: " << endl; print_tm_mat(cout, mat); cout << endl;
     }
+
+    INLINE void RegDiag (Mat<dofpv(D), dofpv(D), double> & mat) const
+    {
+      if constexpr(D == 2) {
+	  if (mat(2,2) == 0.0) mat(2,2) = 0.1 * (mat(0,0) + mat(1,1));
+	}
+      else {
+	// RegTM<0,6,6>(mat);
+	RegTM<3,3,6>(mat);
+      }
+    }
+
     // {
     //   // mat = -42; // TODO: do I need this?
     //   auto & edata = get<1>(fmesh.Data())->Data()[edge.id];

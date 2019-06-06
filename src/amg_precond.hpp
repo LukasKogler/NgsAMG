@@ -61,6 +61,7 @@ namespace amg
       Array<int> sm_skip_levels;           // forbid prol-smoothing on these levels
       bool force_sm = false;               // force smoothing on exactyle sm_levels
       bool composite_smooth = true;        // concatenate prols before or after smoothing
+      bool force_composite_smooth = false; // smooth each concatenated prol once!
       /** Smoothers - haha, you have no choice  **/
       /** Coarsest level opts **/
       string clev_type = "INV"; // available: "INV", "NOTHING"
@@ -133,7 +134,7 @@ namespace amg
   	}
   	if (ilev <= DETAILED) return;
   	vcc_l.Append(amesh->template GetNN<NT_VERTEX>());
-  	size_t locnv_l = amesh->template GetENN<NT_VERTEX>(0);
+  	size_t locnv_l = vcc_l.Last() ? amesh->template GetENN<NT_VERTEX>(0) : 0;
   	size_t locnv_g = comm.Reduce(locnv_l, MPI_SUM, 0);
   	if (comm.Rank()==0) fvloc.Append( locnv_g/double(NVs.Last()) );
       }
@@ -249,6 +250,8 @@ namespace amg
     {this->amg_mat->GetBF(level, rank, dof, vec); }
     size_t GetNDof(size_t level, int rank) const
     { return this->amg_mat->GetNDof(level, rank); }
+    void CINV(shared_ptr<BaseVector> x, shared_ptr<BaseVector> b) const
+    {this->amg_mat->CINV(x, b); }
     shared_ptr<Info> GetInfo () const { return infos; }
     shared_ptr<Options> GetOptions () const { return options; }
 
@@ -451,6 +454,8 @@ namespace amg
     size_t GetNLevels(int rank) const {return this->amg_pc->GetNLevels(rank); }
     void GetBF(size_t level, int rank, size_t dof, BaseVector & vec) const {this->amg_pc->GetBF(level, rank, dof, vec); }
     size_t GetNDof(size_t level, int rank) const { return this->amg_pc->GetNDof(level, rank); }
+    void CINV(shared_ptr<BaseVector> x, shared_ptr<BaseVector> b) const {this->amg_pc->CINV(x, b); }
+
     // virtual string GetName () const override { return AMG_CLASS::GetName(); }
     
     shared_ptr<Options> options;

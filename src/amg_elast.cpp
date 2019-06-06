@@ -32,38 +32,64 @@ namespace amg
   ElasticityAMG<3> :: RegularizeMatrix (shared_ptr<BaseSparseMatrix> bspmat, shared_ptr<ParallelDofs> & pardofs) const
   {
     auto mat = static_pointer_cast<ElasticityAMG<3>::TSPM>(bspmat);
-    // cerr << "reg. mat " << mat->Height() << " x " << mat->Width() << endl;
-    // print_tm_spmat(cerr, *mat);
-    // cerr << "reg diags: " << endl;
+    cout << "reg. mat " << mat->Height() << " x " << mat->Width() << endl;
+    // print_tm_spmat(cout, *mat);
+    // cout << "reg diags: " << endl;
     // pardofs->GetCommunicator().Barrier();
-    Matrix<double> M(6,6), evecs(6,6);
-    Vector<double> evals(6);
-    for(auto k : Range(mat->Height())) {
-      // cerr << " k " << k << endl;
-      auto& diag = (*mat)(k,k);
 
-      // M = diag;
-      // LapackEigenValuesSymmetric(M, evals, evecs);
-      // cerr << "diag evals: " << endl; cerr << evals << endl;
-
-      // print_tm(cerr, diag); cerr << endl;
-      RegTM<3,3,6>(diag);
-      // cerr << " reged " << endl;
-      // print_tm(cerr, diag); cerr << endl;
-
-      // M = diag;
-      // LapackEigenValuesSymmetric(M, evals, evecs);
-      // cerr << "reg diag evals: " << endl; cerr << evals << endl;
-      
+    auto H = mat->Height();
+    
+    size_t cntex = 0;
+    TableCreator<int> ct;
+    for (; !ct.Done(); ct++) {
+      cntex = 0;
+      for(auto k : Range(H)) {
+	auto dps = pardofs->GetDistantProcs(k);
+	if (!dps.Size()) continue;
+	for (auto p : dps) ct.Add(cntex, p);
+	cntex++;
+      }
     }
-    // cerr << "all ok " << endl;
-    // pardofs->GetCommunicator().Barrier();
+    constexpr size_t MS = dofpv(3)*dofpv(3);
+    auto block_pds = make_shared<ParallelDofs>(pardofs->GetCommunicator(), ct.MoveTable(), MS, false);
+
+    auto a2b = [&](const auto& a, auto & b) {
+      Iterate<MS>([&](auto i) {
+	  b(i.value) = a(i.value);
+	});
+    };
+
+    auto rank = pardofs->GetCommunicator().Rank();
+
+    ParallelVVector<Vec<MS,double>> pvec(block_pds, DISTRIBUTED);
+    cntex = 0;
+    for(auto k : Range(H)) {
+      auto dps = pardofs->GetDistantProcs(k);
+      if(dps.Size()) a2b((*mat)(k,k), pvec(cntex++));
+    }
+    pvec.Cumulate();
+    cntex = 0;
+    for(auto k : Range(H)) {
+      auto& diag = (*mat)(k,k);
+      auto dps = pardofs->GetDistantProcs(k);
+      bool ex = dps.Size();
+      bool master = !ex || rank < dps[0];
+      if (ex && master) {
+	if (master) { a2b(pvec(cntex++), diag); }
+	else diag = 0;
+      }
+
+      if (master) { RegDiag(diag); }
+      // RegTM<3,3,6>(diag);
+    }
+
     return mat;
   }
 
   template<> shared_ptr<BaseSparseMatrix>
   ElasticityAMG<2> :: RegularizeMatrix (shared_ptr<BaseSparseMatrix> bspmat, shared_ptr<ParallelDofs> & pardofs) const
   {
+    // TODO: fix this for MPI-parallel coarse level...
     auto mat = static_pointer_cast<ElasticityAMG<2>::TSPM>(bspmat);
     for(auto k : Range(mat->Height())) {
       auto& diag = (*mat)(k,k);
@@ -338,7 +364,7 @@ namespace amg
 	  double fc = fabsum(cspm(rvsort[e.v[0]], rvsort[e.v[1]])) / dofpv(C::DIM);;
 	  auto& emat = we[e.id]; emat = 0;
 	  Iterate<disppv(C::DIM)>([&](auto i) { emat(i.value, i.value) = fc; });
-	  Iterate<rotpv(C::DIM)>([&](auto i) { emat(disppv(C::DIM)+i.value, disppv(C::DIM)+i.value) = 1e-10 * fc; });
+	  // Iterate<rotpv(C::DIM)>([&](auto i) { emat(disppv(C::DIM)+i.value, disppv(C::DIM)+i.value) = 1e-10 * fc; });
 	}
       }
     else
@@ -353,6 +379,7 @@ namespace amg
     static Timer t(this->GetName()+string("::BuildEmbedding")); RegionTimer rt(t);
     auto fpardofs = finest_mat->GetParallelDofs();
     auto & vsort = node_sort[NT_VERTEX];
+    // cout << "vsort: " << endl; prow2(vsort); cout << endl;
     if (options->v_dofs == "NODAL") {
       if (options->block_s.Size() == 1 ) { // ndof/vertex != #kernel vecs
 	if (options->block_s[0] != disppv(C::DIM)) {
@@ -519,9 +546,9 @@ namespace amg
 	  // 	});
 	  //   });
 	  // cout << "ELEW after: " << endl; print_tm(cout, elew); cout << endl;
-	  Iterate<rotpv(D)>([&](auto i) {
-	      elew(disppv(D)+i.value, disppv(D)+i.value) += 1e-10 * lam;
-	    });
+	  // Iterate<rotpv(D)>([&](auto i) {
+	  //     elew(disppv(D)+i.value, disppv(D)+i.value) += 1e-10 * lam;
+	  //   });
 	  // if (lam<0) {
 	  //   throw Exception("LAM<0!!");
 	  // }
@@ -538,7 +565,7 @@ namespace amg
   void ElEData<D> :: map_data (const CoarseMap<TMESH> & cmap, ElEData<D> & celed) const
   {
     static_assert(std::is_same<TMESH,ElasticityMesh<D>>::value==1, "ElEData with wrong map?!");
-    // cerr << " map edges " << endl;
+    // cout << " map edges " << endl;
     static Timer t(string("ElEData<")+to_string(D)+string(">::map_data")); RegionTimer rt(t);
     auto & mesh = static_cast<ElasticityMesh<D>&>(*this->mesh);
     mesh.CumulateData();
@@ -551,12 +578,13 @@ namespace amg
     const size_t NCE = cmap.template GetMappedNN<NT_EDGE>();
 
     // cout << " NE NCE " << NE << " " << NCE << endl;
+
     
     celed.data.SetSize(NCE); celed.data = 0.0;
     auto e_map = cmap.template GetMap<NT_EDGE>();
-    // cout << "e_map: " << endl; prow2(e_map); cout << endl << endl;
     auto v_map = cmap.template GetMap<NT_VERTEX>();
-    // cout << "v_map: " << endl; prow2(v_map); cout << endl << endl;
+    // if (v_map.Size() < 2000) cout << "e_map: " << endl; prow2(e_map); cout << endl << endl;
+    // if (v_map.Size() < 2000) cout << "v_map: " << endl; prow2(v_map); cout << endl << endl;
     auto pecon = mesh.GetEdgeCM();
     // cout << "fine mesh ECM: " << endl << *pecon << endl;
     const auto & econ(*pecon);
@@ -569,6 +597,12 @@ namespace amg
     auto fed = this->Data();
     auto ced = celed.Data();
     auto edges = mesh.template GetNodes<NT_EDGE>();
+
+    // cout << "fine edges / mats: " << endl;
+    // for (auto & edge : edges) {
+    //   cout << "fedge: " << edge << ": " << endl; print_tm(cout, fed[edge.id]); cout << endl;
+    // }
+
     Table<int> c2fe;
     {
       TableCreator<int> cc2fe(NCE);
@@ -647,6 +681,13 @@ namespace amg
 	calc_cemat(cedge, ced[cedge.id], [&](auto fenr) { return true; });
       }, false); // def, false!
     celed.SetParallelStatus(CUMULATED);
+
+    // cout << "coarse edges / mats: " << endl;
+    // auto cedges = cmesh.template GetNodes<NT_EDGE>();
+    // for (auto & edge : cedges) {
+    //   cout << "cedge : " << edge << ": " << endl; print_tm(cout, ced[edge.id]); cout << endl;
+    // }
+
     // cout << "wait map edge data " << endl;
     // eqc_h.GetCommunicator().Barrier();
     // cout << "wait map edge data done " << endl;

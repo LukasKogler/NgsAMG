@@ -12,7 +12,12 @@ namespace amg
     ConcSteps();
     if (embed_step != nullptr) {
       cout << "CONC with embed-step!" << endl;
-      steps[0] = embed_step->Concatenate(steps[0]);
+      auto conc = dynamic_pointer_cast<ConcDMS>(steps[0]);
+      shared_ptr<BaseDOFMapStep> fstep = conc ? conc->hacky_get_first_step() : steps[0];
+      fstep = embed_step->Concatenate(fstep);
+      if (conc) conc->hacky_replace_first_step(fstep);
+      else steps[0] = fstep;
+      cout << "conced step: " << steps[0] << endl;
     }
   }
     
@@ -108,6 +113,7 @@ namespace amg
     RegionTimer rt(timer_hack_prol_f2c());
     // x_coarse->FVDouble() = 0.0;
     // prol->MultTransAdd(1.0, *x_fine, *x_coarse);
+    x_fine->Distribute();
     prol_trans->Mult(*x_fine, *x_coarse);
     x_coarse->SetParallelStatus(DISTRIBUTED);
   }
@@ -125,6 +131,9 @@ namespace amg
   template<class TMAT>
   shared_ptr<BaseDOFMapStep> ProlMap<TMAT> :: Concatenate (shared_ptr<BaseDOFMapStep> other)
   {
+    cout << "conc me, " << this << " and " << other.get() << endl;
+    cout << "conc me, " << typeid(*this).name() << " with right " << typeid(*other).name() << endl;
+    // me left, other right
     if (auto otmp = dynamic_pointer_cast<TwoProlMap<SPM_TM_C, SPM_TM_C>>(other)) {
       cout << "conc, am dim " << GetProl()->Height() << " x " << GetProl()->Width()  << endl;
       cout << "TPM, left is dim " << otmp->GetLMap()->GetProl()->Height() << " x " << otmp->GetLMap()->GetProl()->Width()  << endl;
@@ -152,8 +161,18 @@ namespace amg
 	throw Exception("Right ProlMap should always be final!!");
 	return nullptr;
       }
+
+      if (opmap->IsPW() && opmap->CanSM() && !CanSM()) {
+      	// this is a bit of a hack for the embed-step
+      	// if I cannot smooth myself, and the right prol can, but has not, it should do that now
+      	cout << "probably good idea to smooth right prol here!" << endl;
+      	opmap->Smooth();
+      	opmap->ClearSMF();
+      }
+      
+      // (Sn) P - S(...)    -> return TPM [(Sn) P, S(..)]
       // P - S(...)    -> return TPM [P, S(..)]
-      if ( (IsPW()) && (!CanSM()) && (!opmap->IsPW()) ) {
+      if ( (IsPW()) && (!MustSM()) && (!opmap->IsPW()) ) {
 	cout << "MAKE TPM 1" << endl;
 	auto tpm = make_shared<TwoProlMap<TMAT, SPM_TM_C>> (make_shared<ProlMap<TMAT>> (GetProl(), GetParDofs(), GetMappedParDofs()), opmap);
 	tpm->GetLMap()->SetCnt(GetCnt());
@@ -163,7 +182,9 @@ namespace amg
       // P - P         -> mult, return PMAP
       // (S)P - P      -> mult, smooth, return PMAP
       // (S)P - S(...) -> smooth, mult, returm PMAP
-      bool smooth_now = IsPW() && CanSM();
+      // (Sn)P - ((Sn)) P -> mult, return PMAP with (Sn)
+      // (Sn)p - ((Sn)) P -> mult, return PAMP wirh (Sn)
+      bool smooth_now = IsPW() && MustSM();
       if ( smooth_now && (!opmap->IsPW()) )
 	{ // (S)P - S(...)
 	  smooth_now = false;
@@ -181,7 +202,13 @@ namespace amg
 	  comp_map->Smooth();
 	  ClearSMF();
 	}
-      cout << "resulting prol sm? " << !comp_map->IsPW() << endl;
+      else if (CanSM()) {
+	  cout << "ONLY SET COMP SM!" << endl;
+	comp_map->SetSMF(GetSMF(), MustSM());
+	ClearSMF();
+      }
+      cout << "resulting prol sm, can, must" << !comp_map->IsPW() << " " << comp_map->CanSM() << " " << comp_map->MustSM() << endl;
+      // cout << "resulting prol sm? " << !comp_map->IsPW() << endl;
       return comp_map;
     }
     else {
@@ -194,14 +221,14 @@ namespace amg
   {
     if (!IsPW()) { throw Exception("Cannot set smoothed (Already smoothed)."); }
     cout << "set smoothed, am dim " << GetProl()->Height() << " x " << GetProl()->Width()  << endl;
-    SMFUNC = ASMFUNC; has_smf = true;
+    SMFUNC = ASMFUNC; has_smf = true; force_sm = forced;
   }
 
   template<class TMAT>
   void ProlMap<TMAT> :: ClearSMF ( )
   {
     cout << "clear smoothed, am dim " << GetProl()->Height() << " x " << GetProl()->Width()  << endl;
-    SMFUNC = [](auto x){ ; }; has_smf = false;
+    SMFUNC = [](auto x){ ; }; has_smf = false; force_sm = false;
   }
 
   template<class TMAT>

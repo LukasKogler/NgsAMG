@@ -90,6 +90,8 @@ namespace amg
       mat(0,1) = mat(1,0) = - (mat(0,0) = mat(1,1) = w);
     }
 
+    INLINE void RegDiag (double & val) const { ; }
+
   };
 
 

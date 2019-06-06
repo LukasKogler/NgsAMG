@@ -51,7 +51,7 @@ namespace amg
       size_t last_nv_ass = nvs[0], last_nv_smo = nvs[0], last_nv_ctr = nvs[0];
       size_t step_cnt = 0;
       while ( level[0] < MAX_NL-1 && ( (level[0]==0) || (fm->template GetNNGlobal<NT_VERTEX>() > MAX_NV) ) ) {
-	// cout << "level " << level << endl;
+	// cout << "MESH level " << level << endl << *fm << endl;
 	size_t curr_nv = fm->template GetNNGlobal<NT_VERTEX>();
 	if ( (!contr_locked) && (grid_step = (gstep_contr = TryContract(level, fm))) != nullptr ) {
 	  contr_locked = true;
@@ -71,6 +71,9 @@ namespace amg
 
 	  if (smoothit) { last_nv_smo = curr_nv; }
 
+	  // set sm-func for all prols
+	  smoothit |= options->force_composite_smooth;
+	  
 	  cout << "level " << level;
 	  
 	  auto prol_step = BuildDOFMapStep(level, gstep_coarse, fm_pd, smoothit);
@@ -92,6 +95,7 @@ namespace amg
 	if (fm == nullptr) { fm_pd = nullptr; cutoffs.Append(step_cnt); break; } // no mesh due to contract
 	size_t next_nv = fm->template GetNNGlobal<NT_VERTEX>();
 	fm_pd = BuildParDofs(fm);
+	cout << "ndof level " << level << fm_pd->GetNDofGlobal() << " " << fm_pd->GetNDofLocal() << endl;
 	nvs.Append(next_nv);
 	double frac_crs = (1.0*next_nv) / curr_nv;
 	bool assit = false;
@@ -198,6 +202,8 @@ namespace amg
 	  auto comm = cpds->GetCommunicator();
 	  shared_ptr<BaseSparseMatrix> cspm = static_pointer_cast<BaseSparseMatrix>(mats.Last());
 	  cspm = RegularizeMatrix(cspm, cpds);
+	  cout << "crsmat: " << endl << *cspm << endl;
+	  cout << "invert " << cspm->Height() << " " << cpds->GetNDofLocal() << endl;
 	  if (comm.Size()>0) {
 	    // cout << "coarse inv " << endl;
 	    if constexpr(MAX_SYS_DIM < DPN) {
@@ -207,12 +213,15 @@ namespace amg
 	    else {
 	      shared_ptr<BaseMatrix> cinv;
 	      if (cpds->GetCommunicator().Size() <= 2) { // <= 1 if i remove dummy master
+		cout << "coarse local inv!!" << endl;
 		cspm->SetInverseType(SPARSECHOLESKY);
 		cinv = cspm->InverseMatrix();
 	      }
 	      else {
 		auto cpm = make_shared<ParallelMatrix>(cspm, cpds);
-		cpm->SetInverseType(options->clev_inv_type);
+		cout << "coarse parallel inv!!" << endl;
+		// cpm->SetInverseType(options->clev_inv_type);
+		cpm->SetInverseType(MUMPS);
 		cinv = cpm->InverseMatrix();
 	      }
 	      amg_mat->AddFinalLevel(cinv);
@@ -354,9 +363,10 @@ namespace amg
     if (smoothed_prol) {
       auto fm = static_pointer_cast<TMESH>(_cmap->GetMesh());
       if (options.composite_smooth) {
-	pmap->SetSMF ([this, fm](auto x) { SmoothProlongation_hack(x, fm); });
+	pmap->SetSMF ([this, fm](auto x) { SmoothProlongation_hack(x, fm); }, !options.force_composite_smooth);
       }
       else {
+	cout << "smooth prol level " << level << endl;
 	SmoothProlongation(pmap, fm); 
       }
     }
@@ -407,6 +417,9 @@ namespace amg
       }
     }
 
+    // cout << "PWP MAT: " << endl;
+    // print_tm_spmat(cout, *prol); cout << endl<< endl;
+
     return prol;
   }
 
@@ -415,6 +428,7 @@ namespace amg
   VWiseAMG<AMG_CLASS, TMESH, DPN> :: SmoothProlongation (shared_ptr<ProlMap<TSPM_TM>> pmap, shared_ptr<TMESH> afmesh) const
   {
     static Timer t(GetName()+string("::SmoothProlongation")); RegionTimer rt(t);
+    static Timer tinv(GetName()+string("::SmoothProlongation - invert"));
     const auto & options = static_cast<const Options&>(*this->GetOptions());
 
     const AMG_CLASS & self = static_cast<const AMG_CLASS&>(*this);
@@ -426,7 +440,8 @@ namespace amg
     const double MIN_PROL_FRAC = options.min_prol_frac;
     const int MAX_PER_ROW = options.max_per_row;
     const double omega = options.sp_omega;
-    const bool sing_diags = options.singular_diag;
+    // const bool sing_diags = options.singular_diag;
+    const bool sing_diags = false; // moved to CalcRMBlock for now..
 
     // Construct vertex-map from prol (can be concatenated)
     size_t NFV = fmesh.template GetNN<NT_VERTEX>();
@@ -609,30 +624,30 @@ namespace amg
 	  // int brow = (V == all_fedges[used_edges[l]].v[0]) ? 0 : 1;
 	  mat(0,l) = block(brow,1-brow); // off-diag entry
 	  mat(0,posV) += block(brow,brow); // diag-entry
+	  // cout << "diag now: " << endl; print_tm(cout, mat(0,posV)); cout << endl;
 	}
-	// cout << "repl mat row: " << endl; print_tm_mat(cout, mat); cout << endl;
-	TMAT diag = mat(0, posV);
 	// cout << "inv diag V = " << V << endl; print_tm(cout, diag); cout << endl;
-	double tr = 0;
+	tinv.Start();
+	TMAT diag;
+	double tr = 1;
 	if constexpr(mat_traits<TMAT>::HEIGHT == 1) {
-	    tr = 1;
-	    CalcInverse(diag);
+	    diag = mat(0, posV);
 	  }
 	else {
-	  Iterate<mat_traits<TMAT>::HEIGHT>([&](auto i) { tr += diag(i.value,i.value); });
+	  diag = mat(0, posV);
+	  tr = 0; Iterate<mat_traits<TMAT>::HEIGHT>([&](auto i) { tr += diag(i.value,i.value); });
 	  tr /= mat_traits<TMAT>::HEIGHT;
-	  mat /= tr;
 	  diag /= tr;
-	  // cout << "invert (rescaled) diag V = " << V << endl; print_tm(cout, diag); cout << endl;
+	  // mat /= tr;
+	  // diag = mat(0, posV);
 	  if (sing_diags) {
-	    // cout << "pseudoinv" << endl;
-	    CalcPseudoInverse<mat_traits<TMAT>::HEIGHT>(diag);
-	  }
-	  else {
-	    // cout << "normal inv" << endl;
-	    CalcInverse(diag);
+	    self.RegDiag(diag);
 	  }
 	}
+	// cout << "invert diag: " << endl; print_tm(cout, diag); cout << endl;
+	CalcInverse(diag);
+	// cout << "inverted diag: " << endl; print_tm(cout, diag); cout << endl;
+	tinv.Stop();
 	// for ( auto l : Range(unv)) {
 	//   TMAT diag2 = mat(0, l);
 	//   TMAT diag3 = diag * diag2;
@@ -646,12 +661,13 @@ namespace amg
 	// cout << " - omega * diag * row : " << endl; print_tm_mat(cout, row); cout << endl;
 	// row(0, posV) = (1.0-omega) * id;
 
-	// cout << "mat: " << endl; print_tm_mat(cout, mat); cout << endl;
+	// cout << "mat row: " << endl; print_tm_mat(cout, mat); cout << endl;
 	// cout << "inv: " << endl; print_tm(cout, diag); cout << endl;
 	// cout << " repl-row: " << endl; print_tm_mat(cout, row); cout << endl;
 	
 	auto sp_ri = sprol->GetRowIndices(V); sp_ri = graph_row;
 	auto sp_rv = sprol->GetRowValues(V); sp_rv = 0;
+	double fac = omega/tr;
 	for (auto l : Range(unv)) {
 	  int vl = used_verts[l];
 	  auto pw_rv = pwprol.GetRowValues(vl);
@@ -664,7 +680,7 @@ namespace amg
 	  // cout << " before " << endl; print_tm(cout, sp_rv[pos]); cout << endl;
 	  if (l==posV)
 	    { sp_rv[pos] += pw_rv[0]; }
-	  sp_rv[pos] -= omega * (diag * mat(0,l)) * pw_rv[0];
+	  sp_rv[pos] -= fac * (diag * mat(0,l)) * pw_rv[0];
 	  // cout << " after "; print_tm(cout, sp_rv[pos]); cout << endl;
 	  
 	  // if (l==posV) {
@@ -683,7 +699,7 @@ namespace amg
       }
     }
 
-    // cout << "smoothed: " << endl;
+    // cout << "SPROL MAT: " << endl;
     // print_tm_spmat(cout, *sprol); cout << endl;
 
     pmap->SetProl(sprol);

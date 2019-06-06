@@ -54,6 +54,7 @@ namespace amg {
       else if (name == "force_sm") { py::list py_list = item.second.cast<py::list>(); opts->force_sm = true; opts->sm_levels = move(makeCArray<int>(py_list)); }
       else if (name == "sm_frac") { opts->smooth_after_frac = item.second.cast<double>(); }
       else if (name == "comp_sm") { opts->composite_smooth = item.second.cast<bool>(); }
+      else if (name == "force_comp_sm") { opts->force_composite_smooth = item.second.cast<bool>(); }
       else if (name == "enable_redist") { opts->enable_ctr = item.second.cast<bool>(); }
       else if (name == "ctr_min_nv") { opts->ctr_min_nv = item.second.cast<size_t>(); }
       else if (name == "ctr_seq_nv") { opts->ctr_seq_nv = item.second.cast<size_t>(); }
@@ -156,7 +157,12 @@ namespace amg {
       .def("GetBF", [](AMG_CLASS &pre, shared_ptr<BaseVector> vec,
 		       size_t level, size_t rank, size_t dof) {
 	     pre.GetBF(level, rank, dof, *vec);
-	   });
+	   }, py::arg("vec")=nullptr, py::arg("level")=size_t(0),
+	   py::arg("rank")=size_t(0), py::arg("dof")=size_t(0))
+      .def("CINV", [](AMG_CLASS &pre, shared_ptr<BaseVector> csol,
+		      shared_ptr<BaseVector> rhs) {
+	     pre.CINV(csol, rhs);
+	   }, py::arg("sol")=nullptr, py::arg("rhs")=nullptr);
   }
 
 #ifdef USE_BOOMER
