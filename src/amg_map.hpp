@@ -123,7 +123,13 @@ namespace amg {
 	  vecs[k-1] = sub_steps[k]->CreateVector();
     }
 
-    void hacky_replace_first_step (shared_ptr<BaseDOFMapStep> astep) { sub_steps[0] = astep; }
+    void hacky_replace_first_step (shared_ptr<BaseDOFMapStep> astep)
+    {
+      this->pardofs = astep->GetParDofs();
+      sub_steps[0] = astep;
+      if (sub_steps.Size() == 1)
+	this->mapped_pardofs = astep->GetMappedParDofs();
+    }
     shared_ptr<BaseDOFMapStep> hacky_get_first_step () { return sub_steps[0]; }
     
     virtual void TransferF2C (const shared_ptr<const BaseVector> & x_fine,
