@@ -32,7 +32,7 @@ namespace amg
   ElasticityAMG<3> :: RegularizeMatrix (shared_ptr<BaseSparseMatrix> bspmat, shared_ptr<ParallelDofs> & pardofs) const
   {
     auto mat = static_pointer_cast<ElasticityAMG<3>::TSPM>(bspmat);
-    cout << "reg. mat " << mat->Height() << " x " << mat->Width() << endl;
+    // cout << "reg. mat " << mat->Height() << " x " << mat->Width() << endl;
     // print_tm_spmat(cout, *mat);
     // cout << "reg diags: " << endl;
     // pardofs->GetCommunicator().Barrier();

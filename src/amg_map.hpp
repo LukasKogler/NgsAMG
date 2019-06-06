@@ -255,8 +255,8 @@ namespace amg {
     { // can only happen for [PP, S(..)] case with first map
       // AAAARGH MORE HACKS AAAAAAA
       auto& self = const_cast<TwoProlMap<SPML, SPMR>&>(*this);
-      cout << "TPM, mult mats at assemble, cnt = " << lmap->GetCnt() << " + " << rmap->GetCnt() << endl;
-      cout << lmap->GetProl()->Height() << " x " << lmap->GetProl()->Width() << " WITH " << rmap->GetProl()->Height() << " x " << rmap->GetProl()->Width() << endl;
+      // cout << "TPM, mult mats at assemble, cnt = " << lmap->GetCnt() << " + " << rmap->GetCnt() << endl;
+      // cout << lmap->GetProl()->Height() << " x " << lmap->GetProl()->Width() << " WITH " << rmap->GetProl()->Height() << " x " << rmap->GetProl()->Width() << endl;
       self.prol = MatMultAB<SPML, SPMR>(*lmap->GetProl(), *rmap->GetProl());
       self.SetCnt(lmap->GetCnt() + rmap->GetCnt());
       self.ispw = rmap->IsPW() && lmap->IsPW();

@@ -74,8 +74,6 @@ namespace amg
 	  // set sm-func for all prols
 	  smoothit |= options->force_composite_smooth;
 	  
-	  cout << "level " << level;
-	  
 	  auto prol_step = BuildDOFMapStep(level, gstep_coarse, fm_pd, smoothit);
 
 	  dof_step = prol_step;
@@ -95,7 +93,6 @@ namespace amg
 	if (fm == nullptr) { fm_pd = nullptr; cutoffs.Append(step_cnt); break; } // no mesh due to contract
 	size_t next_nv = fm->template GetNNGlobal<NT_VERTEX>();
 	fm_pd = BuildParDofs(fm);
-	cout << "ndof level " << level << fm_pd->GetNDofGlobal() << " " << fm_pd->GetNDofLocal() << endl;
 	nvs.Append(next_nv);
 	double frac_crs = (1.0*next_nv) / curr_nv;
 	bool assit = false;
@@ -346,12 +343,10 @@ namespace amg
 
     auto pwp = this->BuildPWProl (_cmap, fpd);
 
-    cout << "built a PW prol: " << " " << pwp->Height() << " x " << pwp->Width() << endl;
 
     bool ispw = (!smoothed_prol) || options.composite_smooth;
     auto pmap = make_shared<ProlMap<TSPM_TM>> (pwp, fpd, cpd, ispw);
     pmap->SetCnt(1);
-    cout << "log smoothed " << smoothed_prol << endl;
     this->GetInfo()->LogSMP(level, smoothed_prol);
     pmap->SetLog([this] (auto x) { this->GetInfo()->LogProl(x); });
 
@@ -362,7 +357,6 @@ namespace amg
 	pmap->SetSMF ([this, fm](auto x) { SmoothProlongation_hack(x, fm); }, !options.force_composite_smooth);
       }
       else {
-	cout << "smooth prol level " << level << endl;
 	SmoothProlongation(pmap, fm); 
       }
     }
