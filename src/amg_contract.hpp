@@ -116,7 +116,16 @@ namespace amg
     template<NODE_TYPE NT, typename T>
     void MapNodeData (FlatArray<T> data, PARALLEL_STATUS stat, Array<T> * cdata) const
     {
-      // cout << "MAPNODEDATA " << endl;
+      // cout << "MAPNODEDATA, NT " << NT << ", stat " << stat << endl;
+      // cout << "orig data: " << endl << "___" << endl;
+      // for (auto k : Range(data.Size())) {
+      // 	cout << "orig data " << k;
+      // 	if (is_gm) cout << ", maps to " << node_maps[NT][0][k];
+      // 	else cout << ", maps to NOT MASTER";
+      // 	cout << ": " << endl << data[k] << endl << "___" << endl;
+      // }
+      // cout << endl;
+
       RegionTimer rt1(timer_hack_gccm1());
       RegionTimer rt2(timer_hack_gccm2<NT>());
       auto comm = eqc_h->GetCommunicator();
@@ -153,6 +162,13 @@ namespace amg
       }
       // annoy data is not scattered correctly now for edge-based data!!
       auto & anodes = annoy_nodes[NT];
+
+      // cout << "1, contr data: " << endl << "___" << endl;
+      // for (auto k : Range(out.Size())) {
+      // 	cout << "1, contr data " << k << ": " << endl << out[k] << endl << "___" << endl;
+      // }
+      // cout << endl;
+
       if(!anodes.Size()) { return; } // no annoying nodes for this type!!
       auto cneqcs = c_eqc_h->GetNEQCS();
       Array<size_t> sz(cneqcs);
@@ -163,6 +179,15 @@ namespace amg
 	for(auto j:Range(anodes[k].Size()))
 	  adata[k][j] = out[anodes[k][j]];
       }
+
+      // for (auto k : Range(adata.Size())) {
+      // 	for (auto j : Range(adata[k].Size())) {
+      // 	  cout << "anode " << anodes[k][j] << "(is " << k << " " << j << "):" << endl;
+      // 	  cout << adata[k][j];
+      // 	  cout << endl << "__" << endl;
+      // 	}
+      // }
+
       auto radata = ReduceTable<T,T>(adata, c_eqc_h, [&](auto & t) {
 	  // cout << "lambda for t: " << endl;
 	  // for(auto k:Range(t.Size())) { cout<<k<<"(" << t[k].Size() << "):  ";prow(t[k]);cout<<endl; }
@@ -172,7 +197,6 @@ namespace amg
 	  out.SetSize(t[0].Size());
 	  out = t[0];
 	  if(t.Size()==1) return out;
-	  // T zero(0);
 	  for(auto k:Range((size_t)1, t.Size())) {
 	    for(auto j:Range(t[k].Size())) {
 	      // if( (stat==DISTRIBUTED) || (t[k][j]==zero) ) { // TODO: why??
@@ -181,7 +205,8 @@ namespace amg
 		out[j] += t[k][j];
 	      }
 	      else {
-		out[j] = t[k][j];
+		if (is_zero(out[j]) && !is_zero(t[k][j]))
+		  out[j] = t[k][j];
 	      }
 	    }
 	  }
@@ -191,6 +216,13 @@ namespace amg
 	for(auto j:Range(anodes[k].Size()))
 	  out[anodes[k][j]] = radata[k][j];
       }
+
+      // cout << "2, contr data: " << endl << "___" << endl;
+      // for (auto k : Range(out.Size())) {
+      // 	cout << "2, contr data " << k << ": " << endl << out[k] << endl << "___" << endl;
+      // }
+      // cout << endl;
+
       return;
     }
     

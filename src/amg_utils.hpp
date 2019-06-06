@@ -537,10 +537,15 @@ namespace amg
 
   template<int N, class T> INLINE void CalcPseudoInverse (T & m)
   {
+    static Timer t("CalcPseudoInverse"); RegionTimer rt(t);
+    static Timer tl("CalcPseudoInverse - Lapck");
+
     static Matrix<double> M(N,N), evecs(N,N);
     static Vector<double> evals(N);
     M = m;
+    tl.Start();
     LapackEigenValuesSymmetric(M, evals, evecs);
+    tl.Stop();
     // cout << "pseudo inv evals: "; prow(evals); cout << endl;
     double tol = 0; for(auto v : evals) tol += v;
     tol = max(1e-8 * tol / N, 1e-12);
@@ -558,6 +563,7 @@ namespace amg
 
   template<int IMIN, int N, int NN> INLINE void RegTM (Mat<NN,NN,double> & m)
   {
+    // static Timer t(string("RegTM<") + to_string(IMIN) + string(",") + to_string(3) + string(",") + to_string(6) + string(">")); RegionTimer rt(t);
     static_assert( (IMIN + N <= NN) , "ILLEGAL RegTM!!");
     static Matrix<double> M(N,N), evecs(N,N);
     static Vector<double> evals(N);
@@ -584,6 +590,104 @@ namespace amg
       });
   }
 
+    /**
+       assume rank 0, 2 or 3
+
+       rank 1 never happens for 3d elasticity (I think?)
+
+       rank 0: mat is 0, add to diags..
+       rank 3: do nothing
+
+       rank 2: if any diagonal value is 0, add to diag
+
+       rank 2, otherwise:
+       m = (w1, w2, w3)
+       m * w_i !=0 (because diag values !=0)
+       z := w1 x w2
+       if z==0:
+          w1 = alpha w2
+	  kernel-candidate = (1, -alpha, 0)
+       else:
+          w1, w2 LU and they span the range of m (if really rank 2)
+	  z is orthogonal to w1, w2
+          kernel-candidate = z
+       then check if candidate is really kernel
+     **/
+  template<> INLINE void RegTM<3,3,6> (Mat<6,6,double> & m)
+  {
+    Vec<3, double> mkv, kv, vi, vj;
+
+    int cnt0; cnt0 = 0;
+    double atr = 0.33 * (m(3,3) + m(4,4) + m(5,5));
+    double utr = 0.33 * (m(0,0) + m(1,1) + m(2,2));
+    // if basically 0, scale to u-part, else scale to r-part
+    if (atr < 1e-8 * utr) atr = utr;
+    Iterate<3>([&](auto i) {
+  	if (m(3+i.value, 3+i.value) < 1e-6 * atr) {
+  	  cnt0++; m(3+i.value, 3+i.value) = atr;
+  	}
+      });
+
+    if (cnt0 > 0)
+      { return; }
+
+    // t_cps.Start();
+    double norm = 0;
+    int I = -1, J = -1, L = -1;
+    auto reg = [&](auto i, auto j, auto l) {
+      Iterate<3>([&](auto k) {
+  	  vi(k.value) = m(3+i, 3+k.value);
+  	  vj(k.value) = m(3+j, 3+k.value);
+  	});
+      vi /= L2Norm(vi); vj /= L2Norm(vj);
+      kv = Cross(vi, vj);
+      norm = L2Norm(kv);
+      I = i; J = j; L = l;
+    };
+
+    reg(0, 1, 2);
+    if (norm < 0.1)
+      reg(1, 2, 0);
+    if (norm < 0.1)
+      reg(2, 0, 1);
+
+    if (norm < 1e-3) {
+      int JJ = 0; double mxe = 0;
+      Iterate<3>([&](auto i) {
+  	  if (fabs(vj(i.value)) > mxe) {
+  	    mxe = vj(i.value);
+  	    JJ = i.value;
+  	  }
+  	});
+      double alpha = vi(JJ) / vj(JJ);
+      kv(I) = 1;
+      kv(J) = - alpha;
+      kv(L) = 0;
+      kv /= L2Norm(kv);
+    }
+    else {
+      kv /= norm;
+    }
+
+    mkv = m.Rows(3,6).Cols(3,6) * kv;
+    double ncross = L2Norm(mkv);
+
+    // {
+    //   cout << "m: " << endl << m.Rows(3,6).Cols(3,6) << endl;
+    //   cout << "kv: " << kv << endl;
+    //   cout << "atr: " << atr << endl;
+    //   cout << "ncross: " << ncross << endl;
+    // }
+
+    if (ncross > 0.05 * atr)
+      { return; }
+
+    Iterate<3>([&](auto i) {
+  	Iterate<3>([&](auto j) {
+  	    m(i.value, j.value) += atr * kv(i.value) * kv(j.value);
+  	  });
+      });
+  }
   
   template<int N> INLINE double CalcDet (Mat<N,N,double> & m)
   { throw Exception(string("CalcDet<")+to_string(N)+string(",")+to_string(N)+string("> not implemented")); }
@@ -628,7 +732,35 @@ namespace amg
 	});
     }
     // cout << "m pseudo inv: " << endl; print_tm(cout, m); cout << endl;
+  } // CalcPseudoInv
+
+
+  INLINE bool is_zero (const double & x) { return x == 0; }
+  INLINE bool is_zero (const int & x) { return x == 0; }
+  INLINE bool is_zero (const size_t & x) { return x == 0; }
+  template<int N, int M, typename TSCAL>
+  INLINE bool is_zero (const Mat<N, M,  TSCAL> & m)
+  {
+    for (auto k : Range(N))
+      for (auto j : Range(M))
+	if (!is_zero(m(k,j))) return false;
+    return true;
   }
+  template<int N, typename TSCAL>
+  INLINE bool is_zero (const INT<N, TSCAL> & m)
+  {
+    for (auto k : Range(N))
+      if (!is_zero(m[k])) return false;
+    return true;
+  }
+  template<int N, typename TSCAL>
+  INLINE bool is_zero (const Vec<N, TSCAL> & m)
+  {
+    for (auto k : Range(N))
+      if (!is_zero(m(k))) return false;
+    return true;
+  }
+
 } // namespace amg
 
 #endif

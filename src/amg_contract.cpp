@@ -598,7 +598,7 @@ namespace amg
       }
     }
 
-    // cout << "contr emap: " << endl;
+    // cout << "contr vmap: " << endl;
     // for (auto k : Range(my_group.Size())) {
     //   cout << "map for " << k << ", rank " << my_group[k] << ":  ";
     //   prow2(vmaps[k]); cout << endl;
