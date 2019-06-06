@@ -202,8 +202,7 @@ namespace amg
 	  auto comm = cpds->GetCommunicator();
 	  shared_ptr<BaseSparseMatrix> cspm = static_pointer_cast<BaseSparseMatrix>(mats.Last());
 	  cspm = RegularizeMatrix(cspm, cpds);
-	  cout << "crsmat: " << endl << *cspm << endl;
-	  cout << "invert " << cspm->Height() << " " << cpds->GetNDofLocal() << endl;
+	  // cout << "invert " << cspm->Height() << " " << cpds->GetNDofLocal() << endl;
 	  if (comm.Size()>0) {
 	    // cout << "coarse inv " << endl;
 	    if constexpr(MAX_SYS_DIM < DPN) {
@@ -213,15 +212,12 @@ namespace amg
 	    else {
 	      shared_ptr<BaseMatrix> cinv;
 	      if (cpds->GetCommunicator().Size() <= 2) { // <= 1 if i remove dummy master
-		cout << "coarse local inv!!" << endl;
 		cspm->SetInverseType(SPARSECHOLESKY);
 		cinv = cspm->InverseMatrix();
 	      }
 	      else {
 		auto cpm = make_shared<ParallelMatrix>(cspm, cpds);
-		cout << "coarse parallel inv!!" << endl;
-		// cpm->SetInverseType(options->clev_inv_type);
-		cpm->SetInverseType(MUMPS);
+		cpm->SetInverseType(options->clev_inv_type);
 		cinv = cpm->InverseMatrix();
 	      }
 	      amg_mat->AddFinalLevel(cinv);

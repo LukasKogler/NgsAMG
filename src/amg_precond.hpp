@@ -147,6 +147,7 @@ namespace amg
       
       void LogProl (shared_ptr<BaseSparseMatrix> prol)
       {
+	// cout << "log a prol " << prol->Height() << " x " << prol->Width() << endl;
   	if (ilev == NONE) return;
 	int ew = GetEntryWidth(prol.get());
   	rpp.Append( (prol->Height() ? ((double(prol->NZE()) * ew) / (prol->Height())) : 0));

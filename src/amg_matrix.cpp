@@ -69,6 +69,7 @@ namespace amg
     shared_ptr<BaseVector> tmp2 = rhs_level[0];
     rhs_level[0] = shared_ptr<BaseVector>(const_cast<BaseVector*>(b.get()), NOOP_Deleter);
     rhs_level[0]->Distribute();
+    // cout << "type x b " << typeid(*x).name() << " " << typeid(*b).name() << endl;
     // static double tf = 0;
     // static double tb = 0;
     /** pre-smooth **/

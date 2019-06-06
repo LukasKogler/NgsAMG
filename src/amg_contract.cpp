@@ -273,6 +273,8 @@ namespace amg
   template<class TV> shared_ptr<typename CtrMap<TV>::TSPM>
   CtrMap<TV> :: DoAssembleMatrix (shared_ptr<typename CtrMap<TV>::TSPM> mat) const
   {
+    // cout << "contract mat " << mat->Height() << " x " << mat->Width() << endl;
+
     RegionTimer rt(timer_hack_ctrmat(0));
     NgsAMG_Comm comm(pardofs->GetCommunicator());
 
@@ -422,7 +424,7 @@ namespace amg
     }
     timer_hack_ctrmat(3).Stop();
 
-    // cout << "contr mat: " << endl << *cmat << endl;
+    // cout << "contracted mat " << cmat->Height() << " x " << cmat->Width() << endl;
 
     return cmat;
   }
