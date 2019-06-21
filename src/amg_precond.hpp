@@ -63,6 +63,7 @@ namespace amg
       bool composite_smooth = true;        // concatenate prols before or after smoothing
       bool force_composite_smooth = false; // smooth each concatenated prol once!
       /** Smoothers - haha, you have no choice  **/
+      bool smooth_symmetric = false;
       /** Coarsest level opts **/
       string clev_type = "INV"; // available: "INV", "NOTHING"
       string clev_inv_type = "masterinverse";
@@ -245,13 +246,13 @@ namespace amg
     virtual void MultAdd (double s, const BaseVector & b, BaseVector & x) const override
     { amg_mat->MultAdd(s, b, x); }
 
-    size_t GetNLevels(int rank) const
+    size_t GetNLevels (int rank) const
     {return this->amg_mat->GetNLevels(rank); }
-    void GetBF(size_t level, int rank, size_t dof, BaseVector & vec) const
+    void GetBF (size_t level, int rank, size_t dof, BaseVector & vec) const
     {this->amg_mat->GetBF(level, rank, dof, vec); }
-    size_t GetNDof(size_t level, int rank) const
+    size_t GetNDof (size_t level, int rank) const
     { return this->amg_mat->GetNDof(level, rank); }
-    void CINV(shared_ptr<BaseVector> x, shared_ptr<BaseVector> b) const
+    void CINV (shared_ptr<BaseVector> x, shared_ptr<BaseVector> b) const
     {this->amg_mat->CINV(x, b); }
     shared_ptr<Info> GetInfo () const { return infos; }
     shared_ptr<Options> GetOptions () const { return options; }

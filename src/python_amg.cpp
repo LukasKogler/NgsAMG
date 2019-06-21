@@ -64,6 +64,10 @@ namespace amg {
       else if (name == "log_level") { opts->info_level = int_to_il(item.second.cast<int>()); }
       else if (name == "crs_v_thresh") { opts->min_vcw = item.second.cast<double>(); }
       else if (name == "crs_e_thresh") { opts->min_ecw = item.second.cast<double>(); }
+      else if (name == "prol_max_per_row") { opts->max_per_row = item.second.cast<int>(); }
+      else if (name == "prol_min_frac") { opts->min_prol_frac = item.second.cast<double>(); }
+      else if (name == "sp_omega") { opts->sp_omega = item.second.cast<double>(); }
+      else if (name == "smooth_symm") { opts->smooth_symmetric = item.second.cast<bool>(); }
       else if (name == "dpv") { opts->block_s.SetSize(1); opts->block_s[0] = item.second.cast<int>(); }
       // else { throw Exception(string("warning, invalid AMG option: ")+name); }
     }
