@@ -269,6 +269,7 @@ namespace amg {
 
     rr_gather.SetSize(nexp_larger);
     rr_scatter.SetSize(nexp_smaller);
+    rsds.SetSize(max2(nexp_smaller, nexp_larger));
     buf_cnt.SetSize(nexp);
     buf_os.SetSize(nexp+1);
     buf_os[0] = 0;
@@ -480,6 +481,7 @@ namespace amg {
     FlatVector<TV> tvec = vec.FV<TV>();
     auto & pds = *parallel_dofs;
     auto ex_procs = pds.GetDistantProcs();
+    rsds.SetSize0();
     for (auto kp : Range(nexp_smaller)) {
       auto p = ex_procs[kp];
       int sz = buf_os[kp+1] - buf_os[kp];
@@ -494,10 +496,10 @@ namespace amg {
 	}
       }
       // cout << "gather, send buf to " << p << ", kp " << kp << " " << p_buffer.Size() << ": "; prow(p_buffer); cout << endl;
-      MPI_Request req = MyMPI_ISend(p_buffer, p, MPI_TAG_AMG, comm);
-      MPI_Request_free(&req);
+      rsds.Append(MyMPI_ISend(p_buffer, p, MPI_TAG_AMG, comm));
+      // MPI_Request_free(&req);
     }
-    if (nexp_larger==0) return;
+    if (nexp_larger==0) { MyMPI_WaitAll(rsds); return; }
     for (auto kkp : Range(nexp_larger)) {
       auto kp = nexp_smaller + kkp;
       auto p = ex_procs[kp];
@@ -530,6 +532,7 @@ namespace amg {
       }
       // cout << endl;
     }
+    MyMPI_WaitAll(rsds);
   } // gather_vec
 
   template<int BS> void
@@ -540,16 +543,17 @@ namespace amg {
     FlatVector<TV> fvec = vec.FV<TV>();
     auto & pds = *parallel_dofs;
     auto ex_procs = pds.GetDistantProcs();
+    rsds.SetSize0();
     for (int kkp : Range(nexp_larger)) {
       int kp = nexp_smaller + kkp;
       auto p = ex_procs[kp];
       int sz = buf_os[kp+1] - buf_os[kp];
       FlatArray<TV> p_buffer (sz, &(buffer[buf_os[kp]]));
       // cout << "scatter, send update to " << p << ", kp " << kp << " " << p_buffer.Size() << ": "; prow(p_buffer); cout << endl;
-      MPI_Request reqs = MyMPI_ISend(p_buffer, p, MPI_TAG_AMG, comm);
-      MPI_Request_free(&reqs); // TODO: am i SURE that this is OK??
+      rsds.Append(MyMPI_ISend(p_buffer, p, MPI_TAG_AMG, comm));
+      // MPI_Request_free(&reqs); // TODO: am i SURE that this is OK??
     }
-    if (nexp_smaller==0) return;
+    if (nexp_smaller==0) { MyMPI_WaitAll(rsds); return; }
     for (int kp : Range(nexp_smaller)) {
       int sz = buf_os[kp+1] - buf_os[kp];
       // cout << "scatter, recv " << sz << " from " << p << ", kp " << kp << endl;
@@ -577,6 +581,7 @@ namespace amg {
       }
       // cout << endl;
     }
+    MyMPI_WaitAll(rsds);
   } // scatter_vec
 
   
@@ -670,6 +675,30 @@ namespace amg {
 
 
 
+  template<int BS>
+  void HybridGSS<BS> :: Smooth (BaseVector  &x, const BaseVector &b,
+				BaseVector  &res, bool res_updated,
+				bool update_res, bool x_zero) const
+  {
+    if (symmetric)
+      { smoothfull(2, x, b, res, res_updated, update_res, x_zero); }
+    else
+      { smoothfull(0, x, b, res, res_updated, update_res, x_zero); }
+  }
+
+
+  template<int BS>
+  void HybridGSS<BS> :: SmoothBack (BaseVector  &x, const BaseVector &b,
+				    BaseVector &res, bool res_updated,
+				    bool update_res, bool x_zero) const
+  {
+    if (symmetric)
+      { smoothfull(2, x, b, res, res_updated, update_res, x_zero); }
+    else
+      { smoothfull(1, x, b, res, res_updated, update_res, x_zero); }
+  }
+
+
   /**
     L,D,L.T    - refers to diag-block of A
     C          - the off-diag part of A
@@ -708,6 +737,8 @@ namespace amg {
 		   !!restore buffered x_old_D values
   	    III) as above
   **/
+  template<int BS> struct TEREF { typedef FlatVec<BS, double> T; };
+  template<> struct TEREF<1> { typedef double& T; };
   template<int BS> Timer& hgss_timer_hack (string bname, int type) {
     static Timer t0(bname+string("::FW"));
     static Timer t1(bname+string("::BW"));
@@ -730,14 +761,46 @@ namespace amg {
     const bool res_updated = _res_updated;
     const bool update_res = _update_res;
     const bool x_zero = _x_zero;
-    
+
+    // auto comm = parallel_dofs->GetCommunicator();
+    // auto rk = comm.Rank();
+    // auto check_res = [&]() {
+    //   auto pv1 = res.CreateVector(); auto & v1(*pv1); auto fv1 = v1.FV<double>(); auto tv1 = v1.FV<TV>();
+    //   auto pv2 = res.CreateVector(); auto & v2(*pv2); auto fv2 = v2.FV<double>(); auto tv2 = v2.FV<TV>();
+    //   tv1 = tvr; v1.SetParallelStatus(res.GetParallelStatus()); v1.Cumulate();
+    //   tv2 = tvb; v2.SetParallelStatus(b.GetParallelStatus()); v2.Distribute();
+    //   if (free_dofs) {
+    // 	for (auto k : Range(fv1.Size()))
+    // 	  if (!free_dofs->Test(k))
+    // 	    { tvx(k) = 0; }
+    //   }
+    //   x.Cumulate();
+    //   spmat->MultAdd(-1, x, v2);
+    //   v2.Cumulate();
+    //   fv1 -= fv2;
+    //   if (free_dofs) {
+    // 	for (auto k : Range(fv1.Size()))
+    // 	  if (!free_dofs->Test(k))
+    // 	    { fv1(k) = 0; }
+    //   }
+    //   auto nl = sqrt(InnerProduct(fv1, fv1));
+    //   auto ng = sqrt(InnerProduct(v1, v1));
+    //   auto nb = sqrt(InnerProduct(b,b));
+    //   if (ng > 1e-8)
+    // 	cout << "DIFF NORM RANK " << rk << ": " << nl << " " << ng << "   , norm b " << nb << endl;
+    //   if (nl > 1e-8)
+    // 	for (auto k : Range(fv1.Size()))
+    // 	  { if (fabs(fv1(k)) > 1e-12) { cout << k << ": " << fv1(k) << " "; if (free_dofs) cout << free_dofs->Test(k); cout  << endl; } }
+    //   comm.Barrier();
+    // };
+
     if (type==2) {
-      smoothfull(0, x, b, res, res_updated, true, _x_zero);
+      smoothfull(0, x, b, res, res_updated, true, x_zero);
       smoothfull(1, x, b, res, true, update_res, false);
       return;
     }
     else if (type==3) {
-      smoothfull(1, x, b, res, res_updated, true, _x_zero);
+      smoothfull(1, x, b, res, res_updated, true, x_zero);
       smoothfull(0, x, b, res, true, update_res, false);
       return;
     }
@@ -1150,7 +1213,7 @@ namespace amg {
 				   auto af_in_min, auto af_in_max) {
       if (free_dofs && !free_dofs->Test(rownr)) return;
       const bool exrow = mf_exd.Test(rownr);
-      auto resval = tvr(rownr);
+      typename TEREF<BS>::T resval = tvr(rownr);
       // cout << "type " << typeid(resval).name() << endl;
       auto ris = A.GetRowIndices(rownr);
       auto rvs = A.GetRowValues(rownr);

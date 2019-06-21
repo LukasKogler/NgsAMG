@@ -50,21 +50,18 @@ namespace amg {
     ~HybridGSS();
     virtual void Smooth (BaseVector  &x, const BaseVector &b,
     			 BaseVector  &res, bool res_updated = true,
-    			 bool update_res = true, bool x_zero = true) const override
-    {
-      // smoothfull(3, x, b, res, res_updated, update_res, x_zero);
-      smoothfull(0, x, b, res, res_updated, update_res, x_zero);
-    }
+    			 bool update_res = true, bool x_zero = true) const override;
     virtual void SmoothBack (BaseVector  &x, const BaseVector &b,
     			     BaseVector &res, bool res_updated = false,
-    			     bool update_res = false, bool x_zero = false) const override
-    {
-      smoothfull(1, x, b, res, res_updated, update_res, x_zero);
-      // smoothfull(3, x, b, res, res_updated, update_res, x_zero);
-    }
+    			     bool update_res = false, bool x_zero = false) const override;
     virtual string SType() const override { return name; }
     virtual Array<MemoryUsage> GetMemoryUsage() const override;
+    void SetSymmetric (bool sym) { symmetric = sym; }
+
   protected:
+
+    bool symmetric = false;
+
     string name;
     shared_ptr<const BitArray> free_dofs;
     shared_ptr<ParallelDofs> parallel_dofs;
@@ -88,6 +85,7 @@ namespace amg {
     int nexp;
     int nexp_smaller; mutable Array<MPI_Request> rr_gather;
     int nexp_larger; mutable Array<MPI_Request> rr_scatter;
+    mutable Array<MPI_Request> rsds;
     Array<TM> diag;
 
     virtual void Finalize () override { CalcDiag(); }
