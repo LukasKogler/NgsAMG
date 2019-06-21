@@ -724,6 +724,10 @@ namespace amg
     : Preconditioner(blf, Flags() /*(opts->energy=="ELMAT" ? Flags() : Flags({"not_register_for_auto_update"}))*/), options(opts), bfa(blf), fes(blf->GetFESpace()),
       node_sort(4), node_pos(4), ht_vertex(nullptr), ht_edge(nullptr)
   {
+
+    // Preconditioner constructor does not set paralleldofs!
+    SetParallelDofs(blf->GetTrialSpace()->GetParallelDofs());
+
     if (options->energy != "ELMAT") {
       /** we might be setting up directly from the assembled matrix.
 	  in that case call FinalizeLevel ourselfs **/

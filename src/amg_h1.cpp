@@ -14,7 +14,9 @@ namespace amg
 						    shared_ptr<BitArray> free_dofs)
   {
     shared_ptr<const TSPM> spmat = dynamic_pointer_cast<TSPM> (mat);
-    return make_shared<HybridGSS<1>> (spmat, par_dofs, free_dofs);
+    auto sm = make_shared<HybridGSS<1>> (spmat, par_dofs, free_dofs);
+    sm->SetSymmetric(options->smooth_symmetric);
+    return sm;
   }
 
   /** See ngsolve/comp/h1amg.cpp **/
