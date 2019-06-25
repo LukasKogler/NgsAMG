@@ -31,8 +31,8 @@ namespace amg
       double min_ecw = 0.05, min_vcw = 0.5;
       /** Level-control **/
       int max_n_levels = 20;               // maximum number of coarsening steps
-      size_t max_n_verts = 1;              // stop coarsening when the coarsest mesh has this few vertices
-      int skip_ass_first = 2;              // skip this many levels in the beginning
+      size_t max_n_verts = 50;             // stop coarsening when the coarsest mesh has this few vertices
+      int skip_ass_first = 4;              // skip this many levels in the beginning
       Array<int> ass_levels;               // force matrix assembly on these levels
       Array<int> ass_skip_levels;          // forbid matrix assembly on these levels
       bool force_ass = false;              // force assembly ONLY on ass_levels
@@ -43,7 +43,7 @@ namespace amg
       double disc_fac_ok     = 0.95;       // accept discard map if we reduce by at least this
       /** Contract (Re-Distribute) **/
       bool enable_ctr = true;              // enable re-distributing
-      int skip_ctr_first = 3;                    // skip for contract
+      int skip_ctr_first = 3;              // skip for contract
       double ctr_after_frac = 0.05;        // re-distribute after we have reduced the NV by this factor
       double ctr_crs_thresh = 0.7;         // if coarsening slows down more than this, ctract
       double ctr_pfac = 0.25;              // contract proc-factor (overruled by min NV per proc)
@@ -54,14 +54,14 @@ namespace amg
       bool singular_diag = false;          // if yes, regularize diagonals
       double min_prol_frac = 0.1;          // min. (relative) wt to include an edge
       int max_per_row = 3;                 // maximum entries per row (should be >= 2!)
-      double sp_omega = 0.5;               // relaxation parameter for prol-smoothing
+      double sp_omega = 1.0;               // relaxation parameter for prol-smoothing
       int skip_smooth_first = 3;           // do this many piecewise prols in the beginning
       double smooth_after_frac = 0.5;      // smooth a prol after reducing NV by this factor
       Array<int> sm_levels;                // force prol-smoothing on these levels
       Array<int> sm_skip_levels;           // forbid prol-smoothing on these levels
       bool force_sm = false;               // force smoothing on exactyle sm_levels
       bool composite_smooth = true;        // concatenate prols before or after smoothing
-      bool force_composite_smooth = false; // smooth each concatenated prol once!
+      bool force_composite_smooth = true;  // smooth each concatenated prol once!
       /** Smoothers - haha, you have no choice  **/
       bool smooth_symmetric = false;
       /** Coarsest level opts **/
@@ -395,7 +395,7 @@ namespace amg
 	    "ELMAT" -> calc from elmats, use ext_blf if given, else blf (not back yet)
 	    "ALG" -> determine algebraically (not implemented)
 	    "TRIV" -> use 1 weights everywhere **/
-      string energy = "TRIV"; shared_ptr<BilinearForm> ext_blf = nullptr; shared_ptr<BitArray> elmat_dofs = nullptr;
+      string energy = "ALG"; shared_ptr<BilinearForm> ext_blf = nullptr; shared_ptr<BitArray> elmat_dofs = nullptr;
       /** kvecs: 
 	    "TRIV" -> dofs in each block have to stand for: have to stand for: trans_x/y/z(+ rot_x/y/z if rot-dofs)
 	    "VEC" -> kernel_vecs have to be trans_x/y/z, rot_x/y/z **/
@@ -404,7 +404,7 @@ namespace amg
 	    "ELMAT", "ELMAT_FULL" -> calc from elmats, FULL->all-to-all
 	    "MESH" -> take from Mesh
 	    "ALG" -> calc from FEM-Matrix **/
-      string edges = "MESH";
+      string edges = "ALG";
     };
     using TMESH = typename AMG_CLASS::TMESH;
 
