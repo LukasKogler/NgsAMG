@@ -176,6 +176,8 @@ namespace amg {
   class ProlMap : public BaseDOFMapStep
   {
   public:
+
+#ifdef ELASTICITY // workaround until NGSolve master gets updated
     using SPM_TM_F = stripped_spm_tm<Mat<mat_traits<typename TMAT::TENTRY>::HEIGHT, mat_traits<typename TMAT::TENTRY>::HEIGHT, double>>;
     using SPM_TM_P = stripped_spm_tm<Mat<mat_traits<typename TMAT::TENTRY>::HEIGHT, mat_traits<typename TMAT::TENTRY>::WIDTH, double>>;
     using SPM_TM_C = stripped_spm_tm<Mat<mat_traits<typename TMAT::TENTRY>::WIDTH, mat_traits<typename TMAT::TENTRY>::WIDTH, double>>;
@@ -183,6 +185,14 @@ namespace amg {
     using SPM_F = SparseMatrix<typename strip_mat<Mat<mat_traits<typename TMAT::TENTRY>::HEIGHT, mat_traits<typename TMAT::TENTRY>::HEIGHT, double>>::type>;
     using SPM_P = SparseMatrix<typename strip_mat<Mat<mat_traits<typename TMAT::TENTRY>::HEIGHT, mat_traits<typename TMAT::TENTRY>::WIDTH, double>>::type>;
     using SPM_C = SparseMatrix<typename strip_mat<Mat<mat_traits<typename TMAT::TENTRY>::WIDTH, mat_traits<typename TMAT::TENTRY>::WIDTH, double>>::type>;
+#else
+    using SPM_TM_F = SparseMatrixTM<double>;
+    using SPM_TM_P = SparseMatrixTM<double>;
+    using SPM_TM_C = SparseMatrixTM<double>;
+    using SPM_F = SparseMatrix<double>;
+    using SPM_P = SparseMatrix<double>;
+    using SPM_C = SparseMatrix<double>;
+#endif
 
     static_assert(std::is_same<SPM_TM_P, TMAT>::value, "Use SPM_TM for ProlMap!!");
 

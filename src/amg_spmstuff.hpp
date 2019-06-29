@@ -90,10 +90,15 @@ namespace amg
   //  Matrix Transpose
   template<class TM>
   using trans_mat = typename strip_mat<Mat<mat_traits<TM>::WIDTH, mat_traits<TM>::HEIGHT, typename mat_traits<TM>::TSCAL>>::type;
+#ifdef ELASTICITY // workaround until NGSolve master gets updated
   template<class TM>
   using trans_spm_tm = SparseMatrixTM<trans_mat<typename TM::TENTRY>>;
   template<class TM>
   using trans_spm = SparseMatrix<trans_mat<typename TM::TENTRY>>;
+#else
+  template<class TM> using trans_spm_tm = SparseMatrixTM<double>;
+  template<class TM> using trans_spm = SparseMatrix<double>;
+#endif
   template <class TM> shared_ptr<trans_spm_tm<TM>> TransposeSPM (const TM & mat);
 
   // Matrix Multiplication
@@ -102,8 +107,12 @@ namespace amg
   template<class TMA, class TMB>
   using mult_mat = typename strip_mat<Mat<mat_traits<TMA>::HEIGHT, mat_traits<TMB>::WIDTH,
 					  typename mult_scal<typename mat_traits<TMA>::TSCAL, typename mat_traits<TMB>::TSCAL>::type>>::type;
+#ifdef ELASTICITY // workaround until NGSolve master gets updated
   template<class TMA, class TMB>
   using mult_spm_tm = stripped_spm_tm<mult_mat<typename TMA::TENTRY, typename TMB::TENTRY>>;
+#else
+  template<class TMA, class TMB> using mult_spm_tm = SparseMatrixTM<double>;
+#endif
   template<class TMA, class TMB>
   shared_ptr<mult_spm_tm<TMA, TMB>> MatMultAB (const TMA & mata, const TMB & matb);
     

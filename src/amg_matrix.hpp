@@ -66,11 +66,15 @@ namespace amg
     void SmoothV(const shared_ptr<BaseVector> & x,
   		 const shared_ptr<const BaseVector> & b,
 		 FlatArray<int> on_levels) const;
+    virtual void MultTrans (const BaseVector & b, BaseVector & x) const override
+    { Mult(b, x); }
     virtual void Mult (const BaseVector & b, BaseVector & x) const override {
       shared_ptr<BaseVector> sx(&x, NOOP_Deleter);
       shared_ptr<const BaseVector> sb(const_cast<BaseVector*>(&b), NOOP_Deleter);
       this->SmoothV(sx, sb);
     }
+    virtual void MultTransAdd (double s, const BaseVector & b, BaseVector & x) const override
+    { MultAdd(s, b, x); }
     virtual void MultAdd (double s, const BaseVector & b, BaseVector & x) const override {
       shared_ptr<const BaseVector> sb(const_cast<BaseVector*>(&b), NOOP_Deleter);
       this->SmoothV(x_level[0], sb);

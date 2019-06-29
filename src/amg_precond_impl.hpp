@@ -731,17 +731,12 @@ namespace amg
     if (options->energy != "ELMAT") {
       /** we might be setting up directly from the assembled matrix.
 	  in that case call FinalizeLevel ourselfs **/
-      if (auto mp = bfa->GetMatrixPtr()) {
-	FinalizeLevel(mp.get());
-      }
-      // else {
-      // 	// some problem with multiple registration??
-      // 	throw Exception("BLF not assembled and energy != elmat!");
-      // }
+      if (auto mp = bfa->GetMatrixPtr())
+	{ FinalizeLevel(mp.get()); }
     }
     else {
       if (auto mp = bfa->GetMatrixPtr()) {
-	throw Exception("enrgy is set to ELMAT, but BLF is already assembled!!");
+	throw Exception("energy is set to ELMAT, but BLF is already assembled!!");
       }
       /** we are setting up from element matrices - allocate hash-tables
 	  FinalizeLevel will be called from BLF-Assemble **/
@@ -769,6 +764,22 @@ namespace amg
       }
     }
   }
+
+
+  template<class AMG_CLASS, class HTVD, class HTED>
+  EmbedVAMG<AMG_CLASS, HTVD, HTED> :: EmbedVAMG (shared_ptr<BilinearForm> blf, const Flags & aflags, const string aname)
+    : Preconditioner(bfa, aflags, aname), options(make_shared<EmbedVAMG<AMG_CLASS, HTVD, HTED>::Options>()), bfa(blf), fes(blf->GetFESpace()),
+      node_sort(4), node_pos(4), ht_vertex(nullptr), ht_edge(nullptr)
+  {
+    
+  }
+
+
+  template<class AMG_CLASS, class HTVD, class HTED>
+  EmbedVAMG<AMG_CLASS, HTVD, HTED> :: EmbedVAMG (const PDE & apde, const Flags & aflags, const string aname)
+    : Preconditioner(&apde, aflags, aname)
+  { throw Exception("PDE-constructor for Ngs-AMG Preconditioners not implemented!"); }
+
 
   template<class AMG_CLASS, class HTVD, class HTED>
   EmbedVAMG<AMG_CLASS, HTVD, HTED> :: ~EmbedVAMG ()

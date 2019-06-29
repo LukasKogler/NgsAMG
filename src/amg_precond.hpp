@@ -48,7 +48,7 @@ namespace amg
       double ctr_crs_thresh = 0.7;         // if coarsening slows down more than this, ctract
       double ctr_pfac = 0.25;              // contract proc-factor (overruled by min NV per proc)
       size_t ctr_min_nv = 500;             // re-distribute such that at least this many NV per proc remain
-      size_t ctr_seq_nv = 500;             // re-distribute to sequential once NV reached this threshhold
+      size_t ctr_seq_nv = 500;             // re-distribute to sequential once NV reaches this threshhold
       /** Prolongation smoothing **/
       bool enable_sm = true;               // emable prolongation-smoothing
       bool singular_diag = false;          // if yes, regularize diagonals
@@ -60,7 +60,7 @@ namespace amg
       Array<int> sm_levels;                // force prol-smoothing on these levels
       Array<int> sm_skip_levels;           // forbid prol-smoothing on these levels
       bool force_sm = false;               // force smoothing on exactyle sm_levels
-      bool composite_smooth = true;        // concatenate prols before or after smoothing
+      bool composite_smooth = true;        // concatenate prols before smoothing
       bool force_composite_smooth = true;  // smooth each concatenated prol once!
       /** Smoothers - haha, you have no choice  **/
       bool smooth_symmetric = false;
@@ -240,11 +240,21 @@ namespace amg
 
     virtual string GetName () const { return string("NodeWiseAMG"); }
 
+    virtual const BaseMatrix & GetMatrix() const {
+      if (amg_mat == nullptr)
+	{ throw Exception("AMG-Preconditioner not ready!"); }
+      return *amg_mat;
+    }
+    virtual shared_ptr<BaseMatrix> GetMatrixPtr () { return amg_mat; }
     virtual AutoVector CreateVector () const override { return amg_mat->CreateVector(); }
     virtual void Mult (const BaseVector & b, BaseVector & x) const override
     { amg_mat->Mult(b, x); }
+    virtual void MultTrans (const BaseVector & b, BaseVector & x) const override
+    { amg_mat->MultTrans(b, x); }
     virtual void MultAdd (double s, const BaseVector & b, BaseVector & x) const override
     { amg_mat->MultAdd(s, b, x); }
+    virtual void MultTransAdd (double s, const BaseVector & b, BaseVector & x) const override
+    { amg_mat->MultTransAdd(s, b, x); }
 
     size_t GetNLevels (int rank) const
     {return this->amg_mat->GetNLevels(rank); }
@@ -396,6 +406,8 @@ namespace amg
 	    "ALG" -> determine algebraically (not implemented)
 	    "TRIV" -> use 1 weights everywhere **/
       string energy = "ALG"; shared_ptr<BilinearForm> ext_blf = nullptr; shared_ptr<BitArray> elmat_dofs = nullptr;
+      // enum ENERGY : char { ALG = 0, ELMAT = 1, TRIV = 2 };
+      // ENERGY energy = ALG;
       /** kvecs: 
 	    "TRIV" -> dofs in each block have to stand for: have to stand for: trans_x/y/z(+ rot_x/y/z if rot-dofs)
 	    "VEC" -> kernel_vecs have to be trans_x/y/z, rot_x/y/z **/
@@ -409,19 +421,30 @@ namespace amg
     using TMESH = typename AMG_CLASS::TMESH;
 
     EmbedVAMG (shared_ptr<BilinearForm> blf, shared_ptr<Options> opts);
+    EmbedVAMG (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string aname = "precond");
+    EmbedVAMG (const PDE & apde, const Flags & aflags, const string aname = "precond");
     // virtual ~EmbedVAMG ();
     ~EmbedVAMG ();
 
+    virtual const BaseMatrix & GetMatrix() const override
+    { return amg_pc->GetMatrix(); }
+    virtual shared_ptr<BaseMatrix> GetMatrixPtr () override
+    { return amg_pc->GetMatrixPtr(); }
     virtual void Mult (const BaseVector & b, BaseVector & x) const override
     { amg_pc->Mult(b, x); }
+    virtual void MultTrans (const BaseVector & b, BaseVector & x) const override
+    { amg_pc->MultTrans(b, x); }
     virtual void MultAdd (double s, const BaseVector & b, BaseVector & x) const override
     { amg_pc->MultAdd(s, b, x); }
-
+    virtual void MultTransAdd (double s, const BaseVector & b, BaseVector & x) const override
+    { amg_pc->MultTransAdd(s, b, x); }
+    
     virtual const BaseMatrix & GetAMatrix() const override
     { return *finest_mat; }
     virtual int VHeight() const override { return finest_mat->VHeight(); }
     virtual int VWidth() const override { return finest_mat->VWidth();}
 
+    virtual void InitLevel (shared_ptr<BitArray> freedofs = nullptr) override;
     virtual void FinalizeLevel (const BaseMatrix * mat) override;
     virtual void Update () override { ; };
     virtual void AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
