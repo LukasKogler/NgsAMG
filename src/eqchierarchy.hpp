@@ -15,9 +15,10 @@ namespace amg {
     /** 
 	setup from paralleldofs;
 	if do_cutunion==true, also constructs all possible cuts/unions of EQCs
+	if _max_nd != -1, only looks at dofs 0.._max_nd
      **/
     EQCHierarchy (const shared_ptr<ParallelDofs> & apd,
-		  bool do_cutunion = false);
+		  bool do_cutunion = false, size_t _max_nd = -1);
 
     /** 
 	setup from finished eqc-dps;

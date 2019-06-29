@@ -47,7 +47,7 @@ namespace amg {
 
 
   EQCHierarchy :: EQCHierarchy (const shared_ptr<ParallelDofs> & apd,
-				bool do_cutunion)
+				bool do_cutunion, size_t _max_nd)
     : comm(apd->GetCommunicator())
   {
     static Timer t("EQCHierarchy::Constructor 2"); RegionTimer rt(t);
@@ -63,7 +63,8 @@ namespace amg {
     this->np = comm.Size();
     
     Table<int> vanilla_dps;
-    if(apd!=nullptr)
+    size_t max_nd = (_max_nd == -1) ? apd->GetNDofLocal() : _max_nd;
+    if (apd != nullptr)
       {
 	int ndof = apd->GetNDofLocal();
 	neqcs = 0;
@@ -72,27 +73,30 @@ namespace amg {
 	index_of_block.SetSize(0);
 	Array<int> size_of_dps(50);
 	size_of_dps.SetSize(0);
-	for (auto k:Range(ndof)) {
+	if (ndof > 0) { size_of_dps.Append(0); index_of_block.Append(0); neqcs++; }
+	for (auto k:Range(max_nd)) {
 	  auto dp = apd->GetDistantProcs(k);
+	  if (!dp.Size()) continue; 
 	  int pos = -1;
 	  for (size_t l=0;l<index_of_block.Size() && (pos==-1);l++)
-	    if(apd->GetDistantProcs(index_of_block[l])==dp)
+	    if (apd->GetDistantProcs(index_of_block[l])==dp)
 	      pos = l;
-	  if(pos>=0) continue;
+	  if (pos>=0) continue;
 	  //new eqc found!
 	  index_of_block.Append(k);
 	  size_of_dps.Append(dp.Size());
 	  neqcs++;	
 	}
 	vanilla_dps = Table<int>(size_of_dps);
-	for (auto k:Range(neqcs))
-	  if(vanilla_dps[k].Size()) {
-	    auto dps = apd->GetDistantProcs(index_of_block[k]);
-	    vanilla_dps[k] = dps;
-	  }      
+	for (auto k:Range(size_t(1), neqcs)) {
+	  // if (vanilla_dps[k].Size()) { // i think i dont need this anymore since local EQ is hard-coded to 0
+	  auto dps = apd->GetDistantProcs(index_of_block[k]);
+	  vanilla_dps[k] = dps;
+	  //}
+	}
       }
 
-    if(do_cutunion)
+    if (do_cutunion)
       this->SetupFromInitialDPs(std::move(vanilla_dps));
     else
       this->SetupFromDPs(std::move(vanilla_dps));
@@ -109,7 +113,7 @@ namespace amg {
     this->rank = comm.Rank();
     this->np = comm.Size();
 
-    if(do_cutunion)
+    if (do_cutunion)
       this->SetupFromInitialDPs(std::move(eqcs));
     else
       this->SetupFromDPs(std::move(eqcs));
@@ -148,7 +152,7 @@ namespace amg {
 	  size_t k = 0;
 	  size_t j = 0;
 	  while( (k<a.Size()) && (j<b.Size()) )
-	    if(a[k]<b[j])
+	    if (a[k]<b[j])
 	      c.Append(a[k++]);
 	    else if (a[k]>b[j])
 	      c.Append(b[j++]);
@@ -177,14 +181,14 @@ namespace amg {
 	      {
 		seq = true;
 		for (size_t l=0;l<mdp.Size()&&seq;l++)
-		  if(!new_dps[e3].Contains(mdp[l]))
+		  if (!new_dps[e3].Contains(mdp[l]))
 		    seq = false;
-		if(seq)
+		if (seq)
 		  valid = true;
-		if(seq && (new_dps[e3].Size()==mdp.Size()))
+		if (seq && (new_dps[e3].Size()==mdp.Size()))
 		  is_new = false;
 	      }
-	    if(valid && is_new)
+	    if (valid && is_new)
 	      {
 		new_dps.Append(Array<int>(mdp.Size()));
 		for (auto j:Range(mdp.Size()))
@@ -282,14 +286,14 @@ namespace amg {
 		  auto & rowj = new_dps[j];
 		  common_dist_procs.SetSize(0);
 		  for (auto p:rowk)
-		    if(rowj.Contains(p))
+		    if (rowj.Contains(p))
 		      common_dist_procs.Append(p);
 		  QuickSort(common_dist_procs);	      
 		  int pos = -1;
 		  for (size_t l=0;l<new_dps.Size() && (pos==-1);l++)
-		    if(new_dps[l]==common_dist_procs)
+		    if (new_dps[l]==common_dist_procs)
 		      pos = l;
-		  if(pos==-1) //we have a new eqc!!
+		  if (pos==-1) //we have a new eqc!!
 		    {
 		      new_dps.Append(Array<int>(common_dist_procs.Size()));
 		      for (auto j:Range(common_dist_procs.Size()))
@@ -322,8 +326,8 @@ namespace amg {
     QuickSort(perm, [new_dps](auto l, auto j) -> bool {
 	auto dp1 = new_dps[l]; auto dps1 = dp1.Size();
 	auto dp2 = new_dps[j]; auto dps2 = dp2.Size();
-    	if(dps1 > dps2) return false;
-    	else if(dps1<dps2) return true;
+    	if (dps1 > dps2) return false;
+    	else if (dps1<dps2) return true;
     	else
 	  for (auto k:Range(dps1)) {
 	    auto p1 = dp1[k]; auto p2 = dp2[k];
@@ -332,7 +336,7 @@ namespace amg {
     	return false;
       });
     auto permute = [&perm] (auto & a){
-      if(!a.Size())
+      if (!a.Size())
   	return;
       int neqcs = perm.Size();
       Array<typename std::remove_reference<decltype(a[0])>::type > a_save(neqcs);
@@ -360,7 +364,7 @@ namespace amg {
     
     for (auto k:Range(neqcs))
       for (auto j:Range(dist_procs[k].Size())) {
-	if(!all_dist_procs.Contains(dist_procs[k][j]))
+	if (!all_dist_procs.Contains(dist_procs[k][j]))
 	  all_dist_procs.Append(dist_procs[k][j]);
       }
     QuickSort(all_dist_procs);
@@ -372,7 +376,7 @@ namespace amg {
     **/
     int nblocks_loc = 0;
     for (auto k:Range(dist_procs.Size()))
-      if( (dist_procs[k].Size()) && (rank<dist_procs[k][0]) )
+      if ( (dist_procs[k].Size()) && (rank<dist_procs[k][0]) )
   	nblocks_loc++;
     Array<int> nblocks(np);
     nblocks = 0;
@@ -387,9 +391,9 @@ namespace amg {
     eqc_ids.SetSize(dist_procs.Size());
     eqc_ids = -1;
     for (auto k:Range(dist_procs.Size()))
-      if( !dist_procs[k].Size() )
+      if ( !dist_procs[k].Size() )
   	eqc_ids[k] = AMG_TAG_BASE + rank;
-      else if( rank<dist_procs[k][0] )
+      else if ( rank<dist_procs[k][0] )
   	{
   	  eqc_ids[k] = tagbase_loc++;
   	  for (auto p:dist_procs[k]) {
@@ -439,12 +443,12 @@ namespace amg {
   	size_t i2 = 0;
   	c.SetSize(0);
   	while( (i1<a.Size()) && (i2<b.Size()) )
-  	  if(a[i1]==b[i2])
+  	  if (a[i1]==b[i2])
   	    {
   	      c.Append(a[i1++]);
   	      i2++;
   	    }
-  	  else if(a[i1]<b[i2])
+  	  else if (a[i1]<b[i2])
   	    c.Append(a[i1++]);
   	  else
   	    c.Append(b[i2++]);
@@ -465,7 +469,7 @@ namespace amg {
   	    merge_arrays(dist_procs[eqc1], dist_procs[eqc2], arr);
   	    auto pos = NO_EQC;
   	    for (auto k:Range(neqcs))
-  	      if(dist_procs[k]==arr)
+  	      if (dist_procs[k]==arr)
   		pos = k;
 	    merge[eqc1+neqcs*eqc2] = pos;
   	    merge[eqc2+neqcs*eqc1] = pos;
@@ -478,13 +482,13 @@ namespace amg {
       for (auto eqc2:Range(neqcs))
 	{
 	  bool subset = true;
-	  if( (!dist_procs[eqc2].Size()) && dist_procs[eqc1].Size())
+	  if ( (!dist_procs[eqc2].Size()) && dist_procs[eqc1].Size())
 	    subset = false;
 	  else
 	    for (size_t l=0; (l<dist_procs[eqc1].Size()) && subset; l++)
-	      if( dist_procs[eqc2].Pos(dist_procs[eqc1][l])==size_t(-1))
+	      if ( dist_procs[eqc2].Pos(dist_procs[eqc1][l])==size_t(-1))
 		subset = false;
-	  if(!subset)
+	  if (!subset)
 	    continue;
 	  hierarchic_order.Set(eqc1*neqcs+eqc2);
 	  //hierarchic_order.Set(eqc2*neqcs+eqc1); //haha, I'm a moron...
@@ -497,13 +501,13 @@ namespace amg {
   	c.SetSize(0);
   	while( (i1<a.Size()) && (i2<b.Size()) )
   	  {
-  	    if(a[i1]==b[i2])
+  	    if (a[i1]==b[i2])
   	      {
   		c.Append(a[i1]);
   		i1++;
   		i2++;
   	      }
-  	    else if(a[i1]<b[i2])
+  	    else if (a[i1]<b[i2])
   	      i1++;
   	    else
   	      i2++;
@@ -520,7 +524,7 @@ namespace amg {
   	    intersect_arrays(dist_procs[eqc1], dist_procs[eqc2], arr);
   	    auto pos = -1;
   	    for (auto k:Range(neqcs))
-  	      if(dist_procs[k]==arr)
+  	      if (dist_procs[k]==arr)
   		pos = k;
 	    intersect[eqc1+neqcs*eqc2] = pos;
   	    intersect[eqc2+neqcs*eqc1] = pos;

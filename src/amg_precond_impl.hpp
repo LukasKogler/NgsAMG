@@ -768,10 +768,33 @@ namespace amg
 
   template<class AMG_CLASS, class HTVD, class HTED>
   EmbedVAMG<AMG_CLASS, HTVD, HTED> :: EmbedVAMG (shared_ptr<BilinearForm> blf, const Flags & aflags, const string aname)
-    : Preconditioner(bfa, aflags, aname), options(make_shared<EmbedVAMG<AMG_CLASS, HTVD, HTED>::Options>()), bfa(blf), fes(blf->GetFESpace()),
+    : Preconditioner(blf, aflags, aname), options(make_shared<EmbedVAMG<AMG_CLASS, HTVD, HTED>::Options>()), bfa(blf), fes(blf->GetFESpace()),
       node_sort(4), node_pos(4), ht_vertex(nullptr), ht_edge(nullptr)
   {
+
+    options->energy = aflags.GetStringFlag("ngs_amg_energy", "ALG");
     
+    options->edges = aflags.GetStringFlag("ngs_amg_edges", "ALG");
+
+    // Find out which chunk of the matrix we should use for coarsening:
+    // We can be explicitely told which part to use.
+    // use cases: nodal p2, i guess AMG on component of a composite fespace without seperate matrix assembly
+    size_t min_def_dof = aflags.GetNumFlag("ngs_amg_lower", 0);
+    size_t max_def_dof = aflags.GetNumFlag("ngs_amg_upper", blf->GetFESpace()->GetNDof());
+    // Otherwise default to caorsening on low order space, except if we are explicitely told not to
+    if ( (min_def_dof == 0) && (max_def_dof == blf->GetFESpace()->GetNDof()) &&
+	 (!aflags.GetDefineFlagX("ngs_amg_lo").IsFalse()) )
+      if (auto lospace = blf->GetFESpace()->LowOrderFESpacePtr()) // e.g compound has no LO space
+	{ min_def_dof = 0; max_def_dof = lospace->GetNDof(); }
+
+    if ( (min_def_dof != 0) || (max_def_dof != blf->GetFESpace()->GetNDof()) ) {
+      options->on_dofs = make_shared<BitArray>(blf->GetFESpace()->GetNDof());
+      options->on_dofs->Clear();
+      for (auto k : Range(min_def_dof, max_def_dof))
+	{ options->on_dofs->Set(k); }
+    }
+    
+
   }
 
 
@@ -788,6 +811,13 @@ namespace amg
     if (ht_edge   != nullptr) delete ht_edge;
   }
   
+  template<class AMG_CLASS, class HTVD, class HTED>
+  void EmbedVAMG<AMG_CLASS, HTVD, HTED> :: InitLevel (shared_ptr<BitArray> freedofs)
+  {
+    options->finest_free_dofs = freedofs;
+  }
+
+
   template<class AMG_CLASS, class HTVD, class HTED>
   void EmbedVAMG<AMG_CLASS, HTVD, HTED> :: FinalizeLevel (const BaseMatrix * mat)
   {
@@ -809,16 +839,13 @@ namespace amg
 
     finest_mat = fine_spm; // embed-amg finest mat - need parallel matrix!
 
-    if (auto pmat = dynamic_pointer_cast<ParallelMatrix>(fine_spm)) {
-      fine_spm = pmat->GetMatrix();
-    }
+    if (auto pmat = dynamic_pointer_cast<ParallelMatrix>(fine_spm))
+      { fine_spm = pmat->GetMatrix(); }
     else {
-      cout << "SHOULD BE NULLPTR: " << fine_spm->GetParallelDofs() << endl;
       Array<int> perow (fine_spm->Height()); perow = 0;
       Table<int> pds (perow);
       fine_spm->SetParallelDofs(make_shared<ParallelDofs> (MPI_COMM_WORLD, move(pds), GetEntryDim(fine_spm.get()), false));
     }
-
     
     auto mesh = BuildInitialMesh();
     amg_pc = make_shared<AMG_CLASS>(mesh, options);
@@ -827,6 +854,7 @@ namespace amg
 
     amg_pc->Finalize(fine_spm, embed_step); // VAMG finest mat
   }
+
 
   template<class AMG_CLASS, class HTVD, class HTED>
   shared_ptr<BlockTM> EmbedVAMG<AMG_CLASS, HTVD, HTED> :: BuildTopMesh ()
@@ -841,10 +869,23 @@ namespace amg
     shared_ptr<BlockTM> top_mesh = nullptr;
     auto fpd = finest_mat->GetParallelDofs();
     shared_ptr<EQCHierarchy> eqc_h;
-    if (ma->GetCommunicator().Size() == 1) // second version has an optimization the first does not have!
-      { eqc_h = make_shared<EQCHierarchy>(fpd, true); }
+    // if (ma->GetCommunicator().Size() == 1) // second version has an optimization the first does not have!
+    //   { eqc_h = make_shared<EQCHierarchy>(fpd, true); }
+    // else
+    //   { eqc_h = make_shared<EQCHierarchy>(ma, Array<NODE_TYPE>({NT_VERTEX}), true); }
+    size_t maxset = 0;
+    if ( (O.v_dofs == "NODAL") && (O.on_dofs != nullptr) ) {
+      for (auto k : Range(O.on_dofs->Size()))
+	if (O.in_dofs->Test(k))
+	  { maxset = k; }
+    }
+    else if (O.v_dofs == "VARIABLE")
+      { maxset = (O.v_blocks.Size() > 0) ? O.v_blocks[O.v_blocks.Size()-1][0] : 0; }
     else
-      { eqc_h = make_shared<EQCHierarchy>(ma, Array<NODE_TYPE>({NT_VERTEX}), true); }
+      { maxset =  fpd->GetNDofLocal(); }
+
+    eqc_h = make_shared<EQCHierarchy>(fpd, true, maxset+1);
+
     t1.Stop();
     t2.Start();
     if (O.edges == "MESH") { // convert Netgen-mesh to AMG-Mesh
@@ -877,6 +918,10 @@ namespace amg
       }
     }
     else if (O.edges == "ELMAT") { // AMG-Mesh top. from hash-tables
+      if ( (O.v_dofs == "NODAL") && (O.on_dofs != nullptr) )
+	{ throw Exception("unhandled case elmat + sub-block of mat"); }
+      else if (O.v_dofs == "VARIABLE")
+	{ throw Exception("unhandled case elmat + variable dofs"); }
       top_mesh = make_shared<BlockTM>(eqc_h);
       size_t n_verts = fpd->GetNDofLocal();
       auto & vert_sort = node_sort[NT_VERTEX]; vert_sort.SetSize(n_verts);
@@ -898,19 +943,81 @@ namespace amg
 	}, [](auto node_num, auto id) { /* do nothing - dont care about edge-sort! */ });
     }
     else { // vertices/edges from matrix (is this even relevant??)
-      throw Exception("Sorry, have not implemented this case yet either.");
+
+      top_mesh = make_shared<BlockTM>(eqc_h);
+      
+      // vertices
+      size_t n_verts;
+      if (options->v_dofs == "NODAL") {
+	int dpv = std::accumulate(options->block_s.begin(), O.block_s.end(), 0);
+	const auto bs0 = options->block_s[0];
+	n_verts = (O.on_dofs != nullptr) ? O.on_dofs->NumSet() / dpv : fpd->GetNDofLocal() / dpv;
+	// if (n_verts != 0) max_first_v = (n_verts-1) * bs0;
+	auto & vert_sort = node_sort[NT_VERTEX]; vert_sort.SetSize(n_verts);
+	top_mesh->SetVs (n_verts, [&](auto vnr)->FlatArray<int> { return fpd->GetDistantProcs(vnr * bs0); },
+			 [&vert_sort](auto i, auto j){ vert_sort[i] = j; });
+      }
+      else {
+	n_verts = options->v_blocks.Size(); auto& vblocks = options->v_blocks;
+	// if (n_verts != 0) max_first_v = options->v_blocks[n_verts-1][0];
+	auto & vert_sort = node_sort[NT_VERTEX]; vert_sort.SetSize(n_verts);
+	top_mesh->SetVs (n_verts, [&](auto vnr)->FlatArray<int> { return fpd->GetDistantProcs(v_blocks[vnr][0]); },;
+			 [&vert_sort](auto i, auto j){ vert_sort[i] = j; });
+      }
+
+      // edges 
+      Array<decltype(AMG_NODE<NT_EDGE>::V)>> epairs;
+      auto create_edges = [&]( auto v2d, auto d2v ) { // vertex->dof,  // dof-> vertex
+	auto traverse_graph = [&](const MatrixGraph & g, auto fun) {
+	  for (auto k : Range(n_verts)) {
+	    auto row = v2d(k);
+	    auto ri = g.GetRowIndices(row);
+	    auto pos = find_in_sorted_array(ri, row); // no duplicates
+	    for (auto col : ri.Part(pos)) {
+	      auto j = d2v(col);
+	      if (j != -1) { fun(vert_sort[k],vert_sort[j]); }
+	    }
+	  };
+	  auto bspm = dynamic_pointer_casst<BaseSparseMatrix>(finest_mat);
+	  if (!bsp) { bspm = dynamic_pointer_cast<BaseSparseMatrix>( dynamic_pointer_cast<ParallelMatrix>(finest_mat)->GetMatrix() ); )
+	  if (!bsp) { throw Exception("could not get BaseSparseMatrix out of finest_mat!!"); }
+	  size_t nedges = 0;
+	  traverse_graph(*bspm, , [&](auto vk, auto vj) { nedges++; });
+	  epairs.SetSize(nedges); nedges = 0;
+	  traverse_graph(*bspm, , [&](auto vk, auto vj) { epairs[nedges++] = {k, j}; });
+	};
+	if (O.v_dofs == "NODAL") { // note d/bs0 works bc d will be <= v2d(nverts-1) =  (nverts-1) * bs0 
+	  create_edges ( [&](auto v) { return bs0 * v; }, [&](auto d) -> int { return ( (d%bs0) == 0) ? -1 : d/bs0; } );
+	}
+	else {
+	  auto& vblocks = O.v_blocks;
+	  Array<int> compress(vblocks[n_verts-1][0]); compress = -1;
+	  auto v2d = [&](auto v) { return vblocks[v][0]; }
+	  for (auto k : Range(compress.Size())) { compress[v2d[k]] = k; }
+	  create_edges ( v2d , [&](auto d) -> int { return compress[d]; } );
+	}
+	size_t n_edges = epairs.Size();
+	top_mesh->SetNodes<NT_EDGE> (n_edges, [&](auto num) { return epairs[num]; }); // (already v-sorted)
     }
     t2.Stop();
     t3.Start();
     /** Convert FreeDofs **/
+
+
+    // ACTUALLY:: TODO:: MOVE FREEDOFS TO EMBEDDING (??)
+    // for h1 this is definitely the way to go. for hcurl i am not sure
+    
     static Timer tfd(this->GetName() + string("::BuildTopMesh - FDS")); RegionTimer rtfd(tfd);
+    // TODO:: THIS NEEDS TO WORK WITH on_dofs // v_blocks!!
     auto fes_fds = fes->GetFreeDofs();
     auto fvs = make_shared<BitArray>(top_mesh->GetNN<NT_VERTEX>()); fvs->Clear();
+    // HCURLMARKER (this means that I have to do something more refined here..)
     auto & vsort = node_sort[NT_VERTEX];
     for (auto k : Range(top_mesh->GetNN<NT_VERTEX>())) if (fes_fds->Test(k)) { fvs->Set(vsort[k]); }
     // cout << "vertex sort: " << endl; prow2(vsort); cout << endl;
-    options->free_verts = fvs;
-    options->finest_free_dofs = fes_fds;
+    O.free_verts = fvs;
+    if (O.finest_free_dofs == nullptr) // could already be set by InitLevel
+      { O.finest_free_dofs = fes_fds; }
     t3.Stop();
     return top_mesh;
   }

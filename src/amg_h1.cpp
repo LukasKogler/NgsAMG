@@ -8,7 +8,16 @@ namespace amg
 
   H1AMG :: H1AMG (shared_ptr<H1AMG::TMESH> mesh,  shared_ptr<H1AMG::Options> opts)
     : VWiseAMG<H1AMG, H1AMG::TMESH, 1>(mesh, opts)
-  { }
+  {
+    options->block_s = {1};
+  }
+
+  H1AMG :: H1AMG (shared_ptr<BilinearForm> blf, const Flags & aflags, const string aname)
+    : VWiseAMG<H1AMG, H1AMG::TMESH, 1>(mesh, opts)
+  {
+    options->block_s = {1};
+  }
+
 
   shared_ptr<BaseSmoother> H1AMG :: BuildSmoother  (INT<3> level, shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs> par_dofs,
 						    shared_ptr<BitArray> free_dofs)
@@ -137,12 +146,35 @@ namespace amg
   {
     auto & vsort = node_sort[NT_VERTEX];
     shared_ptr<ParallelDofs> fpds = finest_mat->GetParallelDofs();
-    auto pmap = make_shared<ProlMap<SparseMatrixTM<double>>>(BuildPermutationMatrix<double>(vsort), fpds, nullptr);
+    auto emb_mat = BuildPermutationMatrix<double>(vsort);
+    if (on_dofs != nullptr) { // embed this
+      Array<int> perow(fpds->GetNDofLocal());
+      for (auto k : Rang(fpds->GetNDofLocal()))
+	perow[k] = on_dofs->Test(k) ? 1 : 0;
+      auto mat = make_shared<SparseMatrix<double>>(perow);
+      int cnt = 0;
+      for (auto k : Rang(fpds->GetNDofLocal()))
+	if (on_dofs->Test(k)) {
+	  mat->GetRowIndices(k) = cnt++;
+	  mat->GetRowValues(k) = 1;
+	}
+      emb_mat = MatMultAB(*mat, *emb_mat);
+    }
+    else if (vsort.Size() != fpds->GetNDofLocal())
+      { throw Exception("When seem to not be working on the full space, but we do not know where!"); }
+
+    if (fpds->GetNDofLocal() != emb_mat->Height())
+      throw Exception(string("EMBED MAT H does not fit: ") + to_string(fpds->GetNDofLocal()) + string("!=") + to_string(emb_mat->Height()));
+    if (vsort.Size() != emb_mat->Width())
+      throw Exception(string("EMBED MAT W does not fit: ") + to_string(vsort.Size()) + string("!=") + to_string(emb_mat->Height()));
+
+    auto pmap = make_shared<ProlMap<SparseMatrixTM<double>>>(emb_mat, fpds, nullptr);
+
     return pmap;
   }
 
   
-  
+  RegisterPreconditioner<EmbedVAMG<H1AMG>> registet_h1amg_scal("ngs_amg.h1_scal");
   
 } // namespace amg
 

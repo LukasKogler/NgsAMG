@@ -25,8 +25,8 @@ namespace amg
     struct Options
     {
       /** Dirichlet conditions for finest level **/
-      shared_ptr<BitArray> free_verts = nullptr;
-      shared_ptr<BitArray> finest_free_dofs = nullptr;
+      shared_ptr<BitArray> free_verts = nullptr;         // used for coarsening
+      // shared_ptr<BitArray> finest_free_dofs = nullptr;   // DOFs for finest level smoother
       /** Coarsening **/
       double min_ecw = 0.05, min_vcw = 0.5;
       /** Level-control **/
@@ -389,12 +389,17 @@ namespace amg
     struct Options : AMG_CLASS::Options
     {
       /** nr of vertices **/
-      size_t n_verts = 0;
+      // size_t n_verts = 0;
       /** v_dofs:
 	    "NODAL" -> sum(block_s) dofs per "vertex", determined by on_dofs+block_s
+	      e.g: block_s = [2,3], then we have ndof blocks of 2 vertices, then ndof blocks of 3 vertices
+	      each block is increasing and continuous (neither [12,18] nor [5,4] are valid blocks) 
+	      on_dofs has to be set for ALL dofs in a block (no guarantee what happens otherise,
+	      probably will just take the first one)
 	    "VARIABLE" -> dofs for vertex k: v_blocks[k] (need for 3d TDNNS) **/
+      // enum dof_ordering : char = { NODAL = 0; COMPWISE = 1; VARIBALE = 2 }
       string v_dofs = "NODAL";
-      shared_ptr<BitArray> on_dofs = nullptr; Array<int> block_s;
+      shared_ptr<BitArray> on_dofs = nullptr; Array<int> block_s; // we are computing NV from this, so don't put freedofs in here
       Table<int> v_blocks;
       /** v_pos: 
 	    "VERTEX", "FACE" -> use node pos
@@ -412,7 +417,7 @@ namespace amg
 	    "TRIV" -> dofs in each block have to stand for: have to stand for: trans_x/y/z(+ rot_x/y/z if rot-dofs)
 	    "VEC" -> kernel_vecs have to be trans_x/y/z, rot_x/y/z **/
       string kvecs = "TRIV"; FlatArray<shared_ptr<BaseVector>> kernel_vecs;
-      /** edges: 
+      /** edges:  (better name would be Topology...)
 	    "ELMAT", "ELMAT_FULL" -> calc from elmats, FULL->all-to-all
 	    "MESH" -> take from Mesh
 	    "ALG" -> calc from FEM-Matrix **/
