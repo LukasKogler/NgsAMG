@@ -8,15 +8,7 @@ namespace amg
 
   H1AMG :: H1AMG (shared_ptr<H1AMG::TMESH> mesh,  shared_ptr<H1AMG::Options> opts)
     : VWiseAMG<H1AMG, H1AMG::TMESH, 1>(mesh, opts)
-  {
-    options->block_s = {1};
-  }
-
-  H1AMG :: H1AMG (shared_ptr<BilinearForm> blf, const Flags & aflags, const string aname)
-    : VWiseAMG<H1AMG, H1AMG::TMESH, 1>(mesh, opts)
-  {
-    options->block_s = {1};
-  }
+  { ; }
 
 
   shared_ptr<BaseSmoother> H1AMG :: BuildSmoother  (INT<3> level, shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs> par_dofs,
@@ -26,6 +18,13 @@ namespace amg
     auto sm = make_shared<HybridGSS<1>> (spmat, par_dofs, free_dofs);
     sm->SetSymmetric(options->smooth_symmetric);
     return sm;
+  }
+
+  template<> void
+  EmbedVAMG<H1AMG> :: ModifyInitialOptions ()
+  {
+    // LUKAS DA WARST GRAD
+    options->block_s = { 1 };
   }
 
   /** See ngsolve/comp/h1amg.cpp **/
@@ -147,14 +146,14 @@ namespace amg
     auto & vsort = node_sort[NT_VERTEX];
     shared_ptr<ParallelDofs> fpds = finest_mat->GetParallelDofs();
     auto emb_mat = BuildPermutationMatrix<double>(vsort);
-    if (on_dofs != nullptr) { // embed this
+    if (options->on_dofs != nullptr) { // embed this
       Array<int> perow(fpds->GetNDofLocal());
       for (auto k : Rang(fpds->GetNDofLocal()))
-	perow[k] = on_dofs->Test(k) ? 1 : 0;
+	perow[k] = options->on_dofs->Test(k) ? 1 : 0;
       auto mat = make_shared<SparseMatrix<double>>(perow);
       int cnt = 0;
-      for (auto k : Rang(fpds->GetNDofLocal()))
-	if (on_dofs->Test(k)) {
+      for (auto k : Range(fpds->GetNDofLocal()))
+	if (options->on_dofs->Test(k)) {
 	  mat->GetRowIndices(k) = cnt++;
 	  mat->GetRowValues(k) = 1;
 	}

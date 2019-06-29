@@ -794,7 +794,7 @@ namespace amg
 	{ options->on_dofs->Set(k); }
     }
     
-
+    ModifyInitialOptions();
   }
 
 
@@ -947,26 +947,11 @@ namespace amg
       top_mesh = make_shared<BlockTM>(eqc_h);
       
       // vertices
-      size_t n_verts;
-      if (options->v_dofs == "NODAL") {
-	int dpv = std::accumulate(options->block_s.begin(), O.block_s.end(), 0);
-	const auto bs0 = options->block_s[0];
-	n_verts = (O.on_dofs != nullptr) ? O.on_dofs->NumSet() / dpv : fpd->GetNDofLocal() / dpv;
-	// if (n_verts != 0) max_first_v = (n_verts-1) * bs0;
-	auto & vert_sort = node_sort[NT_VERTEX]; vert_sort.SetSize(n_verts);
-	top_mesh->SetVs (n_verts, [&](auto vnr)->FlatArray<int> { return fpd->GetDistantProcs(vnr * bs0); },
-			 [&vert_sort](auto i, auto j){ vert_sort[i] = j; });
-      }
-      else {
-	n_verts = options->v_blocks.Size(); auto& vblocks = options->v_blocks;
-	// if (n_verts != 0) max_first_v = options->v_blocks[n_verts-1][0];
-	auto & vert_sort = node_sort[NT_VERTEX]; vert_sort.SetSize(n_verts);
-	top_mesh->SetVs (n_verts, [&](auto vnr)->FlatArray<int> { return fpd->GetDistantProcs(v_blocks[vnr][0]); },;
-			 [&vert_sort](auto i, auto j){ vert_sort[i] = j; });
-      }
+      size_t n_verts = 0, n_edges = 0;
+      auto & vert_sort = node_sort[NT_VERTEX];
+      Array<decltype(AMG_Node<NT_EDGE>::v)> epairs;
 
       // edges 
-      Array<decltype(AMG_NODE<NT_EDGE>::V)>> epairs;
       auto create_edges = [&]( auto v2d, auto d2v ) { // vertex->dof,  // dof-> vertex
 	auto traverse_graph = [&](const MatrixGraph & g, auto fun) {
 	  for (auto k : Range(n_verts)) {
@@ -977,27 +962,60 @@ namespace amg
 	      auto j = d2v(col);
 	      if (j != -1) { fun(vert_sort[k],vert_sort[j]); }
 	    }
-	  };
-	  auto bspm = dynamic_pointer_casst<BaseSparseMatrix>(finest_mat);
-	  if (!bsp) { bspm = dynamic_pointer_cast<BaseSparseMatrix>( dynamic_pointer_cast<ParallelMatrix>(finest_mat)->GetMatrix() ); )
-	  if (!bsp) { throw Exception("could not get BaseSparseMatrix out of finest_mat!!"); }
-	  size_t nedges = 0;
-	  traverse_graph(*bspm, , [&](auto vk, auto vj) { nedges++; });
-	  epairs.SetSize(nedges); nedges = 0;
-	  traverse_graph(*bspm, , [&](auto vk, auto vj) { epairs[nedges++] = {k, j}; });
+	  }
 	};
-	if (O.v_dofs == "NODAL") { // note d/bs0 works bc d will be <= v2d(nverts-1) =  (nverts-1) * bs0 
-	  create_edges ( [&](auto v) { return bs0 * v; }, [&](auto d) -> int { return ( (d%bs0) == 0) ? -1 : d/bs0; } );
-	}
+	auto bspm = dynamic_pointer_cast<BaseSparseMatrix>(finest_mat);
+	if (!bspm) { bspm = dynamic_pointer_cast<BaseSparseMatrix>( dynamic_pointer_cast<ParallelMatrix>(finest_mat)->GetMatrix()); }
+	if (!bspm) { throw Exception("could not get BaseSparseMatrix out of finest_mat!!"); }
+	n_edges = 0;
+	traverse_graph(*bspm, [&](auto vk, auto vj) { n_edges++; });
+	epairs.SetSize(n_edges); n_edges = 0;
+	traverse_graph(*bspm, [&](auto vk, auto vj) { epairs[n_edges++] = {vk, vj}; });
+      };
+
+      if (O.v_dofs == "NODAL") {
+	int dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
+	const auto bs0 = O.block_s[0];
+	n_verts = (O.on_dofs != nullptr) ? O.on_dofs->NumSet() / dpv : fpd->GetNDofLocal() / dpv;
+
+	Array<int> first_dof(n_verts);
+	Array<int> compress(maxset); compress = -1;
+	if (O.on_dofs != nullptr)
+	  for (size_t k = 0, j = 0; k < n_verts; j += bs0) {
+	    if (O.on_block->Test(j))
+	      { first_dof[k] = j; compress[j] = k; }
+	  }
 	else {
-	  auto& vblocks = O.v_blocks;
-	  Array<int> compress(vblocks[n_verts-1][0]); compress = -1;
-	  auto v2d = [&](auto v) { return vblocks[v][0]; }
-	  for (auto k : Range(compress.Size())) { compress[v2d[k]] = k; }
-	  create_edges ( v2d , [&](auto d) -> int { return compress[d]; } );
+	  for (auto k : Range(n_verts))
+	    { first_dof[k] = bs0 * k; compress[bs0*k] = k; }
 	}
-	size_t n_edges = epairs.Size();
-	top_mesh->SetNodes<NT_EDGE> (n_edges, [&](auto num) { return epairs[num]; }); // (already v-sorted)
+	auto v2d = [&](auto v) { return first_dof[v]; };
+	auto d2v = [&](auto d) -> int { return compress[d]; };
+
+	vert_sort.SetSize(n_verts);
+	top_mesh->SetVs (n_verts, [&](auto vnr)->FlatArray<int> { return fpd->GetDistantProcs(v2d(vnr)); },
+			 [&vert_sort](auto i, auto j){ vert_sort[i] = j; });
+	create_edges ( [&](auto v) { return bs0 * v; }, [&](auto d) -> int { return ( (d%bs0) == 0) ? -1 : d/bs0; } );
+      }
+      else {
+	auto& vblocks = O.v_blocks;
+	n_verts = O.v_blocks.Size();
+	vert_sort.SetSize(n_verts);
+
+	auto v2d = [&](auto v) { return vblocks[v][0]; };
+
+	Array<int> compress(vblocks[n_verts-1][0]); compress = -1;
+	for (auto k : Range(compress.Size())) { compress[v2d[k]] = k; }
+	auto d2v = [&](auto d) -> int { return compress[d]; };
+
+	top_mesh->SetVs (n_verts, [&](auto vnr)->FlatArray<int> { return fpd->GetDistantProcs(v2d(vnr)); },
+			 [&vert_sort](auto i, auto j){ vert_sort[i] = j; });
+
+
+	create_edges ( v2d , d2v );
+      }
+
+      top_mesh->SetNodes<NT_EDGE> (n_edges, [&](auto num) { return epairs[num]; }); // (already v-sorted)
     }
     t2.Stop();
     t3.Start();

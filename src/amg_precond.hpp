@@ -431,6 +431,9 @@ namespace amg
     // virtual ~EmbedVAMG ();
     ~EmbedVAMG ();
 
+    // a way for different embeds to set some optins. called at end of constructor
+    virtual void ModifyInitialOptions () { ; }
+
     virtual const BaseMatrix & GetMatrix() const override
     { return amg_pc->GetMatrix(); }
     virtual shared_ptr<BaseMatrix> GetMatrixPtr () override
