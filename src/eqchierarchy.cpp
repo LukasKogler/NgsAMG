@@ -64,6 +64,7 @@ namespace amg {
     
     Table<int> vanilla_dps;
     size_t max_nd = (_max_nd == -1) ? apd->GetNDofLocal() : _max_nd;
+    // cout << " size_t max_nd = " << (_max_nd == -1) << " ? " << apd->GetNDofLocal() << " : " <<  _max_nd << endl;
     if (apd != nullptr)
       {
 	int ndof = apd->GetNDofLocal();

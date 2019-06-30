@@ -26,9 +26,9 @@ namespace amg
     {
       /** Dirichlet conditions for finest level **/
       shared_ptr<BitArray> free_verts = nullptr;         // used for coarsening
-      // shared_ptr<BitArray> finest_free_dofs = nullptr;   // DOFs for finest level smoother
+      shared_ptr<BitArray> finest_free_dofs = nullptr;   // DOFs for finest level smoother (size can be larger than free_verts)
       /** Coarsening **/
-      double min_ecw = 0.05, min_vcw = 0.5;
+      double min_ecw = 0.05, min_vcw = 0.3;
       /** Level-control **/
       int max_n_levels = 20;               // maximum number of coarsening steps
       size_t max_n_verts = 50;             // stop coarsening when the coarsest mesh has this few vertices
@@ -69,6 +69,7 @@ namespace amg
       string clev_inv_type = "masterinverse";
       /** Wether we keep track of info **/
       INFO_LEVEL info_level = NONE;
+      bool print_info = false; string info_file = "";
       bool sync = true;
     };
 
@@ -105,6 +106,8 @@ namespace amg
 
       bool has_comm;
       NgsAMG_Comm glob_comm;
+
+      bool print_info = false; string info_file = "";
     public:
       Info (INFO_LEVEL ailev, size_t asize) : ilev(ailev) {
   	has_comm = false;
@@ -119,6 +122,8 @@ namespace amg
   	  { alloc(vcc_l); alloc(occ_l); alloc(mcc1_l); alloc(mcc2_l); }
       }
 
+      void SetPrintInfo (bool api, string fname = "") { print_info = api; info_file = fname; }
+      
       void LogMesh (INT<3> level, shared_ptr<TMESH> & amesh, bool assit) {
   	if (ilev == NONE) return;
   	auto comm = amesh->GetEQCHierarchy()->GetCommunicator();
@@ -174,8 +179,8 @@ namespace amg
   	mcc1_l.Append(nbts_mat_l);
   	mcc2_l.Append(nbts_sm_l);
       }
-      
-      void Finalize() {
+
+      void FinalSync () {
   	if (ilev == NONE) return;
   	static Timer t("Info::Finalize"); RegionTimer rt(t);
   	int n_meshes = NVs.Size(), n_mats = occ.Size(); // == 0 if not master
@@ -197,7 +202,10 @@ namespace amg
   	op_comp = 0; double oc0 = occ[0];
   	for (auto k : Range(n_mats))
   	  { auto v = occ[k]/oc0; op_comp += v; occ[k] = v; }
-  	if (ilev <= BASIC) return;
+	// RPP (get RPP from rank 1 .. with max. OPC)
+	double rppkey = (glob_comm.Rank() == 1) ? 1 : 0;
+	lam_max(rppkey , rpp);
+	if (ilev <= BASIC) return;
   	// MC-1 & MC-2
   	mem_comp1 = 0; mem_comp2 = 0; double mm0 = mcc1[0];
   	for (auto k : Range(n_mats))
@@ -220,10 +228,10 @@ namespace amg
   	op_comp_l = 0; double ocl0 = max2(1.0, occ_l[0]);
   	for (auto k : Range(n_mats))
   	  { auto v = occ_l[k]/ocl0; op_comp_l += v; occ_l[k] = v; }
-	double rppkey = op_comp_l;
+	// double rppkey = op_comp_l;
   	lam_max(op_comp_l, occ_l);
-  	// RPP (get RPP from a rank with max. OPC)
-	lam_max(rppkey, rpp);
+  	// // RPP (get RPP from a rank with max. OPC)
+	// lam_max(rppkey, rpp);
   	// MC-1-L & MC-2-L
   	mem_comp1_l = 0; mem_comp2_l = 0; double mml0 = max2(1.0, mcc1_l[0]);
   	for (auto k : Range(n_mats))
@@ -234,6 +242,52 @@ namespace amg
   	lam_max(mem_comp1_l, mcc1_l);
   	lam_max(mem_comp2_l, mcc2_l);
       }
+
+      void DumpInfo (ostream & out) {
+	out << endl << " ---------- AMG Summary ---------- " << endl;
+  	if (ilev == NONE) return;
+
+	if (ilev >= BASIC) {
+	  // out << endl;
+	  // out << "--- Final AMG Cycle info ---" << endl;
+	  out << "Vertex complexity: " << v_comp << endl;
+	  out << "Vertex complexity components: "; prow(vcc, out); out << endl;
+	  out << "Operator complexity: " << op_comp << endl;
+	  out << "Operator complexity components: "; prow(occ, out); out << endl;
+	  out << "Prol. entries per row: "; prow(rpp, out); out << endl;
+	}
+  	if (ilev >= DETAILED ) {
+	  out << "Memory complexity: " << mem_comp1 << endl;
+	  out << "Memory complexity components: "; prow(mcc1, out); out << endl;
+	  out << "Smoother memory overhead: " << mem_comp2 << endl;
+	  out << "Smoother memory overhead components: "; prow(mcc2, out); out << endl;
+  	}
+	if (ilev >= EXTRA) {
+	  out << "Max. local vertex complexity: " << v_comp_l << endl;
+	  out << "Max. local vertex complexity components: "; prow(vcc_l, out); out << endl;
+	  out << "Max. local operator complexity: " << op_comp_l << endl;
+	  out << "Max. local operator complexity components: "; prow(occ_l, out); out << endl;
+	  out << "Max. local memory complexity: " << mem_comp1_l << endl;
+	  out << "Max. local memory complexity components: "; prow(mcc1_l, out); out << endl;
+	  out << "Max. local Smoother memory overhead: " << mem_comp2_l << endl;
+	  out << "Max. local Smoother memory overhead components: "; prow(mcc2_l, out); out << endl;
+	}
+
+	out << " ---------- AMG Summary End ---------- " << endl << endl;
+      }
+
+      void Finalize ()
+      {
+	FinalSync ();
+
+	if ( (glob_comm.Rank() == 0) && (print_info) ) {
+	  if (info_file.size() == 0)
+	    { DumpInfo(cout); }
+	  else
+	    { ofstream out(info_file, ios::out); DumpInfo(out); }
+	}
+      }
+      
     };
     
     NodeWiseAMG (shared_ptr<TMESH> finest_mesh, shared_ptr<Options> opts) : options(opts), mesh(finest_mesh) { ; };

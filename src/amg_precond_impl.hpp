@@ -36,6 +36,7 @@ namespace amg
     nvs.Append(fm->template GetNNGlobal<NT_VERTEX>());
     
     infos = make_shared<Info>(options->info_level, 3*MAX_NL); // over-estimate
+    infos->SetPrintInfo(options->print_info, options->info_file);
     
     Array<size_t> cutoffs = {0};
     { // coarsen mesh!
@@ -83,8 +84,12 @@ namespace amg
 	else if ( !disc_locked ) { throw Exception("Discard-Map not yet ported to new Version!"); }
        	else { throw Exception("No map variant worked!"); break; } // all maps failed
 	fm = dynamic_pointer_cast<TMESH>(grid_step->GetMappedMesh());
+	// cout << "------------------------------" << endl << "coarse mesh: " << endl << *fm << endl << "-------------------------" << endl;
 	if (fm != nullptr && fm->template GetNNGlobal<NT_VERTEX>()==0) { // can happen due to discard/vertex ground
-	  if (cutoffs.Last() != step_cnt) cutoffs.Append(step_cnt);
+	  if (level[0] == 1) // e.g. everywhere diagonally dominant matrix -> only smooth on level 0 (level[0] == 1 after coarsening)
+	    { dof_map->AddStep(dof_step); }
+	  else if (cutoffs.Last() != step_cnt)
+	    { cutoffs.Append(step_cnt); } // 0 is always in cutoffs
 	  fm_pd = nullptr; break;
 	}
 	levels.Append(level);
@@ -92,7 +97,8 @@ namespace amg
 	step_cnt++;
 	if (fm == nullptr) { fm_pd = nullptr; cutoffs.Append(step_cnt); break; } // no mesh due to contract
 	size_t next_nv = fm->template GetNNGlobal<NT_VERTEX>();
-	fm_pd = BuildParDofs(fm);
+	// fm_pd = BuildParDofs(fm); dof-step should already have coarse pardofs
+	fm_pd = dof_step->GetMappedParDofs();
 	nvs.Append(next_nv);
 	double frac_crs = (1.0*next_nv) / curr_nv;
 	bool assit = false;
@@ -153,21 +159,6 @@ namespace amg
     //   cout << endl;
     // }
 
-    // Array<shared_ptr<BaseSmoother>> sms(cutoffs.Size()); sms.SetSize(0);
-    // {
-    //   static Timer t(timer_name + string("-Smoothers")); RegionTimer rt(t);
-    //   for (auto k : Range(mats.Size()-1)) {
-    // 	cout << "make smoother " << k << "!!" << endl;
-    // 	auto pds = dof_map->GetParDofs(k);
-    // 	shared_ptr<const TSPM_TM> mat = dynamic_pointer_cast<TSPM_TM>(mats[k]);
-    // 	cout << "mat: " << mat << endl;
-    // 	cout << mat->Height() << " x " << mat->Width() << endl;
-    // 	cout << "ndglob: " << pds->GetNDofGlobal() << endl;
-    // 	sms.Append(make_shared<HybridGSS<mat_traits<TV>::HEIGHT>>(mat,pds,(k==0) ? options->finest_free_dofs : nullptr));
-    // 	infos->LogMatSm(mats[k], sms.Last());
-    //   }
-    // }
-
     Array<shared_ptr<BaseSmoother>> sms(cutoffs.Size()); sms.SetSize(0);
     {
       static Timer t(timer_name + string("-Smoothers")); RegionTimer rt(t);
@@ -176,6 +167,7 @@ namespace amg
 	// cout << "mat: " << mats[k] << endl;
 	// cout << mats[k]->Height() << " x " << mats[k]->Width() << endl;
 	auto pds = dof_map->GetParDofs(k);
+	// cout << "pds: " << pds << endl;
 	// cout << "ndglob: " << pds->GetNDofGlobal() << endl;
 	auto sm = BuildSmoother(ass_levels[k], mats[k], pds, (k==0) ? options->finest_free_dofs : nullptr);
 	sm->Finalize();
@@ -193,7 +185,7 @@ namespace amg
     {
       static Timer t(timer_name + string("-CLevel")); RegionTimer rt(t);
       if (options->clev_type=="INV") {
-    	if (mats.Last()!=nullptr) {
+    	if (mats.Last() != nullptr) {
 	  // cout << "COARSE MAT: " << endl << *mats.Last() << endl;
 	  auto cpds = dof_map->GetMappedParDofs();
 	  auto comm = cpds->GetCommunicator();
@@ -793,6 +785,17 @@ namespace amg
       for (auto k : Range(min_def_dof, max_def_dof))
 	{ options->on_dofs->Set(k); }
     }
+
+    int ll = aflags.GetNumFlag("ngs_amg_log_level", 0);
+    switch (ll) {
+    case(0) : { options->info_level = NONE; break; }
+    case(1) : { options->info_level = BASIC; options->print_info = true; break; }
+    case(2) : { options->info_level = DETAILED; options->print_info = true; break; }
+    case(3) : { options->info_level = EXTRA; options->print_info = true; break; }
+    default : { break; }
+    }
+
+    options->info_file = aflags.GetStringFlag("ngs_amg_log_file", "");
     
     ModifyInitialOptions();
   }
@@ -844,7 +847,11 @@ namespace amg
     else {
       Array<int> perow (fine_spm->Height()); perow = 0;
       Table<int> pds (perow);
-      fine_spm->SetParallelDofs(make_shared<ParallelDofs> (MPI_COMM_WORLD, move(pds), GetEntryDim(fine_spm.get()), false));
+      NgsMPI_Comm c(MPI_COMM_WORLD);
+      // TODO: directly MPI_Comm, is never cleaned up
+      netgen::Array<int> me(1); me[0] = c.Rank();
+      MPI_Comm mecomm = (c.Size() == 1) ? MPI_COMM_WORLD : netgen::MyMPI_SubCommunicator(c, me );
+      fine_spm->SetParallelDofs(make_shared<ParallelDofs> ( mecomm , move(pds), GetEntryDim(fine_spm.get()), false));
     }
     
     auto mesh = BuildInitialMesh();
@@ -876,15 +883,15 @@ namespace amg
     size_t maxset = 0;
     if ( (O.v_dofs == "NODAL") && (O.on_dofs != nullptr) ) {
       for (auto k : Range(O.on_dofs->Size()))
-	if (O.in_dofs->Test(k))
-	  { maxset = k; }
+	if (O.on_dofs->Test(k))
+	  { maxset = k+1; }
     }
     else if (O.v_dofs == "VARIABLE")
-      { maxset = (O.v_blocks.Size() > 0) ? O.v_blocks[O.v_blocks.Size()-1][0] : 0; }
+      { maxset = (O.v_blocks.Size() > 0) ? O.v_blocks[O.v_blocks.Size()-1][0]+1 : 0; }
     else
       { maxset =  fpd->GetNDofLocal(); }
 
-    eqc_h = make_shared<EQCHierarchy>(fpd, true, maxset+1);
+    eqc_h = make_shared<EQCHierarchy>(fpd, true, maxset);
 
     t1.Stop();
     t2.Start();
@@ -946,76 +953,80 @@ namespace amg
 
       top_mesh = make_shared<BlockTM>(eqc_h);
       
-      // vertices
       size_t n_verts = 0, n_edges = 0;
+
       auto & vert_sort = node_sort[NT_VERTEX];
-      Array<decltype(AMG_Node<NT_EDGE>::v)> epairs;
+
+      // vertives
+      auto set_vs = [&](auto nv, auto v2d) {
+	vert_sort.SetSize(nv);
+	top_mesh->SetVs (nv, [&](auto vnr)->FlatArray<int> { return fpd->GetDistantProcs(v2d(vnr)); },
+			 [&vert_sort](auto i, auto j){ vert_sort[i] = j; });
+      };
 
       // edges 
-      auto create_edges = [&]( auto v2d, auto d2v ) { // vertex->dof,  // dof-> vertex
-	auto traverse_graph = [&](const MatrixGraph & g, auto fun) {
+      auto create_edges = [&](auto v2d, auto d2v) {
+	auto traverse_graph = [&](const auto& g, auto fun) { // vertex->dof,  // dof-> vertex
 	  for (auto k : Range(n_verts)) {
-	    auto row = v2d(k);
+	    int row = v2d(k); // for find_in_sorted_array
 	    auto ri = g.GetRowIndices(row);
-	    auto pos = find_in_sorted_array(ri, row); // no duplicates
-	    for (auto col : ri.Part(pos)) {
-	      auto j = d2v(col);
-	      if (j != -1) { fun(vert_sort[k],vert_sort[j]); }
+	    auto pos = find_in_sorted_array(row, ri); // no duplicates
+	    if (pos+1 < ri.Size()) {
+	      for (auto col : ri.Part(pos+1)) {
+		auto j = d2v(col);
+		if (j != -1) { fun(vert_sort[k],vert_sort[j]); }
+	      }
 	    }
 	  }
-	};
+	}; // traverse_graph
 	auto bspm = dynamic_pointer_cast<BaseSparseMatrix>(finest_mat);
 	if (!bspm) { bspm = dynamic_pointer_cast<BaseSparseMatrix>( dynamic_pointer_cast<ParallelMatrix>(finest_mat)->GetMatrix()); }
 	if (!bspm) { throw Exception("could not get BaseSparseMatrix out of finest_mat!!"); }
 	n_edges = 0;
 	traverse_graph(*bspm, [&](auto vk, auto vj) { n_edges++; });
-	epairs.SetSize(n_edges); n_edges = 0;
-	traverse_graph(*bspm, [&](auto vk, auto vj) { epairs[n_edges++] = {vk, vj}; });
-      };
+	Array<decltype(AMG_Node<NT_EDGE>::v)> epairs(n_edges);
+	n_edges = 0;
+	traverse_graph(*bspm, [&](auto vk, auto vj) {
+	    if (vk < vj) { epairs[n_edges++] = {vk, vj}; }
+	    else { epairs[n_edges++] = {vj, vk}; }
+	  });
+	top_mesh->SetNodes<NT_EDGE> (n_edges, [&](auto num) { return epairs[num]; }, // (already v-sorted)
+				     [](auto node_num, auto id) { /* dont care about edge-sort! */ });
+      }; // create_edges
 
       if (O.v_dofs == "NODAL") {
 	int dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
 	const auto bs0 = O.block_s[0];
-	n_verts = (O.on_dofs != nullptr) ? O.on_dofs->NumSet() / dpv : fpd->GetNDofLocal() / dpv;
-
-	Array<int> first_dof(n_verts);
-	Array<int> compress(maxset); compress = -1;
-	if (O.on_dofs != nullptr)
-	  for (size_t k = 0, j = 0; k < n_verts; j += bs0) {
-	    if (O.on_block->Test(j))
-	      { first_dof[k] = j; compress[j] = k; }
-	  }
-	else {
-	  for (auto k : Range(n_verts))
-	    { first_dof[k] = bs0 * k; compress[bs0*k] = k; }
+	if (O.on_dofs == nullptr) { // coarsening all dofs
+	  n_verts = fpd->GetNDofLocal() / dpv;
+	  auto d2v = [&](auto d) -> int { return ( (d%bs0) == 0) ? d/bs0 : -1; };
+	  auto v2d = [&](auto v) { return bs0 * v; };
+	  set_vs (n_verts, v2d);
+	  create_edges ( v2d , d2v );
 	}
-	auto v2d = [&](auto v) { return first_dof[v]; };
-	auto d2v = [&](auto d) -> int { return compress[d]; };
-
-	vert_sort.SetSize(n_verts);
-	top_mesh->SetVs (n_verts, [&](auto vnr)->FlatArray<int> { return fpd->GetDistantProcs(v2d(vnr)); },
-			 [&vert_sort](auto i, auto j){ vert_sort[i] = j; });
-	create_edges ( [&](auto v) { return bs0 * v; }, [&](auto d) -> int { return ( (d%bs0) == 0) ? -1 : d/bs0; } );
+	else { // coarsening on a subset
+	  n_verts = O.on_dofs->NumSet() / dpv;
+	  Array<int> first_dof(n_verts);
+	  Array<int> compress(maxset); compress = -1;
+	  for (size_t k = 0, j = 0; k < n_verts; j += bs0)
+	    if (O.on_dofs->Test(j))
+	      { first_dof[k] = j; compress[j] = k; }
+	  auto v2d = [&](auto v) { return first_dof[v]; };
+	  auto d2v = [&](auto d) -> int { return compress[d]; };
+	  set_vs (n_verts, v2d);
+	  create_edges ( v2d , d2v );
+	}
       }
       else {
 	auto& vblocks = O.v_blocks;
-	n_verts = O.v_blocks.Size();
-	vert_sort.SetSize(n_verts);
-
+	n_verts = vblocks.Size();
 	auto v2d = [&](auto v) { return vblocks[v][0]; };
-
 	Array<int> compress(vblocks[n_verts-1][0]); compress = -1;
-	for (auto k : Range(compress.Size())) { compress[v2d[k]] = k; }
+	for (auto k : Range(compress.Size())) { compress[v2d(k)] = k; }
 	auto d2v = [&](auto d) -> int { return compress[d]; };
-
-	top_mesh->SetVs (n_verts, [&](auto vnr)->FlatArray<int> { return fpd->GetDistantProcs(v2d(vnr)); },
-			 [&vert_sort](auto i, auto j){ vert_sort[i] = j; });
-
-
+	set_vs (n_verts, v2d);
 	create_edges ( v2d , d2v );
       }
-
-      top_mesh->SetNodes<NT_EDGE> (n_edges, [&](auto num) { return epairs[num]; }); // (already v-sorted)
     }
     t2.Stop();
     t3.Start();

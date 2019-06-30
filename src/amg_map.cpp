@@ -24,6 +24,10 @@ namespace amg
     // cout << "CONCSTEPS: " << endl; prow2(steps); cout << endl;
     static Timer t("DOFMap::ConcSteps");
     RegionTimer rt(t);
+
+    if (steps.Size() == 1) // nothing to do
+      { return; }
+    
     Array<shared_ptr<BaseDOFMapStep>> sub_steps(steps.Size()),
       new_steps(steps.Size()), rss(0);
     new_steps.SetSize(0);

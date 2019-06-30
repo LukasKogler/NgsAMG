@@ -148,9 +148,9 @@ namespace amg
     auto emb_mat = BuildPermutationMatrix<double>(vsort);
     if (options->on_dofs != nullptr) { // embed this
       Array<int> perow(fpds->GetNDofLocal());
-      for (auto k : Rang(fpds->GetNDofLocal()))
+      for (auto k : Range(fpds->GetNDofLocal()))
 	perow[k] = options->on_dofs->Test(k) ? 1 : 0;
-      auto mat = make_shared<SparseMatrix<double>>(perow);
+      auto mat = make_shared<SparseMatrixTM<double>>(perow, fpds->GetNDofLocal());
       int cnt = 0;
       for (auto k : Range(fpds->GetNDofLocal()))
 	if (options->on_dofs->Test(k)) {
