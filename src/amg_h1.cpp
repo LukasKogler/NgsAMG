@@ -125,12 +125,15 @@ namespace amg
       auto ad = a->Data();
       for (auto k : Range(NV)) {
 	auto rvs = fspm->GetRowValues(k);
+	auto ris = fspm->GetRowIndices(k);
 	double sum = 0;
-	for (auto v : rvs)
-	  if (v < NV) // constant vec only has LO dof vals...
-	    { sum += v; }
-	ad[rvsort[k]] = sum;
+	for (auto j : Range(ris)) {
+	  if (ris[j] < NV)  // constant vec only has LO dof vals...
+	    { sum += rvs[j]; }
+	}
+	ad[rvsort[k]] = fabs(sum);
       }
+
       // off-diag entry -> is edge weight
       auto edges = top_mesh->GetNodes<NT_EDGE>();
       const auto & cspm(*fspm);
