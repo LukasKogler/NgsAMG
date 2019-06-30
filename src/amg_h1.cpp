@@ -111,7 +111,7 @@ namespace amg
       // cout << "elmat edge weights: " << endl; prow2(bd); cout << endl;
     }
     else { // "ALG"
-      // provisional for now, will probably only work on actually nodal mats
+      // TODO: ONLY WORKS FOR ACTUAL 0..nv DOF ORDERING!! (should be fine most of the time..)
       FlatArray<int> vsort = node_sort[NT_VERTEX];
       Array<int> rvsort(vsort.Size());
       for (auto k : Range(vsort.Size()))
@@ -125,7 +125,10 @@ namespace amg
       auto ad = a->Data();
       for (auto k : Range(NV)) {
 	auto rvs = fspm->GetRowValues(k);
-	double sum = 0; for (auto v : rvs) sum += v;
+	double sum = 0;
+	for (auto v : rvs)
+	  if (v < NV) // constant vec only has LO dof vals...
+	    { sum += v; }
 	ad[rvsort[k]] = sum;
       }
       // off-diag entry -> is edge weight
