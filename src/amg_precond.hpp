@@ -476,6 +476,7 @@ namespace amg
 	    "MESH" -> take from Mesh
 	    "ALG" -> calc from FEM-Matrix **/
       string edges = "ALG";
+      bool mat_ready = false; // set this if BLF is already assembled so we call Init/Finalize ourselfs
     };
     using TMESH = typename AMG_CLASS::TMESH;
 

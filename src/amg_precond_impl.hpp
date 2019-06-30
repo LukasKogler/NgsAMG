@@ -799,7 +799,23 @@ namespace amg
 
     options->info_file = aflags.GetStringFlag("ngs_amg_log_file", "");
     
+    options->mat_ready = aflags.GetDefineFlagX("ngs_amg_mat_ready").IsTrue();
+
     ModifyInitialOptions();
+
+    SetParallelDofs(blf->GetTrialSpace()->GetParallelDofs());
+
+    if (options->energy != "ELMAT") {
+      /** we might be setting up directly from the assembled matrix.
+	  in that case call FinalizeLevel ourselfs **/
+      if (auto mp = bfa->GetMatrixPtr()) { // is also not nullptr if we are being used as coarse solver
+	if (options->mat_ready) {
+	  InitLevel(bfa->GetFESpace()->GetFreeDofs(bfa->UsesEliminateInternal()));
+	  FinalizeLevel(mp.get());
+	}
+      }
+    }
+
   }
 
 
@@ -842,6 +858,7 @@ namespace amg
   template<class AMG_CLASS, class HTVD, class HTED>
   void EmbedVAMG<AMG_CLASS, HTVD, HTED> :: FinalizeLevel (const BaseMatrix * mat)
   {
+
     static Timer t(string("EmbedVAMG::FinalizeLevel")); RegionTimer rt(t);
 
     if (options->sync)
@@ -1048,8 +1065,11 @@ namespace amg
 	  create_edges ( v2d , d2v );
 	}
 
-	// cout << "AMG performed on " << n_verts << " vertices, ndof local is: " << fpd->GetNDofLocal() << endl;
-	// cout << "free dofs " << options->finest_free_dofs->NumSet() << " ndof local is: " << fpd->GetNDofLocal() << endl;
+	// if (NgMPI_Comm(MPI_COMM_WORLD).Rank() == 1) {
+	//   cout << "AMG performed on " << n_verts << " vertices, ndof local is: " << fpd->GetNDofLocal() << endl;
+	//   cout << "free dofs " << options->finest_free_dofs->NumSet() << " ndof local is: " << fpd->GetNDofLocal() << endl;
+	// }
+
       }
       else {
 	auto& vblocks = O.v_blocks;
