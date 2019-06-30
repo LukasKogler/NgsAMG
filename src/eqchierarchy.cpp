@@ -89,11 +89,13 @@ namespace amg {
 	  neqcs++;	
 	}
 	vanilla_dps = Table<int>(size_of_dps);
-	for (auto k:Range(size_t(1), neqcs)) {
-	  // if (vanilla_dps[k].Size()) { // i think i dont need this anymore since local EQ is hard-coded to 0
-	  auto dps = apd->GetDistantProcs(index_of_block[k]);
-	  vanilla_dps[k] = dps;
-	  //}
+	if (neqcs > 1) { //size_t range...
+	  for (auto k:Range(size_t(1), neqcs)) {
+	    // if (vanilla_dps[k].Size()) { // i think i dont need this anymore since local EQ is hard-coded to 0
+	    auto dps = apd->GetDistantProcs(index_of_block[k]);
+	    vanilla_dps[k] = dps;
+	    //}
+	  }
 	}
       }
 

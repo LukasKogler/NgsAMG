@@ -713,7 +713,7 @@ namespace amg
   
   template<class AMG_CLASS, class HTVD, class HTED>
   EmbedVAMG<AMG_CLASS, HTVD, HTED> :: EmbedVAMG (shared_ptr<BilinearForm> blf, shared_ptr<EmbedVAMG<AMG_CLASS, HTVD, HTED>::Options> opts)
-    : Preconditioner(blf, Flags() /*(opts->energy=="ELMAT" ? Flags() : Flags({"not_register_for_auto_update"}))*/), options(opts), bfa(blf), fes(blf->GetFESpace()),
+    : Preconditioner(blf, Flags() /*(opts->energy=="ELMAT" ? Flags() : Flags({"not_register_for_auto_update"}))*/), options(opts), bfa(blf),
       node_sort(4), node_pos(4), ht_vertex(nullptr), ht_edge(nullptr)
   {
 
@@ -723,10 +723,12 @@ namespace amg
     if (options->energy != "ELMAT") {
       /** we might be setting up directly from the assembled matrix.
 	  in that case call FinalizeLevel ourselfs **/
-      if (auto mp = bfa->GetMatrixPtr())
-	{ FinalizeLevel(mp.get()); }
+      if (auto mp = bfa->GetMatrixPtr()) {
+	InitLevel(bfa->GetFESpace()->GetFreeDofs());
+	FinalizeLevel(mp.get());
+      }
     }
-    else {
+    else { // TODO: this probably does not work with standard Preconditioner interface
       if (auto mp = bfa->GetMatrixPtr()) {
 	throw Exception("energy is set to ELMAT, but BLF is already assembled!!");
       }
@@ -760,7 +762,7 @@ namespace amg
 
   template<class AMG_CLASS, class HTVD, class HTED>
   EmbedVAMG<AMG_CLASS, HTVD, HTED> :: EmbedVAMG (shared_ptr<BilinearForm> blf, const Flags & aflags, const string aname)
-    : Preconditioner(blf, aflags, aname), options(make_shared<EmbedVAMG<AMG_CLASS, HTVD, HTED>::Options>()), bfa(blf), fes(blf->GetFESpace()),
+    : Preconditioner(blf, aflags, aname), options(make_shared<EmbedVAMG<AMG_CLASS, HTVD, HTED>::Options>()), bfa(blf),
       node_sort(4), node_pos(4), ht_vertex(nullptr), ht_edge(nullptr)
   {
 
@@ -817,7 +819,23 @@ namespace amg
   template<class AMG_CLASS, class HTVD, class HTED>
   void EmbedVAMG<AMG_CLASS, HTVD, HTED> :: InitLevel (shared_ptr<BitArray> freedofs)
   {
-    options->finest_free_dofs = freedofs;
+    if (freedofs == nullptr) // postpone to FinalizeLevel
+      { return; }
+
+    if (bfa->UsesEliminateInternal()) {
+      auto fes = bfa->GetFESpace();
+      options->finest_free_dofs = make_shared<BitArray>(*freedofs);
+      auto& ofd(*options->finest_free_dofs);
+      for (auto k : Range(freedofs->Size()))
+	if (ofd.Test(k)) {
+	  COUPLING_TYPE ct = fes->GetDofCouplingType(k);
+	  if ((ct & CONDENSABLE_DOF) != 0)
+	    ofd.Clear(k);
+	}
+    }
+    else
+      { options->finest_free_dofs = freedofs; }
+
   }
 
 
@@ -833,6 +851,12 @@ namespace amg
 	  pmat->GetParallelDofs()->GetCommunicator().Barrier();
 	}
       }
+
+    if (options->finest_free_dofs == nullptr) { // dummy freedofs
+      options->finest_free_dofs = make_shared<BitArray>(mat->Height());
+      options->finest_free_dofs->Set();
+    }
+
 
     shared_ptr<BaseMatrix> fine_spm;
     if (mat != nullptr)
@@ -851,6 +875,7 @@ namespace amg
       // TODO: directly MPI_Comm, is never cleaned up
       netgen::Array<int> me(1); me[0] = c.Rank();
       MPI_Comm mecomm = (c.Size() == 1) ? MPI_COMM_WORLD : netgen::MyMPI_SubCommunicator(c, me );
+      // NOTE: this will have an effect on jaboci-preconditioner (if i ever get around to redoing the hybrid smoothers)
       fine_spm->SetParallelDofs(make_shared<ParallelDofs> ( mecomm , move(pds), GetEntryDim(fine_spm.get()), false));
     }
     
@@ -974,7 +999,13 @@ namespace amg
 	    if (pos+1 < ri.Size()) {
 	      for (auto col : ri.Part(pos+1)) {
 		auto j = d2v(col);
-		if (j != -1) { fun(vert_sort[k],vert_sort[j]); }
+		if (j != -1) {
+		  // cout << "dofs " << row << " " << col << " are vertices " << k << " " << j << endl;
+		  fun(vert_sort[k],vert_sort[j]);
+		}
+		// else {
+		//   cout << "dont use " << row << " " << j << " with dof " << col << endl;
+		// }
 	      }
 	    }
 	  }
@@ -1010,12 +1041,15 @@ namespace amg
 	  Array<int> compress(maxset); compress = -1;
 	  for (size_t k = 0, j = 0; k < n_verts; j += bs0)
 	    if (O.on_dofs->Test(j))
-	      { first_dof[k] = j; compress[j] = k; }
+	      { first_dof[k] = j; compress[j] = k++; }
 	  auto v2d = [&](auto v) { return first_dof[v]; };
-	  auto d2v = [&](auto d) -> int { return compress[d]; };
+	  auto d2v = [&](auto d) -> int { return (d+1 > compress.Size()) ? -1 : compress[d]; };
 	  set_vs (n_verts, v2d);
 	  create_edges ( v2d , d2v );
 	}
+
+	// cout << "AMG performed on " << n_verts << " vertices, ndof local is: " << fpd->GetNDofLocal() << endl;
+	// cout << "free dofs " << options->finest_free_dofs->NumSet() << " ndof local is: " << fpd->GetNDofLocal() << endl;
       }
       else {
 	auto& vblocks = O.v_blocks;
@@ -1023,30 +1057,21 @@ namespace amg
 	auto v2d = [&](auto v) { return vblocks[v][0]; };
 	Array<int> compress(vblocks[n_verts-1][0]); compress = -1;
 	for (auto k : Range(compress.Size())) { compress[v2d(k)] = k; }
-	auto d2v = [&](auto d) -> int { return compress[d]; };
+	auto d2v = [&](auto d) -> int { return (d+1 > compress.Size()) ? -1 : compress[d]; };
 	set_vs (n_verts, v2d);
 	create_edges ( v2d , d2v );
       }
     }
     t2.Stop();
     t3.Start();
-    /** Convert FreeDofs **/
 
-
-    // ACTUALLY:: TODO:: MOVE FREEDOFS TO EMBEDDING (??)
-    // for h1 this is definitely the way to go. for hcurl i am not sure
-    
+    /** Convert FreeDofs to FreeVerts (should probably do this above where I have v2d mapping1)**/
     static Timer tfd(this->GetName() + string("::BuildTopMesh - FDS")); RegionTimer rtfd(tfd);
     // TODO:: THIS NEEDS TO WORK WITH on_dofs // v_blocks!!
-    auto fes_fds = fes->GetFreeDofs();
     auto fvs = make_shared<BitArray>(top_mesh->GetNN<NT_VERTEX>()); fvs->Clear();
-    // HCURLMARKER (this means that I have to do something more refined here..)
     auto & vsort = node_sort[NT_VERTEX];
-    for (auto k : Range(top_mesh->GetNN<NT_VERTEX>())) if (fes_fds->Test(k)) { fvs->Set(vsort[k]); }
-    // cout << "vertex sort: " << endl; prow2(vsort); cout << endl;
+    for (auto k : Range(top_mesh->GetNN<NT_VERTEX>())) if (O.finest_free_dofs->Test(k)) { fvs->Set(vsort[k]); }
     O.free_verts = fvs;
-    if (O.finest_free_dofs == nullptr) // could already be set by InitLevel
-      { O.finest_free_dofs = fes_fds; }
     t3.Stop();
     return top_mesh;
   }

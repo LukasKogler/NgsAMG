@@ -548,7 +548,6 @@ namespace amg
     shared_ptr<Options> options;
   protected:
     shared_ptr<BilinearForm> bfa;
-    shared_ptr<FESpace> fes;
     shared_ptr<AMG_CLASS> amg_pc;
     shared_ptr<BaseMatrix> finest_mat = nullptr;
     // shared_ptr<BaseMatrix> embed_mat;
