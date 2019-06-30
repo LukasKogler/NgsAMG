@@ -255,6 +255,7 @@ namespace amg
 	  out << "Operator complexity: " << op_comp << endl;
 	  out << "Operator complexity components: "; prow(occ, out); out << endl;
 	  out << "Prol. entries per row: "; prow(rpp, out); out << endl;
+	  out << "# vertices in grids: "; prow(NVs, out); out << endl;
 	}
   	if (ilev >= DETAILED ) {
 	  out << "Memory complexity: " << mem_comp1 << endl;
