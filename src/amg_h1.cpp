@@ -179,7 +179,7 @@ namespace amg
   }
 
   
-  RegisterPreconditioner<EmbedVAMG<H1AMG>> registet_h1amg_scal("ngs_amg.h1_scal");
+  RegisterPreconditioner<EmbedVAMG<H1AMG>> register_h1amg_scal("ngs_amg.h1_scal");
   
 } // namespace amg
 

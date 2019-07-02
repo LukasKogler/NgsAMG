@@ -147,12 +147,13 @@ namespace amg
     else if (auto p = dynamic_cast<const SparseMatrixTM<Mat<1,2,double>>*>(&mat)) { return p->GetMemoryUsage(); }
     else if (auto p = dynamic_cast<const SparseMatrixTM<Mat<1,3,double>>*>(&mat)) { return p->GetMemoryUsage(); }
     else if (auto p = dynamic_cast<const SparseMatrixTM<Mat<1,6,double>>*>(&mat)) { return p->GetMemoryUsage(); }
+    else if (auto p = dynamic_cast<const SparseMatrixTM<Mat<2,2,double>>*>(&mat)) { return p->GetMemoryUsage(); }
     else if (auto p = dynamic_cast<const SparseMatrixTM<Mat<2,3,double>>*>(&mat)) { return p->GetMemoryUsage(); }
     else if (auto p = dynamic_cast<const SparseMatrixTM<Mat<3,3,double>>*>(&mat)) { return p->GetMemoryUsage(); }
     else if (auto p = dynamic_cast<const SparseMatrixTM<Mat<3,6,double>>*>(&mat)) { return p->GetMemoryUsage(); }
     else if (auto p = dynamic_cast<const SparseMatrixTM<Mat<6,6,double>>*>(&mat)) { return p->GetMemoryUsage(); }
     else {
-      throw Exception("GetMemoryUsage for weird matrix!");
+      throw Exception(string("GetMemoryUsage for weird matrix: ") + typeid(mat).name());
       return Array<MemoryUsage>();
     }
   }

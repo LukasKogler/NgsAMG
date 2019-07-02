@@ -306,6 +306,22 @@ namespace amg
       { throw Exception("INVALID SOC!"); }
   }
   
+  template<class C, class D, class E>
+  void EmbedVAMG<C, D, E> :: ModifyInitialOptions ()
+  {
+    if (bfa->GetFESpace()->GetDimension() == 1) {
+      options->block_s.SetSize(disppv(C::DIM));
+      options->block_s = 1;
+    }
+    else { // assume that this is ok
+      options->block_s = { disppv(C::DIM) }; // compound
+    }
+
+    options->keep_vp = true;
+    // options->edges = "MESH"; // actually broken for HO
+    options->singular_diag = true; // false anyways
+  }
+
   INLINE Timer & timer_hack_Hack_BuildAlgMesh () { static Timer t("ElasticityAMG::BuildAlgMesh"); return t; }
   template<class C, class D, class E> shared_ptr<typename C::TMESH>
   EmbedVAMG<C, D, E> :: BuildAlgMesh (shared_ptr<BlockTM> top_mesh)
@@ -353,15 +369,18 @@ namespace amg
 	shared_ptr<BaseMatrix> fseqmat = finest_mat;
 	if (auto fpm = dynamic_pointer_cast<ParallelMatrix>(finest_mat))
 	  fseqmat = fpm->GetMatrix();
-	auto fspm = dynamic_pointer_cast<SparseMatrixTM<Mat<disppv(C::DIM), disppv(C::DIM), double>>>(fseqmat);
+	auto fspm = dynamic_pointer_cast<SparseMatrixTM<Mat<disppv(C::DIM), disppv(C::DIM), double>>>(fseqmat); // jesus this does not work for bddc (converts to SPMDBL)
 	const auto & cspm(*fspm);
 	FlatArray<int> vsort = node_sort[NT_VERTEX];
 	Array<int> rvsort(vsort.Size());
 	for (auto k : Range(vsort.Size()))
 	  rvsort[vsort[k]] = k;
 	auto edges = top_mesh->GetNodes<NT_EDGE>();
+	auto& fvs = *options->free_verts;
 	for (auto & e : edges) {
-	  double fc = fabsum(cspm(rvsort[e.v[0]], rvsort[e.v[1]])) / dofpv(C::DIM);;
+	  auto rv0 = rvsort[e.v[0]];
+	  auto rv1 = rvsort[e.v[1]];
+	  double fc = (fvs.Test(rv0) && fvs.Test(rv1)) ? fabsum(cspm(rv0, rv1)) / dofpv(C::DIM) : 1e-4; // after BBDC, diri entries are compressed
 	  auto& emat = we[e.id]; emat = 0;
 	  Iterate<disppv(C::DIM)>([&](auto i) { emat(i.value, i.value) = fc; });
 	  // Iterate<rotpv(C::DIM)>([&](auto i) { emat(disppv(C::DIM)+i.value, disppv(C::DIM)+i.value) = 1e-10 * fc; });
@@ -388,7 +407,25 @@ namespace amg
 	}
 	using TESM = Mat<disppv(C::DIM), dofpv(C::DIM)>;
 	options->regularize = true;
-	auto pmap = make_shared<ProlMap<SparseMatrixTM<TESM>>> (BuildPermutationMatrix<TESM>(vsort), fpardofs, nullptr);
+
+	auto permat = BuildPermutationMatrix<TESM>(vsort);
+	if (options->on_dofs != nullptr) { // embed this
+	  Array<int> perow(fpardofs->GetNDofLocal());
+	  for (auto k : Range(fpardofs->GetNDofLocal()))
+	    perow[k] = options->on_dofs->Test(k) ? 1 : 0;
+	  auto mat = make_shared<SparseMatrixTM<Mat<disppv(C::DIM), disppv(C::DIM)>>>(perow, fpardofs->GetNDofLocal());
+	  int cnt = 0;
+	  for (auto k : Range(fpardofs->GetNDofLocal()))
+	    if (options->on_dofs->Test(k)) {
+	      mat->GetRowIndices(k) = cnt++;
+	      SetIdentity(mat->GetRowValues(k)[0]);
+	    }
+	  permat = MatMultAB(*mat, *permat);
+	}
+	else if (vsort.Size() != fpardofs->GetNDofLocal())
+	  { throw Exception("When seem to not be working on the full space, but we do not know where!"); }
+
+	auto pmap = make_shared<ProlMap<SparseMatrixTM<TESM>>> (permat, fpardofs, nullptr);
 	return pmap;
       }
       else if (options->block_s.Size() > 1) {
@@ -699,6 +736,9 @@ namespace amg
   template void ElEData<2>::map_data (const CoarseMap<ElasticityMesh<2>> & cmap, ElEData<2> & cdata) const;
   template void ElEData<3>::map_data (const CoarseMap<ElasticityMesh<3>> & cmap, ElEData<3> & cdata) const;
 
+
+  RegisterPreconditioner<EmbedVAMG<ElasticityAMG<2>, double, STABEW<2>>> register_el_2d("ngs_amg.el_2d");
+  RegisterPreconditioner<EmbedVAMG<ElasticityAMG<3>, double, STABEW<3>>> register_el_3d("ngs_amg.el_3d");
 
 } // namespace amg
 

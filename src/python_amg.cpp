@@ -184,16 +184,22 @@ PYBIND11_MODULE (ngs_amg, m) {
   amg::Export1<amg::EmbedVAMG<amg::ElasticityAMG<2>, double, amg::STABEW<2>>>
     (m, "AMG_EL2", "Ngs-AMG for 2d elasticity",
      [](auto & o, auto & kwa) {
+      o->block_s = { 2 };
       o->keep_vp = true;
+      o->edges = "MESH";
       o->singular_diag = ( (kwa.contains("sing_diag")) && (kwa["sing_diag"].template cast<bool>()) == false) ? false : true;
+      o->print_info = ( (kwa.contains("log_level")) && (kwa["log_level"].template cast<bool>()) == true) ? true : false;
       if (kwa.contains("soc"))
 	o->soc = amg::capitalize_it(kwa["soc"].template cast<string>());
     });
   amg::Export1<amg::EmbedVAMG<amg::ElasticityAMG<3>, double, amg::STABEW<3>>>
-    (m, "AMG_EL3", "Ngs-AMG for 2d elasticity",
+    (m, "AMG_EL3", "Ngs-AMG for 3d elasticity",
      [](auto & o, auto & kwa) {
+      o->block_s = { 3 };
       o->keep_vp = true;
+      o->edges = "MESH";
       o->singular_diag = ( (kwa.contains("sing_diag")) && (kwa["sing_diag"].template cast<bool>()) == false) ? false : true;
+      o->print_info = ( (kwa.contains("log_level")) && (kwa["log_level"].template cast<bool>()) == true) ? true : false;
       if (kwa.contains("soc"))
 	o->soc = amg::capitalize_it(kwa["soc"].template cast<string>());
     });

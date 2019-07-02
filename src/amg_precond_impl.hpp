@@ -190,6 +190,8 @@ namespace amg
 	  auto cpds = dof_map->GetMappedParDofs();
 	  auto comm = cpds->GetCommunicator();
 	  shared_ptr<BaseSparseMatrix> cspm = static_pointer_cast<BaseSparseMatrix>(mats.Last());
+	  // cout << "COARSE MAT: " << endl << *mats.Last() << endl;
+	  // cout << "invert " << cspm->Height() << " " << cpds->GetNDofLocal() << endl;
 	  cspm = RegularizeMatrix(cspm, cpds);
 	  // cout << "invert " << cspm->Height() << " " << cpds->GetNDofLocal() << endl;
 	  if (comm.Size()>0) {
@@ -801,6 +803,8 @@ namespace amg
     
     options->mat_ready = aflags.GetDefineFlagX("ngs_amg_mat_ready").IsTrue();
 
+    options->do_test = aflags.GetDefineFlagX("ngs_amg_test").IsTrue();
+
     ModifyInitialOptions();
 
     SetParallelDofs(blf->GetTrialSpace()->GetParallelDofs());
@@ -816,6 +820,12 @@ namespace amg
       }
     }
 
+    if (options->keep_vp) {
+      auto & vpos(node_pos[NT_VERTEX]); vpos.SetSize(ma->GetNV());
+      for (auto k : Range(vpos.Size()))
+	ma->GetPoint(k,vpos[k]);
+      // cout << "vpos init: " << endl; prow2(vpos); cout << endl;
+    }
   }
 
 
@@ -883,16 +893,63 @@ namespace amg
 
     finest_mat = fine_spm; // embed-amg finest mat - need parallel matrix!
 
+    // I) bddc is garbage with multidim anyways
+    // II) if this comes, back it has to be after parmat-cast
+    // if (GetEntryDim(fine_spm.get()) != bfa->GetFESpace()->GetDimension()) { // BDDC converts to SparseMatrix<SCAL>
+    //   auto fesdim = bfa->GetFESpace()->GetDimension();
+    //   auto matdim = GetEntryDim(fine_spm.get());
+    //   if (matdim != 1)
+    // 	{ throw Exception("can only convert from double mat"); }
+    //   auto pfine_spm = dynamic_cast<SparseMatrix<double>*>(finest_mat.get());
+    //   if (!pfine_spm)
+    // 	{ throw Exception("can only convert from double mat"); }
+    //   Array<int> perow(finest_mat->Height() * matdim / fesdim); perow = 0;
+    //   for (auto k : Range(perow.Size()))
+    // 	{ perow[k] = pfine_spm->GetRowIndices(fesdim / matdim * k).Size() * matdim / fesdim; }
+    //   if (fesdim == 2) {
+    // 	if (NgMPI_Comm(MPI_COMM_WORLD).Rank() == 0)
+    // 	  { cout << "NGsAMG did not get the expected matrix format, converting!" << endl; }
+    // 	auto spm = make_shared<SparseMatrix<Mat<2>>>(perow);
+    // 	for (auto bk : Range(perow.Size())) {
+    // 	  auto bri = spm->GetRowIndices(bk);
+    // 	  auto brv = spm->GetRowValues(bk);
+    // 	  auto ris = pfine_spm->GetRowIndices(bk * fesdim);
+    // 	  auto rvs1 = pfine_spm->GetRowValues(bk * fesdim);
+    // 	  auto rvs2 = pfine_spm->GetRowValues(bk * fesdim + 1);
+    // 	  for (auto j : Range(ris.Size() / fesdim)) {
+    // 	    bri[j] = ris[2*j] / fesdim;
+    // 	    brv[j](0, 0) = rvs1[2*j];
+    // 	    brv[j](0, 1) = rvs1[2*j+1];
+    // 	    brv[j](1, 0) = rvs2[2*j];
+    // 	    brv[j](1, 1) = rvs2[2*j+1];
+    // 	  }
+    // 	}
+    // 	// cout << endl << "converted mat: " << endl << *spm << endl;
+    // 	// cout << "heights " << fine_spm->Height() << " " << GetEntryDim(fine_spm.get()) << endl;
+    // 	// cout << "heights " << spm->Height() << GetEntryDim(spm.get()) << endl;
+    // 	// cout << "heights " << finest_mat->Height() << GetEntryDim(finest_mat.get()) << endl;
+    // 	fine_spm = finest_mat = spm;
+    //   }
+    //   else if (fesdim == 3) {
+    // 	throw Exception("unhandled fes dim");
+    //   }
+    //   else
+    // 	{ throw Exception("unhandled fes dim"); }
+    //   }
+    
     if (auto pmat = dynamic_pointer_cast<ParallelMatrix>(fine_spm))
       { fine_spm = pmat->GetMatrix(); }
     else {
-      Array<int> perow (fine_spm->Height()); perow = 0;
+      if ( (GetEntryDim(fine_spm.get())==1) != (AMG_CLASS::DPN==1) )
+	{ throw Exception("Not sure if this works..."); }
+      Array<int> perow (fine_spm->Height() ); perow = 0;
       Table<int> pds (perow);
       NgsMPI_Comm c(MPI_COMM_WORLD);
       // TODO: directly MPI_Comm, is never cleaned up
       netgen::Array<int> me(1); me[0] = c.Rank();
       MPI_Comm mecomm = (c.Size() == 1) ? MPI_COMM_WORLD : netgen::MyMPI_SubCommunicator(c, me );
       // NOTE: this will have an effect on jaboci-preconditioner (if i ever get around to redoing the hybrid smoothers)
+      // fine_spm->SetParallelDofs(make_shared<ParallelDofs> ( mecomm , move(pds), GetEntryDim(fine_spm.get()), false));
       fine_spm->SetParallelDofs(make_shared<ParallelDofs> ( mecomm , move(pds), GetEntryDim(fine_spm.get()), false));
     }
     
@@ -902,6 +959,13 @@ namespace amg
     auto embed_step = BuildEmbedding();
 
     amg_pc->Finalize(fine_spm, embed_step); // VAMG finest mat
+
+    if (options->do_test)
+      {
+	printmessage_importance = 1; 
+	netgen::printmessage_importance = 1; 
+	Test();
+      }
   }
 
 
@@ -999,7 +1063,7 @@ namespace amg
 
       auto & vert_sort = node_sort[NT_VERTEX];
 
-      // vertives
+      // vertices
       auto set_vs = [&](auto nv, auto v2d) {
 	vert_sort.SetSize(nv);
 	top_mesh->SetVs (nv, [&](auto vnr)->FlatArray<int> { return fpd->GetDistantProcs(v2d(vnr)); },
@@ -1044,19 +1108,23 @@ namespace amg
 
       if (O.v_dofs == "NODAL") {
 	int dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
-	const auto bs0 = O.block_s[0];
+	const auto bs0 = O.block_s[0]; // is this not kind of redundant ?
+	const auto fes_bs = fpd->GetEntrySize();
 	if (O.on_dofs == nullptr) { // coarsening all dofs
-	  n_verts = fpd->GetNDofLocal() / dpv;
-	  auto d2v = [&](auto d) -> int { return ( (d%bs0) == 0) ? d/bs0 : -1; };
-	  auto v2d = [&](auto v) { return bs0 * v; };
+	  n_verts = fpd->GetNDofLocal() * fes_bs / dpv;
+	  auto d2v = [&](auto d) -> int { return ( (d%(fes_bs/bs0)) == 0) ? d*fes_bs/bs0 : -1; };
+	  auto v2d = [&](auto v) { return bs0/fes_bs * v; };
 	  set_vs (n_verts, v2d);
 	  create_edges ( v2d , d2v );
 	}
 	else { // coarsening on a subset
-	  n_verts = O.on_dofs->NumSet() / dpv;
+	  // cout << "on_dofs: " << endl << *O.on_dofs << endl;
+	  n_verts = O.on_dofs->NumSet() * fes_bs / dpv;
+	  // cout << O.on_dofs->NumSet() << " * " << fes_bs << " / " << dpv << " = " << n_verts << endl;
 	  Array<int> first_dof(n_verts);
 	  Array<int> compress(maxset); compress = -1;
-	  for (size_t k = 0, j = 0; k < n_verts; j += bs0)
+	  // cout << "maxset: " << maxset << endl;
+	  for (size_t k = 0, j = 0; k < n_verts; j += bs0 / fes_bs)
 	    if (O.on_dofs->Test(j))
 	      { first_dof[k] = j; compress[j] = k++; }
 	  auto v2d = [&](auto v) { return first_dof[v]; };
@@ -1065,10 +1133,10 @@ namespace amg
 	  create_edges ( v2d , d2v );
 	}
 
-	// if (NgMPI_Comm(MPI_COMM_WORLD).Rank() == 1) {
-	//   cout << "AMG performed on " << n_verts << " vertices, ndof local is: " << fpd->GetNDofLocal() << endl;
-	//   cout << "free dofs " << options->finest_free_dofs->NumSet() << " ndof local is: " << fpd->GetNDofLocal() << endl;
-	// }
+	if (NgMPI_Comm(MPI_COMM_WORLD).Rank() == 1) {
+	  cout << "AMG performed on " << n_verts << " vertices, ndof local is: " << fpd->GetNDofLocal() << endl;
+	  cout << "free dofs " << options->finest_free_dofs->NumSet() << " ndof local is: " << fpd->GetNDofLocal() << endl;
+	}
 
       }
       else {

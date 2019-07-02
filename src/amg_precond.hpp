@@ -258,6 +258,7 @@ namespace amg
 	  out << "# vertices in grids: "; prow(NVs, out); out << endl;
 	}
   	if (ilev >= DETAILED ) {
+	  out << "# procs active: "; prow(NPs, out); out << endl;
 	  out << "Memory complexity: " << mem_comp1 << endl;
 	  out << "Memory complexity components: "; prow(mcc1, out); out << endl;
 	  out << "Smoother memory overhead: " << mem_comp2 << endl;
@@ -478,6 +479,7 @@ namespace amg
 	    "ALG" -> calc from FEM-Matrix **/
       string edges = "ALG";
       bool mat_ready = false; // set this if BLF is already assembled so we call Init/Finalize ourselfs
+      bool do_test = false;
     };
     using TMESH = typename AMG_CLASS::TMESH;
 
@@ -488,7 +490,7 @@ namespace amg
     ~EmbedVAMG ();
 
     // a way for different embeds to set some optins. called at end of constructor
-    virtual void ModifyInitialOptions () { ; }
+    virtual void ModifyInitialOptions ();
 
     virtual const BaseMatrix & GetMatrix() const override
     { return amg_pc->GetMatrix(); }

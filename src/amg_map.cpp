@@ -10,7 +10,12 @@ namespace amg
     cutoffs.SetSize(acutoffs.Size());
     cutoffs = acutoffs;
     ConcSteps();
+    // cout << "AFTER CONC" << endl;
+    // for (auto step : steps)
+    //   { cout << typeid(*step).name()  << endl; }
+    // cout << "EMBED " << embed_step << endl;
     if (embed_step != nullptr) {
+      // cout << "EMBED : " << typeid(*embed_step).name() << endl;
       auto conc = dynamic_pointer_cast<ConcDMS>(steps[0]);
       shared_ptr<BaseDOFMapStep> fstep = conc ? conc->hacky_get_first_step() : steps[0];
       fstep = embed_step->Concatenate(fstep);
@@ -22,6 +27,8 @@ namespace amg
   void DOFMap :: ConcSteps ()
   {
     // cout << "CONCSTEPS: " << endl; prow2(steps); cout << endl;
+    // for (auto step : steps)
+    //   { cout << typeid(*step).name()  << endl; }
     static Timer t("DOFMap::ConcSteps");
     RegionTimer rt(t);
 
@@ -263,7 +270,7 @@ namespace amg
     }
     auto tfmat = dynamic_pointer_cast<SPM_TM_F>(mat);
     if (tfmat==nullptr) {
-      throw Exception(string("Cannot cast to ") + typeid(SPM_TM_F).name() + string("!!") );
+      throw Exception(string("Cannot cast to ") + typeid(SPM_TM_F).name() + string(", type = ") + typeid(*mat).name() + string("! !") );
       return nullptr;
     }
 
@@ -275,7 +282,14 @@ namespace amg
     self.prol_trans = TransposeSPM(*prol);
     self.prol = make_shared<SPM_P>(move(*prol));
     self.prol_trans = make_shared<trans_spm<SPM_P>>(move(*prol_trans));
+    
 
+    // cout << prol->Height() << " x " << prol->Width() << endl;
+							// cout << tfmat->Height() << " x " << tfmat->Width() << endl;
+
+
+							// 						      print_tm_spmat(cout, *prol); cout << endl;
+    
     auto spm_tm = RestrictMatrixTM<SPM_TM_F, TMAT> (*prol_trans, *tfmat, *prol);
     return make_shared<SPM_C>(move(*spm_tm));
   }
