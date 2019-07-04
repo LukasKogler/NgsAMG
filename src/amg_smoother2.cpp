@@ -534,6 +534,7 @@ namespace amg
       if (spm == nullptr)
 	{ throw Exception("HybridGSS2 could not cast correctly!!"); }
     }
+    SetParallelDofs(pardofs);
 
     auto& M = *A->GetM();
 
@@ -544,7 +545,23 @@ namespace amg
 	if (pardofs->IsMasterDof(k))
 	  M(k,k) += add_diag[k];
 
-    jac = make_shared<JacobiPrecond<TM>>(*spm, _subset, false); // false to make sure it does not cumulate diag
+    cout << "add_diag: " << endl;
+    prow2(add_diag);
+
+    shared_ptr<BitArray> mss = _subset;
+    if (_subset && pardofs) {
+      mss = make_shared<BitArray>(_subset->Size());
+      for (auto k : Range(spm->Height())) {
+	if (_subset->Test(k) && pardofs->IsMasterDof(k)) { mss->Set(k); }
+	else { mss->Clear(k); }
+      }
+    }
+
+    cout << "M: " << endl << M << endl;
+    cout << "SPM: " << endl << *spm << endl;
+    
+    jac = make_shared<JacobiPrecond<TM>>(M, mss, false); // false to make sure it does not cumulate diag
+    // jac = make_shared<JacobiPrecond<TM>>(*spm, mss, false); // false to make sure it does not cumulate diag
 
     if (parmat != nullptr)
       for (auto k : Range(spm->Height()))
@@ -572,22 +589,27 @@ namespace amg
 
     A->gather_vec(x); // does nothing for cumulated x (as it usually is)
 
-    if (!x_zero) {
+
+    if (!res_updated) {
       b.Distribute();
-      resloc = bloc - *A->GetS() * xloc;
-      // res.template FV<TV>() = bloc.template FV<TV>() - *A->GetS() * xloc.template FV<TV>();
+      if (x_zero)
+	{ resloc = bloc; }
+      else
+	{ resloc = bloc - *A->GetS() * xloc; }
       res.SetParallelStatus(DISTRIBUTED);
     }
+
+    res.Distribute();
 
     A->gather_vec(res);
     
     switch(type) {
     case(0) : {
-      jac->GSSmooth(xloc, resloc);
+      jac->GSSmooth(xloc, bloc);
       break;
     }
     case(1) : {
-      jac->GSSmoothBack(xloc, resloc);
+      jac->GSSmoothBack(xloc, bloc);
       break;
     }
     case(2) : {

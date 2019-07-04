@@ -769,9 +769,13 @@ namespace amg
       node_sort(4), node_pos(4), ht_vertex(nullptr), ht_edge(nullptr)
   {
 
+    options->max_n_levels = aflags.GetNumFlag("ngs_amg_max_levels", options->max_n_levels);
+
     options->energy = aflags.GetStringFlag("ngs_amg_energy", "ALG");
     
     options->edges = aflags.GetStringFlag("ngs_amg_edges", "ALG");
+
+    options->clev_type = aflags.GetStringFlag("ngs_amg_clev", "INV");
 
     // Find out which chunk of the matrix we should use for coarsening:
     // We can be explicitely told which part to use.
