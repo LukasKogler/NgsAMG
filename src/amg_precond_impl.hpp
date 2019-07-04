@@ -816,6 +816,8 @@ namespace amg
       
     options->smooth_symmetric = aflags.GetDefineFlagX("ngs_amg_smsym").IsTrue();
 
+    options->old_smoothers = aflags.GetDefineFlagX("ngs_amg_oldsm").IsTrue();
+
     ModifyInitialOptions();
 
     SetParallelDofs(blf->GetTrialSpace()->GetParallelDofs());

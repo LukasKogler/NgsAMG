@@ -26,7 +26,6 @@ namespace amg
     shared_ptr<SparseMatrix<TM>> sp_S; // master-slave and slave-master blocks
     shared_ptr<BaseMatrix> S; // master-slave and slave-master blocks
     shared_ptr<ParallelDofs> pardofs;
-    Array<TM> add_diag;
     
   public:
     using TSCAL = typename mat_traits<TM>::TSCAL;
@@ -42,7 +41,6 @@ namespace amg
     INLINE shared_ptr<SparseMatrix<TM>> GetM () { return M; }
     INLINE shared_ptr<BaseMatrix> GetS () { return S; }
     INLINE shared_ptr<SparseMatrix<TM>> GetSPS () { return sp_S; }
-    INLINE FlatArray<TM> GetAdditionalDiag () const { return add_diag; }
 
     void gather_vec (const BaseVector & vec) const;
     void scatter_vec (const BaseVector & vec) const;
@@ -71,20 +69,25 @@ namespace amg
 
 
   template<class TM>
-  class HybridGSS2 : public BaseMatrix
+  class HybridGSS2 : public BaseSmoother
   {
   public:
     HybridGSS2 (shared_ptr<BaseMatrix> _A, shared_ptr<BitArray> _subset);
 
     virtual void Smooth (BaseVector  &x, const BaseVector &b,
     			 BaseVector  &res, bool res_updated = false,
-    			 bool update_res = true, bool x_zero = false) const;
+    			 bool update_res = true, bool x_zero = false) const override;
     virtual void SmoothBack (BaseVector  &x, const BaseVector &b,
     			     BaseVector &res, bool res_updated = false,
-    			     bool update_res = true, bool x_zero = false) const;
+    			     bool update_res = true, bool x_zero = false) const override;
 
+    virtual Array<MemoryUsage> GetMemoryUsage() const override { return Array<MemoryUsage>(); }
 
     using TV = typename strip_vec<Vec<mat_traits<TM>::HEIGHT,typename mat_traits<TM>::TSCAL>> :: type;
+
+    void SetSymmetric (bool sym) { smooth_symmetric = sym; }
+
+    virtual Array<TM> CalcAdditionalDiag ();
 
   protected:
     shared_ptr<BaseMatrix> origA;

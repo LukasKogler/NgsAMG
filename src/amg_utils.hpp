@@ -487,6 +487,8 @@ namespace amg
   template<int A, int B, class C> INLINE double calc_trace (const Mat<A,B,C> & x) {
     double sum = 0; for (auto k : Range(A)) sum += x(k,k); return sum;
   }
+  INLINE double calc_trace (double x) { return x; }
+  INLINE Complex calc_trace (Complex x) { return x; }
   template<int A, int B, class C> INLINE double fabsum (const Mat<A,B,C> & x) {
     double sum = 0;
     for (auto k : Range(A))

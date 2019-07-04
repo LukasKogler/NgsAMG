@@ -72,6 +72,7 @@ namespace amg
       bool print_info = false; string info_file = "";
       bool sync = true;
       bool recompute_weights = true;
+      bool old_smoothers = false;
    };
 
     struct Info

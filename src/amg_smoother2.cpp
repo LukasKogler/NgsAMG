@@ -79,6 +79,8 @@ namespace amg
 
     pardofs = parmat->GetParallelDofs();
 
+    SetParallelDofs(pardofs);
+
     if (pardofs == nullptr)
       { throw Exception("HybridMatrix needs valid ParallelDofs!"); }
 
@@ -88,8 +90,6 @@ namespace amg
     comm = pardofs->GetCommunicator();
 
     SetUpMats(*loc_spmat);
-
-    add_diag.SetSize(M->Height()); add_diag = TM(0);
 
   }
 
@@ -102,7 +102,6 @@ namespace amg
     if (M == nullptr)
       { throw Exception("u gave me an actual TM mat - WTF am i supposed to do with that??"); }
     S = make_shared<NoMatrix>(M->Height(), M->Width());
-    add_diag.SetSize(M->Height()); add_diag = TM(0);
     comm = AMG_ME_COMM;
   }
 
@@ -235,6 +234,7 @@ namespace amg
 		size_t ar_dof = exds[ar]; // the dof that row belongs to
 		if (ar_dof>rownr) continue; // not yet that row's turn
 		row_matis.Append(kkp);
+		// cout << "row " << at_row[kp] << " from " << kp << " " << kkp << endl;
 		at_row[kkp]++;
 	      }
 	      all_cols.SetSize0(); all_cols.SetSize(1+row_matis.Size()); // otherwise tries to copy FA I think
@@ -251,18 +251,19 @@ namespace amg
 	      }
 	      all_cols.Last().Assign(A.GetRowIndices(rownr));
 
-	      cout << "merge cols: " << endl;
-	      for (auto k : Range(all_cols.Size()))
-		{ cout << k << " || "; prow2(all_cols[k]); cout << endl; }
-	      cout << endl;
+	      // cout << "merge cols: " << endl;
+	      // for (auto k : Range(all_cols.Size()))
+	      // 	{ cout << k << " || "; prow2(all_cols[k]); cout << endl; }
+	      // cout << endl;
 
 	      auto merged_cols = merge_arrays(all_cols, [](const auto&a, const auto &b){return a<b; });
 
-	      cout << "merged cols: "; prow2(merged_cols); cout << endl;
+	      // cout << "merged cols: "; prow2(merged_cols); cout << endl;
 
 	      fun(rownr, row_matis, merged_cols);
 	    } // mf-exd.Test(rownr);a
 	    else {
+	      row_matis.SetSize0();
 	      fun(rownr, row_matis, A.GetRowIndices(rownr));
 	    }
 	  }
@@ -277,21 +278,25 @@ namespace amg
       iterate_rowinds([&](auto rownr, const auto & matis, const auto & rowis) {
 	  auto ris = M->GetRowIndices(rownr); ris = rowis;
 	  auto rvs = M->GetRowValues(rownr); rvs = 0;
-	  auto add_vals = [&](auto vs, auto cols) {
-	    for (auto l : Range(vs.Size())) {
+	  // cout << "rownr, rowis: " << rownr << ", "; prow2(rowis); cout << endl;
+	  // cout << "rownr, matis: " << rownr << ", "; prow2(matis); cout << endl;
+	  // cout << ris.Size() << " " << rvs.Size() << " " << rowis.Size() << endl;
+	  auto add_vals = [&](auto cols, auto vals) {
+	    for (auto l : Range(cols)) {
 	      auto pos = find_in_sorted_array<int>(cols[l], ris);
-	      cout << "look for " << cols[l] << " in "; prow(ris); cout << " -> pos " << pos << endl;
+	      // cout << "look for " << cols[l] << " in "; prow(ris); cout << " -> pos " << pos << endl;
 	      if (pos != -1)
-		{ rvs[pos] += vs[l]; }
+		{ rvs[pos] += vals[l]; }
 	    }
 	  };
 	  if (rowis.Size() > A.GetRowIndices(rownr).Size())
 	    { add_vals(A.GetRowIndices(rownr), A.GetRowValues(rownr)); }
 	  else
 	    { rvs = A.GetRowValues(rownr); }
-	  for (auto kp : Range(matis.Size())) {
-	    add_vals(recv_mats[kp]->GetRowIndices(at_row[kp]-1),
-		     recv_mats[kp]->GetRowValues(at_row[kp]-1));
+	  for (auto kkp : matis) {
+	    // cout << "row " << at_row[kkp] -1 << " from kkp " << kkp << endl;
+	    add_vals(recv_mats[kkp]->GetRowIndices(at_row[kkp]-1),
+		     recv_mats[kkp]->GetRowValues(at_row[kkp]-1));
 	  }
 	}, false);
 
@@ -474,6 +479,44 @@ namespace amg
     MyMPI_WaitAll(rsds);
   } // scatter_vec
 
+    
+  template<class TM> INLINE void AddODToD (const TM & v, TM & w) {
+    Iterate<mat_traits<TM>::HEIGHT>([&](auto i) {
+	Iterate<mat_traits<TM>::HEIGHT>([&](auto j) {
+	    w(i.value, i.value) += 0.5 * fabs(v(i.value, j.value));
+	  });
+      });
+  }
+
+  template<> INLINE void AddODToD<double> (const double & v, double & w)
+  { w += 0.5 * fabs(v); }
+
+  // template<> INLINE void AddODToD<Complex> (const double & v, double & w)
+  // { w += 0.5 * fabs(v); }
+
+
+  template<class TM>
+  Array<TM> HybridGSS2<TM> :: CalcAdditionalDiag ()
+  {
+    Array<TM> add_diag(A->Height()); add_diag = 0;
+ 
+    auto S = A->GetSPS();
+    if (S == nullptr)
+      { return add_diag; }
+    
+    for (auto k : Range(S->Height())) {
+      if (pardofs->IsMasterDof(k)) continue;
+      auto rvs = S->GetRowValues(k);
+      for (auto v : rvs) {
+	AddODToD(v, add_diag[k]);
+      }
+    }
+
+    AllReduceDofData (add_diag, MPI_SUM, pardofs);  
+
+    return add_diag;
+  }
+
 
   template<class TM>
   HybridGSS2<TM> :: HybridGSS2 (shared_ptr<BaseMatrix> _A, shared_ptr<BitArray> _subset)
@@ -492,17 +535,21 @@ namespace amg
 	{ throw Exception("HybridGSS2 could not cast correctly!!"); }
     }
 
-    auto add_diag = A->GetAdditionalDiag();
     auto& M = *A->GetM();
-    if (parmat != nullptr && false)
-      for (auto k : Range(spm->Height()))
-	M(k,k) += add_diag[k];
 
-    jac = make_shared<JacobiPrecond<TM>>(*spm, _subset, false); // false just to be sure in case pardofs are attached somewhere
+    Array<TM> add_diag = CalcAdditionalDiag();
 
-    if (parmat != nullptr && false)
+    if (parmat != nullptr)
       for (auto k : Range(spm->Height()))
-	M(k,k) -= add_diag[k];
+	if (pardofs->IsMasterDof(k))
+	  M(k,k) += add_diag[k];
+
+    jac = make_shared<JacobiPrecond<TM>>(*spm, _subset, false); // false to make sure it does not cumulate diag
+
+    if (parmat != nullptr)
+      for (auto k : Range(spm->Height()))
+	if (pardofs->IsMasterDof(k))
+	  M(k,k) -= add_diag[k];
     
   }
 

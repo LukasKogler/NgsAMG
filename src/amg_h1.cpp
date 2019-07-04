@@ -15,9 +15,16 @@ namespace amg
 						    shared_ptr<BitArray> free_dofs)
   {
     shared_ptr<const TSPM> spmat = dynamic_pointer_cast<TSPM> (mat);
-    auto sm = make_shared<HybridGSS<1>> (spmat, par_dofs, free_dofs);
-    sm->SetSymmetric(options->smooth_symmetric);
-    return sm;
+    if (options->old_smoothers) {
+      auto sm = make_shared<HybridGSS<1>> (spmat, par_dofs, free_dofs);
+      return sm;
+    }
+    else {
+      auto parmat = make_shared<ParallelMatrix>(const_pointer_cast<TSPM>(spmat), par_dofs, par_dofs, C2D);
+      auto sm = make_shared<HybridGSS2<double>> (parmat, free_dofs);
+      sm->SetSymmetric(options->smooth_symmetric);
+      return sm;
+    }
   }
 
   void H1AMG :: SmoothProlongation_hack (ProlMap<SparseMatrixTM<double>>* pmap,
