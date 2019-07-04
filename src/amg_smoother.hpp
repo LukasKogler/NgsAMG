@@ -18,10 +18,10 @@ namespace amg {
      **/
     virtual void Smooth (BaseVector  &x, const BaseVector &b,
     			 BaseVector  &res, bool res_updated = false,
-    			 bool update_res = true, bool x_zero =false) const = 0;
+    			 bool update_res = true, bool x_zero = false) const = 0;
     virtual void SmoothBack (BaseVector  &x, const BaseVector &b,
     			     BaseVector &res, bool res_updated = false,
-    			     bool update_res = true, bool x_zero =false) const = 0;
+    			     bool update_res = true, bool x_zero = false) const = 0;
     virtual string SType() const { return "base"; }
     virtual Array<MemoryUsage> GetMemoryUsage() const override = 0;
     virtual void Finalize() { ; }

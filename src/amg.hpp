@@ -19,6 +19,7 @@ namespace amg {
 #include "amg_coarsen.hpp"
 #include "amg_contract.hpp"
 #include "amg_smoother.hpp"
+#include "amg_smoother2.hpp"
 #include "amg_matrix.hpp"
 #include "amg_precond.hpp"
 #include "amg_h1.hpp"

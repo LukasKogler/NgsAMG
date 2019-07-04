@@ -174,6 +174,7 @@ namespace amg
       if (opmap->IsPW() && opmap->CanSM() && !CanSM()) {
       	// this is a bit of a hack for the embed-step
       	// if I cannot smooth myself, and the right prol can, but has not, it should do that now
+	cout << "call smooth C" << endl;
       	opmap->Smooth();
       	opmap->ClearSMF();
       }
@@ -195,16 +196,19 @@ namespace amg
       if ( smooth_now && (!opmap->IsPW()) )
 	{ // (S)P - S(...)
 	  smooth_now = false;
+	  cout << "call smooth B" << endl;
 	  Smooth();
 	}
       auto comp_prol = MatMultAB<TMAT, SPM_TM_C> (*prol, *opmap->GetProl());
       auto comp_map = make_shared<ProlMap<mult_spm_tm<TMAT, SPM_TM_C>>> (comp_prol, GetParDofs(), opmap->GetMappedParDofs(),
 								   ( IsPW() && opmap->IsPW() ) );
+      comp_map->fmesh_hack = fmesh_hack;
       comp_map->SetCnt(GetCnt() + opmap->GetCnt());
       comp_map->SetLog(LOGFUNC);
       if ( smooth_now )
 	{ // (S)P - P
 	  comp_map->SetSMF(GetSMF());
+	  cout << "call smooth A" << endl;
 	  comp_map->Smooth();
 	  ClearSMF();
 	}
@@ -253,8 +257,8 @@ namespace amg
   {
     if (!IsPW()) { throw Exception("Cannot smooth twice."); }
     // if (!WantSM()) { throw Exception("Cannot smooth (not set)."); }
-    // cout << "call smooth, am dim " << GetProl()->Height() << " x " << GetProl()->Width()  << ", cnt is " << GetCnt() << endl;
-    // cout << "call smooted with cnt " << GetCnt() << endl;
+    cout << "call smooth, am dim " << GetProl()->Height() << " x " << GetProl()->Width()  << ", cnt is " << GetCnt() << endl;
+    cout << "call smooted with cnt " << GetCnt() << endl;
     //amg->SmoothProlongation_hack (this, mesh);
     SMFUNC(this); ispw = false;
     ClearSMF();
@@ -263,9 +267,12 @@ namespace amg
   template<class TMAT>
   shared_ptr<BaseSparseMatrix> ProlMap<TMAT> :: AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const
   {
+
+    const_cast<ProlMap<TMAT>&>(*this).fmat_hack = mat;
+
     // cout << "assemble with cnt " << GetCnt() << endl;
     if (IsPW() && CanSM() ) {
-      // cout << "Call smooth before assmat!" << endl;
+      cout << "Call smooth before assmat!" << endl;
       const_cast<ProlMap<TMAT>&>(*this).Smooth();
     }
     auto tfmat = dynamic_pointer_cast<SPM_TM_F>(mat);
@@ -291,6 +298,9 @@ namespace amg
 							// 						      print_tm_spmat(cout, *prol); cout << endl;
     
     auto spm_tm = RestrictMatrixTM<SPM_TM_F, TMAT> (*prol_trans, *tfmat, *prol);
+
+    const_cast<ProlMap<TMAT>&>(*this).fmat_hack = nullptr;
+    const_cast<ProlMap<TMAT>&>(*this).fmesh_hack = nullptr;
     return make_shared<SPM_C>(move(*spm_tm));
   }
 

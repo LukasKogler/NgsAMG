@@ -71,7 +71,8 @@ namespace amg
       INFO_LEVEL info_level = NONE;
       bool print_info = false; string info_file = "";
       bool sync = true;
-    };
+      bool recompute_weights = true;
+   };
 
     struct Info
     {
@@ -296,7 +297,7 @@ namespace amg
 
     virtual string GetName () const { return string("NodeWiseAMG"); }
 
-    virtual const BaseMatrix & GetMatrix() const {
+    virtual const BaseMatrix & GetMatrix () const {
       if (amg_mat == nullptr)
 	{ throw Exception("AMG-Preconditioner not ready!"); }
       return *amg_mat;
@@ -406,10 +407,10 @@ namespace amg
     shared_ptr<TSPM_TM> BuildPWProl (shared_ptr<CoarseMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd) const;
     void SmoothProlongation (shared_ptr<ProlMap<TSPM_TM>> pmap, shared_ptr<TMESH> mesh) const;
 
-    template<class ASPM>
-    INLINE void SmoothProlongation_hack (ProlMap<ASPM>* pmap, shared_ptr<TMESH> mesh) const
+    virtual void SmoothProlongation_hack (ProlMap<TSPM_TM>* pmap, shared_ptr<TMESH> mesh) const
     {
-      static_assert(is_same<ASPM,TSPM_TM>::value, "INVALID PROL-TYPE TO SMOOTH!");
+      // static_assert(is_same<ASPM,TSPM_TM>::value, "INVALID PROL-TYPE TO SMOOTH!");
+      cout << "BCLASS SPHACK" << endl;
       SmoothProlongation (shared_ptr<ProlMap<TSPM_TM>>(pmap, NOOP_Deleter), mesh);
     }
 
@@ -492,18 +493,18 @@ namespace amg
     // a way for different embeds to set some optins. called at end of constructor
     virtual void ModifyInitialOptions ();
 
-    virtual const BaseMatrix & GetMatrix() const override
-    { return amg_pc->GetMatrix(); }
+    virtual const BaseMatrix & GetMatrix () const override
+    { if (amg_pc == nullptr) { throw Exception("NGsAMG Preconditioner not ready!"); } return amg_pc->GetMatrix(); }
     virtual shared_ptr<BaseMatrix> GetMatrixPtr () override
-    { return amg_pc->GetMatrixPtr(); }
+    { if (amg_pc == nullptr) { throw Exception("NGsAMG Preconditioner not ready!"); } return amg_pc->GetMatrixPtr(); }
     virtual void Mult (const BaseVector & b, BaseVector & x) const override
-    { amg_pc->Mult(b, x); }
+    { if (amg_pc == nullptr) { throw Exception("NGsAMG Preconditioner not ready!"); } amg_pc->Mult(b, x); }
     virtual void MultTrans (const BaseVector & b, BaseVector & x) const override
-    { amg_pc->MultTrans(b, x); }
+    { if (amg_pc == nullptr) { throw Exception("NGsAMG Preconditioner not ready!"); } amg_pc->MultTrans(b, x); }
     virtual void MultAdd (double s, const BaseVector & b, BaseVector & x) const override
-    { amg_pc->MultAdd(s, b, x); }
+    { if (amg_pc == nullptr) { throw Exception("NGsAMG Preconditioner not ready!"); } amg_pc->MultAdd(s, b, x); }
     virtual void MultTransAdd (double s, const BaseVector & b, BaseVector & x) const override
-    { amg_pc->MultTransAdd(s, b, x); }
+    { if (amg_pc == nullptr) { throw Exception("NGsAMG Preconditioner not ready!"); } amg_pc->MultTransAdd(s, b, x); }
     
     virtual const BaseMatrix & GetAMatrix() const override
     { return *finest_mat; }

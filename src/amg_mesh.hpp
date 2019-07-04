@@ -560,6 +560,7 @@ namespace amg
     ~BlockAlgMesh () { std::apply([](auto& ...x){ (...,delete x); }, node_data);}
 
     const std::tuple<T*...>& Data () const { return node_data; }
+    const std::tuple<T*...>& AttachedData () const { return node_data; }
 
     INLINE void CumulateData () const { std::apply([&](auto& ...x){ (x->Cumulate(),...); }, node_data); }
     INLINE void DistributeData () const { std::apply([&](auto& ...x){ (x->Distribute(),...); }, node_data); }

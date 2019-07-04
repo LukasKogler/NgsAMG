@@ -1441,4 +1441,104 @@ namespace amg {
 
 } // namespace amg
 
+#include <python_ngstd.hpp>
+
+namespace amg {
+
+  void ExportSmoothers (py::module & m)
+  {
+    py::class_<HybridGSS<1>, shared_ptr<HybridGSS<1>>, BaseMatrix>
+      (m, "HybridGSS", "scalar hybrid Gauss-Seidel")
+      .def(py::init<>
+	   ( [] (shared_ptr<BaseMatrix> mat, shared_ptr<BitArray> freedofs) {
+	     shared_ptr<SparseMatrix<double>> spm;
+	     shared_ptr<ParallelDofs> pardofs;
+	     if ( auto parmat = dynamic_pointer_cast<ParallelMatrix>(mat) ) {
+	       spm = dynamic_pointer_cast<SparseMatrix<double>>(parmat->GetMatrix());
+	       if (spm == nullptr)
+		 { throw Exception("wrong mat type for hgss"); }
+	       pardofs = parmat->GetParallelDofs();
+	     }
+	     else { // ok .. make dummy pardofs
+	       spm = dynamic_pointer_cast<SparseMatrix<double>>(mat);
+	       if (spm == nullptr)
+		 { throw Exception("wrong mat type for hgss"); }
+	       Array<int> perow (spm->Height() ); perow = 0;
+	       Table<int> pds (perow);
+	       NgsMPI_Comm c(MPI_COMM_WORLD);
+	       netgen::Array<int> me(1); me[0] = c.Rank();
+	       MPI_Comm mecomm = (c.Size() == 1) ? MPI_COMM_WORLD : netgen::MyMPI_SubCommunicator(c, me );
+	       pardofs = make_shared<ParallelDofs> ( mecomm , move(pds), GetEntryDim(spm.get()), false);
+	     }
+	     auto sm = make_shared<HybridGSS<1>>(spm, pardofs, freedofs);
+	     BaseSmoother & bsm(*sm); bsm.Finalize();
+	     return sm;
+	   }), py::arg("mat"), py::arg("freedofs") = nullptr)
+      .def ( "SmoothSym",
+	     [&](shared_ptr<HybridGSS<1>> & sm, shared_ptr<BaseVector> & x,
+		 shared_ptr<BaseVector> & b, shared_ptr<BaseVector> & res,
+		 int k)
+	     {
+	       res->FVDouble() = b->FVDouble();
+	       res->SetParallelStatus(b->GetParallelStatus());
+	       sm->Smooth(*x, *b, *res, true, true, false);
+	       for (int j = 0; j+1<k; j++) {
+		 sm->SmoothBack(*x, *b, *res, true, true, false);
+		 sm->Smooth(*x, *b, *res, true, true, false);
+	       }
+	       sm->SmoothBack(*x, *b, *res, true, false, false);
+	     }, py::arg("sol"), py::arg("rhs"), py::arg("res"), py::arg("numits") = 1);
+
+
+    py::class_<HybridGSS<3>, shared_ptr<HybridGSS<3>>, BaseMatrix>
+      (m, "HybridGS3", "scalar hybrid Gauss-Seidel")
+      .def(py::init<>
+	   ( [] (shared_ptr<BaseMatrix> mat, shared_ptr<BitArray> freedofs) {
+	     shared_ptr<SparseMatrix<Mat<3>>> spm;
+	     shared_ptr<ParallelDofs> pardofs;
+	     if ( auto parmat = dynamic_pointer_cast<ParallelMatrix>(mat) ) {
+	       spm = dynamic_pointer_cast<SparseMatrix<Mat<3>>>(parmat->GetMatrix());
+	       if (spm == nullptr)
+		 { throw Exception("wrong mat type for hgss"); }
+	       pardofs = parmat->GetParallelDofs();
+	     }
+	     else { // ok .. make dummy pardofs
+	       spm = dynamic_pointer_cast<SparseMatrix<Mat<3>>>(mat);
+	       if (spm == nullptr)
+		 { throw Exception("wrong mat type for hgss"); }
+	       Array<int> perow (spm->Height() ); perow = 0;
+	       Table<int> pds (perow);
+	       NgsMPI_Comm c(MPI_COMM_WORLD);
+	       netgen::Array<int> me(1); me[0] = c.Rank();
+	       MPI_Comm mecomm = (c.Size() == 1) ? MPI_COMM_WORLD : netgen::MyMPI_SubCommunicator(c, me );
+	       pardofs = make_shared<ParallelDofs> ( mecomm , move(pds), GetEntryDim(spm.get()), false);
+	     }
+	     auto sm = make_shared<HybridGSS<3>>(spm, pardofs, freedofs);
+	     BaseSmoother & bsm(*sm); bsm.Finalize();
+	     return sm;
+	   }), py::arg("mat"), py::arg("freedofs") = nullptr)
+      .def ( "SmoothSym",
+	     [&](shared_ptr<HybridGSS<3>> & sm, shared_ptr<BaseVector> & x,
+		 shared_ptr<BaseVector> & b, shared_ptr<BaseVector> & res,
+		 shared_ptr<BaseMatrix> & mat,
+		 int k)
+	     {
+
+	       for (int j = 0; j+1<k; j++) {
+		 sm->Smooth(*x, *b, *res, true, false, true);
+		 sm->SmoothBack(*x, *b, *res, false, false, false);
+	       }
+
+	       // for (int j = 0; j<k; j++) {
+	       // 	 sm->Smooth(*x, *b, *res, false, false, false);
+	       // 	 sm->SmoothBack(*x, *b, *res, false, false, false);
+	       // }
+
+	       
+	     }, py::arg("sol"), py::arg("rhs"), py::arg("res"), py::arg("mat"),py::arg("numits") = 1);
+
+  }
+
+} // namespace amg
+
 #include "amg_tcs.hpp"

@@ -69,6 +69,7 @@ namespace amg {
       else if (name == "sp_omega") { opts->sp_omega = item.second.cast<double>(); }
       else if (name == "smooth_symm") { opts->smooth_symmetric = item.second.cast<bool>(); }
       else if (name == "dpv") { opts->block_s.SetSize(1); opts->block_s[0] = item.second.cast<int>(); }
+      else if (name == "rc_wts") { opts->recompute_weights = item.second.cast<bool>(); }
       // else { throw Exception(string("warning, invalid AMG option: ")+name); }
     }
     // opts->v_pos = "VERTEX";
@@ -173,6 +174,9 @@ namespace amg {
   extern void ExportBoomer (py::module & m);
 #endif
 
+  extern void ExportSmoothers (py::module & m);
+  extern void ExportSmoothers2 (py::module & m);
+
 } // namespace amg
 
 PYBIND11_MODULE (ngs_amg, m) {
@@ -217,5 +221,9 @@ PYBIND11_MODULE (ngs_amg, m) {
 #ifdef USE_BOOMER
   amg::ExportBoomer(m);
 #endif
+
+  amg::ExportSmoothers(m);
+
+  amg::ExportSmoothers2(m);
 
 }

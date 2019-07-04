@@ -232,6 +232,10 @@ namespace amg {
     
     void SetCnt (int acnt) { cnt = acnt; }
     int GetCnt () const { return cnt; }
+
+    shared_ptr<BaseSparseMatrix> fmat_hack;
+    shared_ptr<TopologicMesh> fmesh_hack;
+
   protected:
     shared_ptr<TMAT> prol;
     shared_ptr<trans_spm_tm<TMAT>> prol_trans;
@@ -240,6 +244,7 @@ namespace amg {
     int cnt;
     std::function<void(ProlMap<TMAT> * map)> SMFUNC;
     std::function<void(shared_ptr<BaseSparseMatrix> prol)> LOGFUNC;
+
   };
 
 

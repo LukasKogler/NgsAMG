@@ -348,6 +348,7 @@ namespace amg
     if (smoothed_prol) {
       auto fm = static_pointer_cast<TMESH>(_cmap->GetMesh());
       if (options.composite_smooth) {
+	pmap->fmesh_hack = fm;
 	pmap->SetSMF ([this, fm](auto x) { SmoothProlongation_hack(x, fm); }, !options.force_composite_smooth);
       }
       else {
@@ -804,6 +805,16 @@ namespace amg
     options->mat_ready = aflags.GetDefineFlagX("ngs_amg_mat_ready").IsTrue();
 
     options->do_test = aflags.GetDefineFlagX("ngs_amg_test").IsTrue();
+
+    options->recompute_weights = !aflags.GetDefineFlagX("ngs_amg_rc_wts").IsFalse();
+
+    options->ass_after_frac = aflags.GetNumFlag("ngs_amg_aaf", options->ass_after_frac);
+
+    options->max_per_row = aflags.GetNumFlag("ngs_amg_sp_mpr", options->max_per_row);
+
+    options->skip_ass_first = aflags.GetNumFlag("ngs_amg_saf", options->skip_ass_first);
+      
+    options->smooth_symmetric = aflags.GetDefineFlagX("ngs_amg_smsym").IsTrue();
 
     ModifyInitialOptions();
 

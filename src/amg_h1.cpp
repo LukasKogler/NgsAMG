@@ -20,6 +20,48 @@ namespace amg
     return sm;
   }
 
+  void H1AMG :: SmoothProlongation_hack (ProlMap<SparseMatrixTM<double>>* pmap,
+						 shared_ptr<H1Mesh> mesh) const
+  {
+    cout << "G1 SPHACK" << endl;
+    recompute_weights_hack(static_pointer_cast<H1Mesh>(pmap->fmesh_hack),
+			   static_pointer_cast<SparseMatrixTM<double>>(pmap->fmat_hack));
+    SmoothProlongation (shared_ptr<ProlMap<SparseMatrixTM<double>>>(pmap, NOOP_Deleter), mesh);
+  }
+
+
+  void H1AMG :: recompute_weights_hack (shared_ptr<H1Mesh> mesh, shared_ptr<SparseMatrixTM<double>> mat) const
+  {
+    cout << "RECOMPUTE WEIGHTS??" << endl;
+    cout << mesh << " " << mat << endl;
+    if (mat == nullptr) {
+      // hack for first level i think?
+      return;
+    }
+    if (!options->recompute_weights)
+      { return; }
+    if (mat->Height() != mesh->GetNN<NT_VERTEX>()) // NO GOOD CHECK FOR MPI
+      { return; }
+    cout << "RECOMPUTE WEIGHTS!!" << endl;
+    auto aed = get<1>(mesh->AttachedData());
+    aed->SetParallelStatus(DISTRIBUTED);
+    auto edata = aed->Data();
+    Array<double> old_wts(edata.Size()); old_wts = edata;
+    edata = 0;
+    const auto& spm(*mat);
+    for (const auto& edge : mesh->GetNodes<NT_EDGE>()) {
+      edata[edge.id] = fabs(spm(edge.v[0], edge.v[1]));
+    }
+    aed->Cumulate();
+    cout << "wt diff: " << endl;
+    for (auto k : Range(edata.Size())) {
+      auto diff = abs(edata[k] - old_wts[k]);
+      auto rdiff = diff / old_wts[k];
+      if (rdiff > 0.1)
+	cout << k << ": " << old_wts[k] << " -> " << edata[k] << ( (edata[k] > old_wts[k]) ? ", up " : ", down " ) << rdiff << endl;
+    }
+  }
+
   template<> void
   EmbedVAMG<H1AMG> :: ModifyInitialOptions ()
   {
@@ -83,6 +125,8 @@ namespace amg
           }
     }
   }
+
+  
 
   template<> shared_ptr<EmbedVAMG<H1AMG>::TMESH>
   EmbedVAMG<H1AMG> :: BuildAlgMesh (shared_ptr<BlockTM> top_mesh)

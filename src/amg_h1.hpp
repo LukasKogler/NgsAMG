@@ -40,6 +40,7 @@ namespace amg
       ch1v.SetParallelStatus(DISTRIBUTED);
     }
   };
+
   /** data which we attach to each edge in the mesh **/
   class H1EData : public AttachedNodeData<NT_EDGE, double, H1EData>
   {
@@ -92,6 +93,9 @@ namespace amg
 
     INLINE void RegDiag (double & val) const { ; }
 
+    virtual void SmoothProlongation_hack (ProlMap<TSPM_TM>* pmap, shared_ptr<TMESH> mesh) const override;
+    void recompute_weights_hack (shared_ptr<H1Mesh> mesh, shared_ptr<SparseMatrixTM<double>> mat) const;
+    
   };
 
 

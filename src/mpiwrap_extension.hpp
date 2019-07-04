@@ -11,7 +11,7 @@ namespace amg
   enum { MPI_TAG_AMG = 1120 };
 
   class BlockTM;
-  
+
   class NgsAMG_Comm : public NgsMPI_Comm
   {
   public:
@@ -151,6 +151,8 @@ namespace amg
     void Recv (shared_ptr<BlockTM> & mesh, int src,  int tag) const;
     
   }; // class NgsAMG_Comm
+  
+  extern NgsAMG_Comm AMG_ME_COMM;
   
 } // namespace amg
 

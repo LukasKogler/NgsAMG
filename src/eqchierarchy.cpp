@@ -2,6 +2,18 @@
 
 namespace amg {
 
+  NgsAMG_Comm make_me_comm () {
+    NgMPI_Comm wcomm(MPI_COMM_WORLD);
+    if (wcomm.Size() == 1)
+      { return NgsAMG_Comm(wcomm); }
+    else {
+      netgen::Array<int> me(1); me[0] = wcomm.Rank();
+      return NgsAMG_Comm(netgen::MyMPI_SubCommunicator(wcomm, me ), true);
+    }
+  }
+
+  static NgsAMG_Comm mecomm (make_me_comm());
+  NgsAMG_Comm AMG_ME_COMM = mecomm;
 
   EQCHierarchy :: EQCHierarchy (const shared_ptr<MeshAccess> & ma, Array<NODE_TYPE> nts, bool do_cutunion)
     : comm(ma->GetCommunicator())
