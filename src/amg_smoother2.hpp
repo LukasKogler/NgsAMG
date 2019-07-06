@@ -11,11 +11,13 @@ namespace amg
      
      A_MM  A_MS          m    0           0    A_MS
                   ->               +   
-     A_SM  A_SS          0    0          A_SM   0
+     A_SM  A_SS          0    0          A_SM   S_SS
 
      m = A_MM + Adist_SS
 
      The MM-block of M is an actual diagonal block of the global matrix!
+     
+     S_SS has entries ij where master(i)!=master(j)
   **/
   template<class TM>
   class HybridMatrix : public BaseMatrix
@@ -62,9 +64,6 @@ namespace amg
     int nexp;
     int nexp_smaller; mutable Array<MPI_Request> rr_gather;
     int nexp_larger; mutable Array<MPI_Request> rr_scatter;
-    mutable Array<MPI_Request> rsds;
-    Array<int> buf_os; // buffer[buf_os[k]..buf_os[k+1]) for ex-proc k!
-    mutable Array<TV> buffer; // [ex_p0, ex_p1, .....]
   }; // class HybridSmoother
 
 

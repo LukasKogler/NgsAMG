@@ -145,7 +145,7 @@ namespace amg
 	  for (auto j:Range(exdofs.Size())) {
 	    auto d = exdofs[j];
 	    auto dps = pds.GetDistantProcs(d);
-	    if (dps[0]>=m) {
+	    if (dps[0] >= m) { // either I or "p" are master of this DOF
 	      cmxd.Add(k,d);
 	      cmxd_loc.Add(k,j);
 	    }
@@ -188,13 +188,9 @@ namespace amg
 	  });
 	return dspm;
       };
-
       for (auto kp : Range(nexp_smaller)) {
-	// Generate diagonal block to send
-	auto p = ex_procs[kp];
-	auto dofs = mx_dofs[kp];
-	send_add_diag_mats[kp] = SPM_DIAG(dofs);
-	rsdmat[kp] = comm.ISend(*send_add_diag_mats[kp], p, MPI_TAG_AMG);
+	send_add_diag_mats[kp] = SPM_DIAG(mx_dofs[kp]);
+	rsdmat[kp] = comm.ISend(*send_add_diag_mats[kp], ex_procs[kp], MPI_TAG_AMG);
       }
     } // create & send diag-blocks to masters
 
@@ -202,7 +198,7 @@ namespace amg
     
     Array<shared_ptr<TSPMAT_TM>> recv_mats(nexp_larger);
     { // recv diag-mats
-      static Timer t(cn + "::SetUpMats - wait diag"); RegionTimer rt(t);
+      static Timer t(cn + "::SetUpMats - recv diag"); RegionTimer rt(t);
       for (auto kkp : Range(nexp_larger))
 	{
 	  comm.Recv(recv_mats[kkp], ex_procs[nexp_smaller + kkp], MPI_TAG_AMG);
@@ -217,13 +213,15 @@ namespace amg
       static Timer t(cn + "::SetUpMats - merge"); RegionTimer rt(t);
 
       Array<int> perow(H); perow = 0;
-      Array<size_t> at_row(nexp_larger); at_row = 0;
+      Array<size_t> at_row(nexp_larger);
       Array<int> row_matis(nexp_larger);
       Array<FlatArray<int>> all_cols;
+      Array<int> mrowis(50); mrowis.SetSize0(); // col-inds for a row of orig mat (but have to remove a couple first)
 
       auto iterate_rowinds = [&](auto fun, bool map_exd) {
+	at_row = 0; // restart counting through rows of recv-mats
 	for (auto rownr : Range(H)) {
-	  if (mf_dofs.Test(rownr)) {
+	  if (mf_dofs.Test(rownr)) { // I am master of this dof - merge recved rows with part of original row
 	    row_matis.SetSize0(); // which mats I received have this row?
 	    if (mf_exd.Test(rownr)) { // local master
 	      for (auto kkp : Range(nexp_larger)) {
@@ -241,15 +239,23 @@ namespace amg
 	      for (auto k:Range(all_cols.Size()-1)) {
 		auto kkp = row_matis[k];
 		auto kp = nexp_smaller + kkp;
-		auto mxd = mx_dofs[kp];
 		auto cols = recv_mats[kkp]->GetRowIndices(at_row[kkp]-1);
-		if (map_exd) {
+		if (map_exd) { // !!! <- remap col-nrs of received rows, only do this ONCE!!
+		  auto mxd = mx_dofs[kp];
 		  for (auto j:Range(cols.Size()))
 		    cols[j] = mxd[cols[j]];
 		}
 		all_cols[k].Assign(cols);
 	      }
-	      all_cols.Last().Assign(A.GetRowIndices(rownr));
+
+	      // only master-master (not master-all) goes into M
+	      auto aris = A.GetRowIndices(rownr);
+	      mrowis.SetSize(aris.Size()); int c = 0;
+	      for (auto col : aris)
+		if (pardofs->IsMasterDof(col))
+		  mrowis[c++] = col;
+	      mrowis.SetSize(c);
+	      all_cols.Last().Assign(mrowis);
 
 	      // cout << "merge cols: " << endl;
 	      // for (auto k : Range(all_cols.Size()))
@@ -261,19 +267,23 @@ namespace amg
 	      // cout << "merged cols: "; prow2(merged_cols); cout << endl;
 
 	      fun(rownr, row_matis, merged_cols);
-	    } // mf-exd.Test(rownr);a
-	    else {
-	      row_matis.SetSize0();
-	      fun(rownr, row_matis, A.GetRowIndices(rownr));
+	    } // mf-exd.Test(rownr);
+	    else { // local row - pick out only master-cols
+	      auto aris = A.GetRowIndices(rownr);
+	      mrowis.SetSize(aris.Size()); int c = 0;
+	      for (auto col : aris)
+		if (pardofs->IsMasterDof(col))
+		  mrowis[c++] = col;
+	      mrowis.SetSize(c);
+	      fun(rownr, row_matis, mrowis);
 	    }
-	  }
+	  } // mf_dofs.Test(rownr)
 	}
       };
 
       iterate_rowinds([&](auto rownr, const auto &matis, const auto &rowis) { perow[rownr] = rowis.Size(); }, true);
 
       M = make_shared<SparseMatrix<TM>>(perow);
-      at_row = 0;
 
       iterate_rowinds([&](auto rownr, const auto & matis, const auto & rowis) {
 	  auto ris = M->GetRowIndices(rownr); ris = rowis;
@@ -289,10 +299,7 @@ namespace amg
 		{ rvs[pos] += vals[l]; }
 	    }
 	  };
-	  if (rowis.Size() > A.GetRowIndices(rownr).Size())
-	    { add_vals(A.GetRowIndices(rownr), A.GetRowValues(rownr)); }
-	  else
-	    { rvs = A.GetRowValues(rownr); }
+	  add_vals(A.GetRowIndices(rownr), A.GetRowValues(rownr));
 	  for (auto kkp : matis) {
 	    // cout << "row " << at_row[kkp] -1 << " from kkp " << kkp << endl;
 	    add_vals(recv_mats[kkp]->GetRowIndices(at_row[kkp]-1),
@@ -306,31 +313,39 @@ namespace amg
     { /** build S-matrix **/
 
       static Timer t(cn + "::SetUpMats - S-mat"); RegionTimer rt(t);
-      
-      auto iterate_coo = [&](auto fun) {
-	for (auto kp : Range(nexp_smaller)) {
-	  auto exd = mx_dofs[kp];
-	  for (auto dof:exd) {
-	    auto ris = A.GetRowIndices(dof);
-	    auto rvs = A.GetRowValues(dof);
-	    for (auto j : Range(ris.Size())) {
-	      auto dj = ris[j];
-	      if (pds.IsMasterDof(dj)) {
-		fun(dof, dj, rvs[j]);
-	      }
-	    }
-	  }
-	}
+
+      // ATTENTION: explicitely only for symmetric matrices!
+      auto master_of = [&](auto k) {
+	auto dps = pardofs->GetDistantProcs(k);
+	return (dps.Size() && dps[0] < comm.Rank()) ? dps[0] : comm.Rank();
       };
-      Array<int> perow(A.Height()); perow = 0;
+      auto is_loc = [&](auto k)
+	{ return pardofs->GetDistantProcs(k).Size() == 0; };
+      const auto me = comm.Rank();
+      Array<int> perow(A.Height());
+      auto iterate_coo = [&](auto fun) { // could be better if we had GetMaxExchangeDof(), or GetExchangeDofs()
+      	perow = 0;
+      	for (auto rownr : Range(A.Height())) {
+      	  auto ris = A.GetRowIndices(rownr);
+      	  auto rvs = A.GetRowValues(rownr);
+      	  auto mrow = master_of(rownr);
+      	  for (auto j : Range(ris)) {
+      	    if (master_of(ris[j]) != mrow) {
+	      // cout << " add " << rownr << " " << ris[j] << ", masters " << mrow << " " << master_of(ris[j]) << ", val " << rvs[j] << endl;
+      	      fun(rownr, ris[j], rvs[j]);
+      	    }
+      	  }
+      	}
+      };
       iterate_coo([&](auto i, auto j, auto val) {
-	  perow[i]++;
+	  perow[i]++; // perow[j]++;
 	});
       S = sp_S = make_shared<SparseMatrix<TM>>(perow);
-      perow = 0;
       iterate_coo([&](auto i, auto j, auto val) {
 	  sp_S->GetRowIndices(i)[perow[i]] = j;
 	  sp_S->GetRowValues(i)[perow[i]++] = val;
+	  // sp_S->GetRowIndices(j)[perow[j]] = i;
+	  // sp_S->GetRowValues(j)[perow[j]++] = val;
 	});
     } // build S-matrix
 
@@ -344,16 +359,6 @@ namespace amg
 
     rr_gather.SetSize(nexp_larger);
     rr_scatter.SetSize(nexp_smaller);
-    rsds.SetSize(max2(nexp_smaller, nexp_larger));
-    Array<int> buf_cnt(nexp);
-    buf_os.SetSize(nexp+1);
-    buf_os[0] = 0;
-    for (auto kp : Range(nexp)) {
-      buf_cnt[kp] = mx_dofs[kp].Size();
-      buf_os[kp+1] = buf_os[kp] + buf_cnt[kp];
-    }
-    buffer.SetSize(buf_os.Last());
-    rsds.SetSize(nexp_larger + nexp_smaller); rsds.SetSize0();
 
   } // HybridMatrix :: SetUpMats
 
@@ -364,64 +369,29 @@ namespace amg
     static Timer t(string("HybridMatrix<bs=")+to_string(BS())+">::gather_vec");
     RegionTimer rt(t);
 
-    if ( (vec.GetParallelStatus() != DISTRIBUTED) ) { // also do nothing for NOT_PARALLEL
-      vec.Distribute();
-      return;
-    }
+    ParallelBaseVector * parvec = const_cast<ParallelBaseVector*>(dynamic_cast_ParallelBaseVector(&vec));
 
-    FlatVector<TV> tvec = vec.FV<TV>();
-    auto & pds = *pardofs;
-    auto ex_procs = pds.GetDistantProcs();
-    rsds.SetSize0();
-    for (auto kp : Range(nexp_smaller)) {
-      auto p = ex_procs[kp];
-      int sz = buf_os[kp+1] - buf_os[kp];
-      FlatArray<TV> p_buffer (sz, &(buffer[buf_os[kp]]));
-      int c = 0;
-      auto exdofs = pds.GetExchangeDofs(p);
-      for (auto d:exdofs) {
-	auto master = pds.GetMasterProc(d);
-	if (p==master) {
-	  p_buffer[c++] = tvec(d); tvec(d) = 0;
-	}
-      }
-      // cout << "gather, send buf to " << p << ", kp " << kp << " " << p_buffer.Size() << ": "; prow(p_buffer); cout << endl;
-      rsds.Append(MyMPI_ISend(p_buffer, p, MPI_TAG_AMG, comm));
-      // MPI_Request_free(&req);
+    if (!parvec)
+      { return; }
+
+    if (parvec->GetParallelStatus() == CUMULATED)
+      { return; }
+
+    auto ex_procs = paralleldofs->GetDistantProcs();
+
+    for (auto kp : Range(nexp_smaller))
+      { parvec->ISend(ex_procs[kp], rr_scatter[kp]); }
+
+    for (auto kkp : Range(nexp_larger))
+      { parvec->IRecvVec(ex_procs[nexp_smaller + kkp], rr_gather[kkp]); }
+
+    MyMPI_WaitAll(rr_scatter);
+
+    for (auto j : Range(nexp_larger)) {
+      auto kkp = MyMPI_WaitAny(rr_gather);
+      parvec->AddRecvValues(ex_procs[nexp_smaller + kkp]);
     }
-    if (nexp_larger==0) { MyMPI_WaitAll(rsds); return; }
-    for (auto kkp : Range(nexp_larger)) {
-      auto kp = nexp_smaller + kkp;
-      auto p = ex_procs[kp];
-      int sz = buf_os[kp+1] - buf_os[kp];
-      // cout << "gather, recv " << sz << " from " << p << ", kp " << kp << endl;
-      FlatArray<TV> p_buffer (sz, &(buffer[buf_os[kp]]));
-      rr_gather[kkp] = MyMPI_IRecv(p_buffer, p, MPI_TAG_AMG, comm);
-    }
-    int nrr = nexp_larger;
-    MPI_Request* rrptr = &rr_gather[0];
-    int ind;
-    for (int nreq = 0; nreq<nexp_larger; nreq++) {
-      // cout << "wait for message " << nreq << " of " << nexp_larger << endl;
-      MPI_Waitany(nrr, rrptr, &ind, MPI_STATUS_IGNORE);
-      int kp = nexp_smaller+ind;
-      auto p = ex_procs[kp];
-      auto exdofs = pds.GetExchangeDofs(p);
-      int c = 0;
-      int sz = buf_os[kp+1] - buf_os[kp];
-      FlatArray<TV> p_buffer (sz, &(buffer[buf_os[kp]]));
-      // cout << "gather, got buf from " << p << ", kp " << kp << " " << p_buffer.Size() << ": "; prow(p_buffer); cout << endl;
-      // cout << "apply to dofs ";
-      for (auto d:exdofs) {
-	if (!pds.IsMasterDof(d)) continue;
-	// TV old = tvec(d);
-	tvec(d) += p_buffer[c++];
-	// cout << "tvec(" << d << ") += " << p_buffer[c-1] << ": "
-	//      << old << " -> " << tvec(d) << endl;
-      }
-      // cout << endl;
-    }
-    MyMPI_WaitAll(rsds);
+    
   } // gather_vec
 
 
@@ -431,52 +401,29 @@ namespace amg
     static Timer t(string("HybridMatrix<bs=")+to_string(BS())+">>::scatter_vec");
     RegionTimer rt(t);
 
-    if (vec.GetParallelStatus() == NOT_PARALLEL) {
-      return;
-    }
-    vec.SetParallelStatus(CUMULATED);
+    ParallelBaseVector * parvec = const_cast<ParallelBaseVector*>(dynamic_cast_ParallelBaseVector(&vec));
 
-    FlatVector<TV> fvec = vec.FV<TV>();
-    auto & pds = *pardofs;
-    auto ex_procs = pds.GetDistantProcs();
-    rsds.SetSize0();
-    for (int kkp : Range(nexp_larger)) {
-      int kp = nexp_smaller + kkp;
-      auto p = ex_procs[kp];
-      int sz = buf_os[kp+1] - buf_os[kp];
-      FlatArray<TV> p_buffer (sz, &(buffer[buf_os[kp]]));
-      // cout << "scatter, send update to " << p << ", kp " << kp << " " << p_buffer.Size() << ": "; prow(p_buffer); cout << endl;
-      rsds.Append(MyMPI_ISend(p_buffer, p, MPI_TAG_AMG, comm));
-      // MPI_Request_free(&reqs); // TODO: am i SURE that this is OK??
+    if (!parvec)
+      { return; }
+
+    auto ex_procs = paralleldofs->GetDistantProcs();
+
+    parvec->SetParallelStatus(CUMULATED); parvec->Distribute();
+
+    for (auto kkp : Range(nexp_larger))
+      { parvec->ISend(ex_procs[nexp_smaller + kkp], rr_gather[kkp]); }
+
+    for (auto kp : Range(nexp_smaller))
+      { parvec->IRecvVec(ex_procs[kp], rr_scatter[kp]); }
+
+    MyMPI_WaitAll(rr_gather);
+
+    for (auto j : Range(nexp_smaller)) {
+      auto kp = MyMPI_WaitAny(rr_scatter);
+      parvec->AddRecvValues(ex_procs[kp]);
     }
-    if (nexp_smaller==0) { MyMPI_WaitAll(rsds); return; }
-    for (int kp : Range(nexp_smaller)) {
-      int sz = buf_os[kp+1] - buf_os[kp];
-      // cout << "scatter, recv " << sz << " from " << p << ", kp " << kp << endl;
-      FlatArray<TV> p_buffer (sz, &(buffer[buf_os[kp]]));
-      rr_scatter[kp] = MyMPI_IRecv(p_buffer, ex_procs[kp], MPI_TAG_AMG, comm);
-    }
-    int nrr = nexp_smaller;
-    MPI_Request * rrptr = &rr_scatter[0];
-    int ind;
-    for (int nreq = 0; nreq<nexp_smaller; nreq++) {
-      MPI_Waitany(nrr, rrptr, &ind, MPI_STATUS_IGNORE);
-      int kp = ind;
-      auto p = ex_procs[kp];
-      auto exdofs = pds.GetExchangeDofs(p);
-      int sz = buf_os[kp+1] - buf_os[kp];
-      FlatArray<TV> p_buffer (sz, &(buffer[buf_os[kp]]));
-      // cout << "apply update from " << p << ", kp " << kp << " " << p_buffer.Size() << ": "; prow(p_buffer); cout << endl;
-      int c = 0;
-      // cout << "to dofs: ";
-      for (auto d:exdofs) {
-	auto master = pds.GetMasterProc(d);
-	// if (master==p) cout << d << " ";
-	if (master==p) fvec(d) += p_buffer[c++];
-      }
-      // cout << endl;
-    }
-    MyMPI_WaitAll(rsds);
+
+    parvec->SetParallelStatus(CUMULATED);
   } // scatter_vec
 
     
@@ -489,7 +436,7 @@ namespace amg
   }
 
   template<> INLINE void AddODToD<double> (const double & v, double & w)
-  { w += 0.5 * fabs(v); }
+  { w += fabs(v); }
 
   // template<> INLINE void AddODToD<Complex> (const double & v, double & w)
   // { w += 0.5 * fabs(v); }
@@ -498,17 +445,20 @@ namespace amg
   template<class TM>
   Array<TM> HybridGSS2<TM> :: CalcAdditionalDiag ()
   {
+    static Timer t(string("HybridGSS<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::CalcAdditionalDiag");
+    RegionTimer rt(t);
+
     Array<TM> add_diag(A->Height()); add_diag = 0;
  
     auto S = A->GetSPS();
     if (S == nullptr)
       { return add_diag; }
-    
+
     for (auto k : Range(S->Height())) {
-      if (pardofs->IsMasterDof(k)) continue;
       auto rvs = S->GetRowValues(k);
-      for (auto v : rvs) {
-	AddODToD(v, add_diag[k]);
+      for (auto l : Range(rvs)) {
+	AddODToD(rvs[l], add_diag[k]);
+	  // AddODToD(rvs[l], add_diag[ris[l]]);
       }
     }
 
@@ -536,6 +486,7 @@ namespace amg
     }
     SetParallelDofs(pardofs);
 
+    origA = _A;
     auto& M = *A->GetM();
 
     Array<TM> add_diag = CalcAdditionalDiag();
@@ -545,8 +496,7 @@ namespace amg
 	if (pardofs->IsMasterDof(k))
 	  M(k,k) += add_diag[k];
 
-    cout << "add_diag: " << endl;
-    prow2(add_diag);
+    cout << "add_diag: " << endl; prow2(add_diag); cout << endl;
 
     shared_ptr<BitArray> mss = _subset;
     if (_subset && pardofs) {
@@ -557,9 +507,6 @@ namespace amg
       }
     }
 
-    cout << "M: " << endl << M << endl;
-    cout << "SPM: " << endl << *spm << endl;
-    
     jac = make_shared<JacobiPrecond<TM>>(M, mss, false); // false to make sure it does not cumulate diag
     // jac = make_shared<JacobiPrecond<TM>>(*spm, mss, false); // false to make sure it does not cumulate diag
 
@@ -567,7 +514,7 @@ namespace amg
       for (auto k : Range(spm->Height()))
 	if (pardofs->IsMasterDof(k))
 	  M(k,k) -= add_diag[k];
-    
+
   }
 
   template<class TM>
@@ -587,29 +534,30 @@ namespace amg
     const auto & bloc = *get_loc_ptr(b);
     auto & resloc = *get_loc_ptr(res);
 
-    A->gather_vec(x); // does nothing for cumulated x (as it usually is)
+    // A->gather_vec(x); // does nothing for cumulated x (as it usually is)
+    x.Cumulate();
 
 
     if (!res_updated) {
       b.Distribute();
       if (x_zero)
-	{ resloc = bloc; }
+    	{ resloc = bloc; }
       else
-	{ resloc = bloc - *A->GetS() * xloc; }
+    	{ resloc = bloc - *A->GetS() * xloc; }
       res.SetParallelStatus(DISTRIBUTED);
     }
 
-    res.Distribute();
-
-    A->gather_vec(res);
+    // A->gather_vec(res); // res.SetParallelStatus(CUMULATED); res.Distribute();
     
+    res.Cumulate(); res.Distribute();
+
     switch(type) {
     case(0) : {
-      jac->GSSmooth(xloc, bloc);
+      jac->GSSmooth(xloc, resloc);
       break;
     }
     case(1) : {
-      jac->GSSmoothBack(xloc, bloc);
+      jac->GSSmoothBack(xloc, resloc);
       break;
     }
     case(2) : {
@@ -628,10 +576,54 @@ namespace amg
     }
     }
 
-    A->scatter_vec(x); x.SetParallelStatus(CUMULATED);
+    A->scatter_vec(x);
+
+    // x.SetParallelStatus(CUMULATED); x.Distribute(); x.Cumulate();
+
+    // cout << "x now: " << x.GetParallelStatus() << endl;
+    // for (auto k : Range(A->Height())) {
+    //   cout << k<< "> " << xloc.template FV<TV>()(k) << ", dps = "; prow2(pardofs->GetDistantProcs(k)); cout << endl;
+    // }
+    // cout << endl;
+    
 
     if (update_res) {
       res = b - *A * x;
+
+      // auto res2 = res.CreateVector();
+      // res2 = b - *origA * x;
+      // auto res3 = res.CreateVector();
+      // res3 = b - *A * x;
+      // auto res4 = res.CreateVector();
+      // res4 = res3;
+      // res4 -= res2;
+
+      // cout << "DIFF AX orig // A: " << endl;
+      // for (auto k : Range(res.FVDouble().Size())) {
+      // 	auto diff = fabs(res4.FVDouble()[k]);
+      // 	auto dps = pardofs->GetDistantProcs(k);
+      // 	if (diff > 1e-8) {
+      // 	  cout << k << ": " << res2.FVDouble()[k] << " // " <<  res3.FVDouble()[k] << " // " << fabs(diff) << " // dps ";
+      // 	  prow2(dps);
+      // 	  cout << endl;
+      // 	}
+      // }
+      // cout << endl;
+      
+
+      // cout << "CUMUL DIFF AX orig // A: " << L2Norm(res4) << " // rel " << L2Norm(res4)/L2Norm(res) << " // rel " << L2Norm(res4)/L2Norm(b) << endl;
+      // res2.Cumulate(); res3.Cumulate(); res4.Cumulate();
+      // for (auto k : Range(res.FVDouble().Size())) {
+      // 	auto diff = fabs(res4.FVDouble()[k]);
+      // 	auto dps = pardofs->GetDistantProcs(k);
+      // 	if (diff > 1e-8) {
+      // 	  cout << k << ": " << res2.FVDouble()[k] << " // " <<  res3.FVDouble()[k] << " // " << fabs(diff) << " // dps ";
+      // 	  prow2(dps);
+      // 	  cout << endl;
+      // 	}
+      // }
+      // cout << endl;
+
     }
   }
 
@@ -641,7 +633,7 @@ namespace amg
 				 BaseVector  &res, bool res_updated,
 				 bool update_res, bool x_zero) const
   {
-    SmoothInternal(smooth_symmetric ? 0 : 2, x, b, res, res_updated, update_res, x_zero);
+    SmoothInternal(smooth_symmetric ? 2 : 0, x, b, res, res_updated, update_res, x_zero);
   }
 
 
@@ -650,7 +642,7 @@ namespace amg
 				     BaseVector &res, bool res_updated,
 				     bool update_res, bool x_zero) const
   {
-    SmoothInternal(smooth_symmetric ? 1 : 3, x, b, res, res_updated, update_res, x_zero);
+    SmoothInternal(smooth_symmetric ? 3 : 1, x, b, res, res_updated, update_res, x_zero);
   }
 
 
