@@ -6,6 +6,204 @@
 namespace amg
 {
 
+  template<class TM>
+  GSS2<TM> :: GSS2 (shared_ptr<SparseMatrix<TM>> mat, shared_ptr<BitArray> subset, FlatArray<TM> add_diag)
+    : spmat(mat), freedofs(subset)
+  {
+    H = spmat->Height();
+    dinv.SetSize (H); 
+    const auto& A(*spmat);
+    ParallelFor (H, [&](size_t i) {
+  	if (!freedofs || freedofs->Test(i)) {
+  	  dinv[i] = A(i,i);
+  	  CalcInverse (dinv[i]);
+  	}
+  	else
+  	  { dinv[i] = TM(0.0); }
+      });
+  }
+
+
+  // template<class TM>
+  // void GSS2<TM> :: Smooth (BaseVector  &x, const BaseVector &b,
+  // 			BaseVector  &res, bool res_updated,
+  // 			bool update_res, bool x_zero) const
+  // {
+  //   SmoothInternal(0, x, b, res, res_updated, update_res, x_zero);
+  // }
+
+
+  // template<class TM>
+  // void GSS2<TM> :: SmoothBack (BaseVector  &x, const BaseVector &b,
+  // 			    BaseVector &res, bool res_updated,
+  // 			    bool update_res, bool x_zero) const
+  // {
+  //   SmoothInternal(1, x, b, res, res_updated, update_res, x_zero);
+  // }
+
+
+  // template<class TM>
+  // void GSS2<TM> :: SmoothSym (BaseVector  &x, const BaseVector &b,
+  // 			   BaseVector  &res, bool res_updated,
+  // 			   bool update_res, bool x_zero) const
+  // {
+  //   SmoothInternal(2, x, b, res, res_updated, update_res, x_zero);
+  // }
+
+
+  // template<class TM>
+  // void GSS2<TM> :: SmoothSymReverse (BaseVector  &x, const BaseVector &b,
+  // 				  BaseVector &res, bool res_updated,
+  // 				  bool update_res, bool x_zero) const
+  // {
+  //   SmoothInternal(3, x, b, res, res_updated, update_res, x_zero);
+  // }
+
+
+  // template<class TM>
+  // void GSS2<TM> :: SmoothInternal (int type, BaseVector  &x, const BaseVector &b, BaseVector &res,
+  // 				bool res_updated, bool update_res, bool x_zero) const
+  // {
+  //   if (type == 2) { // FW/BW
+  //     bool up_mid = res_updated; // .. hm ..
+  //     SmoothInternal(0, x, b, res, res_updated, up_mid, x_zero);
+  //     SmoothInternal(1, x, b, res, up_mid, update_res, false);
+  //     return;
+  //   }
+  //   else if (type == 3) { // BW/FW
+  //     bool up_mid = res_updated; // .. hm ..
+  //     SmoothInternal(1, x, b, res, res_updated, up_mid, x_zero);
+  //     SmoothInternal(0, x, b, res, up_mid, update_res, false);
+  //     return;
+  //   }
+
+  //   const auto& A(*spmat);
+
+  //   auto fvx = x.FV<TV>();
+  //   auto fvb = b.FV<TV>();
+  //   auto fvr = res.FV<TV>();
+
+  //   // most of the time either RU+UR or !RU + !UR
+  //   if (res_updated && !update_res) { // RU && !UR
+  //     SmoothInternal(type, x, b, res, false, false, x_zero); // this is actually cheaper I think
+  //     return;
+  //   }
+  //   if (!res_updated && update_res) { // !RU + UR
+  //     // should happen very infrequently - we can affort mat x vector 
+  //     if (x_zero)
+  // 	{ res = b; }
+  //     else
+  // 	{ res = b - A * x; } // what about freedofs?
+  //     SmoothInternal(type, x, b, res, true, update_res, x_zero);
+  //     return;
+  //   }
+  //   // RU+UR or !RU+!UR case
+
+  //   auto fds = freedofs.get();
+
+  //   auto update_row_resu = [&](auto rownr) {
+  //     auto w = -dinv[rownr] * fvr(rownr);
+  //     A.AddRowTransToVector(rownr, w, fvr);
+  //     fvx(rownr) -= w;
+  //   };
+
+  //   auto update_row_resnotu = [&](auto rownr) {
+  //     auto r = fvb(rownr) - A.RowTimesVector(rownr, fvx);
+  //     fvx(rownr) += dinv[rownr] * r;
+  //   };
+
+  //   if (type==0) { // FW
+  //     if (res_updated) {
+  // 	for (size_t rownr = 0; rownr<H; rownr++)
+  // 	  if (!fds || fds->Test(rownr))
+  // 	    update_row_resu(rownr);
+  //     }
+  //     else {
+  // 	for (size_t rownr = 0; rownr<H; rownr++)
+  // 	  if (!fds || fds->Test(rownr))
+  // 	    update_row_resnotu(rownr);
+  //     }
+  //   }
+  //   else { // BW
+  //     if (res_updated)
+  // 	for (int rownr = H-1; rownr>=0; rownr--) {
+  // 	  if (!fds || fds->Test(rownr))
+  // 	    update_row_resu(rownr);
+  // 	}
+  //     else {
+  // 	for (int rownr = H-1; rownr>=0; rownr--)
+  // 	  if (!fds || fds->Test(rownr))
+  // 	    update_row_resnotu(rownr);
+  //     }
+  //   }
+
+  // } // GSS2::SmoothInternal
+
+
+  template<class TM>
+  void GSS2<TM> :: SmoothRHSInternal (BaseVector &x, const BaseVector &b, bool backwards) const
+  {
+    static Timer t(string("GSS2<bs=")+to_string(BS())+">::SmoothRHS");
+    RegionTimer rt(t);
+
+    const auto& A(*spmat);
+
+    auto fds = freedofs.get();
+
+    auto fvx = x.FV<TV>();
+    auto fvb = b.FV<TV>();
+
+    auto up_row = [&](auto rownr) {
+      auto r = fvb(rownr) - A.RowTimesVector(rownr, fvx);
+      fvx(rownr) += dinv[rownr] * r;
+    };
+
+    if (!backwards) {
+      for (size_t rownr = 0; rownr<H; rownr++)
+	if (!fds || fds->Test(rownr))
+	  up_row(rownr);
+    }
+    else {
+      for (int rownr = H-1; rownr>=0; rownr--)
+	if (!fds || fds->Test(rownr))
+	  up_row(rownr);
+    }
+
+  }
+
+  template<class TM>
+  void GSS2<TM> :: SmoothRESInternal (BaseVector &x, BaseVector &res, bool backwards) const
+  {
+    static Timer t(string("GSS2<bs=")+to_string(BS())+">::SmoothRES");
+    RegionTimer rt(t);
+
+    const auto& A(*spmat);
+
+    auto fds = freedofs.get();
+
+    auto fvx = x.FV<TV>();
+    auto fvr = res.FV<TV>();
+
+    auto up_row = [&](auto rownr) {
+      auto w = -dinv[rownr] * fvr(rownr);
+      A.AddRowTransToVector(rownr, w, fvr);
+      fvx(rownr) -= w;
+    };
+    
+    if (!backwards) {
+      for (size_t rownr = 0; rownr<H; rownr++)
+	if (!fds || fds->Test(rownr))
+	  up_row(rownr);
+    }
+    else {
+      for (int rownr = H-1; rownr>=0; rownr--)
+	if (!fds || fds->Test(rownr))
+	  up_row(rownr);
+    }
+
+  }
+
+
   class NoMatrix : public BaseMatrix
   {
   protected:
@@ -30,6 +228,9 @@ namespace amg
   template<class TM>
   void HybridMatrix<TM> :: MultAdd (double s, const BaseVector & x, BaseVector & y) const
   {
+    static Timer t(string("HybridMatrix<bs=")+to_string(BS())+">::MultAdd");
+    RegionTimer rt(t);
+
     x.Cumulate();
     y.Distribute();
     M->MultAdd(s, x, y);
@@ -39,6 +240,9 @@ namespace amg
   template<class TM>
   void HybridMatrix<TM> :: MultAdd (Complex s, const BaseVector & x, BaseVector & y) const
   {
+    static Timer t(string("HybridMatrix<bs=")+to_string(BS())+">::MultAdd");
+    RegionTimer rt(t);
+
     x.Cumulate();
     y.Distribute();
     M->MultAdd(s, x, y);
@@ -48,6 +252,9 @@ namespace amg
   template<class TM>
   void HybridMatrix<TM> :: MultTransAdd (double s, const BaseVector & x, BaseVector & y) const
   {
+    static Timer t(string("HybridMatrix<bs=")+to_string(BS())+">::MultTransAdd");
+    RegionTimer rt(t);
+
     x.Cumulate();
     y.Distribute();
     M->MultTransAdd(s, x, y);
@@ -57,6 +264,9 @@ namespace amg
   template<class TM>
   void HybridMatrix<TM> :: MultTransAdd (Complex s, const BaseVector & x, BaseVector & y) const
   {
+    static Timer t(string("HybridMatrix<bs=")+to_string(BS())+">::MultTransAdd");
+    RegionTimer rt(t);
+
     x.Cumulate();
     y.Distribute();
     M->MultTransAdd(s, x, y);
@@ -496,7 +706,7 @@ namespace amg
 	if (pardofs->IsMasterDof(k))
 	  M(k,k) += add_diag[k];
 
-    cout << "add_diag: " << endl; prow2(add_diag); cout << endl;
+    // cout << "add_diag: " << endl; prow2(add_diag); cout << endl;
 
     shared_ptr<BitArray> mss = _subset;
     if (_subset && pardofs) {
@@ -509,12 +719,128 @@ namespace amg
 
     jac = make_shared<JacobiPrecond<TM>>(M, mss, false); // false to make sure it does not cumulate diag
     // jac = make_shared<JacobiPrecond<TM>>(*spm, mss, false); // false to make sure it does not cumulate diag
+    jac2 = make_shared<GSS2<TM>>(A->GetM(), mss);
+
+    Sx = make_shared<S_BaseVectorPtr<double>> (pardofs->GetNDofLocal(), pardofs->GetEntrySize());
 
     if (parmat != nullptr)
       for (auto k : Range(spm->Height()))
 	if (pardofs->IsMasterDof(k))
 	  M(k,k) -= add_diag[k];
 
+  }
+
+
+  template<class TM>
+  void HybridGSS2<TM> :: SmoothInternal2 (int type, BaseVector  &x, const BaseVector &b, BaseVector &res,
+					  bool res_updated, bool update_res, bool x_zero) const
+  {
+
+    static Timer t(string("HybridGSS2<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::Smooth");
+    RegionTimer rt(t);
+
+    static Timer tpre(string("HybridGSS2<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::Smooth - pre");
+    static Timer tpost(string("HybridGSS2<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::Smooth - post");
+
+    tpre.Start();
+
+    const auto H = A->Height();
+
+    // cout << typeid(x).name() << " " << typeid(b).name() << " " << typeid(res).name() << endl;
+
+    // most of the time either RU==UR
+    if (res_updated && !update_res) { // RU && !UR
+      SmoothInternal(type, x, b, res, false, false, x_zero); // this is actually cheaper I think
+      return;
+    }
+    if (!res_updated && update_res) { // !RU + UR
+      // should happen very infrequently - we can affort mat x vector 
+      if (x_zero)
+  	{ res = b; }
+      else
+  	{ res = b - *A * x; } // what about freedofs?
+      SmoothInternal(type, x, b, res, true, update_res, x_zero);
+      return;
+    }
+
+    /** !!! RU==UR case !!! **/
+
+    auto get_loc_ptr = [&](const auto& x) -> BaseVector* { // FML i hate this
+      if (auto parvec = dynamic_cast<const ParallelBaseVector*>(&x))
+	{ return parvec->GetLocalVector().get(); }
+      else
+	{ return const_cast<BaseVector*>(&x); }
+    };
+
+    const auto& S(*A->GetS());
+
+    auto & xloc = *get_loc_ptr(x);
+    const auto & bloc = *get_loc_ptr(b);
+    auto & resloc = *get_loc_ptr(res);
+    auto & Sxloc = *get_loc_ptr(*Sx);
+    // auto & Sxloc = *Sx; // local vector anyways (?)
+
+    x.Cumulate(); // should do nothing most of the time
+
+
+    if (!res_updated) { // feed in b-S*x as RHS, not res-update
+      b.Distribute();
+      if (x_zero)
+	{ resloc = bloc;}
+      else
+	{ resloc = bloc - S * xloc; }
+      res.SetParallelStatus(DISTRIBUTED);
+    }
+    else if (!x_zero) // stash S*x_old, because afterwards we get out b-Mx_new-Sx_old
+      { Sxloc = S * xloc; }
+
+    A->gather_vec(res); res.SetParallelStatus(CUMULATED); res.Distribute();
+    
+    tpre.Stop();
+
+    switch(type) {
+    case(0) : {
+      // jac->GSSmooth(xloc, resloc);
+      if (update_res)
+	{ jac2->SmoothRES(xloc, resloc); }
+      else
+	{ jac2->Smooth(xloc, resloc); }
+      break;
+    }
+    case(1) : {
+      if (update_res)
+	{ jac2->SmoothBackRES(xloc, resloc); }
+      else
+	{ jac2->SmoothBack(xloc, resloc); }
+      break;
+    }
+    case(2) : {
+      throw Exception("GSS invalid type");
+      jac->GSSmooth(xloc, resloc);
+      jac->GSSmoothBack(xloc, resloc);
+      break;
+    }
+    case(3) : {
+      throw Exception("GSS invalid type");
+      jac->GSSmoothBack(xloc, resloc);
+      jac->GSSmooth(xloc, resloc);
+      break;
+    }
+    default : {
+      throw Exception("GSS invalid type");
+      break;
+    }
+    }
+    tpost.Start();
+    A->scatter_vec(x);
+
+    if (update_res) {
+      res.Distribute();
+      if (!x_zero)
+       	{ resloc += Sxloc; }
+      S.MultAdd(-1, xloc, resloc);
+    }
+    tpost.Stop();
   }
 
   template<class TM>
@@ -571,7 +897,7 @@ namespace amg
       break;
     }
     default : {
-      throw Exception("HGSS invalid type");
+      throw Exception("GSS invalid type");
       break;
     }
     }
@@ -633,7 +959,7 @@ namespace amg
 				 BaseVector  &res, bool res_updated,
 				 bool update_res, bool x_zero) const
   {
-    SmoothInternal(smooth_symmetric ? 2 : 0, x, b, res, res_updated, update_res, x_zero);
+    SmoothInternal2(smooth_symmetric ? 2 : 0, x, b, res, res_updated, update_res, x_zero);
   }
 
 
@@ -642,7 +968,7 @@ namespace amg
 				     BaseVector &res, bool res_updated,
 				     bool update_res, bool x_zero) const
   {
-    SmoothInternal(smooth_symmetric ? 3 : 1, x, b, res, res_updated, update_res, x_zero);
+    SmoothInternal2(smooth_symmetric ? 3 : 1, x, b, res, res_updated, update_res, x_zero);
   }
 
 

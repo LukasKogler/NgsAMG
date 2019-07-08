@@ -4,6 +4,54 @@
 namespace amg
 {
 
+  /** 
+      Sequential Gauss-Seidel. Can update residual during computation.
+      If add_diag is given, adds uses (D + add_D)^-1 instead if D^-1
+  **/
+  template<class TM>
+  class GSS2
+  {
+  protected:
+    size_t H;
+    shared_ptr<SparseMatrix<TM>> spmat;
+    shared_ptr<BitArray> freedofs;
+    Array<TM> dinv;
+
+  public:
+    using TSCAL = typename mat_traits<TM>::TSCAL;
+    // using BS = mat_traits<TM>::HEIGHT;
+    static constexpr int BS () { return mat_traits<TM>::HEIGHT; }
+    using TV = typename strip_vec<Vec<BS(),TSCAL>> :: type;
+
+    GSS2 (shared_ptr<SparseMatrix<TM>> mat, shared_ptr<BitArray> subset = nullptr,
+	   FlatArray<TM> add_diag = FlatArray<TM>(0, nullptr));
+
+  protected:
+    virtual void SmoothRESInternal (BaseVector &x, BaseVector &res, bool backwards) const;
+    virtual void SmoothRHSInternal (BaseVector &x, const BaseVector &b, bool backwards) const;
+
+  public:
+    // smooth with RHS
+    virtual void Smooth (BaseVector &x, const BaseVector &b) const
+    { SmoothRHSInternal(x, b, false); }
+    virtual void SmoothBack (BaseVector &x, const BaseVector &b) const
+    { SmoothRHSInternal(x, b, true); }
+
+    // smooth with residual and keep it up do date
+    virtual void SmoothRES (BaseVector &x, BaseVector &res) const
+    { SmoothRESInternal(x, res, false); }
+    virtual void SmoothBackRES (BaseVector &x, BaseVector &res) const
+    { SmoothRESInternal(x, res, true); }
+
+    shared_ptr<BitArray> GetFreeDofs () const { return freedofs; }
+
+  protected:
+    void SmoothInternal (int type, BaseVector  &x, const BaseVector &b, BaseVector &res,
+			 bool res_updated = false, bool update_res = true, bool x_zero = false) const;
+
+  };
+
+
   /**
      Splits a ParallelMatrix with a SparseMatrix inside in this way: (M .. master, S .. slave)
         
@@ -92,7 +140,9 @@ namespace amg
     shared_ptr<BaseMatrix> origA;
     shared_ptr<HybridMatrix<TM>> A;
     shared_ptr<JacobiPrecond<TM>> jac;
+    shared_ptr<GSS2<TM>> jac2;
     shared_ptr<ParallelDofs> pardofs;
+    shared_ptr<BaseVector> Sx; // stash C * x_old
     NgsAMG_Comm comm;
     bool smooth_symmetric = false;
 
@@ -106,6 +156,8 @@ namespace amg
     void SmoothInternal (int type, BaseVector  &x, const BaseVector &b, BaseVector &res,
 			 bool res_updated = false, bool update_res = true, bool x_zero = false) const;
 			       
+    void SmoothInternal2 (int type, BaseVector  &x, const BaseVector &b, BaseVector &res,
+			  bool res_updated = false, bool update_res = true, bool x_zero = false) const;
   };
 
 } // namespace amg
