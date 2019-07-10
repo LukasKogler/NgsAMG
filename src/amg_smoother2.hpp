@@ -52,6 +52,8 @@ namespace amg
   };
 
 
+
+
   /**
      Splits a ParallelMatrix with a SparseMatrix inside in this way: (M .. master, S .. slave)
         
@@ -73,7 +75,6 @@ namespace amg
   protected:
     bool dummy = false;
     shared_ptr<SparseMatrix<TM>> M; // the master-master block
-    shared_ptr<SparseMatrix<TM>> sp_S; // master-slave and slave-master blocks
     shared_ptr<BaseMatrix> S; // master-slave and slave-master blocks
     shared_ptr<ParallelDofs> pardofs;
     
@@ -84,13 +85,10 @@ namespace amg
     // using TV = strip_vec<Vec<BS,TSCAL>> :: type;
     using TV = typename strip_vec<Vec<BS(),TSCAL>> :: type;
 
-    HybridMatrix (shared_ptr<ParallelMatrix> parmat);
+    HybridMatrix (shared_ptr<BaseMatrix> mat);
 
-    HybridMatrix (shared_ptr<SparseMatrixTM<TM>> _M); // dummy constructor for actually local mats!
-
-    INLINE shared_ptr<SparseMatrix<TM>> GetM () { return M; }
-    INLINE shared_ptr<BaseMatrix> GetS () { return S; }
-    INLINE shared_ptr<SparseMatrix<TM>> GetSPS () { return sp_S; }
+    shared_ptr<SparseMatrix<TM>> GetM () { return M; }
+    shared_ptr<BaseMatrix> GetS () { return S; }
 
     void gather_vec (const BaseVector & vec) const;
     void scatter_vec (const BaseVector & vec) const;
@@ -105,60 +103,102 @@ namespace amg
     virtual void MultTransAdd (Complex s, const BaseVector & x, BaseVector & y) const override;
 
   protected:
-    void SetUpMats (SparseMatrixTM<TM> & A);
+    void SetUpMats (shared_ptr<SparseMatrix<TM>> A);
 
     // for gather/scatter OPs
-    NgsAMG_Comm comm;
     int nexp;
     int nexp_smaller; mutable Array<MPI_Request> rr_gather;
     int nexp_larger; mutable Array<MPI_Request> rr_scatter;
   }; // class HybridSmoother
 
 
+  /**
+     Any kind of hybrid Smoother, based on local smoothers for diagonal blocks of the global matrix.
+   **/
   template<class TM>
-  class HybridGSS2 : public BaseSmoother
+  class HybridSmoother : public BaseSmoother
+  {
+  public:
+
+    HybridSmoother (shared_ptr<BaseMatrix> _A, bool _csr = false);
+
+
+    virtual void Smooth (BaseVector  &x, const BaseVector &b,
+    			 BaseVector  &res, bool res_updated = false,
+    			 bool update_res = false, bool x_zero = false) const override;
+    virtual void SmoothBack (BaseVector  &x, const BaseVector &b,
+    			     BaseVector &res, bool res_updated = false,
+    			     bool update_res = false, bool x_zero = false) const override;
+
+    virtual Array<MemoryUsage> GetMemoryUsage() const override { return Array<MemoryUsage>(); }
+
+    shared_ptr<BaseVector> Sx; // to stash C * x_old
+    bool smooth_symmetric = false;
+    bool can_smooth_res = false; // temporary hack for block smoothers (they cant update res)
+
+    void SetSymmetric (bool sym) { smooth_symmetric = sym; }
+
+    virtual int VHeight () const override { return A->Height(); }
+    virtual int VWidth () const override { return A->Width(); }
+
+  protected:
+
+    // type: 0 - FW / 1 - BW / 2 - FW/BW / 3 - BW/FW
+    virtual void SmoothInternal (int type, BaseVector  &x, const BaseVector &b, BaseVector &res,
+				 bool res_updated, bool update_res, bool x_zero) const;
+
+    // apply local smoothing operation with right hand side rhs
+    virtual void SmoothLocal (BaseVector &x, const BaseVector &b) const = 0;
+    virtual void SmoothBackLocal (BaseVector &x, const BaseVector &b) const = 0;
+
+    // apply local smoothing, assuming that res is the residuum. update the residuum.
+    virtual void SmoothRESLocal (BaseVector &x, BaseVector &res) const
+    { throw Exception("SmoothRESLocal not implemented"); }
+    virtual void SmoothBackRESLocal (BaseVector &x, BaseVector &res) const
+    { throw Exception("SmoothRESLocal not implemented"); }
+
+    shared_ptr<HybridMatrix<TM>> A;
+  };
+
+
+  /** l1-smoother from "Multigrid Smoothers for Ultraparallel Computing" **/
+  template<class TM>
+  class HybridGSS2 : public HybridSmoother<TM>
   {
   public:
     HybridGSS2 (shared_ptr<BaseMatrix> _A, shared_ptr<BitArray> _subset);
 
-    virtual void Smooth (BaseVector  &x, const BaseVector &b,
-    			 BaseVector  &res, bool res_updated = false,
-    			 bool update_res = true, bool x_zero = false) const override;
-    virtual void SmoothBack (BaseVector  &x, const BaseVector &b,
-    			     BaseVector &res, bool res_updated = false,
-    			     bool update_res = true, bool x_zero = false) const override;
-
-    virtual Array<MemoryUsage> GetMemoryUsage() const override { return Array<MemoryUsage>(); }
-
     using TV = typename strip_vec<Vec<mat_traits<TM>::HEIGHT,typename mat_traits<TM>::TSCAL>> :: type;
 
-    void SetSymmetric (bool sym) { smooth_symmetric = sym; }
-
-    virtual Array<TM> CalcAdditionalDiag ();
+    Array<TM> CalcAdditionalDiag ();
 
   protected:
-    shared_ptr<BaseMatrix> origA;
-    shared_ptr<HybridMatrix<TM>> A;
-    shared_ptr<JacobiPrecond<TM>> jac;
-    shared_ptr<GSS2<TM>> jac2;
-    shared_ptr<ParallelDofs> pardofs;
-    shared_ptr<BaseVector> Sx; // stash C * x_old
-    NgsAMG_Comm comm;
-    bool smooth_symmetric = false;
+    using HybridSmoother<TM>::A;
 
-    /**
-       type:
-       0 - FW
-       1 - BW
-       2 - FW/BW
-       3 - BW/FW
-    **/
-    void SmoothInternal (int type, BaseVector  &x, const BaseVector &b, BaseVector &res,
-			 bool res_updated = false, bool update_res = true, bool x_zero = false) const;
-			       
-    void SmoothInternal2 (int type, BaseVector  &x, const BaseVector &b, BaseVector &res,
-			  bool res_updated = false, bool update_res = true, bool x_zero = false) const;
+    shared_ptr<GSS2<TM>> jac;
+
+    virtual void SmoothLocal (BaseVector &x, const BaseVector &b) const override;
+    virtual void SmoothBackLocal (BaseVector &x, const BaseVector &b) const override;
+    virtual void SmoothRESLocal (BaseVector &x, BaseVector &res) const override;
+    virtual void SmoothBackRESLocal (BaseVector &x, BaseVector &res) const override;
   };
+
+
+  template<class TM>
+  class HybridBlockSmoother : public HybridSmoother<TM>
+  {
+  public:
+    HybridBlockSmoother (shared_ptr<BaseMatrix> _A, shared_ptr<Table<int>> _blocktable);
+
+  protected:
+    using HybridSmoother<TM>::A;
+
+    shared_ptr<BlockJacobiPrecond<TM, typename HybridMatrix<TM>::TV, typename HybridMatrix<TM>::TV>> jac;
+
+    virtual void SmoothLocal (BaseVector &x, const BaseVector &b) const override;
+    virtual void SmoothBackLocal (BaseVector &x, const BaseVector &b) const override;
+  };
+
 
 } // namespace amg
 
