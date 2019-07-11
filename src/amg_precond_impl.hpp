@@ -1,8 +1,6 @@
 #ifndef FILE_AMGPCIMPL
 #define FILE_AMGPCIMPL
 
-#include "amg.hpp"
-
 namespace amg
 {
 
@@ -16,6 +14,99 @@ namespace amg
     finest_mat = fine_mat;
     embed_step = aembed_step;
     Setup();
+  }
+
+
+  template<class TMESH, NODE_TYPE NT, int DPN>
+  void NodeWiseAMG<TMESH, NT, DPN> :: Setup2 ()
+  {
+    string timer_name = GetName() + string("::Setup");
+    static Timer t(timer_name); RegionTimer rt(t);
+    
+    auto dof_map = make_shared<DOFMap>();
+
+    Capsule fcap = { 0, mesh, finest_mat, BuildParDofs(mesh), embed_step };
+
+    // compute prolongations and coarse level matrices
+    auto cmats = SetUpLevels(fcap, dof_map);
+    Array<shared_ptr<BaseSparseMatrix>> mats(cmats.Size() + 1);
+    mats[0] = finest_mat;
+    for (auto k : Range(cmats.Size()))
+      mats[1+k] = cmats[cmats.Size() - 1 - k];
+
+    // set up smoothers
+
+  }
+
+
+  template<class TMESH, NODE_TYPE NT, int DPN>
+  Array<shared_ptr<BaseSparseMatrix>> NodeWiseAMG<TMESH, NT, DPN> ::  SetUpLevels (Capsule cap, shared_ptr<DOFMap> dm)
+  {
+    shared_ptr<BaseDOFMapStep> ds;
+
+    shared_ptr<TMESH> fmesh = capsule.mesh, cmesh = capsule.mesh;
+    shared_ptr<ParallelDofs> fpds = capsule.pardofs, cpds = nullptr;
+    auto curr_nv = fmesh->GetNNGlobal<NT_VERTEX>();
+    size_t goal_nv = max( (cap.level == 0) ? options->first_aaf * curr_nv : options->ass_aster_fac * curr_nv, options->max_n_verts);
+
+    INT<3> level = {capsule.level, 0, 0};
+
+    
+    shared_ptr<TSPM_TM> conc_pwp;
+    while (curr_nv > goal_nv) { // do any steps until we reduce NV by this factor
+      while (curr_nv > goal_nv) { // coarsening steps
+	auto gstep = TryCoarsen(level, cmesh);
+
+	if (gstep == nullptr)
+	  { break; }
+
+	bool non_acceptable = false;
+	if (non_acceptable)
+	  { break; }
+	
+	cmesh = static_pointer_cast<TMESH>(gstep->GetMappedMesh());
+
+	auto pwp = BuildPWProl(gstep, fpds);
+
+	conc_prol = (conc_prol == nullptr) ? pwp : MatMultAB(*conc_prol, *pwp);
+	cpds = BuildParallelDofs(fmesh);
+
+	// try discard here I think
+
+      }
+      if (conc_pwp == nullptr)
+	{ throw Exception("Could not even coarsen once, lol."); }
+
+      fpds = cpds; conc_pwp = nullptr; fmesh = cmesh;
+      auto pstep = make_shared<ProlMap<TSPM_TM>> (pwp, fpds, cpds, true);
+      SmoothProlongation(pstep, capsule.mesh);
+      ds->AddStep(pstep);
+
+      if (auto gs_c = TryContract(level, fmesh)) {
+	auto ds = BuildFODMapStep(level, gs_c, fpds);
+	ds->AddStep(ds);
+	fmesh = cmesh = ds->GetMappedMesh();
+	fpds = cpds = ds->GetMappedParDofs();
+      }
+      if (cmesh == nullptr) // contracted out - I am done!
+	{ break; }
+    }
+    
+    // coarse level matrix
+    auto cmat = dm->AssembleMatrix(cap.mat);
+
+    bool do_more_levels = (cap.level < options->max_n_levels) && (cmesh->GetNNGlobal<NT_VERTEX>() > options->max_n_verts);
+    do_more_levels &&= (cmesh != nullptr); // only continue if we are not contracted out
+    
+    if (do_more_levels) {
+      // recursively call setup
+      auto cmats = SetUpLevels( cap.level + 1, cmesh, cmat, cpds, nullptr );
+      cmats.Append(cmat);
+    }
+    else {
+      // no more coarse levels
+      return Array<shared_ptr<BaseSparseMatrix>> ({cmat});
+    }
   }
 
   template<class TMESH, NODE_TYPE NT, int DPN>

@@ -560,7 +560,7 @@ namespace amg
     static Timer tpre(string("HybridGSS2<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::Smooth - pre");
     static Timer tpost(string("HybridGSS2<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::Smooth - post");
 
-    // most of the time either RU==UR
+    /** most of the time RU == UR, if not, reduce to such a case **/
     if (res_updated && !update_res) { // RU && !UR
       SmoothInternal(type, x, b, res, false, false, x_zero); // this is actually cheaper I think
       return;
@@ -605,7 +605,7 @@ namespace amg
 	if (!res_updated) { // feed in b-S*x as RHS, not res-update
 	  b.Distribute();
 	  if (x_zero)
-	    { resloc = bloc;}
+	    { resloc = bloc; } // TODO: take bloc for this cast
 	  else
 	    { resloc = bloc - *S * xloc; }
 	  res.SetParallelStatus(DISTRIBUTED);
@@ -669,12 +669,12 @@ namespace amg
 
   template<class TM>
   HybridGSS2<TM> :: HybridGSS2 (shared_ptr<BaseMatrix> _A, shared_ptr<BitArray> _subset)
-    : HybridSmoother<TM> (_A)
+    : HybridSmoother<TM>(_A, true)
   {
 
     auto& M = *A->GetM();
 
-    Array<TM> add_diag = CalcAdditionalDiag();
+    Array<TM> add_diag = this->CalcAdditionalDiag();
 
     auto pardofs = A->GetParallelDofs();
 
@@ -714,7 +714,7 @@ namespace amg
   // template<> INLINE void AddODToD<Complex> (const double & v, double & w)
   // { w += 0.5 * fabs(v); }
   template<class TM>
-  Array<TM> HybridGSS2<TM> :: CalcAdditionalDiag ()
+  Array<TM> HybridSmoother<TM> :: CalcAdditionalDiag ()
   {
     static Timer t(string("HybridGSS<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::CalcAdditionalDiag");
     RegionTimer rt(t);
@@ -777,6 +777,11 @@ namespace amg
 	    if (pardofs->IsMasterDof(dof))
 	      dofs[c++] = dof;
 	  dofs.SetSize(c);
+	  if (c != row.Size()) {
+	    cout << "adjusted block " << bnr << endl;
+	    prow2(row); cout << endl;
+	    prow2(dofs); cout << endl;
+	  }
 	  lam(dofs);
 	}
       };
@@ -796,7 +801,22 @@ namespace amg
       _blocktable = b2;
     }
 
-    jac = make_shared<BlockJacobiPrecond<TM, typename HybridMatrix<TM>::TV, typename HybridMatrix<TM>::TV>> (*A->GetM(), _blocktable);
+    Array<TM> add_diag = this->CalcAdditionalDiag();
+
+    auto &M(*A->GetM());
+    auto pardofs = A->GetParallelDofs();
+
+    if (pardofs != nullptr)
+      for (auto k : Range(M.Height()))
+	if (pardofs->IsMasterDof(k))
+	  M(k,k) += add_diag[k];
+
+    jac = make_shared<BlockJacobiPrecond<TM, typename HybridMatrix<TM>::TV, typename HybridMatrix<TM>::TV>> (M, _blocktable);
+
+    if (pardofs != nullptr)
+      for (auto k : Range(M.Height()))
+	if (pardofs->IsMasterDof(k))
+	  M(k,k) -= add_diag[k];
   }
 
 
@@ -807,6 +827,22 @@ namespace amg
   template<class TM>
   void HybridBlockSmoother<TM> :: SmoothBackLocal (BaseVector &x, const BaseVector &b) const
   { jac->GSSmoothBack(x, b); }
+
+  // template<class TM>
+  // void HybridBlockSmoother<TM> :: Smooth (BaseVector  &x, const BaseVector &b,
+  // 					  BaseVector  &res, bool res_updated,
+  // 					  bool update_res, bool x_zero) const
+  // {
+  //   jac->GSSmooth(x, b);
+  // }
+
+  // template<class TM>
+  // void HybridBlockSmoother<TM> :: SmoothBack (BaseVector  &x, const BaseVector &b,
+  // 					      BaseVector &res, bool res_updated,
+  // 					      bool update_res, bool x_zero) const
+  // {
+  //   jac->GSSmoothBack(x, b);
+  // }
 
 } // namespace amg
 
@@ -827,7 +863,7 @@ namespace amg
 	   { sm->Smooth(*sol, *rhs, *res); }, py::arg("sol"), py::arg("rhs"), py::arg("res"))
       .def("SmoothBack", [](shared_ptr<HybridSmoother<double>> & sm, shared_ptr<BaseVector> & sol,
 			    shared_ptr<BaseVector> & rhs, shared_ptr<BaseVector> & res)
-	   { sm->Smooth(*sol, *rhs, *res); }, py::arg("sol"), py::arg("rhs"), py::arg("res"))
+	   { sm->SmoothBack(*sol, *rhs, *res); }, py::arg("sol"), py::arg("rhs"), py::arg("res"))
       .def("SmoothSymm", [](shared_ptr<HybridSmoother<double>> & sm, shared_ptr<BaseVector> & sol,
 			    shared_ptr<BaseVector> & rhs, shared_ptr<BaseVector> & res) {
 	     sm->Smooth(*sol, *rhs, *res);

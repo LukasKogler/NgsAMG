@@ -67,6 +67,33 @@ namespace amg
       if (rdiff > 0.1)
 	cout << k << ": " << old_wts[k] << " -> " << edata[k] << ( (edata[k] > old_wts[k]) ? ", up " : ", down " ) << rdiff << endl;
     }
+
+    if (mesh->GetNN<NT_VERTEX>()) {
+
+      auto econ = mesh->GetEdgeCM();
+      double text = 0;
+      Array<int> extra_per_row(mesh->GetNodes<NT_VERTEX>()); extra_per_row = 0;
+      for (auto k : Range(extra_per_row.Size())) {
+	auto ris = mat->GetRowIndices(k);
+	auto es = econ->GetRowIndices(k);
+	extra_per_row[k] = ris.Size() - es.Size();
+	text += (ris.Size() - es.Size()) / (1.0 * extra_per_row.Size());
+      }
+
+      cout << "NV " << mesh->GetNN<NT_VERTEX>() << ", NE " << mesh->GetNN<NT_EDGE>();
+      cout << ", NE/NV " << (1.0*mesh->GetNN<NT_EDGE>())/mesh->GetNN<NT_VERTEX>() << endl;
+      cout << "NZE " << mat->NZE() << endl;
+      cout << "etr/row " << (1.0*mat->NZE()) / mat->Height() << endl;
+      cout << "extra per row: " << text << endl;
+      cout << "extra: " << endl; prow2(extra_per_row); cout << endl;
+
+
+      Array<int> cntv(100); cntv = 0;
+      for (auto k : Range(mesh->GetNN<NT_VERTEX>()))
+	cntv[econ->GetRowIndices(k).Size()]++;
+      cout << "CNTV: " << endl << cntv << endl;
+
+    }
   }
 
   template<> void

@@ -158,6 +158,8 @@ namespace amg
     { throw Exception("SmoothRESLocal not implemented"); }
 
     shared_ptr<HybridMatrix<TM>> A;
+
+    Array<TM> CalcAdditionalDiag ();
   };
 
 
@@ -170,7 +172,6 @@ namespace amg
 
     using TV = typename strip_vec<Vec<mat_traits<TM>::HEIGHT,typename mat_traits<TM>::TSCAL>> :: type;
 
-    Array<TM> CalcAdditionalDiag ();
 
   protected:
     using HybridSmoother<TM>::A;
@@ -197,6 +198,13 @@ namespace amg
 
     virtual void SmoothLocal (BaseVector &x, const BaseVector &b) const override;
     virtual void SmoothBackLocal (BaseVector &x, const BaseVector &b) const override;
+
+    // virtual void Smooth (BaseVector  &x, const BaseVector &b,
+    // 			 BaseVector  &res, bool res_updated = false,
+    // 			 bool update_res = false, bool x_zero = false) const override;
+    // virtual void SmoothBack (BaseVector  &x, const BaseVector &b,
+    // 			     BaseVector &res, bool res_updated = false,
+    // 			     bool update_res = false, bool x_zero = false) const override;
   };
 
 

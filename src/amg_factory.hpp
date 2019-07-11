@@ -56,7 +56,7 @@ namespace amg
     virtual shared_ptr<CoarseMap<TMESH>> BuildCoarseMap  (shared_ptr<TMESH> mesh) const = 0;
     virtual shared_ptr<TSPM_TM> BuildPWProl (shared_ptr<GridConctractMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd) const = 0;
 
-    virtual shared_ptr<GridContractMap<TMESH>> BuildContractMap (shared_ptr<TMESH> mesh) const;
+    virtual shared_ptr<GridContractMap<TMESH>> BuildContractMap (double factor, shared_ptr<TMESH> mesh) const;
 
 
   };
@@ -67,6 +67,8 @@ namespace amg
   template<NODE_TYPE NT, class TMESH, class TM>
   class NodalAMGFactory : public AMGFactory<TMESH, TM>
   {
+  public:
+    struct Options;
 
   };
 
@@ -74,6 +76,9 @@ namespace amg
   template<class TMESH, class TM>
   class VertexBasedAMGFactory : public NodalAMGFactory<NT_VERTEX, TMESH, TM>
   {
+  public:
+    struct Options;
+
   protected:
     shared_ptr<BitArray> free_vertices;
 

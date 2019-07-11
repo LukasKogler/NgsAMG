@@ -592,7 +592,14 @@ namespace amg
       });
   }
 
-    /**
+  template<> INLINE void RegTM<2,2,3> (Mat<3,3,double> & m)
+  {
+    double tr = 0.5 * (m(0,0) + m(1,1));
+    if ( m(2,2) / tr < 1e-8 )
+      m(2,2) = tr;
+  }
+
+  /**
        assume rank 0, 2 or 3
 
        rank 1 never happens for 3d elasticity (I think?)

@@ -85,6 +85,8 @@ namespace amg {
   class DOFMap
   {
   public:
+    INLINE size_t GetNSteps () const { return steps.Size(); }
+    INLINE size_t GetNLevels () const { return GetNSteps() + 1; } // we count one "empty" level if we drop
     void AddStep(const shared_ptr<BaseDOFMapStep> step) { steps.Append(step); }
     shared_ptr<BaseDOFMapStep> GetStep (int k) { return steps[k]; }
     void Finalize (FlatArray<size_t> acutoffs, shared_ptr<BaseDOFMapStep> embed_step);
@@ -96,7 +98,6 @@ namespace amg {
     { steps[lev_dest]->TransferC2F(x_fine, x_coarse);}
     shared_ptr<BaseVector> CreateVector (size_t l) const
     { return (l>steps.Size()) ? nullptr : ((l==steps.Size()) ? steps.Last()->CreateMappedVector() : steps[l]->CreateVector()); }
-    size_t GetNLevels () const { return steps.Size() + 1; } // we count one "empty" level if we drop
     shared_ptr<ParallelDofs> GetParDofs (size_t L = 0) const { return (L==steps.Size()) ? steps.Last()->GetMappedParDofs() : steps[L]->GetParDofs(); }
     shared_ptr<ParallelDofs> GetMappedParDofs () const { return steps.Last()->GetMappedParDofs(); }
     Array<shared_ptr<BaseSparseMatrix>> AssembleMatrices (shared_ptr<BaseSparseMatrix> finest_mat) const;

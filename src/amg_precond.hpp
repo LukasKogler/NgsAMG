@@ -36,7 +36,8 @@ namespace amg
       Array<int> ass_levels;               // force matrix assembly on these levels
       Array<int> ass_skip_levels;          // forbid matrix assembly on these levels
       bool force_ass = false;              // force assembly ONLY on ass_levels
-      double ass_after_frac = 0.15;        // assemble a level after reducing NV by this factor
+      double ass_after_frac = 0.1;        // assemble a level after reducing NV by this factor
+      double first_aaf = 0.05;        // assemble a level after reducing NV by this factor
       /** Discard - only dummies for not!!  **/
       bool enable_disc = false;            // enable node-discarding
       double disc_crs_thresh = 0.7;        // try discard if coarsening becomes worse than this
@@ -327,7 +328,17 @@ namespace amg
 
     void Finalize (shared_ptr<BaseMatrix> fine_mat, shared_ptr<BaseDOFMapStep> embed_step = nullptr);
     void Setup ();
-    
+    void Setup2 ();
+
+    struct Capsule {
+      int level;
+      shared_ptr<TMESH> mesh;
+      shared_ptr<BaseSparseMatrix> mat;
+      shared_ptr<ParallelDofs> pardofs;
+      shared_ptr<BaseDOFMapStep> embed;
+    };
+    Array<shared_ptr<BaseSparseMatrix>> SetUpLevels (Capsule cap, shared_ptr<DOFMap> dm);
+
   protected:
 
     // Probably don't need to overload this
