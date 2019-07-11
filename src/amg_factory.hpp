@@ -53,13 +53,17 @@ namespace amg
     // recursive setup method - sets up one more level and calls itself
     Array<shared_ptr<BaseSparseMatrix>> RSU (Capsule cap, shared_ptr<DOFMap> dof_map);
     
+    virtual shared_ptr<ParallelDofs> BuildParDofs (shared_ptr<TMESH> amesh) const = 0;
+
     virtual shared_ptr<CoarseMap<TMESH>> BuildCoarseMap  (shared_ptr<TMESH> mesh) const = 0;
     virtual shared_ptr<TSPM_TM> BuildPWProl (shared_ptr<GridConctractMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd) const = 0;
+    virtual void SmoothProlongation (shared_ptr<ProlMap<TSPM_TM>> pmap, shared_ptr<TMESH> mesh) const = 0;
 
     virtual shared_ptr<GridContractMap<TMESH>> BuildContractMap (double factor, shared_ptr<TMESH> mesh) const;
-
+    virtual shared_ptr<BaseDOFMapStep> BuildDOFContractMap (shared_ptr<GridContractMap<TMESH>> cmap) const = 0;
 
   };
+
 
   /**
      DPN dofs per node of the specified kind
@@ -70,11 +74,15 @@ namespace amg
   public:
     struct Options;
 
+    virtual shared_ptr<ParallelDofs> BuildParDofs (shared_ptr<TMESH> amesh) const override;
+
+    virtual shared_ptr<BaseDOFMapStep> BuildDOFContractMap (shared_ptr<GridContractMap<TMESH>> cmap) const override;
+
   };
 
 
-  template<class TMESH, class TM>
-  class VertexBasedAMGFactory : public NodalAMGFactory<NT_VERTEX, TMESH, TM>
+  template<class FACTORY_CLASS>
+  class VertexBasedAMGFactory : public NodalAMGFactory<NT_VERTEX, typename FACTORY_CLASS::TMESH, typename FACTORY_CLASS::TM>
   {
   public:
     struct Options;
@@ -82,8 +90,13 @@ namespace amg
   protected:
     shared_ptr<BitArray> free_vertices;
 
-    virtual shared_ptr<CoarseMap<TMESH>> BuildCoarseMap  (shared_ptr<TMESH> mesh) const;
+    virtual shared_ptr<CoarseMap<TMESH>> BuildCoarseMap  (shared_ptr<TMESH> mesh) const override;
+
+    virtual shared_ptr<TSPM_TM> BuildPWProl (shared_ptr<GridConctractMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd) const override;
+
+    virtual void SmoothProlongation (shared_ptr<ProlMap<TSPM_TM>> pmap, shared_ptr<TMESH> mesh) const override;
   };
+
 
 } // namespace amg
 

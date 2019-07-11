@@ -124,7 +124,7 @@ namespace amg
 	bool non_acceptable = false; // i guess implement sth like that at some point ?
 	if (non_acceptable)
 	  { break; }
-
+s
 	cmesh = _cmesh;
 
 	auto pwp = BuildPWProl(gstep, fpds);
@@ -236,13 +236,58 @@ namespace amg
 
 
   /** --- NodalAMGFactory --- **/
-
   
+
+  template<NODE_TYPE NT, class TMESH, class TM> shared_ptr<BaseDOFMapStep>
+  NodalAMGFactory<NT, TMESH, TM> :: BuildParDofs (shared_ptr<TMESH> amesh) const
+  {
+    const auto & mesh = *amesh;
+    const auto & eqc_h = *mesh.GetEQCHierarchy();
+    size_t neqcs = eqc_h.GetNEQCS();
+    size_t ndof = mesh.template GetNN<NT_VERTEX>();
+    TableCreator<int> cdps(ndof);
+    for (; !cdps.Done(); cdps++) {
+      for (auto eq : Range(neqcs)) {
+	auto dps = eqc_h.GetDistantProcs(eq);
+	auto verts = mesh.template GetENodes<NT>(eq);
+	for (auto vnr : verts) {
+	  for (auto p:dps) cdps.Add(vnr, p);
+	}
+      }
+    }
+    return make_shared<ParallelDofs> (eqc_h.GetCommunicator(), cdps.MoveTable(), DPN, false);
+  }
+
+
+  template<NODE_TYPE NT, class TMESH, class TM> shared_ptr<BaseDOFMapStep>
+  NodalAMGFactory<NT, TMESH, TM> :: BuildDOFContractMap (shared_ptr<GridContractMap<TMESH>> cmap) const
+  {
+    auto fg = cmap->GetGroup();
+    Array<int> group(fg.Size()); group = fg;
+    Table<int> dof_maps;
+    shared_ptr<ParallelDofs> cpd = nullptr;
+    if (cmap->IsMaster()) {
+      // const TMESH& cmesh(*static_cast<const TMESH&>(*grid_step->GetMappedMesh()));
+      shared_ptr<TMESH> cmesh = static_pointer_cast<TMESH>(cmap->GetMappedMesh());
+      cpd = BuildParDofs(cmesh);
+      Array<int> perow (group.Size()); perow = 0;
+      for (auto k : Range(group.Size())) perow[k] = cmap->template GetNodeMap<NT>(k).Size();
+      dof_maps = Table<int>(perow);
+      for (auto k : Range(group.Size())) dof_maps[k] = cmap->template GetNodeMap<NT>(k);
+    }
+    auto ctr_map = make_shared<CtrMap<typename strip_vec<Vec<DPN, double>>::type>> (fpd, cpd, move(group), move(dof_maps));
+    if (cmap->IsMaster()) {
+      ctr_map->_comm_keepalive_hack = cmap->GetMappedEQCHierarchy()->GetCommunicator();
+    }
+    return move(ctr_map);
+  }
+
+
   /** --- VertexBasedAMGFactory --- **/
 
 
-  template<class TMESH, class TM>
-  shared_ptr<CoarseMap<TMESH>> VertexBasedAMGFactory<TMESH, TM> :: BuildCoarseMap  (shared_ptr<TMESH> mesh) const
+  template<class FACTORY_CLASS>
+  shared_ptr<CoarseMap<TMESH>> VertexBasedAMGFactory<FACTORY_CLASS> :: BuildCoarseMap  (shared_ptr<TMESH> mesh) const
   {
     static Timer t("BuildCoarseMap"); RegionTimer rt(t);
     auto coarsen_opts = make_shared<typename HierarchicVWC<TMESH>::Options>();
@@ -253,7 +298,21 @@ namespace amg
     return calg->Coarsen(mesh);
   }
 
+
+  template<class FACTORY_CLASS>
+  shared_ptr<TSPM_TM> VertexBasedAMGFactory<FACTORY_CLASS> :: BuildPWProl (shared_ptr<GridConctractMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd) const
+  {
+
+  } // VertexBasedAMGFactory :: BuildPWProl
+
+
+  template<class FACTORY_CLASS>
+  void VertexBasedAMGFactory<FACTORY_CLASS> :: SmoothProlongation (shared_ptr<ProlMap<TSPM_TM>> pmap, shared_ptr<TMESH> mesh) const
+  {
+
+  } // VertexBasedAMGFactory :: SmoothProlongation
   
+
 } // namespace amg
 
 #endif
