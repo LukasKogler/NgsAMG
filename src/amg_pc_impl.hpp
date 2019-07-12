@@ -13,7 +13,7 @@ namespace amg
     enum DOF_SUBSET : char { RANGE_SUBSET = 0,        // use Union { [ranges[i][0], ranges[i][1]) }
 			     SELECTED_SUBSET = 1 };   // given by bitarray
     DOF_SUBSET subset = RANGE_SUBSET;
-    Array<INT<2, size_t>> ss_ranges;
+    Array<INT<2, size_t>> ss_ranges; // ranges must be non-overlapping and incresing
     shared_ptr<BitArray> ss_select;
     
     /** How the DOFs in the subset are mapped to vertices **/
@@ -145,20 +145,31 @@ namespace amg
 
     set_enum_opt(O.energy, "energy", {"triv", "alg", "elmat"}, BAO::ALG_ENERGY);
 
+    ModifyOptions(O, flags, prefix);
+
   } // EmbedVAMG::MakeOptionsFromFlags
+
+
+  template<class Factory>
+  void EmbedVAMG<Factory> :: ModifyOptions (Options & O, const Flags & flags, string prefix)
+  { ; }
 
 
   template<class Factory>
   EmbedVAMG<Factory> :: EmbedVAMG (shared_ptr<BilinearForm> blf, const Flags & flags, const string name)
     : Preconditioner(blf, flags, name), bfa(blf)
   {
+    cout << "constr" << endl;
     options = MakeOptionsFromFlags (flags);
+    cout << "have opts" << endl;
   } // EmbedVAMG::EmbedVAMG
 
 
   template<class Factory>
   void EmbedVAMG<Factory> :: InitLevel (shared_ptr<BitArray> freedofs)
   {
+    cout << "init" << endl;
+
     if (freedofs == nullptr) // postpone to FinalizeLevel
       { return; }
 
@@ -182,6 +193,7 @@ namespace amg
   template<class Factory>
   void EmbedVAMG<Factory> :: FinalizeLevel (const BaseMatrix * mat)
   {
+    cout << "finalizelevel" << endl;
 
     if (mat != nullptr)
       { finest_mat = shared_ptr<BaseMatrix>(const_cast<BaseMatrix*>(mat), NOOP_Deleter); }
@@ -196,7 +208,9 @@ namespace amg
   template<class Factory>
   void EmbedVAMG<Factory> :: Finalize ()
   {
-    if (options->sync)
+   cout << "finalize" << endl;
+
+   if (options->sync)
       {
 	if (auto pds = finest_mat->GetParallelDofs()) {
 	  static Timer t(string("NGsAMG - Initial Sync")); RegionTimer rt(t);
@@ -207,6 +221,7 @@ namespace amg
     if (finest_freedofs == nullptr)
       { finest_freedofs = bfa->GetFESpace()->GetFreeDofs(bfa->UsesEliminateInternal()); }
     
+    cout << "finalize" << endl;
 
     /** Set dummy-ParallelDofs **/
     shared_ptr<BaseMatrix> fine_spm = finest_mat;
@@ -220,14 +235,19 @@ namespace amg
       fine_spm->SetParallelDofs(make_shared<ParallelDofs> ( mecomm , move(dps), GetEntryDim(fine_spm.get()), false));
     }
 
+    cout << "finalize" << endl;
+
     auto mesh = BuildInitialMesh();
 
+    cout << "finalize" << endl;
     factory = BuildFactory(mesh);
 
+    cout << "finalize" << endl;
     // set mesh-rebuild here i guess
 
     /** Set up Smoothers **/
     BuildAMGMat();
+    cout << "finalize" << endl;
     
   } // EmbedVAMG::Finalize
 
@@ -278,6 +298,8 @@ namespace amg
   {
     static Timer t("BuildTopMesh"); RegionTimer rt(t);
 
+    cout << "top mesh" << endl;
+    
     auto & O(*options);
 
     typedef BaseEmbedAMGOptions BAO;
@@ -287,7 +309,7 @@ namespace amg
     auto fpd = finest_mat->GetParallelDofs();
     size_t maxset = 0;
     switch (O.subset) {
-    case(BAO::RANGE_SUBSET): { maxset = O.ss_ranges.Last()[1]+1; break; }
+    case(BAO::RANGE_SUBSET): { maxset = O.ss_ranges.Last()[1]; break; }
     case(BAO::SELECTED_SUBSET): {
       auto sz = O.ss_select->Size();
       for (auto k : Range(sz--))
@@ -295,6 +317,8 @@ namespace amg
 	  { maxset = k+1; break; }
       break;
     } }
+    cout << "maxset " << maxset << " " << fpd->GetNDofLocal() << endl;
+
     eqc_h = make_shared<EQCHierarchy>(fpd, true, maxset);
 
     /** Build inital Mesh Topology **/
@@ -324,6 +348,8 @@ namespace amg
 	{ fvs->Set(vsort[k]); }
     free_verts = fvs;
 
+    cout << "top mesh done" << endl;
+
     return top_mesh;
   }; //  EmbedVAMG::BuildTopMesh
 
@@ -331,6 +357,8 @@ namespace amg
   template<class Factory>
   shared_ptr<BlockTM> EmbedVAMG<Factory> :: BTM_Mesh (shared_ptr<EQCHierarchy> eqc_h)
   {
+    cout << "Topmesh mesh" << endl;
+
     node_sort.SetSize(4);
 
     typedef BaseEmbedAMGOptions BAO;
@@ -354,6 +382,8 @@ namespace amg
   template<class Factory>
   shared_ptr<BlockTM> EmbedVAMG<Factory> :: BTM_Alg (shared_ptr<EQCHierarchy> eqc_h)
   {
+    cout << "Topmesh alg" << endl;
+
     node_sort.SetSize(4);
 
     typedef BaseEmbedAMGOptions BAO;
@@ -411,10 +441,12 @@ namespace amg
       }; // create_edges
 
     if (O.dof_ordering == BAO::REGULAR_ORDERING) {
+      cout << "case 1 " << endl;
       const auto fes_bs = fpd->GetEntrySize();
       int dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
       const auto bs0 = O.block_s[0]; // is this not kind of redundant ?
       if (O.subset == BAO::RANGE_SUBSET) {
+      cout << "case 1 " << endl;
 	auto r0 = O.ss_ranges[0];
 	int dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
 	n_verts = (r0[1] - r0[0]) * fes_bs / dpv;
@@ -424,6 +456,7 @@ namespace amg
 	create_edges ( v2d , d2v );
       }
       else { // SELECTED, subset by bitarray (is this tested??)
+      cout << "case 2 " << endl;
 	size_t maxset = 0;
 	auto sz = O.ss_select->Size();
 	for (auto k : Range(sz--))
@@ -443,6 +476,7 @@ namespace amg
       }
     }
     else { // VARIABLE, subset given via table anyways (is this even tested??)
+      cout << "case 2 " << endl;
       auto& vblocks = O.v_blocks;
       n_verts = vblocks.Size();
       auto v2d = [&](auto v) { return vblocks[v][0]; };
@@ -457,6 +491,8 @@ namespace amg
       cout << "AMG performed on " << n_verts << " vertices, ndof local is: " << fpd->GetNDofLocal() << endl;
       cout << "free dofs " << finest_freedofs->NumSet() << " ndof local is: " << fpd->GetNDofLocal() << endl;
     }
+
+    cout << "Topmesh alg done" << endl;
 
     return top_mesh;
   } // EmbedVAMG :: BTM_Alg

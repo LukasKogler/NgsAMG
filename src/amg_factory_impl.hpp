@@ -56,7 +56,7 @@ namespace amg
       { v = flags.GetNumFlag(prefix + key, v); };
 
     set_num(opts.max_n_levels, "max_levels");
-    set_num(opts.max_meash, "max_coarse_size");
+    set_num(opts.max_meas, "max_coarse_size");
     set_num(opts.aaf, "aaf");
     set_num(opts.aaf, "first_aaf");
     set_num(opts.aaf, "aaf_scale");
@@ -88,7 +88,7 @@ namespace amg
   template<NODE_TYPE NT, class TMESH, class TM>
   void NodalAMGFactory<NT, TMESH, TM> :: SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix)
   {
-    BASE :: SetOptionsFromFlags(opts, flags, prefix);
+    BASE::SetOptionsFromFlags(opts, flags, prefix);
   }
 
 
@@ -109,7 +109,7 @@ namespace amg
   template<class FACTORY_CLASS, class TMESH, class TM>
   void VertexBasedAMGFactory<FACTORY_CLASS, TMESH, TM> :: SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix)
   {
-    BASE :: SetOptionsFromFlags (opts, flags, prefix);
+    BASE::SetOptionsFromFlags (opts, flags, prefix);
     
     auto set_num = [&](auto& v, string key)
       { v = flags.GetNumFlag(prefix + key, v); };

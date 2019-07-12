@@ -74,6 +74,9 @@ namespace amg
     virtual shared_ptr<Options> MakeOptionsFromFlags (const Flags & flags, string prefix = "ngs_amg_");
     virtual void SetOptionsFromFlags (Options& O, const Flags & flags, string prefix = "ngs_amg_");
 
+    // I do not want to derive from this class, instead I hook up specific options here. dummy-implementation in impl-header, specialize in cpp
+    virtual void ModifyOptions (Options & O, const Flags & flags, string prefix = "ngs_amg_");
+    
     virtual shared_ptr<BlockTM> BuildTopMesh (); // implemented once for all AMG_CLASS
     virtual shared_ptr<BlockTM> BTM_Mesh (shared_ptr<EQCHierarchy> eqc_h); // implemented once for all AMG_CLASS
     virtual shared_ptr<BlockTM> BTM_Alg (shared_ptr<EQCHierarchy> eqc_h); // implemented once for all AMG_CLASS
