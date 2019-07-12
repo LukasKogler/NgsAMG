@@ -21,11 +21,11 @@ namespace amg
      Implement in specialization:
        - Construct attached data for finest mesh
    **/
-  template<class Factory>
+  template<class FACTORY>
   class EmbedVAMG : public Preconditioner
   {
   public:
-    using TMESH = typename Factory::TMESH;
+    using TMESH = typename FACTORY::TMESH;
 
     struct Options;
     
@@ -43,6 +43,8 @@ namespace amg
 
     virtual void Update () override { ; };
 
+    virtual const BaseMatrix & GetAMatrix () const override
+    { if (finest_mat == nullptr) { throw Exception("NGsAMG Preconditioner not ready!"); } return *finest_mat; }
     virtual const BaseMatrix & GetMatrix () const override
     { if (amg_mat == nullptr) { throw Exception("NGsAMG Preconditioner not ready!"); } return *amg_mat; }
     virtual shared_ptr<BaseMatrix> GetMatrixPtr () override
@@ -69,7 +71,7 @@ namespace amg
 
     shared_ptr<AMGMatrix> amg_mat;
 
-    shared_ptr<Factory> factory;
+    shared_ptr<FACTORY> factory;
 
     virtual shared_ptr<Options> MakeOptionsFromFlags (const Flags & flags, string prefix = "ngs_amg_");
     virtual void SetOptionsFromFlags (Options& O, const Flags & flags, string prefix = "ngs_amg_");
@@ -83,14 +85,19 @@ namespace amg
     virtual shared_ptr<BlockTM> BTM_Elmat (shared_ptr<EQCHierarchy> eqc_h)
     { throw Exception("Elmat topology not overloaded!"); };
 
-    shared_ptr<Factory> BuildFactory (shared_ptr<TMESH> mesh);
+    shared_ptr<FACTORY> BuildFactory (shared_ptr<TMESH> mesh);
 
     virtual shared_ptr<TMESH> BuildAlgMesh (shared_ptr<BlockTM> top_mesh) const; // implemented seperately for all AMG_CLASS
     virtual shared_ptr<TMESH> BuildInitialMesh () { return BuildAlgMesh(BuildTopMesh()); }
     virtual shared_ptr<BaseDOFMapStep> BuildEmbedding ();
 
+    virtual shared_ptr<BaseSparseMatrix> RegularizeMatrix (shared_ptr<BaseSparseMatrix> mat,
+							   shared_ptr<ParallelDofs> & pardofs) const;
+
     virtual shared_ptr<BaseSmoother> BuildSmoother (shared_ptr<BaseSparseMatrix> m, shared_ptr<ParallelDofs> pds,
 						    shared_ptr<BitArray> freedofs = nullptr) const;
+
+
     virtual void Finalize ();
     virtual void BuildAMGMat ();
   };
@@ -98,11 +105,11 @@ namespace amg
   /**
      basically just overloads addelementmatrix
    **/
-  template<class Factory, class HTVD = double, class HTED = double>
-  class EmbedWithElmats: public EmbedVAMG<Factory>
+  template<class FACTORY, class HTVD = double, class HTED = double>
+  class EmbedWithElmats: public EmbedVAMG<FACTORY>
   {
   public:
-    using BASE = EmbedVAMG<Factory>;
+    using BASE = EmbedVAMG<FACTORY>;
     using TMESH = typename BASE::TMESH;
     
     EmbedWithElmats (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string name = "precond");

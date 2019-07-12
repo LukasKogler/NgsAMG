@@ -112,8 +112,9 @@ namespace amg
 
     virtual size_t ComputeMeshMeasure (const TMESH & m) const override;
 
+    shared_ptr<BitArray> free_verts; // TODO: hacky!
+
   protected:
-    shared_ptr<BitArray> free_vertices;
     using BASE::options;
 
     virtual shared_ptr<CoarseMap<TMESH>> BuildCoarseMap  (shared_ptr<TMESH> mesh) const override;

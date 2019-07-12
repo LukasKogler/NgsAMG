@@ -141,6 +141,8 @@ namespace amg
     virtual int VHeight () const override { return A->Height(); }
     virtual int VWidth () const override { return A->Width(); }
 
+    // virtual shared_ptr<BaseMatrix> GetMatrix () const override { return A; }
+
   protected:
 
     // type: 0 - FW / 1 - BW / 2 - FW/BW / 3 - BW/FW

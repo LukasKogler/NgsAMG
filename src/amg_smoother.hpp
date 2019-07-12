@@ -8,9 +8,13 @@ namespace amg {
   {
   public:
     BaseSmoother (){}
+
     BaseSmoother (const shared_ptr<ParallelDofs> & par_dofs)
       : BaseMatrix(par_dofs) {}
+
     virtual ~BaseSmoother(){}
+
+
     /**
        res_updated: is residuum up to date??
        update_res:  if true, updates the residuum while smoothing
@@ -22,11 +26,13 @@ namespace amg {
     virtual void SmoothBack (BaseVector  &x, const BaseVector &b,
     			     BaseVector &res, bool res_updated = false,
     			     bool update_res = true, bool x_zero = false) const = 0;
-    virtual string SType() const { return "base"; }
+
     virtual Array<MemoryUsage> GetMemoryUsage() const override = 0;
+
     virtual void Finalize() { ; }
-    // virtual void Mult (const BaseVector & x, BaseVector & y) const = 0;
-    // virtual void MultTrans (const BaseVector & x, BaseVector & y) const = 0;
+
+    // return the underlying matrix
+    // virtual shared_ptr<BaseMatrix> GetMatrix () const = 0;
   };
   
   /** 
@@ -44,9 +50,9 @@ namespace amg {
     using TV = typename strip_vec<Vec<BS,TSCAL>> :: type;
     using TSPMAT = stripped_spm<TM,TV,TV>;
     using TSPMAT_TM = stripped_spm_tm<TM>;
-    HybridGSS ( const shared_ptr<const TSPMAT> & amat,
+    HybridGSS ( const shared_ptr<TSPMAT> & amat,
 		const shared_ptr<ParallelDofs> & apds,
-		const shared_ptr<const BitArray> & atake_dofs);
+		const shared_ptr<BitArray> & atake_dofs);
     ~HybridGSS();
     virtual void Smooth (BaseVector  &x, const BaseVector &b,
     			 BaseVector  &res, bool res_updated = true,
@@ -54,22 +60,23 @@ namespace amg {
     virtual void SmoothBack (BaseVector  &x, const BaseVector &b,
     			     BaseVector &res, bool res_updated = false,
     			     bool update_res = false, bool x_zero = false) const override;
-    virtual string SType() const override { return name; }
     virtual Array<MemoryUsage> GetMemoryUsage() const override;
     void SetSymmetric (bool sym) { symmetric = sym; }
+
+    // virtual shared_ptr<BaseMatrix> GetMatrix () const override { return spmat; }
 
   protected:
 
     bool symmetric = false;
 
     string name;
-    shared_ptr<const BitArray> free_dofs;
+    shared_ptr<BitArray> free_dofs;
     shared_ptr<ParallelDofs> parallel_dofs;
     BitArray mf_exd, mf_dofs;
     size_t H;
     NgsAMG_Comm comm;
 
-    shared_ptr<const TSPMAT> spmat = nullptr;
+    shared_ptr<TSPMAT> spmat = nullptr;
     const TSPMAT& A;
     // additional diag-part of A
     TSPMAT* addA = nullptr;
@@ -119,9 +126,9 @@ namespace amg {
   {
   public:
     using TSPMAT = typename HybridGSS<BS>::TSPMAT;
-    StabHGSS ( const shared_ptr<const TSPMAT> & amat,
+    StabHGSS ( const shared_ptr<TSPMAT> & amat,
 	       const shared_ptr<ParallelDofs> & apds,
-	       const shared_ptr<const BitArray> & atake_dofs)
+	       const shared_ptr<BitArray> & atake_dofs)
       : HybridGSS<BS>(amat, apds, atake_dofs)
     { name = string("StabHGS<")+to_string(BS)+","+to_string(RMIN)+","+to_string(RMAX)+string(">"); }
   protected:

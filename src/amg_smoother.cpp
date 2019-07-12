@@ -8,9 +8,9 @@ namespace amg {
   /** HybridGSS **/
 
   template<int BS>
-  HybridGSS<BS> :: HybridGSS ( const shared_ptr<const HybridGSS<BS>::TSPMAT> & amat,
+  HybridGSS<BS> :: HybridGSS ( const shared_ptr<HybridGSS<BS>::TSPMAT> & amat,
 					 const shared_ptr<ParallelDofs> & par_dofs,
-					 const shared_ptr<const BitArray> & atake_dofs)
+					 const shared_ptr<BitArray> & atake_dofs)
     : BaseSmoother(par_dofs), free_dofs(atake_dofs), parallel_dofs(par_dofs),
       comm(par_dofs->GetCommunicator()), spmat(amat), A(*spmat)
   {

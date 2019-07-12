@@ -44,30 +44,40 @@ namespace amg
 
     /** How do we compute the replacement matrix **/
     enum ENERGY : char { TRIV_ENERGY = 0,     // uniform weights
-			 ALG_ENERGY = 1,         // from the sparse matrix
-			 ELMAT_ENERGY = 2 };     // from element matrices
+			 ALG_ENERGY = 1,      // from the sparse matrix
+			 ELMAT_ENERGY = 2 };  // from element matrices
     ENERGY energy = ALG_ENERGY;
+
+    /** What we do on the coarsest level **/
+    enum CLEVEL : char { INV_CLEV = 0,        // invert coarsest level
+			 SMOOTH_CLEV = 1 };   // smooth coarsest level
+    CLEVEL clev = INV_CLEV;
+    INVERSETYPE cinv_type = MASTERINVERSE;
+    INVERSETYPE cinv_type_loc = SPARSECHOLESKY;
+    size_t clev_nsteps = 1;                   // if smoothing, how many steps do we do?
   };
 
 
-  template<class Factory>
-  struct EmbedVAMG<Factory>::Options : public Factory::Options,
+  template<class FACTORY>
+  struct EmbedVAMG<FACTORY>::Options : public FACTORY::Options,
 				       public BaseEmbedAMGOptions
   {
     bool keep_vp = false;
     bool mat_ready = false;
     bool sync = false;
+
     /** Smoothers **/
     bool old_smoothers = false;
     bool smooth_symmetric = false;
+
   };
 
 
   /** EmbedVAMG **/
 
 
-  template<class Factory>
-  shared_ptr<typename EmbedVAMG<Factory>::Options> EmbedVAMG<Factory> :: MakeOptionsFromFlags (const Flags & flags, string prefix)
+  template<class FACTORY>
+  shared_ptr<typename EmbedVAMG<FACTORY>::Options> EmbedVAMG<FACTORY> :: MakeOptionsFromFlags (const Flags & flags, string prefix)
   {
     auto opts = make_shared<Options>();
 
@@ -85,11 +95,11 @@ namespace amg
   }
   
 
-  template<class Factory>
-  void EmbedVAMG<Factory> :: SetOptionsFromFlags (Options & O, const Flags & flags, string prefix)
+  template<class FACTORY>
+  void EmbedVAMG<FACTORY> :: SetOptionsFromFlags (Options & O, const Flags & flags, string prefix)
   {
 
-    Factory::SetOptionsFromFlags(O, flags, prefix);
+    FACTORY::SetOptionsFromFlags(O, flags, prefix);
 
     auto pfit = [prefix] (string x) { return prefix + x; };
 
@@ -150,13 +160,13 @@ namespace amg
   } // EmbedVAMG::MakeOptionsFromFlags
 
 
-  template<class Factory>
-  void EmbedVAMG<Factory> :: ModifyOptions (Options & O, const Flags & flags, string prefix)
+  template<class FACTORY>
+  void EmbedVAMG<FACTORY> :: ModifyOptions (Options & O, const Flags & flags, string prefix)
   { ; }
 
 
-  template<class Factory>
-  EmbedVAMG<Factory> :: EmbedVAMG (shared_ptr<BilinearForm> blf, const Flags & flags, const string name)
+  template<class FACTORY>
+  EmbedVAMG<FACTORY> :: EmbedVAMG (shared_ptr<BilinearForm> blf, const Flags & flags, const string name)
     : Preconditioner(blf, flags, name), bfa(blf)
   {
     cout << "constr" << endl;
@@ -165,8 +175,8 @@ namespace amg
   } // EmbedVAMG::EmbedVAMG
 
 
-  template<class Factory>
-  void EmbedVAMG<Factory> :: InitLevel (shared_ptr<BitArray> freedofs)
+  template<class FACTORY>
+  void EmbedVAMG<FACTORY> :: InitLevel (shared_ptr<BitArray> freedofs)
   {
     cout << "init" << endl;
 
@@ -190,8 +200,8 @@ namespace amg
   } // EmbedVAMG::InitLevel
 
 
-  template<class Factory>
-  void EmbedVAMG<Factory> :: FinalizeLevel (const BaseMatrix * mat)
+  template<class FACTORY>
+  void EmbedVAMG<FACTORY> :: FinalizeLevel (const BaseMatrix * mat)
   {
     cout << "finalizelevel" << endl;
 
@@ -205,8 +215,8 @@ namespace amg
   } // EmbedVAMG::FinalizeLevel
 
 
-  template<class Factory>
-  void EmbedVAMG<Factory> :: Finalize ()
+  template<class FACTORY>
+  void EmbedVAMG<FACTORY> :: Finalize ()
   {
    cout << "finalize" << endl;
 
@@ -252,16 +262,24 @@ namespace amg
   } // EmbedVAMG::Finalize
 
 
-  template<class Factory>
-  shared_ptr<Factory> EmbedVAMG<Factory> :: BuildFactory (shared_ptr<TMESH> mesh)
+  template<class FACTORY>
+  shared_ptr<FACTORY> EmbedVAMG<FACTORY> :: BuildFactory (shared_ptr<TMESH> mesh)
   {
     auto emb_step = BuildEmbedding();
-    return make_shared<Factory>(mesh, options, emb_step);
+    auto f = make_shared<FACTORY>(mesh, options, emb_step);
+    f->free_verts = free_verts; free_verts = nullptr;
+    return f;
   } // EmbedVAMG::BuildFactory
 
 
-  template<class Factory>
-  void EmbedVAMG<Factory> :: BuildAMGMat ()
+  template<class FACTORY>
+  shared_ptr<BaseSparseMatrix> EmbedVAMG<FACTORY> :: RegularizeMatrix (shared_ptr<BaseSparseMatrix> mat,
+								       shared_ptr<ParallelDofs> & pardofs) const
+  { return mat; }
+
+
+  template<class FACTORY>
+  void EmbedVAMG<FACTORY> :: BuildAMGMat ()
   {
     /** Build coarse level matrices and grid-transfer **/
 
@@ -272,7 +290,7 @@ namespace amg
     if (auto pmat = dynamic_pointer_cast<ParallelMatrix>(finest_mat))
       { fspm = dynamic_pointer_cast<BaseSparseMatrix>(pmat->GetMatrix()); }
     else
-      { dynamic_pointer_cast<BaseSparseMatrix>(finest_mat); }
+      { fspm = dynamic_pointer_cast<BaseSparseMatrix>(finest_mat); }
 
     if (fspm == nullptr)
       { throw Exception("Could not cast finest mat!"); }
@@ -281,20 +299,79 @@ namespace amg
     auto dof_map = make_shared<DOFMap>();
     factory->SetupLevels(mats, dof_map);
 
+    cout << "got mats: " << endl; prow2(mats); cout << endl;
+   
     // Set up smoothers
+
+    cout << "ff: " << finest_freedofs << endl;
+    if (finest_freedofs) cout << "ff set: " << finest_freedofs->NumSet() << " of " << finest_freedofs->Size() << endl;
+
     Array<shared_ptr<BaseSmoother>> smoothers(mats.Size()-1);
     for (auto k : Range(size_t(0), mats.Size()-1)) {
+      cout << " mat " << k << " = " << mats[k] << endl;
+      cout << mats[k]->Height() << " x " << mats[k]->Width() << endl;
+      cout << "pds " << dof_map->GetParDofs(k) << endl;
       smoothers[k] = BuildSmoother (mats[k], dof_map->GetParDofs(k), (k==0) ? finest_freedofs : nullptr);
       smoothers[k]->Finalize(); // do i even need this anymore ?
+      cout << "ok " << endl;
     }
 
+    amg_mat = make_shared<AMGMatrix> (dof_map, smoothers);
+
     // Coarsest level setup
+
+    if (mats.Last() == nullptr) // we drop out because of redistribution at some point
+      { return; }
+    
+    cout << "cinv " << endl;
+
+    if (options->clev == BaseEmbedAMGOptions::INV_CLEV) {
+      shared_ptr<BaseMatrix> coarse_inv;
+
+      auto cpds = dof_map->GetMappedParDofs();
+      auto comm = cpds->GetCommunicator();
+      auto cspm = mats.Last();
+
+      cspm = RegularizeMatrix(cspm, cpds);
+
+      if constexpr(MAX_SYS_DIM < mat_traits<typename FACTORY::TM>::HEIGHT) {
+	  throw Exception(string("MAX_SYS_DIM = ") + to_string(MAX_SYS_DIM) + string(", need at least ") +
+			  to_string(mat_traits<typename FACTORY::TM>::HEIGHT) + string(" for coarsest level exact Inverse!"));
+	}
+
+      if (comm.Size() > 2) { // parallel inverse
+	auto parmat = make_shared<ParallelMatrix> (cspm, cpds, cpds, C2D);
+	parmat->SetInverseType(options->cinv_type);
+	coarse_inv = parmat->InverseMatrix();
+      }
+      else if ( (comm.Size() == 1) ||
+	   ( (comm.Size() == 2) && (comm.Rank() == 1) ) ) { // local inverse
+	cspm->SetInverseType(options->cinv_type_loc);
+	auto cinv = cspm->InverseMatrix();
+	if (comm.Size() > 1)
+	  { coarse_inv = make_shared<ParallelMatrix> (cinv, cpds, cpds, C2C); } // dummy parmat
+	else
+	  { coarse_inv = cinv; }
+      }
+      else if (comm.Rank() == 0) { // some dummy matrix
+	Array<int> perow(0);
+	auto cinv = make_shared<SparseMatrix<double>>(perow);
+	if (comm.Size() > 1)
+	  { coarse_inv = make_shared<ParallelMatrix> (cinv, cpds, cpds, C2C); } // dummy parmat
+	else
+	  { coarse_inv = cinv; }
+      }
+
+      amg_mat->SetCoarseInv(coarse_inv);
+    }
+
+    cout << "amg mat ok " << endl;
 
   } // EmbedVAMG::BuildAMGMat
 
 
-  template<class Factory>
-  shared_ptr<BlockTM> EmbedVAMG<Factory> :: BuildTopMesh ()
+  template<class FACTORY>
+  shared_ptr<BlockTM> EmbedVAMG<FACTORY> :: BuildTopMesh ()
   {
     static Timer t("BuildTopMesh"); RegionTimer rt(t);
 
@@ -354,8 +431,8 @@ namespace amg
   }; //  EmbedVAMG::BuildTopMesh
 
 
-  template<class Factory>
-  shared_ptr<BlockTM> EmbedVAMG<Factory> :: BTM_Mesh (shared_ptr<EQCHierarchy> eqc_h)
+  template<class FACTORY>
+  shared_ptr<BlockTM> EmbedVAMG<FACTORY> :: BTM_Mesh (shared_ptr<EQCHierarchy> eqc_h)
   {
     cout << "Topmesh mesh" << endl;
 
@@ -379,8 +456,8 @@ namespace amg
   } // EmbedVAMG::BTM_Mesh
     
 
-  template<class Factory>
-  shared_ptr<BlockTM> EmbedVAMG<Factory> :: BTM_Alg (shared_ptr<EQCHierarchy> eqc_h)
+  template<class FACTORY>
+  shared_ptr<BlockTM> EmbedVAMG<FACTORY> :: BTM_Alg (shared_ptr<EQCHierarchy> eqc_h)
   {
     cout << "Topmesh alg" << endl;
 
@@ -500,9 +577,9 @@ namespace amg
 
   /** EmbedWithElmats **/
 
-  template<class Factory, class HTVD, class HTED>
-  EmbedWithElmats<Factory, HTVD, HTED> :: EmbedWithElmats (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string name)
-    : EmbedVAMG<Factory>(bfa, aflags, name)
+  template<class FACTORY, class HTVD, class HTED>
+  EmbedWithElmats<FACTORY, HTVD, HTED> :: EmbedWithElmats (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string name)
+    : EmbedVAMG<FACTORY>(bfa, aflags, name), ht_vertex(nullptr), ht_edge(nullptr)
   {
     typedef BaseEmbedAMGOptions BAO;
     const auto &O(*options);
@@ -518,8 +595,8 @@ namespace amg
   }
 
 
-  template<class Factory, class HTVD, class HTED>
-  EmbedWithElmats<Factory, HTVD, HTED> ::  ~EmbedWithElmats ()
+  template<class FACTORY, class HTVD, class HTED>
+  EmbedWithElmats<FACTORY, HTVD, HTED> ::  ~EmbedWithElmats ()
   {
     if (ht_vertex != nullptr) delete ht_vertex;
     if (ht_edge   != nullptr) delete ht_edge;

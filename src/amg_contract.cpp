@@ -183,8 +183,8 @@ namespace amg
 
   INLINE Timer & timer_hack_ctr_f2c () { static Timer t("CtrMap::TransferF2C"); return t; }
   template<class TV>
-  void CtrMap<TV> :: TransferF2C(const shared_ptr<const BaseVector> & x_fine,
-				 const shared_ptr<BaseVector> & x_coarse) const
+  void CtrMap<TV> :: TransferF2C (const shared_ptr<const BaseVector> & x_fine,
+				  const shared_ptr<BaseVector> & x_coarse) const
   {
     /** 
 	We can have DOFs that cannot be mapped "within-group-locally".
@@ -227,8 +227,8 @@ namespace amg
 
   INLINE Timer & timer_hack_ctr_c2f () { static Timer t("CtrMap::TransferC2F"); return t; }
   template<class TV>
-  void CtrMap<TV> :: TransferC2F(const shared_ptr<BaseVector> & x_fine,
-				 const shared_ptr<const BaseVector> & x_coarse) const
+  void CtrMap<TV> :: TransferC2F (const shared_ptr<BaseVector> & x_fine,
+				  const shared_ptr<const BaseVector> & x_coarse) const
   {
     /**
        some values are transfered to multiple ranks 
@@ -237,10 +237,10 @@ namespace amg
     RegionTimer rt(timer_hack_ctr_c2f());
     auto& comm(pardofs->GetCommunicator());
     x_fine->SetParallelStatus(CUMULATED);
-    auto fvf = x_fine->FV<TV>();
+    auto fvf = x_fine->FV<TV>(); fvf = 0;
     if (!is_gm)
       {
-	if (fvf.Size()>0) MPI_Recv(x_fine->Memory(), fvf.Size(), MyGetMPIType<TV>(), group[0], MPI_TAG_AMG, comm, MPI_STATUS_IGNORE);
+	if (fvf.Size() > 0) MPI_Recv(x_fine->Memory(), fvf.Size(), MyGetMPIType<TV>(), group[0], MPI_TAG_AMG, comm, MPI_STATUS_IGNORE);
 	// cout << "C2F, got data from " << group[0] << ": " << endl << fvf << endl;
 	return;
       }

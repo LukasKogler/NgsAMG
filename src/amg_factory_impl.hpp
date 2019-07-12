@@ -156,11 +156,15 @@ namespace amg
       { throw Exception("SetupLevels needs a finest level mat!"); }
     
     // these are in reverse order
-    auto rev_mats = RSU({ 0, finest_mesh, mats[0]->GetParallelDofs(), mats[0] }, dof_map);
-    mats.SetSize(rev_mats.Size());
-    for (auto k : Range(mats.Size()))
-      { mats[k] = rev_mats[mats.Size()-1-k]; }
-
+    auto fmat = mats[0];
+    shared_ptr<ParallelDofs> fpds = (embed_step == nullptr) ? fmat->GetParallelDofs() : BuildParallelDofs(finest_mesh);
+    auto coarse_mats = RSU({ 0, finest_mesh, fpds, fmat }, dof_map);
+    cout << "coarse mats: " << endl; prow2(coarse_mats); cout << endl;
+    mats.SetSize(coarse_mats.Size() + 1);
+    for (auto k : Range(mats.Size() - 1))
+      { mats[k+1] = coarse_mats[coarse_mats.Size()-1-k]; }
+    mats[0] = fmat;
+    cout << "mats total: "; prow2(mats); cout << endl;
   }
 
 
@@ -215,10 +219,10 @@ namespace amg
 
 	cmesh = _cmesh;
 
-	auto pwp = BuildPWProl(grid_step, fpds);
+	auto pwp = BuildPWProl(grid_step, cpds); // fine pardofs are correct
 
 	conc_pwp = (conc_pwp == nullptr) ? pwp : MatMultAB(*conc_pwp, *pwp);
-	cpds = BuildParallelDofs(fmesh);
+	cpds = BuildParallelDofs(cmesh);
 
 	curr_meas = ComputeMeshMeasure(*cmesh);
 
@@ -252,7 +256,8 @@ namespace amg
 	// break;
       }
       
-      if (options->enable_ctr) { // if we are stuck coarsening wise, or if we have reached a threshhold, redistribute
+      if ( (options->enable_ctr) && (level[2] == 0)
+	   && (cmesh->GetEQCHierarchy()->GetCommunicator().Size() > 2) ) { // if we are stuck coarsening wise, or if we have reached a threshhold, redistribute
 	double af = (cap.level == 0) ? options->first_ctraf : ( pow(options->ctraf_scale, cap.level - ( (options->first_ctraf == -1) ? 1 : 0) ) * options->ctraf );
 	size_t goal_nv = max( size_t(min(af, 0.9) * state->last_ctr_nv), max(options->ctr_seq_nv, size_t(1)));
 	if ( (crs_meas_fac > options->ctr_crs_thresh) ||
@@ -270,7 +275,7 @@ namespace amg
 
 	  auto ds = BuildDOFContractMap(ctr_map, fpds);
 
-	  fpds = ds->GetMappedParDofs(); cpds = nullptr;
+	  fpds = ds->GetMappedParDofs(); cpds = ds->GetMappedParDofs();
 
 	  if (embed_step != nullptr) { // i guess if we cannot coarsen at all in the beginning we should start with embedded contract
 	    auto real_step = embed_step->Concatenate(ds);
@@ -281,16 +286,27 @@ namespace amg
 
 	  cmat = sub_steps.Last()->AssembleMatrix(cmat);
 	  
+	  level[2]++;
+
+	  if (cmesh == nullptr)
+	    { break; }
 	}
+
       }
-      else { break; } // outer loop not useful
+      else // if contract disabled/not possible, the outer loop is not useful
+	{ break; }
     } // outher while
 
     if (sub_steps.Size() > 0) { // we were able to do some sort of step
       shared_ptr<BaseDOFMapStep> tot_step = (sub_steps.Size() > 1) ? make_shared<ConcDMS>(sub_steps) : sub_steps[0];
+      cout << "add step do dof map " << typeid(*tot_step).name() << endl;
+      cout << "pds: " << tot_step->GetParDofs() << " " << tot_step->GetMappedParDofs() << endl;
       dof_map->AddStep(tot_step);
     }
     
+    if (cmesh == nullptr) // i drop out!
+      { return Array<shared_ptr<BaseSparseMatrix>>({ nullptr }); }
+
     // coarse level matrix
 
     if (options->enable_rbm) {
@@ -302,11 +318,15 @@ namespace amg
 
     bool do_more_levels = (cmesh != nullptr) &&
       (cap.level < options->max_n_levels) &&
-      (options->max_meas > ComputeMeshMeasure (*cmesh) );
+      (options->max_meas < ComputeMeshMeasure (*cmesh) );
+
+    cout << "cmesh meas " << ComputeMeshMeasure (*cmesh) << endl;
     
     if (do_more_levels) {
       // recursively call setup
+      cout << "more levels!! " << endl;
       auto cmats = RSU( {cap.level + 1, cmesh, cpds, cmat}, dof_map );
+      cout << "level " << cap.level << ", got cmats from coarse: " << endl; prow2(cmats); cout << endl;
       cmats.Append(cmat);
       return cmats;
     }
@@ -315,6 +335,7 @@ namespace amg
     }
     else {
       // no more coarse levels
+      cout << " no more coarse, return only " << cmat << endl;
       return Array<shared_ptr<BaseSparseMatrix>> ({cmat});
     }
 
@@ -409,7 +430,7 @@ namespace amg
   {
     static Timer t("BuildCoarseMap"); RegionTimer rt(t);
     auto coarsen_opts = make_shared<typename HierarchicVWC<TMESH>::Options>();
-    coarsen_opts->free_verts = free_vertices;
+    // coarsen_opts->free_verts = free_vertices;
     this->SetCoarseningOptions(*coarsen_opts, mesh);
     shared_ptr<VWiseCoarsening<TMESH>> calg;
     calg = make_shared<BlockVWC<TMESH>> (coarsen_opts);

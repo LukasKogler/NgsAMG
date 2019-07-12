@@ -46,7 +46,7 @@ namespace amg {
      -) construct the coarse level matrix
      -) be able to create vectors for both levels
   **/
-  class BaseDOFMapStep
+  class BaseDOFMapStep : public BaseMatrix
   {
   protected:
     shared_ptr<ParallelDofs> pardofs, mapped_pardofs;
@@ -54,10 +54,10 @@ namespace amg {
     BaseDOFMapStep (shared_ptr<ParallelDofs> _pardofs, shared_ptr<ParallelDofs> _mapped_pardofs)
       : pardofs(_pardofs), mapped_pardofs(_mapped_pardofs) {}
     virtual ~BaseDOFMapStep () { ; }
-    virtual void TransferF2C (const shared_ptr<const BaseVector> & x_fine,
-			      const shared_ptr<BaseVector> & x_coarse) const = 0;
-    virtual void TransferC2F (const shared_ptr<BaseVector> & x_fine,
-			      const shared_ptr<const BaseVector> & x_coarse) const = 0;
+    virtual void TransferF2C (const BaseVector * x_fine, BaseVector * x_coarse) const = 0;
+    virtual void AddF2C (double fac, const BaseVector * x_fine, BaseVector * x_coarse) const = 0;
+    virtual void TransferC2F (BaseVector * x_fine, const BaseVector * x_coarse) const = 0;
+    virtual void AddC2F (double fac, BaseVector * x_fine, const BaseVector * x_coarse) const = 0;
     shared_ptr<BaseVector> CreateVector () const {
       return make_shared<S_ParallelBaseVectorPtr<double>>
 	(pardofs->GetNDofLocal(), pardofs->GetEntrySize(), pardofs, DISTRIBUTED);
@@ -84,86 +84,62 @@ namespace amg {
   **/
   class DOFMap
   {
-  public:
-    INLINE size_t GetNSteps () const { return steps.Size(); }
-    INLINE size_t GetNLevels () const { return GetNSteps() + 1; } // we count one "empty" level if we drop
-    void AddStep(const shared_ptr<BaseDOFMapStep> step) { steps.Append(step); }
-    shared_ptr<BaseDOFMapStep> GetStep (int k) { return steps[k]; }
-    void Finalize (FlatArray<size_t> acutoffs, shared_ptr<BaseDOFMapStep> embed_step);
-    INLINE void TransferF2C (size_t lev_start, const shared_ptr<const BaseVector> & x_fine,
-			     const shared_ptr<BaseVector> & x_coarse) const
-    { steps[lev_start]->TransferF2C(x_fine, x_coarse);}
-    INLINE void TransferC2F (size_t lev_dest, const shared_ptr<BaseVector> & x_fine,
-			     const shared_ptr<const BaseVector> & x_coarse) const
-    { steps[lev_dest]->TransferC2F(x_fine, x_coarse);}
-    shared_ptr<BaseVector> CreateVector (size_t l) const
-    { return (l>steps.Size()) ? nullptr : ((l==steps.Size()) ? steps.Last()->CreateMappedVector() : steps[l]->CreateVector()); }
-    shared_ptr<ParallelDofs> GetParDofs (size_t L = 0) const { return (L==steps.Size()) ? steps.Last()->GetMappedParDofs() : steps[L]->GetParDofs(); }
-    shared_ptr<ParallelDofs> GetMappedParDofs () const { return steps.Last()->GetMappedParDofs(); }
-    Array<shared_ptr<BaseSparseMatrix>> AssembleMatrices (shared_ptr<BaseSparseMatrix> finest_mat) const;
-  private:
-    void ConcSteps ();
+  protected:
     Array<shared_ptr<BaseDOFMapStep>> steps;
     Array<size_t> cutoffs;
-  };
+
+  public:
+    DofMap () { ; }
+
+    void AddStep(const shared_ptr<BaseDOFMapStep> step) { steps.Append(step); }
+
+    INLINE size_t GetNSteps () const { return steps.Size(); }
+    INLINE size_t GetNLevels () const { return GetNSteps() + 1; } // we count one "empty" level if we drop
+
+    shared_ptr<BaseDOFMapStep> GetStep (int k) { return steps[k]; }
+
+    // void Finalize (FlatArray<size_t> acutoffs, shared_ptr<BaseDOFMapStep> embed_step);
+
+    INLINE void TransferF2C (size_t lev_start, const BaseVector *x_fine, BaseVector * x_coarse) const
+    { steps[lev_start]->TransferF2C(x_fine, x_coarse);}
+
+    INLINE void AddF2C (size_t lev_start, double fac, const BaseVector *x_fine, BaseVector * x_coarse) const
+    { steps[lev_start]->AddF2C(fac, x_fine, x_coarse);}
+
+    INLINE void TransferC2F (size_t lev_dest, BaseVector *x_fine, const BaseVector * x_coarse) const
+    { steps[lev_dest]->TransferC2F(x_fine, x_coarse);}
+
+    INLINE void AddC2F (size_t lev_dest, double fac, BaseVector *x_fine, const BaseVector * x_coarse) const
+    { steps[lev_dest]->AddC2F(fac, x_fine, x_coarse);}
+
+    shared_ptr<BaseVector> CreateVector (size_t l) const
+    { return (l>steps.Size()) ? nullptr : ((l==steps.Size()) ? steps.Last()->CreateMappedVector() : steps[l]->CreateVector()); }
+
+    shared_ptr<ParallelDofs> GetParDofs (size_t L = 0) const { return (L==steps.Size()) ? steps.Last()->GetMappedParDofs() : steps[L]->GetParDofs(); }
+
+    shared_ptr<ParallelDofs> GetMappedParDofs () const { return steps.Last()->GetMappedParDofs(); }
+
+    Array<shared_ptr<BaseSparseMatrix>> AssembleMatrices (shared_ptr<BaseSparseMatrix> finest_mat) const;
+
+  }; // DOFMap
 
 
+  /** Multiple steps that act as one **/
   class ConcDMS : public BaseDOFMapStep
   {
   protected:
     Array<shared_ptr<BaseDOFMapStep>> sub_steps;
     Array<shared_ptr<BaseVector>> vecs;
-  public:
-    ConcDMS (const Array<shared_ptr<BaseDOFMapStep>> & _sub_steps) :
-      BaseDOFMapStep(_sub_steps[0]->GetParDofs(), _sub_steps.Last()->GetMappedParDofs()),
-      sub_steps(_sub_steps)
-    {
-      vecs.SetSize(sub_steps.Size()-1);
-      if(sub_steps.Size()>1) // TODO: test this out -> i think Range(1,0) is broken??
-	for(auto k:Range(size_t(1),sub_steps.Size()))
-	  vecs[k-1] = sub_steps[k]->CreateVector();
-    }
 
-    void hacky_replace_first_step (shared_ptr<BaseDOFMapStep> astep)
-    {
-      this->pardofs = astep->GetParDofs();
-      sub_steps[0] = astep;
-      if (sub_steps.Size() == 1)
-	this->mapped_pardofs = astep->GetMappedParDofs();
-    }
-    shared_ptr<BaseDOFMapStep> hacky_get_first_step () { return sub_steps[0]; }
+  public:
+    ConcDMS (Array<shared_ptr<BaseDOFMapStep>> & _sub_steps);
     
-    virtual void TransferF2C (const shared_ptr<const BaseVector> & x_fine,
-			      const shared_ptr<BaseVector> & x_coarse) const override
-    {
-      if (sub_steps.Size()==1) {
-	sub_steps[0]->TransferF2C(x_fine, x_coarse);
-	return;
-      }
-      sub_steps[0]->TransferF2C(x_fine, vecs[0]);
-      for (int l = 1; l<int(sub_steps.Size())-1; l++)
-	sub_steps[l]->TransferF2C(vecs[l-1], vecs[l]);
-      sub_steps.Last()->TransferF2C(vecs.Last(), x_coarse);
-    }
-    virtual void TransferC2F (const shared_ptr<BaseVector> & x_fine,
-			      const shared_ptr<const BaseVector> & x_coarse) const override
-    {
-      if (sub_steps.Size()==1) {
-	sub_steps[0]->TransferC2F(x_fine, x_coarse);
-	return;
-      }
-      sub_steps.Last()->TransferC2F(vecs.Last(), x_coarse);
-      for (int l = sub_steps.Size()-2; l>0; l--)
-	sub_steps[l]->TransferC2F(vecs[l-1], vecs[l]);
-      sub_steps[0]->TransferC2F(x_fine, vecs[0]);
-    }
-    virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const override
-    {
-      shared_ptr<BaseSparseMatrix> cmat = mat;
-      for (auto& step : sub_steps)
-	cmat = step->AssembleMatrix(cmat);
-      return cmat;
-    }
+    virtual void TransferF2C (const BaseVector * x_fine, BaseVector * x_coarse) const override;
+    virtual void AddF2C (double fac, const BaseVector * x_fine, BaseVector * x_coarse) const override;
+    virtual void TransferC2F (BaseVector * x_fine, const BaseVector * x_coarse) const override;
+    virtual void AddC2F (double fac, BaseVector * x_fine, const BaseVector * x_coarse) const override;
+
+    virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const override;
   };
 
 
@@ -197,18 +173,16 @@ namespace amg {
 
     static_assert(std::is_same<SPM_TM_P, TMAT>::value, "Use SPM_TM for ProlMap!!");
 
-    ProlMap (shared_ptr<TMAT> aprol, shared_ptr<ParallelDofs> fpd, shared_ptr<ParallelDofs> cpd, bool apw = true)
-      : BaseDOFMapStep(fpd, cpd), prol(aprol), prol_trans(nullptr),
-	ispw(apw), has_smf(false), cnt(1), has_lf(false), force_sm(false),
-	SMFUNC([](auto x) { ; }), LOGFUNC([](auto x) { ; })
+    ProlMap (shared_ptr<TMAT> aprol, shared_ptr<ParallelDofs> fpd, shared_ptr<ParallelDofs> cpd)
+      : BaseDOFMapStep(fpd, cpd), prol(aprol), prol_trans(nullptr)
     { ; }
 
   public:
-    virtual void TransferF2C (const shared_ptr<const BaseVector> & x_fine,
-			      const shared_ptr<BaseVector> & x_coarse) const override;
-    
-    virtual void TransferC2F (const shared_ptr<BaseVector> & x_fine,
-			      const shared_ptr<const BaseVector> & x_coarse) const override;
+
+    virtual void TransferF2C (const BaseVector * x_fine, BaseVector * x_coarse) const override;
+    virtual void AddF2C (double fac, const BaseVector * x_fine, BaseVector * x_coarse) const override;
+    virtual void TransferC2F (BaseVector * x_fine, const BaseVector * x_coarse) const override;
+    virtual void AddC2F (double fac, BaseVector * x_fine, const BaseVector * x_coarse) const override;
 
     virtual shared_ptr<BaseDOFMapStep> Concatenate (shared_ptr<BaseDOFMapStep> other) override;
 
@@ -217,77 +191,10 @@ namespace amg {
     INLINE shared_ptr<TMAT> GetProl () const { return prol; }
     INLINE void SetProl (shared_ptr<TMAT> aprol) { prol = aprol; }
 
-    INLINE bool IsPW () const { return ispw; }
-    INLINE bool CanSM () const { return has_smf; }
-    INLINE bool MustSM () const { return force_sm; }
-    INLINE bool HasLog () const { return has_lf; }
-
-    void SetSMF ( std::function<void(ProlMap<TMAT> * map)> ASMFUNC, bool force = true);
-    std::function<void(ProlMap<TMAT> * map)> GetSMF () const { return SMFUNC; }
-    void ClearSMF ();
-    void Smooth (); 
-
-    void SetLog ( std::function<void(shared_ptr<BaseSparseMatrix> prol)> ALOGFUNC);
-    std::function<void(shared_ptr<BaseSparseMatrix>)> GetLog () { return LOGFUNC; }
-    void ClearLog ();
-    
-    void SetCnt (int acnt) { cnt = acnt; }
-    int GetCnt () const { return cnt; }
-
-    shared_ptr<BaseSparseMatrix> fmat_hack;
-    shared_ptr<TopologicMesh> fmesh_hack;
-
   protected:
     shared_ptr<TMAT> prol;
     shared_ptr<trans_spm_tm<TMAT>> prol_trans;
-
-    bool ispw, has_smf, has_lf, force_sm;
-    int cnt;
-    std::function<void(ProlMap<TMAT> * map)> SMFUNC;
-    std::function<void(shared_ptr<BaseSparseMatrix> prol)> LOGFUNC;
-
   };
-
-
-  template <class SPML, class SPMR>
-  class TwoProlMap : public ProlMap<mult_spm_tm<SPML, SPMR>>
-  {
-  public:    
-    using SPM = mult_spm_tm<SPML, SPMR>;
-
-    TwoProlMap (shared_ptr<ProlMap<SPML>> pml, shared_ptr<ProlMap<SPMR>> pmr)
-      : ProlMap<SPM>(nullptr, pml->GetParDofs(), pmr->GetMappedParDofs()),
-      lmap(pml), rmap(pmr)
-    { ; }
-
-    ~TwoProlMap () { ; }
-    
-    shared_ptr<ProlMap<SPML>> GetLMap () const { return lmap; }
-    void SetLMap (shared_ptr<ProlMap<SPML>> almap) { lmap = almap; }
-    shared_ptr<ProlMap<SPMR>> GetRMap () const { return rmap; }
-    void SetRMap (shared_ptr<ProlMap<SPMR>> armap) { rmap = armap; }
-
-    virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const override
-    { // can only happen for [PP, S(..)] case with first map
-      // AAAARGH MORE HACKS AAAAAAA
-      auto& self = const_cast<TwoProlMap<SPML, SPMR>&>(*this);
-      // cout << "TPM, mult mats at assemble, cnt = " << lmap->GetCnt() << " + " << rmap->GetCnt() << endl;
-      // cout << lmap->GetProl()->Height() << " x " << lmap->GetProl()->Width() << " WITH " << rmap->GetProl()->Height() << " x " << rmap->GetProl()->Width() << endl;
-      self.prol = MatMultAB<SPML, SPMR>(*lmap->GetProl(), *rmap->GetProl());
-      self.SetCnt(lmap->GetCnt() + rmap->GetCnt());
-      self.ispw = rmap->IsPW() && lmap->IsPW();
-      const_cast<shared_ptr<ProlMap<SPML>>&>(lmap) = nullptr;
-      const_cast<shared_ptr<ProlMap<SPMR>>&>(rmap) = nullptr;
-      return ProlMap<SPM> :: AssembleMatrix(mat);      
-    }
-
-  protected:
-    using ProlMap<SPM>::prol;
-    shared_ptr<ProlMap<SPML>> lmap;
-    shared_ptr<ProlMap<SPMR>> rmap;
-  };
-  
-  
 
   
 }

@@ -19,10 +19,10 @@ namespace amg
 	    Array<int> && group, Table<int> && dof_maps);
     ~CtrMap ();
     
-    virtual void TransferF2C(const shared_ptr<const BaseVector> & x_fine,
-			     const shared_ptr<BaseVector> & x_coarse) const override;
-    virtual void TransferC2F(const shared_ptr<BaseVector> & x_fine,
-			     const shared_ptr<const BaseVector> & x_coarse) const override;
+    virtual void TransferF2C (const BaseVector * x_fine, BaseVector * x_coarse) const override;
+    virtual void AddF2C (double fac, const BaseVector * x_fine, BaseVector * x_coarse) const override;
+    virtual void TransferC2F (BaseVector * x_fine, const BaseVector * x_coarse) const override;
+    virtual void AddC2F (double fac, BaseVector * x_fine, const BaseVector * x_coarse) const override;
 
     virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const override
     {
