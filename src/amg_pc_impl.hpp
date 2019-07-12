@@ -2,6 +2,8 @@
 namespace amg
 {
 
+  /** Options **/
+
   // single base class so we only have the enums once
   struct BaseEmbedAMGOptions
   {
@@ -46,6 +48,9 @@ namespace amg
   };
 
 
+  /** EmbedVAMG **/
+
+
   template<class Factory>
   struct EmbedVAMG<Factory>::Options : public Factory::Options,
 				       public BaseEmbedAMGOptions
@@ -59,8 +64,19 @@ namespace amg
   template<class Factory>
   void EmbedVAMG<Factory> :: MakeOptionsFromFlags (const Flags & flags, string prefix)
   {
-    auto options = Factory::MakeOptionsFromFlags(flags, prefix);
-    auto& O(*options);
+    auto opts = make_shared<Factory::Options>();
+
+    SetOptionsFromFlags(*opts, flags, prefix);
+
+    return opts;
+  }
+  
+
+  template<class Factory>
+  void EmbedVAMG<Factory> :: SetOptionsFromFlags (Options & O, const Flags & flags, string prefix)
+  {
+
+    Factory::SetOptionsFromFlags(O, flags, frefix);
 
     auto set_enum_opt = [&] (auto & opt, string key, Array<string> vals, auto default_val) {
       string val = flags.GetStringFlag(prefix+key, "");
@@ -113,9 +129,8 @@ namespace amg
     set_enum_opt(O.v_pos, "vpos", {"vertex", "given"}, VERTEX);
 
     set_enum_opt(O.energy, "energy", {"triv", "alg", "elmat"}, ALG);
-    
-    return options;
-  } // EmbedVAMG::MakeOptionsFromFlags
+
+} // EmbedVAMG::MakeOptionsFromFlags
 
 
   template<class Factory>
@@ -211,7 +226,7 @@ namespace amg
   {
     auto emb_step = BuildEmbedding();
     return make_shared<Factory>(mesh, emb_step, options);
-  }
+  } // EmbedVAMG::BuildFactory
 
 
   template<class Factory>
@@ -283,7 +298,7 @@ namespace amg
     free_verts = fvs;
 
     return top_mesh;
-  };
+  }; //  EmbedVAMG::BuildTopMesh
 
 
   template<class Factory>
@@ -302,7 +317,7 @@ namespace amg
     }
     default: { throw Exception("kinda unexpected case"); return nullptr; }
     }
-  }
+  } // EmbedVAMG::BTM_Mesh
     
 
   template<class Factory>
@@ -407,6 +422,32 @@ namespace amg
     }
 
     return top_mesh;
+  } // EmbedVAMG :: BTM_Alg
+
+
+  /** EmbedWithElmats **/
+
+  template<class Factory, class HTVD, class HTED>
+  EmbedWithElmats<Factory, HTVD, HTED> :: EmbedWithElmats (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string aname = "precond")
+    : EmbedVAMG<Factory>(bfa, aflags, aname)
+  {
+    if (options->energy == ELMATS) {
+      shared_ptr<FESpace> lofes = fes;
+      if (auto V = lofes->LowOrderFESpacePtr())
+	{ lofes = V; }
+      size_t NV = lofes->GetNDof(); // TODO: this overestimates for compound spaces
+      ht_vertex = new HashTable<int, HTVD>(NV);
+      ht_edge = new HashTable<INT<2,int>, HTED>(8*NV);
+    }
   }
+
+
+  template<class Factory, class HTVD, class HTED>
+  EmbedWithElmats<Factory, HTVD, HTED> ::  ~EmbedWithElmats ()
+  {
+    if (ht_vertex != nullptr) delete ht_vertex;
+    if (ht_edge   != nullptr) delete ht_edge;
+  }
+
 
 } // namespace amg

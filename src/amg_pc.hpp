@@ -25,11 +25,13 @@ namespace amg
   class EmbedVAMG : public Preconditioner
   {
   public:
-    struct Options;
+    using TMESH = typename Factory::TMESH;
 
+    struct Options;
+    
     EmbedVAMG (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string aname = "precond");
 
-    ~EmbedVAMG () { ; }
+    virtual ~EmbedVAMG () { ; }
 
     virtual void InitLevel (shared_ptr<BitArray> freedofs = nullptr) override;
 
@@ -45,7 +47,8 @@ namespace amg
 
     shared_ptr<Factory> factory;
 
-    virtual void MakeOptionsFromFlags (const Flags & flags, string prefix = "ngs_amg_");
+    virtual shared_ptr<Options> MakeOptionsFromFlags (const Flags & flags, string prefix = "ngs_amg_");
+    virtual void SetOptionsFromFlags (Options& O, const Flags & flags, string prefix = "ngs_amg_");
 
     virtual shared_ptr<BlockTM> BuildTopMesh (); // implemented once for all AMG_CLASS
     virtual shared_ptr<BlockTM> BTM_Mesh (shared_ptr<EQCHierarchy> eqc_h); // implemented once for all AMG_CLASS
@@ -55,7 +58,7 @@ namespace amg
 
     shared_ptr<Factory> BuildFactory (shared_ptr<TMESH> mesh);
 
-    virtual shared_ptr<TMESH> BuildAlgMesh (shared_ptr<BlockTM> top_mesh); // implemented seperately for all AMG_CLASS
+    virtual shared_ptr<TMESH> BuildAlgMesh (shared_ptr<BlockTM> top_mesh) const; // implemented seperately for all AMG_CLASS
     virtual shared_ptr<TMESH> BuildInitialMesh () { return BuildAlgMesh(BuildTopMesh()); }
     virtual shared_ptr<BaseDOFMapStep> BuildEmbedding ();
 
@@ -67,9 +70,23 @@ namespace amg
      basically just overloads addelementmatrix
    **/
   template<class Factory, class HTVD = double, class HTED = double>
-  class EmbedWithElmats : public EmbedVAMG<Factory>
+  class EmbedWithElmats: public EmbedVAMG<Factory>
   {
+  public:
+    using BASE = EmbedVAMG<Factory>;
+    using TMESH = typename BASE::TMESH;
     
+    EmbedWithElmats (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string aname = "precond");
+
+    ~EmbedWithElmats ();
+
+    virtual shared_ptr<TMESH> BuildAlgMesh (shared_ptr<BlockTM> top_mesh) const override;
+    
+    virtual void AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
+				   ElementId ei, LocalHeap & lh) override;
+  protected:
+    HashTable<int, HTVD> * ht_vertex;
+    HashTable<INT<2,int>, HTED> * ht_edge;
   };
 
 };
