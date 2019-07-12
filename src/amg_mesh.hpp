@@ -227,14 +227,14 @@ namespace amg
       disp.SetSize(neqcs+1);
       Array<size_t> vcnt(neqcs+1);
       disp = 0; vcnt = 0;
-      auto lam_veq = [&](auto fun) {
+      auto lam_veq = [&](auto fun) LAMBDA_INLINE {
 	for (auto vnr : Range(nv)) {
 	  auto dps = get_dps(vnr);
 	  auto eqc = eqc_h.FindEQCWithDPs(dps);
 	  fun(vnr,eqc);
 	}
       };
-      lam_veq([&](auto vnr, auto eqc) {
+      lam_veq([&](auto vnr, auto eqc) LAMBDA_INLINE {
 	  disp[eqc+1]++;
 	});
       disp[0] = 0;
@@ -243,7 +243,7 @@ namespace amg
       }
       vcnt = disp;
       this->eqc_verts = FlatTable<AMG_Node<NT_VERTEX>>(neqcs, &(this->disp_eqc[NT_VERTEX][0]), &(this->verts[0]));
-      lam_veq([&](auto vnr, auto eqc) { set_sort(vnr, vcnt[eqc]++); });
+      lam_veq([&](auto vnr, auto eqc) LAMBDA_INLINE { set_sort(vnr, vcnt[eqc]++); });
       Array<int> v2eq;
       v2eq.SetSize(nv);
       size_t cnt = 0;
@@ -280,7 +280,7 @@ namespace amg
       static Timer t(tname);
       RegionTimer rt(t);
       constexpr int NODE_SIZE = sizeof(AMG_CNode<NT>::v)/sizeof(AMG_Node<NT_VERTEX>);
-      auto lam_neq = [&](auto fun_eqc, auto fun_cross) {
+      auto lam_neq = [&](auto fun_eqc, auto fun_cross) LAMBDA_INLINE {
 	constexpr int NODE_SIZE = sizeof(AMG_CNode<NT>::v)/sizeof(AMG_Node<NT_VERTEX>);
 	INT<NODE_SIZE,int> eqcs;
 	for (auto node_num : Range(annodes)) {
@@ -304,12 +304,12 @@ namespace amg
       node_disp_eqc.SetSize(neqcs+1); node_disp_cross.SetSize(neqcs+1);
       {
 	constexpr int NODE_SIZE = sizeof(AMG_CNode<NT>::v)/sizeof(AMG_Node<NT_VERTEX>);
-	auto add_node_eqc = [&](auto node_num, AMG_CNode<NT>& node, auto eqc) {
+	auto add_node_eqc = [&](auto node_num, AMG_CNode<NT>& node, auto eqc) LAMBDA_INLINE {
 	  if (eqc==0) { node_disp_eqc[1]++; return; }
 	  for(auto i:Range(NODE_SIZE)) node.v[i] = MapNodeToEQC<NT_VERTEX>(node.v[i]);
 	  cten.Add(eqc, node);
 	};
-	auto add_node_cross = [&](auto node_num, AMG_CNode<NT>& node, auto eqc) {
+	auto add_node_cross = [&](auto node_num, AMG_CNode<NT>& node, auto eqc) LAMBDA_INLINE {
 	  if (eqc==0) { node_disp_cross[1]++; return; }
 	  for(auto i:Range(NODE_SIZE)) node.v[i] = MapNodeToEQC<NT_VERTEX>(node.v[i]);
 	  cten.Add(eqc, node);
@@ -336,7 +336,7 @@ namespace amg
       for (auto k:Range(size_t(1), neqcs))
 	QuickSort(tent_ex_nodes[k], smaller);
       // cout << "tent_ex_nodes : " << endl << tent_ex_nodes << endl;
-      auto merge_it = [&](auto & input) { return merge_arrays(input, smaller); };
+      auto merge_it = [&](auto & input) LAMBDA_INLINE { return merge_arrays(input, smaller); };
       auto ex_nodes = ReduceTable<AMG_CNode<NT>,AMG_CNode<NT>> (tent_ex_nodes, this->eqc_h, merge_it);
       // cout << "ex_nodes : " << endl << ex_nodes << endl;
       size_t tot_nnodes, tot_nnodes_eqc, tot_nnodes_cross;
@@ -402,7 +402,7 @@ namespace amg
       }
       // add local nodes + write node_map!
       size_t cnt0 = 0;
-      auto add_node_eqc2 = [&](auto node_num, AMG_CNode<NT>& node, auto eqc) {
+      auto add_node_eqc2 = [&](auto node_num, AMG_CNode<NT>& node, auto eqc) LAMBDA_INLINE {
 	if (eqc==0) {
 	  set_sort(node_num,id);
 	  amg_nts::id_type id = cnt0;
@@ -418,7 +418,7 @@ namespace amg
 	}
       };
       size_t cnt0c = tot_nnodes_eqc;
-      auto add_node_cross2 = [&](auto node_num, AMG_CNode<NT>& node, auto eqc) {
+      auto add_node_cross2 = [&](auto node_num, AMG_CNode<NT>& node, auto eqc) LAMBDA_INLINE {
 	if (eqc==0) {
 	  set_sort(node_num,id);
 	  amg_nts::id_type id = cnt0c;
@@ -438,7 +438,7 @@ namespace amg
 	node_disp_cross[k] -= tot_nnodes_eqc;
       }
       auto writeit = [neqcs, tot_nnodes_eqc](auto & _arr, auto & _disp_eqc, auto & _tab_eqc,
-					     auto & _disp_cross, auto & _tab_cross)
+					     auto & _disp_cross, auto & _tab_cross) LAMBDA_INLINE
 	{
 	  _tab_eqc = FlatTable<AMG_Node<NT>>(neqcs, &(_disp_eqc[0]), &(_arr[0]));
 	  _tab_cross = FlatTable<AMG_Node<NT>>(neqcs, &(_disp_cross[0]), &(_arr[tot_nnodes_eqc]));

@@ -459,7 +459,6 @@ namespace amg
   template<class FACTORY>
   shared_ptr<BlockTM> EmbedVAMG<FACTORY> :: BTM_Alg (shared_ptr<EQCHierarchy> eqc_h)
   {
-    cout << "Topmesh alg" << endl;
 
     node_sort.SetSize(4);
 
@@ -477,13 +476,13 @@ namespace amg
     // vertices
     auto set_vs = [&](auto nv, auto v2d) {
       vert_sort.SetSize(nv);
-      top_mesh->SetVs (nv, [&](auto vnr)->FlatArray<int> { return fpd->GetDistantProcs(v2d(vnr)); },
+      top_mesh->SetVs (nv, [&](auto vnr) LAMBDA_INLINE -> FlatArray<int> { return fpd->GetDistantProcs(v2d(vnr)); },
 		       [&vert_sort](auto i, auto j){ vert_sort[i] = j; });
     };
 
     // edges 
-    auto create_edges = [&](auto v2d, auto d2v) {
-      auto traverse_graph = [&](const auto& g, auto fun) { // vertex->dof,  // dof-> vertex
+    auto create_edges = [&](auto v2d, auto d2v) LAMBDA_INLINE {
+      auto traverse_graph = [&](const auto& g, auto fun) LAMBDA_INLINE { // vertex->dof,  // dof-> vertex
 	for (auto k : Range(n_verts)) {
 	  int row = v2d(k); // for find_in_sorted_array
 	  auto ri = g.GetRowIndices(row);
@@ -506,14 +505,14 @@ namespace amg
 	if (!bspm) { bspm = dynamic_pointer_cast<BaseSparseMatrix>( dynamic_pointer_cast<ParallelMatrix>(finest_mat)->GetMatrix()); }
 	if (!bspm) { throw Exception("could not get BaseSparseMatrix out of finest_mat!!"); }
 	n_edges = 0;
-	traverse_graph(*bspm, [&](auto vk, auto vj) { n_edges++; });
+	traverse_graph(*bspm, [&](auto vk, auto vj) LAMBDA_INLINE { n_edges++; });
 	Array<decltype(AMG_Node<NT_EDGE>::v)> epairs(n_edges);
 	n_edges = 0;
-	traverse_graph(*bspm, [&](auto vk, auto vj) {
+	traverse_graph(*bspm, [&](auto vk, auto vj) LAMBDA_INLINE{
 	    if (vk < vj) { epairs[n_edges++] = {vk, vj}; }
 	    else { epairs[n_edges++] = {vj, vk}; }
 	  });
-	top_mesh->SetNodes<NT_EDGE> (n_edges, [&](auto num) { return epairs[num]; }, // (already v-sorted)
+	top_mesh->SetNodes<NT_EDGE> (n_edges, [&](auto num) LAMBDA_INLINE { return epairs[num]; }, // (already v-sorted)
 				     [](auto node_num, auto id) { /* dont care about edge-sort! */ });
       }; // create_edges
 
@@ -526,9 +525,9 @@ namespace amg
       cout << "case 1 " << endl;
 	auto r0 = O.ss_ranges[0];
 	int dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
-	n_verts = (r0[1] - r0[0]) * fes_bs / dpv;
-	auto d2v = [&](auto d) -> int { return ( (d%(fes_bs/bs0)) == 0) ? d*fes_bs/bs0 : -1; };
-	auto v2d = [&](auto v) { return bs0/fes_bs * v; };
+	n_verts = (r0[1] - r0[0]) * fes_bs / bs0;
+	auto d2v = [&](auto d) LAMBDA_INLINE -> int { return ( (d%(fes_bs/bs0)) == 0) ? d*fes_bs/bs0 : -1; };
+	auto v2d = [&](auto v) LAMBDA_INLINE { return bs0/fes_bs * v; };
 	set_vs (n_verts, v2d);
 	create_edges ( v2d , d2v );
       }
@@ -545,8 +544,8 @@ namespace amg
 	for (size_t k = 0, j = 0; k < n_verts; j += bs0 / fes_bs)
 	  if (O.ss_select->Test(j))
 	    { first_dof[k] = j; compress[j] = k++; }
-	auto v2d = [&](auto v) { return first_dof[v]; };
-	auto d2v = [&](auto d) -> int { return (d+1 > compress.Size()) ? -1 : compress[d]; };
+	auto d2v = [&](auto d) LAMBDA_INLINE -> int { return (d+1 > compress.Size()) ? -1 : compress[d]; };
+	auto v2d = [&](auto v) LAMBDA_INLINE { return first_dof[v]; };
 	set_vs (n_verts, v2d);
 	create_edges ( v2d , d2v );
 	

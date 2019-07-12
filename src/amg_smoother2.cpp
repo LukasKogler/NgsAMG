@@ -710,7 +710,7 @@ namespace amg
       });
   }
   template<> INLINE void AddODToD<double> (const double & v, double & w)
-  { w += fabs(v); }
+  { w += 0.5 * fabs(v); }
   // template<> INLINE void AddODToD<Complex> (const double & v, double & w)
   // { w += 0.5 * fabs(v); }
   template<class TM>
@@ -722,11 +722,13 @@ namespace amg
     Array<TM> add_diag(A->Height()); add_diag = 0;
  
     auto S = dynamic_pointer_cast<SparseMatrixTM<TM>>(A->GetS());
+    const auto & M = *A->GetM();
    
     if (S == nullptr)
       { return add_diag; }
 
     for (auto k : Range(S->Height())) {
+
       auto rvs = S->GetRowValues(k);
       for (auto l : Range(rvs)) {
 	AddODToD(rvs[l], add_diag[k]);
@@ -735,6 +737,16 @@ namespace amg
     }
 
     AllReduceDofData (add_diag, MPI_SUM, A->GetParallelDofs());  
+
+    if constexpr( is_same<TM, double>::value )
+      {
+	for (auto k : Range(M.Height())) {
+	  if ( (add_diag[k] != 0) && (M(k,k) != 0) ) {
+	    if (M(k,k) > 3 * add_diag[k])
+	      { add_diag[k] = 0; }
+	  }
+	}
+      }
 
     return add_diag;
   }

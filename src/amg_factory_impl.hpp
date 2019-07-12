@@ -58,8 +58,8 @@ namespace amg
     set_num(opts.max_n_levels, "max_levels");
     set_num(opts.max_meas, "max_coarse_size");
     set_num(opts.aaf, "aaf");
-    set_num(opts.aaf, "first_aaf");
-    set_num(opts.aaf, "aaf_scale");
+    set_num(opts.first_aaf, "first_aaf");
+    set_num(opts.aaf_scale, "aaf_scale");
 
     set_bool(opts.enable_ctr, "enable_redist");
     set_num(opts.ctraf, "rdaf");
@@ -186,9 +186,14 @@ namespace amg
       state->last_meas_rbm = curr_meas;
     }
 
-    double af = (cap.level == 0) ? options->first_aaf : ( pow(options->aaf_scale, cap.level - ( (options->first_aaf == -1) ? 1 : 0) ) * options->aaf );
+    double af = (cap.level == 0) ? options->first_aaf : ( pow(options->aaf_scale, cap.level - ( (options->first_aaf == -1) ? 0 : 1) ) * options->aaf );
+
+    cout << "using AF " << af << " from " << options->first_aaf << " " << options->aaf_scale << " " << options->aaf << endl;
+
     size_t goal_meas = max( size_t(min(af, 0.9) * curr_meas), max(options->max_meas, size_t(1)));
 
+    cout << "goal is: " << goal_meas << endl;
+    
     INT<3> level = { cap.level, 0, 0 }; // coarse / sub-coarse / ctr 
 
     Array<shared_ptr<BaseDOFMapStep>> sub_steps;
@@ -209,6 +214,8 @@ namespace amg
 	auto _cmesh = static_pointer_cast<TMESH>(grid_step->GetMappedMesh());
 
 	crs_meas_fac = ComputeMeshMeasure(*_cmesh) / (1.0 * curr_meas);
+
+	cout << "coarsen fac " << crs_meas_fac << ", went from " << curr_meas << " to " << ComputeMeshMeasure(*_cmesh) << endl;
 
 	if (crs_meas_fac > 0.95)
 	  { throw Exception("no proper check in place here"); }
@@ -231,10 +238,11 @@ namespace amg
 
       if(conc_pwp != nullptr) {
 	
+	cout << "take a prol: " << conc_pwp->Height() << " -> " << conc_pwp->Width() << endl;
 	auto pstep = make_shared<ProlMap<TSPM_TM>> (conc_pwp, fpds, cpds);
 
 	if (options->enable_sm)
-	  { SmoothProlongation(pstep, cap.mesh); }
+	  { cout << "smoothit!" << endl; SmoothProlongation(pstep, cap.mesh); }
 
 	fpds = cpds; conc_pwp = nullptr; fmesh = cmesh;
 
@@ -269,6 +277,8 @@ namespace amg
 	  double ctr_factor = (next_nv < options->ctr_seq_nv) ? -1 :
 	    min2(fac, double(next_nv) / options->ctr_min_nv / ccomm.Size());
 	  
+	  cout << "contract by factor " << ctr_factor << endl;
+
 	  auto ctr_map = BuildContractMap(ctr_factor, cmesh);
 
 	  cmesh = static_pointer_cast<TMESH>(ctr_map->GetMappedMesh());
@@ -290,6 +300,9 @@ namespace amg
 
 	  if (cmesh == nullptr)
 	    { break; }
+
+	  cout << "NP down to " << cmesh->GetEQCHierarchy()->GetCommunicator().Size() << endl;
+
 	}
 
       }

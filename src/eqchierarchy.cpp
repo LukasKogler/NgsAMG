@@ -86,14 +86,14 @@ namespace amg {
 	index_of_block.SetSize(0);
 	Array<int> size_of_dps(50);
 	size_of_dps.SetSize(0);
-	if (ndof > 0) { size_of_dps.Append(0); index_of_block.Append(0); neqcs++; }
+	if (ndof > 0) { size_of_dps.Append(0); index_of_block.Append(-1); neqcs++; }
 	for (auto k:Range(max_nd)) {
 	  auto dp = apd->GetDistantProcs(k);
 	  if (!dp.Size()) continue; 
 	  int pos = -1;
-	  for (size_t l=0;l<index_of_block.Size() && (pos==-1);l++)
-	    if (apd->GetDistantProcs(index_of_block[l])==dp)
-	      pos = l;
+	  for (size_t l = 1; l<index_of_block.Size() && (pos == -1); l++)
+	    if (apd->GetDistantProcs(index_of_block[l]) == dp)
+	      { pos = l; }
 	  if (pos>=0) continue;
 	  //new eqc found!
 	  index_of_block.Append(k);
