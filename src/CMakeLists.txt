@@ -11,7 +11,7 @@ cmake_minimum_required(VERSION 3.8)
 
 add_ngsolve_python_module(ngs_amg SHARED
   eqchierarchy.cpp amg_mesh.cpp
-  amg_coarsen.cpp amg_h1_v2.cpp
+  amg_coarsen.cpp amg_h1_v2.cpp python_amg.cpp
   amg_spmstuff.cpp amg_map.cpp amg_smoother.cpp
   amg_matrix.cpp amg_contract.cpp amg_elast.cpp
   boomer.cpp amg_smoother2.cpp)
