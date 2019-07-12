@@ -29,7 +29,11 @@ namespace amg
 
     struct Options;
     
-    EmbedVAMG (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string aname = "precond");
+    EmbedVAMG (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string name = "precond");
+
+    EmbedVAMG (const PDE & apde, const Flags & aflags, const string aname = "precond")
+      : Preconditioner(&apde, aflags, aname)
+    { throw Exception("PDE-constructor not implemented!"); }
 
     virtual ~EmbedVAMG () { ; }
 
@@ -37,11 +41,31 @@ namespace amg
 
     virtual void FinalizeLevel (const BaseMatrix * mat) override;
 
+    virtual void Update () override { ; };
+
+    virtual const BaseMatrix & GetMatrix () const override
+    { if (amg_mat == nullptr) { throw Exception("NGsAMG Preconditioner not ready!"); } return *amg_mat; }
+    virtual shared_ptr<BaseMatrix> GetMatrixPtr () override
+    { if (amg_mat == nullptr) { throw Exception("NGsAMG Preconditioner not ready!"); } return amg_mat; }
+    virtual void Mult (const BaseVector & b, BaseVector & x) const override
+    { if (amg_mat == nullptr) { throw Exception("NGsAMG Preconditioner not ready!"); } amg_mat->Mult(b, x); }
+    virtual void MultTrans (const BaseVector & b, BaseVector & x) const override
+    { if (amg_mat == nullptr) { throw Exception("NGsAMG Preconditioner not ready!"); } amg_mat->MultTrans(b, x); }
+    virtual void MultAdd (double s, const BaseVector & b, BaseVector & x) const override
+    { if (amg_mat == nullptr) { throw Exception("NGsAMG Preconditioner not ready!"); } amg_mat->MultAdd(s, b, x); }
+    virtual void MultTransAdd (double s, const BaseVector & b, BaseVector & x) const override
+    { if (amg_mat == nullptr) { throw Exception("NGsAMG Preconditioner not ready!"); } amg_mat->MultTransAdd(s, b, x); }
+
   protected:
+    shared_ptr<Options> options;
+
     shared_ptr<BilinearForm> bfa;
 
     shared_ptr<BitArray> finest_freedofs, free_verts;
-    shared_ptr<BaseMatrix> finest_matrix;
+    shared_ptr<BaseMatrix> finest_mat;
+
+    Array<Array<int>> node_sort;
+    Array<Array<Vec<3,double>>> node_pos;
 
     shared_ptr<AMGMatrix> amg_mat;
 
@@ -62,6 +86,8 @@ namespace amg
     virtual shared_ptr<TMESH> BuildInitialMesh () { return BuildAlgMesh(BuildTopMesh()); }
     virtual shared_ptr<BaseDOFMapStep> BuildEmbedding ();
 
+    virtual shared_ptr<BaseSmoother> BuildSmoother (shared_ptr<BaseSparseMatrix> m, shared_ptr<ParallelDofs> pds,
+						    shared_ptr<BitArray> freedofs = nullptr) const;
     virtual void Finalize ();
     virtual void BuildAMGMat ();
   };
@@ -76,7 +102,11 @@ namespace amg
     using BASE = EmbedVAMG<Factory>;
     using TMESH = typename BASE::TMESH;
     
-    EmbedWithElmats (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string aname = "precond");
+    EmbedWithElmats (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string name = "precond");
+
+    EmbedWithElmats (const PDE & apde, const Flags & aflags, const string aname = "precond")
+      : BASE(apde, aflags, aname)
+    { throw Exception("PDE-constructor not implemented!"); }
 
     ~EmbedWithElmats ();
 
@@ -85,10 +115,12 @@ namespace amg
     virtual void AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
 				   ElementId ei, LocalHeap & lh) override;
   protected:
+    using BASE::options;
+
     HashTable<int, HTVD> * ht_vertex;
     HashTable<INT<2,int>, HTED> * ht_edge;
   };
 
 };
 
-#endif
+#endif // FILE_AMGPC_HPP

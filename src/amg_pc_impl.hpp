@@ -1,3 +1,5 @@
+#ifndef FILE_AMGPC_IMPL_HPP
+#define FILE_AMGPC_IMPL_HPP
 
 namespace amg
 {
@@ -11,7 +13,7 @@ namespace amg
     enum DOF_SUBSET : char { RANGE_SUBSET = 0,        // use Union { [ranges[i][0], ranges[i][1]) }
 			     SELECTED_SUBSET = 1 };   // given by bitarray
     DOF_SUBSET subset = RANGE_SUBSET;
-    Array<INT<2>> ss_ranges;
+    Array<INT<2, size_t>> ss_ranges;
     shared_ptr<BitArray> ss_select;
     
     /** How the DOFs in the subset are mapped to vertices **/
@@ -55,6 +57,9 @@ namespace amg
     bool keep_vp = false;
     bool mat_ready = false;
     bool sync = false;
+    /** Smoothers **/
+    bool old_smoothers = false;
+    bool smooth_symmetric = false;
   };
 
 
@@ -64,9 +69,17 @@ namespace amg
   template<class Factory>
   shared_ptr<typename EmbedVAMG<Factory>::Options> EmbedVAMG<Factory> :: MakeOptionsFromFlags (const Flags & flags, string prefix)
   {
-    auto opts = make_shared<Factory::Options>();
+    auto opts = make_shared<Options>();
 
     SetOptionsFromFlags(*opts, flags, prefix);
+
+    auto set_bool = [&](auto& v, string key) {
+      if (v) { v = !flags.GetDefineFlagX(prefix + key).IsFalse(); }
+      else { v = flags.GetDefineFlagX(prefix + key).IsTrue(); }
+    };
+    
+    set_bool(opts->old_smoothers, "oldsm");
+    set_bool(opts->old_smoothers, "symsm");
 
     return opts;
   }
@@ -100,9 +113,9 @@ namespace amg
 
     switch (O.subset) {
     case (BAO::RANGE_SUBSET) : {
-      auto low = flags.GetNumListFlag(pfit("lower"));
+      auto &low = flags.GetNumListFlag(pfit("lower"));
       if (low.Size()) { // defined on multiple ranges
-	auto up = flags.GetNumListFlag(pfit("upper"));
+	auto &up = flags.GetNumListFlag(pfit("upper"));
 	O.ss_ranges.SetSize(low.Size());
 	for (auto k : Range(low.Size()))
 	  { O.ss_ranges[k] = { size_t(low[k]), size_t(up[k]) }; }
@@ -124,24 +137,22 @@ namespace amg
     default: { throw Exception("Not implemented"); break; }
     }
       
-    set_enum_opt(O.dof_ordering, "dof_order", {"regular", "variable"}, REGULAR_ORDERING);
+    set_enum_opt(O.dof_ordering, "dof_order", {"regular", "variable"}, BAO::REGULAR_ORDERING);
 
-    set_enum_opt(O.topo, "edges", {"alg", "mesh", "elmat"}, ALG_TOPO);
+    set_enum_opt(O.topo, "edges", {"alg", "mesh", "elmat"}, BAO::ALG_TOPO);
 
-    set_enum_opt(O.v_pos, "vpos", {"vertex", "given"}, VERTEX_POS);
+    set_enum_opt(O.v_pos, "vpos", {"vertex", "given"}, BAO::VERTEX_POS);
 
-    set_enum_opt(O.energy, "energy", {"triv", "alg", "elmat"}, ALG_ENERGY);
+    set_enum_opt(O.energy, "energy", {"triv", "alg", "elmat"}, BAO::ALG_ENERGY);
 
   } // EmbedVAMG::MakeOptionsFromFlags
 
 
   template<class Factory>
-  EmbedVAMG<Factory> :: EmbedVAMG (shared_ptr<BilinearForm> blf, const Flags & flags, const string aname = "precond")
+  EmbedVAMG<Factory> :: EmbedVAMG (shared_ptr<BilinearForm> blf, const Flags & flags, const string name)
     : Preconditioner(blf, flags, name), bfa(blf)
   {
-    
     options = MakeOptionsFromFlags (flags);
-
   } // EmbedVAMG::EmbedVAMG
 
 
@@ -172,13 +183,12 @@ namespace amg
   void EmbedVAMG<Factory> :: FinalizeLevel (const BaseMatrix * mat)
   {
 
-    shared_ptr<BaseMatrix> fine_spm;
     if (mat != nullptr)
-      { fine_spm = shared_ptr<BaseMatrix>(const_cast<BaseMatrix*>(mat), NOOP_Deleter); }
+      { finest_mat = shared_ptr<BaseMatrix>(const_cast<BaseMatrix*>(mat), NOOP_Deleter); }
     else
-      { fine_spm = bfa->GetMatrixPtr(); }
+      { finest_mat = bfa->GetMatrixPtr(); }
 
-    finest_mat = fine_spm; // embed-amg finest mat - need parallel matrix!
+    Finalize();
 
   } // EmbedVAMG::FinalizeLevel
 
@@ -188,29 +198,28 @@ namespace amg
   {
     if (options->sync)
       {
-	if (auto pmat = dynamic_pointer_cast<ParallelMatrix>(mat)) {
+	if (auto pds = finest_mat->GetParallelDofs()) {
 	  static Timer t(string("NGsAMG - Initial Sync")); RegionTimer rt(t);
-	  pmat->GetParallelDofs()->GetCommunicator().Barrier();
+	  pds->GetCommunicator().Barrier();
 	}
       }
 
     if (finest_freedofs == nullptr)
       { finest_freedofs = bfa->GetFESpace()->GetFreeDofs(bfa->UsesEliminateInternal()); }
     
-    shared_ptr<BaseMatrix> fine_spm = finest_mat;
 
     /** Set dummy-ParallelDofs **/
+    shared_ptr<BaseMatrix> fine_spm = finest_mat;
     if (auto pmat = dynamic_pointer_cast<ParallelMatrix>(fine_spm))
       { fine_spm = pmat->GetMatrix(); }
     else {
-      if ( (GetEntryDim(fine_spm.get())==1) != (AMG_CLASS::DPN==1) )
-	{ throw Exception("Not sure if this works..."); }
+      Array<int> perow (fine_spm->Height() ); perow = 0;
+      Table<int> dps (perow);
       NgsMPI_Comm c(MPI_COMM_WORLD);
       MPI_Comm mecomm = (c.Size() == 1) ? MPI_COMM_WORLD : AMG_ME_COMM;
-      fine_spm->SetParallelDofs(make_shared<ParallelDofs> ( mecomm , move(pds), GetEntryDim(fine_spm.get()), false));
+      fine_spm->SetParallelDofs(make_shared<ParallelDofs> ( mecomm , move(dps), GetEntryDim(fine_spm.get()), false));
     }
-    
-    Finalize();
+
     auto mesh = BuildInitialMesh();
 
     factory = BuildFactory(mesh);
@@ -227,7 +236,7 @@ namespace amg
   shared_ptr<Factory> EmbedVAMG<Factory> :: BuildFactory (shared_ptr<TMESH> mesh)
   {
     auto emb_step = BuildEmbedding();
-    return make_shared<Factory>(mesh, emb_step, options);
+    return make_shared<Factory>(mesh, options, emb_step);
   } // EmbedVAMG::BuildFactory
 
 
@@ -235,14 +244,27 @@ namespace amg
   void EmbedVAMG<Factory> :: BuildAMGMat ()
   {
     /** Build coarse level matrices and grid-transfer **/
-    Array<BaseSparseMatrix> mats;
+
+    if (finest_mat == nullptr)
+      { throw Exception("Do not have a finest level matrix!"); }
+
+    shared_ptr<BaseSparseMatrix> fspm = nullptr;
+    if (auto pmat = dynamic_pointer_cast<ParallelMatrix>(finest_mat))
+      { fspm = dynamic_pointer_cast<BaseSparseMatrix>(pmat->GetMatrix()); }
+    else
+      { dynamic_pointer_cast<BaseSparseMatrix>(finest_mat); }
+
+    if (fspm == nullptr)
+      { throw Exception("Could not cast finest mat!"); }
+    
+    Array<shared_ptr<BaseSparseMatrix>> mats ({ fspm });
     auto dof_map = make_shared<DOFMap>();
     factory->SetupLevels(mats, dof_map);
 
     // Set up smoothers
-    Array<BaseSmoother> smoothers(mat.Size()-1);
-    for (auto k : Range(size_t(0), mat.Size()-1)) {
-      smoothers[k] = BuildSmoother (mats[k], dof_map->GetParDofs(k), (k==0) ? finest_free_dofs : nullptr);
+    Array<shared_ptr<BaseSmoother>> smoothers(mats.Size()-1);
+    for (auto k : Range(size_t(0), mats.Size()-1)) {
+      smoothers[k] = BuildSmoother (mats[k], dof_map->GetParDofs(k), (k==0) ? finest_freedofs : nullptr);
       smoothers[k]->Finalize(); // do i even need this anymore ?
     }
 
@@ -258,13 +280,15 @@ namespace amg
 
     auto & O(*options);
 
+    typedef BaseEmbedAMGOptions BAO;
+
     /** Build inital EQC-Hierarchy **/
     shared_ptr<EQCHierarchy> eqc_h;
     auto fpd = finest_mat->GetParallelDofs();
     size_t maxset = 0;
     switch (O.subset) {
-    case(RANGE): { maxset = ss_ranges.Last()[1]+1; break; }
-    case(SELECTED): {
+    case(BAO::RANGE_SUBSET): { maxset = O.ss_ranges.Last()[1]+1; break; }
+    case(BAO::SELECTED_SUBSET): {
       auto sz = O.ss_select->Size();
       for (auto k : Range(sz--))
 	if (O.ss_select->Test(sz--))
@@ -276,13 +300,14 @@ namespace amg
     /** Build inital Mesh Topology **/
     shared_ptr<BlockTM> top_mesh;
     switch(O.topo) {
-    case(MESH_TOPO): { top_mesh = BTM_Mesh(eqc_h); break; }
-    case(ELMAT_TOPO): { top_mesh = BTM_Elmat(eqc_h); break; }
-    case(ALG_TOPO): { top_mesh = BTM_Alg(eqc_h); break; }
+    case(BAO::MESH_TOPO): { top_mesh = BTM_Mesh(eqc_h); break; }
+    case(BAO::ELMAT_TOPO): { top_mesh = BTM_Elmat(eqc_h); break; }
+    case(BAO::ALG_TOPO): { top_mesh = BTM_Alg(eqc_h); break; }
     }
 
     /** vertex positions, if we need them **/
-    if (options->keep_vp) {
+    if (O.keep_vp) {
+      node_pos.SetSize(1);
       auto & vsort = node_sort[0]; // also kinda hard coded for vertex-vertex pos, and no additional permutation
       auto & vpos(node_pos[NT_VERTEX]); vpos.SetSize(top_mesh->template GetNN<NT_VERTEX>());
       for (auto k : Range(vpos.Size()))
@@ -295,7 +320,7 @@ namespace amg
     auto fvs = make_shared<BitArray>(top_mesh->GetNN<NT_VERTEX>()); fvs->Clear();
     auto & vsort = node_sort[NT_VERTEX];
     for (auto k : Range(top_mesh->GetNN<NT_VERTEX>()))
-      if (O.finest_free_dofs->Test(k))
+      if (finest_freedofs->Test(k))
 	{ fvs->Set(vsort[k]); }
     free_verts = fvs;
 
@@ -308,12 +333,16 @@ namespace amg
   {
     node_sort.SetSize(4);
 
+    typedef BaseEmbedAMGOptions BAO;
+
+    const auto &O(*options);
+
     switch (O.v_pos) {
-    case(VERTEX): {
+    case(BAO::VERTEX_POS): {
       return MeshAccessToBTM (ma, eqc_h, node_sort[0], true, node_sort[1],
 			      false, node_sort[2], false, node_sort[3]);
     }
-    case(GIVEN): {
+    case(BAO::GIVEN_POS): {
       throw Exception("Cannot combine custom vertices with topology from mesh");
       return nullptr;
     }
@@ -327,11 +356,16 @@ namespace amg
   {
     node_sort.SetSize(4);
 
+    typedef BaseEmbedAMGOptions BAO;
+    const auto &O(*options);
+
     auto top_mesh = make_shared<BlockTM>(eqc_h);
 
     size_t n_verts = 0, n_edges = 0;
 
     auto & vert_sort = node_sort[NT_VERTEX];
+
+    auto fpd = finest_mat->GetParallelDofs();
 
     // vertices
     auto set_vs = [&](auto nv, auto v2d) {
@@ -376,11 +410,12 @@ namespace amg
 				     [](auto node_num, auto id) { /* dont care about edge-sort! */ });
       }; // create_edges
 
-    if (O.dof_ordering == REGULAR_ORDERING) {
-      if (O.subset == RANGE_SUBSET) {
+    if (O.dof_ordering == BAO::REGULAR_ORDERING) {
+      const auto fes_bs = fpd->GetEntrySize();
+      int dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
+      const auto bs0 = O.block_s[0]; // is this not kind of redundant ?
+      if (O.subset == BAO::RANGE_SUBSET) {
 	auto r0 = O.ss_ranges[0];
-	const auto fes_bs = fpd->GetEntrySize();
-	const auto bs0 = O.block_s[0]; // is this not kind of redundant ?
 	int dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
 	n_verts = (r0[1] - r0[0]) * fes_bs / dpv;
 	auto d2v = [&](auto d) -> int { return ( (d%(fes_bs/bs0)) == 0) ? d*fes_bs/bs0 : -1; };
@@ -420,7 +455,7 @@ namespace amg
 
     if (NgMPI_Comm(MPI_COMM_WORLD).Rank() == 1) {
       cout << "AMG performed on " << n_verts << " vertices, ndof local is: " << fpd->GetNDofLocal() << endl;
-      cout << "free dofs " << options->finest_free_dofs->NumSet() << " ndof local is: " << fpd->GetNDofLocal() << endl;
+      cout << "free dofs " << finest_freedofs->NumSet() << " ndof local is: " << fpd->GetNDofLocal() << endl;
     }
 
     return top_mesh;
@@ -430,11 +465,14 @@ namespace amg
   /** EmbedWithElmats **/
 
   template<class Factory, class HTVD, class HTED>
-  EmbedWithElmats<Factory, HTVD, HTED> :: EmbedWithElmats (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string aname = "precond")
-    : EmbedVAMG<Factory>(bfa, aflags, aname)
+  EmbedWithElmats<Factory, HTVD, HTED> :: EmbedWithElmats (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string name)
+    : EmbedVAMG<Factory>(bfa, aflags, name)
   {
-    if (options->energy == ELMAT_ENERGY) {
-      shared_ptr<FESpace> lofes = fes;
+    typedef BaseEmbedAMGOptions BAO;
+    const auto &O(*options);
+
+    if (O.energy == BAO::ELMAT_ENERGY) {
+      shared_ptr<FESpace> lofes = bfa->GetFESpace();
       if (auto V = lofes->LowOrderFESpacePtr())
 	{ lofes = V; }
       size_t NV = lofes->GetNDof(); // TODO: this overestimates for compound spaces
@@ -453,3 +491,5 @@ namespace amg
 
 
 } // namespace amg
+
+#endif //  FILE_AMGPC_IMPL_HPP

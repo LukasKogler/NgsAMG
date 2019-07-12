@@ -44,7 +44,7 @@ namespace amg
 
 
   template<class TMESH, class TM>
-  void AMGFactory<TMESH, TM> :: SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix) const
+  void AMGFactory<TMESH, TM> :: SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix)
   {
     // TODO: implement this ...
   }
@@ -58,7 +58,7 @@ namespace amg
 
 
   template<NODE_TYPE NT, class TMESH, class TM>
-  void NodalAMGFactory<NT, TMESH, TM> :: SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix) const
+  void NodalAMGFactory<NT, TMESH, TM> :: SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix)
   {
     BASE :: SetOptionsFromFlags(opts, flags, prefix);
   }
@@ -67,6 +67,11 @@ namespace amg
   template<class FACTORY_CLASS, class TMESH, class TM>
   struct VertexBasedAMGFactory<FACTORY_CLASS, TMESH, TM> :: Options : public NodalAMGFactory<NT_VERTEX, TMESH, TM>::Options
   {
+    /** Coarsening **/
+    double min_ecw = 0.05;
+    double min_vcw = 0.3;
+
+    /** Smoothed Prolongation **/
     double min_prol_frac = 0.1;          // min. (relative) wt to include an edge
     int max_per_row = 3;                 // maximum entries per row (should be >= 2!)
     double sp_omega = 1.0;               // relaxation parameter for prol-smoothing
@@ -74,13 +79,15 @@ namespace amg
 
 
   template<class FACTORY_CLASS, class TMESH, class TM>
-  void VertexBasedAMGFactory<FACTORY_CLASS, TMESH, TM> :: SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix) const
+  void VertexBasedAMGFactory<FACTORY_CLASS, TMESH, TM> :: SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix)
   {
     BASE :: SetOptionsFromFlags (opts, flags, prefix);
     
     auto set_num = [&](auto& v, string key)
-      { v = opts.GetNumFlag(prefix + key, v); };
+      { v = flags.GetNumFlag(prefix + key, v); };
     
+    set_num(opts.min_ecw, "edge_thresh");
+    set_num(opts.min_vcw, "vert_thresh");
     set_num(opts.min_prol_frac, "sp_thresh");
     set_num(opts.max_per_row, "sp_max_per_row");
     set_num(opts.sp_omega, "sp_omega");
@@ -107,9 +114,26 @@ namespace amg
 
 
   template<class TMESH, class TM>
-  AMGFactory<TMESH, TM> :: AMGFactory (shared_ptr<TMESH> _finest_mesh, shared_ptr<BaseDOFMapStep> _embed_step, shared_ptr<Options> _opts)
+  AMGFactory<TMESH, TM> :: AMGFactory (shared_ptr<TMESH> _finest_mesh, shared_ptr<Options> _opts, shared_ptr<BaseDOFMapStep> _embed_step)
     : options(_opts), finest_mesh(_finest_mesh), embed_step(_embed_step)
   { ; }
+
+
+  template<class TMESH, class TM>
+  void AMGFactory<TMESH, TM> :: SetupLevels (Array<shared_ptr<BaseSparseMatrix>> & mats, shared_ptr<DOFMap> & dof_map)
+  {
+    static Timer t("SetupLevels"); RegionTimer rt(t);
+
+    if(mats.Size() != 1)
+      { throw Exception("SetupLevels needs a finest level mat!"); }
+    
+    // these are in reverse order
+    auto rev_mats = RSU({ 0, finest_mesh, mats[0]->GetParallelDofs(), mats[0] }, dof_map);
+    mats.SetSize(rev_mats);
+    for (auto k : Range(mats.Size()))
+      { mats[k] = rev_mats[mats.Size()-1-k]; }
+
+  }
 
 
   template<class TMESH, class TM>
@@ -284,6 +308,13 @@ namespace amg
   
 
   template<NODE_TYPE NT, class TMESH, class TM>
+  NodalAMGFactory<NT, TMESH, TM> :: NodalAMGFactory (shared_ptr<TMESH> _finest_mesh, shared_ptr<Options> _opts,
+						     shared_ptr<BaseDOFMapStep> _embed_step)
+    : BASE(_finest_mesh, _opts, _embed_step)
+  { ; }
+
+
+  template<NODE_TYPE NT, class TMESH, class TM>
   shared_ptr<ParallelDofs> NodalAMGFactory<NT, TMESH, TM> :: BuildParDofs (shared_ptr<TMESH> amesh) const
   {
     const auto & mesh = *amesh;
@@ -329,6 +360,13 @@ namespace amg
 
 
   /** --- VertexBasedAMGFactory --- **/
+
+
+  template<class FACTORY_CLASS, class TMESH, class TM>
+  VertexBasedAMGFactory<FACTORY_CLASS, TMESH, TM> :: VertexBasedAMGFactory (shared_ptr<TMESH> _finest_mesh, shared_ptr<Options> _opts,
+									    shared_ptr<BaseDOFMapStep> _embed_step)
+    : BASE(_finest_mesh, _opts, _embed_step)
+  { ; }
 
 
   template<class FACTORY_CLASS, class TMESH, class TM>
@@ -613,4 +651,4 @@ namespace amg
 
 } // namespace amg
 
-#endif
+#endif // FILE_AMG_FACTORY_IMPL_HPP

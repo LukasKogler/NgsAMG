@@ -95,7 +95,7 @@ namespace amg
 #endif
 
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGH1_CPP)
-  EXTERN template class EmbedVAMG<H1AMG>;
+  EXTERN template class EmbedVAMG<H1AMGFactory>;
 #endif
 
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGMAP_CPP)

@@ -32,12 +32,13 @@ namespace amg
 
   public:
 
-    AMGFactory (shared_ptr<TMESH> _finest_mesh, shared_ptr<BaseDOFMapStep> _embed_step,
-		shared_ptr<Options> _opts);
+    AMGFactory (shared_ptr<TMESH> _finest_mesh, shared_ptr<Options> _opts,
+		shared_ptr<BaseDOFMapStep> _embed_step = nullptr);
+		
 
-    virtual void SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix = "ngs_amg_") const;
+    static void SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix = "ngs_amg_");
 
-    void SetupLevels (Array<BaseSparseMatrix> & mats, shared_ptr<DOFMap> & dmap);
+    void SetupLevels (Array<shared_ptr<BaseSparseMatrix>> & mats, shared_ptr<DOFMap> & dmap);
 
   protected:
 
@@ -47,7 +48,7 @@ namespace amg
     struct Capsule
     {
       int level;
-      shared_ptr<TopologicMesh> mesh;
+      shared_ptr<TMESH> mesh;
       shared_ptr<ParallelDofs> pardofs;
       shared_ptr<BaseSparseMatrix> mat;
     };
@@ -81,9 +82,12 @@ namespace amg
 
     struct Options;
 
+    NodalAMGFactory (shared_ptr<TMESH> _finest_mesh, shared_ptr<Options> _opts,
+		     shared_ptr<BaseDOFMapStep> _embed_step = nullptr);
+
     virtual shared_ptr<ParallelDofs> BuildParDofs (shared_ptr<TMESH> amesh) const override;
 
-    virtual void SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix = "ngs_amg_") const;
+    static void SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix = "ngs_amg_");
 
     virtual shared_ptr<BaseDOFMapStep> BuildDOFContractMap (shared_ptr<GridContractMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd) const override;
 
@@ -101,7 +105,10 @@ namespace amg
 
     struct Options;
 
-    virtual void SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix = "ngs_amg_") const;
+    VertexBasedAMGFactory (shared_ptr<TMESH> _finest_mesh, shared_ptr<Options> _opts,
+			   shared_ptr<BaseDOFMapStep> _embed_step = nullptr);
+
+    static void SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix = "ngs_amg_");
 
     virtual size_t GetMeshMeasure (TMESH & m) const override;
 
@@ -119,4 +126,4 @@ namespace amg
 
 } // namespace amg
 
-#endif
+#endif // FILE_AMG_FACTORY_HPP
