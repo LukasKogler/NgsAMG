@@ -67,7 +67,7 @@ namespace amg
 
 	rl.Distribute();
 
-	map->TransferF2C(level, res_level[level], rhs_level[level+1]);
+	map->TransferF2C(level, res_level[level].get(), rhs_level[level+1].get());
 
       }
 
@@ -94,22 +94,20 @@ namespace amg
     /** post-smooth **/
     for (int level = n_levels-2; level>=0; level--)
       {
+	RegionTimer rtl(ltimer(level));
+
 	BaseVector &xl ( (level == 0) ? x : *x_level[level]);
 	const BaseVector &bl ( (level == 0) ? b : *rhs_level[level]);
 	BaseVector &rl (*res_level[level]);
 
-	RegionTimer rtl(ltimer(level));
-
 	/** apply coarse grid correction - residuum is no longer updated **/
 	if (x_level[level+1] == nullptr)
 	  { t5.Start(); }
-	map->TransferC2F(level, res_level[level], x_level[level+1]);
+
+	map->AddC2F(level, 1.0, &xl, x_level[level+1].get());
+
 	if (x_level[level+1] == nullptr)
 	  { t5.Stop(); }
-
-	xl.Cumulate(); rl.Cumulate(); // probably does nothing
-	xl += rl;
-
 
 	smoothers[level]->SmoothBack(xl, bl, rl, false, false, false);
 
@@ -156,12 +154,12 @@ namespace amg
     rhs_level[0] = b;
     rhs_level[0]->Distribute();
     for (auto level : Range(n_levels-1))
-      map->TransferF2C(level, rhs_level[level], rhs_level[level+1]);
+      map->TransferF2C(level, rhs_level[level].get(), rhs_level[level+1].get());
     if (!drops_out) {
       crs_inv->Mult(*rhs_level[n_levels-1], *x_level[n_levels-1]);
     }
     for (int level = n_levels-2; level>=0; level--)
-      map->TransferC2F(level, x_level[level], x_level[level+1]);
+      map->TransferC2F(level, x_level[level].get(), x_level[level+1].get());
     x_level[0] = tmp;
     rhs_level[0] = tmp2;
   } // AMGMatrix::CINV
@@ -324,14 +322,14 @@ namespace amg
     }
     /** prolongate down **/
     if (my_max_level == level) { //does not drop out -> #trans=#levels-1
-      for (int k = level-1; k>=0; k--) {
-	map->TransferC2F(k, x_level[k], x_level[k+1]);
+      for (int k = level-1; k >= 0; k--) {
+	map->TransferC2F(k, x_level[k].get(), x_level[k+1].get());
       }
     }
     else { //drops out -> #trans=#levels
-      map->TransferC2F(my_max_level, x_level[my_max_level], nullptr);
-      for (int k = my_max_level-1; k>=0; k--) {
-	map->TransferC2F(k, x_level[k], x_level[k+1]);
+      map->TransferC2F(my_max_level, x_level[my_max_level].get(), nullptr);
+      for (int k = my_max_level-1; k >= 0; k--) {
+	map->TransferC2F(k, x_level[k].get(), x_level[k+1].get());
       }
     }
     x_level[0]->Cumulate();

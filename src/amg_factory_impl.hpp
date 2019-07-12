@@ -231,7 +231,7 @@ namespace amg
 
       if(conc_pwp != nullptr) {
 	
-	auto pstep = make_shared<ProlMap<TSPM_TM>> (conc_pwp, fpds, cpds, true);
+	auto pstep = make_shared<ProlMap<TSPM_TM>> (conc_pwp, fpds, cpds);
 
 	if (options->enable_sm)
 	  { SmoothProlongation(pstep, cap.mesh); }

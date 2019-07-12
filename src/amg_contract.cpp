@@ -185,18 +185,22 @@ namespace amg
       MPI_Type_free(&mpi_types[k]);
   }
 
+
   INLINE Timer & timer_hack_ctr_f2c () { static Timer t("CtrMap::F2C"); return t; }
   INLINE Timer & timer_hack_ctr_c2f () { static Timer t("CtrMap::C2F"); return t; }
 
+
+  template<class TV>
   void CtrMap<TV> :: TransferF2C (const BaseVector * x_fine, BaseVector * x_coarse) const
   {
     RegionTimer rt(timer_hack_ctr_f2c());
     if (x_coarse != nullptr)
-      { x_coarse->FVDouble() = 0; }
-    AddC2F(1.0, x_fine, x_coarse);
+      { x_coarse->FVDouble() = 0; x_coarse->SetParallelStatus(DISTRIBUTED); }
+    AddF2C(1.0, x_fine, x_coarse);
   }
 
 
+  template<class TV>
   void CtrMap<TV> :: AddF2C (double fac, const BaseVector * x_fine, BaseVector * x_coarse) const
   {
     RegionTimer rt(timer_hack_ctr_f2c());
@@ -205,7 +209,6 @@ namespace amg
 	typically this does not matter, because F2C works with DISTRIBUTED vectors
 	anyways
      **/
-    RegionTimer rt(timer_hack_ctr_f2c());
     x_fine->Distribute();
     auto fvf = x_fine->FV<TV>();
     auto& comm(pardofs->GetCommunicator());
@@ -235,11 +238,13 @@ namespace amg
   }
 
 
+  template<class TV>
   void CtrMap<TV> :: TransferC2F (BaseVector * x_fine, const BaseVector * x_coarse) const
   {
     RegionTimer rt(timer_hack_ctr_c2f());
     auto& comm(pardofs->GetCommunicator());
     x_fine->Cumulate();
+    auto fvf = x_fine->FV<TV>();
     if (!is_gm)
       {
 	if (fvf.Size() > 0)
@@ -262,6 +267,7 @@ namespace amg
   }
 
 
+  template<class TV>
   void CtrMap<TV> :: AddC2F (double fac, BaseVector * x_fine, const BaseVector * x_coarse) const
   {
     /**
@@ -271,6 +277,7 @@ namespace amg
     RegionTimer rt(timer_hack_ctr_c2f());
     auto& comm(pardofs->GetCommunicator());
     x_fine->Cumulate();
+    auto fvf = x_fine->FV<TV>();
     if (!is_gm)
       {
 	if (fvf.Size() > 0) {

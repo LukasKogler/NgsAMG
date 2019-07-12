@@ -33,10 +33,13 @@ namespace amg
     : BaseDOFMapStep(_sub_steps[0]->GetParDofs(), _sub_steps.Last()->GetMappedParDofs()),
       sub_steps(_sub_steps)
   {
-    vecs.SetSize(sub_steps.Size()-1);
+    spvecs.SetSize(sub_steps.Size()-1);
     if(sub_steps.Size()>1) // TODO: test this out -> i think Range(1,0) is broken??
-      for(auto k:Range(size_t(1),sub_steps.Size()))
-	vecs[k-1] = sub_steps[k]->CreateVector();
+      for(auto k : Range(size_t(1),sub_steps.Size()))
+	{ spvecs[k-1] = sub_steps[k]->CreateVector(); }
+    vecs.SetSize(spvecs.Size());
+    for (auto k : Range(spvecs.Size()))
+      { vecs[k] = spvecs[k].get(); }
   }
 
 
@@ -82,7 +85,7 @@ namespace amg
   void ConcDMS :: AddC2F (double fac, BaseVector * x_fine, const BaseVector * x_coarse) const
   {
     if (sub_steps.Size() == 1)
-      { sub_steps[0]->AddC2F(x_fine, x_coarse); }
+      { sub_steps[0]->AddC2F(fac, x_fine, x_coarse); }
     else {
       sub_steps.Last()->TransferC2F(vecs.Last(), x_coarse);
       for (int l = sub_steps.Size()-2; l>0; l--)
@@ -114,7 +117,7 @@ namespace amg
 
 
   template<class TMAT>
-  void ProlMap<TMAT> :: AddF2C (const BaseVector * x_fine, BaseVector * x_coarse) const
+  void ProlMap<TMAT> :: AddF2C (double fac, const BaseVector * x_fine, BaseVector * x_coarse) const
   {
     RegionTimer rt(timer_hack_prol_f2c());
     x_fine->Distribute(); x_coarse->Distribute();
@@ -157,6 +160,12 @@ namespace amg
   template<class TMAT>
   shared_ptr<BaseSparseMatrix> ProlMap<TMAT> :: AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const
   {
+
+    auto tfmat = dynamic_pointer_cast<SPM_TM_F>(mat);
+    if (tfmat == nullptr) {
+      throw Exception(string("Cannot cast to ") + typeid(SPM_TM_F).name() + string(", type = ") + typeid(*mat).name() + string("!!") );
+      return nullptr;
+    }
 
     auto& self = const_cast<ProlMap<TMAT>&>(*this);
     self.prol_trans = TransposeSPM(*prol);

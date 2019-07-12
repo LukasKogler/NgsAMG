@@ -46,7 +46,7 @@ namespace amg {
      -) construct the coarse level matrix
      -) be able to create vectors for both levels
   **/
-  class BaseDOFMapStep : public BaseMatrix
+  class BaseDOFMapStep
   {
   protected:
     shared_ptr<ParallelDofs> pardofs, mapped_pardofs;
@@ -73,14 +73,17 @@ namespace amg {
     virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const = 0;
   };
 
+
   /**
      This maps DOFS between levels. We can add DOF-map-steps of various kind.
      Each step has to start where the last one left off.
-     With SetLevelCutoffs, we decide where to assemble matrices.
-     The first, finest matrix is on level 0.
-     The matrix on level k is assembled by steps 0 .. cutoff[k]-1
-     Before actually assembling coarse level matrices, we try to concatenate 
-     steps where possible.
+  
+     OLD INFO (now happens outside of class):
+       With SetLevelCutoffs, we decide where to assemble matrices.
+       The first, finest matrix is on level 0.
+       The matrix on level k is assembled by steps 0 .. cutoff[k]-1
+       Before actually assembling coarse level matrices, we try to concatenate 
+       steps where possible.
   **/
   class DOFMap
   {
@@ -89,7 +92,8 @@ namespace amg {
     Array<size_t> cutoffs;
 
   public:
-    DofMap () { ; }
+
+    DOFMap () { ; }
 
     void AddStep(const shared_ptr<BaseDOFMapStep> step) { steps.Append(step); }
 
@@ -129,7 +133,8 @@ namespace amg {
   {
   protected:
     Array<shared_ptr<BaseDOFMapStep>> sub_steps;
-    Array<shared_ptr<BaseVector>> vecs;
+    Array<shared_ptr<BaseVector>> spvecs;
+    Array<BaseVector*> vecs;
 
   public:
     ConcDMS (Array<shared_ptr<BaseDOFMapStep>> & _sub_steps);
