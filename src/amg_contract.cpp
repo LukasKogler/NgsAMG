@@ -172,6 +172,10 @@ namespace amg
       for (auto k : Range(size_t(1), group.Size())) perow[k] = dof_maps[k].Size();
       buffers = Table<TV>(perow);
     }
+    else {
+      Array<int> perow(1); perow[0] = pardofs->GetNDofLocal();
+      buffers = Table<TV>(perow);
+    }
   }
 
   template<class TV>
@@ -181,11 +185,21 @@ namespace amg
       MPI_Type_free(&mpi_types[k]);
   }
 
-  INLINE Timer & timer_hack_ctr_f2c () { static Timer t("CtrMap::TransferF2C"); return t; }
-  template<class TV>
-  void CtrMap<TV> :: TransferF2C (const shared_ptr<const BaseVector> & x_fine,
-				  const shared_ptr<BaseVector> & x_coarse) const
+  INLINE Timer & timer_hack_ctr_f2c () { static Timer t("CtrMap::F2C"); return t; }
+  INLINE Timer & timer_hack_ctr_c2f () { static Timer t("CtrMap::C2F"); return t; }
+
+  void CtrMap<TV> :: TransferF2C (const BaseVector * x_fine, BaseVector * x_coarse) const
   {
+    RegionTimer rt(timer_hack_ctr_f2c());
+    if (x_coarse != nullptr)
+      { x_coarse->FVDouble() = 0; }
+    AddC2F(1.0, x_fine, x_coarse);
+  }
+
+
+  void CtrMap<TV> :: AddF2C (double fac, const BaseVector * x_fine, BaseVector * x_coarse) const
+  {
+    RegionTimer rt(timer_hack_ctr_f2c());
     /** 
 	We can have DOFs that cannot be mapped "within-group-locally".
 	typically this does not matter, because F2C works with DISTRIBUTED vectors
@@ -195,40 +209,60 @@ namespace amg
     x_fine->Distribute();
     auto fvf = x_fine->FV<TV>();
     auto& comm(pardofs->GetCommunicator());
-    if ( (!is_gm) && (fvf.Size()>0) )
-      {
-	// cout << "F2C, send data to " << group[0] << ": " << endl;
-	// cout << fvf << endl;
-	MPI_Send(x_fine->Memory(), fvf.Size(), MyGetMPIType<TV>(), group[0], MPI_TAG_AMG, comm);
-	return;
-      }
+    if (!is_gm) {
+      if (fvf.Size() > 0)
+	{ MPI_Send(x_fine->Memory(), fvf.Size(), MyGetMPIType<TV>(), group[0], MPI_TAG_AMG, comm); }
+      return;
+    }
+    x_coarse->Distribute();
     auto fvc = x_coarse->FV<TV>();
     auto loc_map = dof_maps[0];
     int nreq_tot = 0;
     for (size_t kp = 1; kp < group.Size(); kp++)
       if (dof_maps[kp].Size()>0) { nreq_tot++; reqs[kp] = MyMPI_IRecv(buffers[kp], group[kp], MPI_TAG_AMG, comm); }
       else reqs[kp] = MPI_REQUEST_NULL;
-    fvc = 0;
     for (auto j : Range(loc_map.Size()))
-      fvc(loc_map[j]) = fvf(j);
+      fvc(loc_map[j]) += fac * fvf(j);
     MPI_Request* rrptr = &reqs[0]; int nrr = group.Size();
     int kp; reqs[0] = MPI_REQUEST_NULL;
     for (int nreq = 0; nreq < nreq_tot; nreq++) {
       MPI_Waitany(nrr, rrptr, &kp, MPI_STATUS_IGNORE);
-      // cout << " message nr " << kp << " arrived " << endl;
       auto map = dof_maps[kp]; auto buf = buffers[kp];
-      // cout << "F2C, got data from " << group[kp] << ": " << endl; prow2(buf); cout << endl;
       for (auto j : Range(map.Size()))
-	fvc(map[j]) += buf[j];
+	fvc(map[j]) += fac * buf[j];
     }
-    x_coarse->SetParallelStatus(DISTRIBUTED);
     // cout << " x coarse is: " << endl << fvc << endl;
   }
 
-  INLINE Timer & timer_hack_ctr_c2f () { static Timer t("CtrMap::TransferC2F"); return t; }
-  template<class TV>
-  void CtrMap<TV> :: TransferC2F (const shared_ptr<BaseVector> & x_fine,
-				  const shared_ptr<const BaseVector> & x_coarse) const
+
+  void CtrMap<TV> :: TransferC2F (BaseVector * x_fine, const BaseVector * x_coarse) const
+  {
+    RegionTimer rt(timer_hack_ctr_c2f());
+    auto& comm(pardofs->GetCommunicator());
+    x_fine->Cumulate();
+    if (!is_gm)
+      {
+	if (fvf.Size() > 0)
+	  { MPI_Recv(x_fine->Memory(), fvf.Size(), MyGetMPIType<TV>(), group[0], MPI_TAG_AMG, comm, MPI_STATUS_IGNORE); }
+	return;
+      }
+
+    x_coarse->Cumulate();
+    auto fvc = x_coarse->FV<TV>();
+    for (size_t kp = 1; kp < group.Size(); kp++) {
+      if (dof_maps[kp].Size() > 0)
+	{ MPI_Isend( x_coarse->Memory(), 1, mpi_types[kp], group[kp], MPI_TAG_AMG, comm, &reqs[kp]); }
+      else
+	{ reqs[kp] = MPI_REQUEST_NULL; }
+    }
+    auto loc_map = dof_maps[0];
+    for (auto j : Range(loc_map.Size()))
+      { fvf(j) = fvc(loc_map[j]); }
+    reqs[0] = MPI_REQUEST_NULL; MyMPI_WaitAll(reqs);
+  }
+
+
+  void CtrMap<TV> :: AddC2F (double fac, BaseVector * x_fine, const BaseVector * x_coarse) const
   {
     /**
        some values are transfered to multiple ranks 
@@ -236,30 +270,33 @@ namespace amg
      **/
     RegionTimer rt(timer_hack_ctr_c2f());
     auto& comm(pardofs->GetCommunicator());
-    x_fine->SetParallelStatus(CUMULATED);
-    auto fvf = x_fine->FV<TV>(); fvf = 0;
+    x_fine->Cumulate();
     if (!is_gm)
       {
-	if (fvf.Size() > 0) MPI_Recv(x_fine->Memory(), fvf.Size(), MyGetMPIType<TV>(), group[0], MPI_TAG_AMG, comm, MPI_STATUS_IGNORE);
-	// cout << "C2F, got data from " << group[0] << ": " << endl << fvf << endl;
+	if (fvf.Size() > 0) {
+	  auto b0 = buffers[0];
+	  comm.Recv(b0, group[0], MPI_TAG_AMG);
+	  for (auto k : Range(fvf.Size()))
+	    { fvf(k) += fac * b0[k]; }
+	}
 	return;
       }
+
     x_coarse->Cumulate();
-    // cout << "dof_maps: " << endl << dof_maps << endl;
     auto fvc = x_coarse->FV<TV>();
-    // cout << "send x coarse: " << endl << fvc << endl;
     for (size_t kp = 1; kp < group.Size(); kp++) {
-      if (dof_maps[kp].Size()>0) MPI_Isend( x_coarse->Memory(), 1, mpi_types[kp], group[kp], MPI_TAG_AMG, comm, &reqs[kp]);
-      else reqs[kp] = MPI_REQUEST_NULL;
+      if (dof_maps[kp].Size() > 0)
+	{ MPI_Isend( x_coarse->Memory(), 1, mpi_types[kp], group[kp], MPI_TAG_AMG, comm, &reqs[kp]); }
+      else
+	{ reqs[kp] = MPI_REQUEST_NULL; }
     }
     auto loc_map = dof_maps[0];
     for (auto j : Range(loc_map.Size()))
-      fvf(j) = fvc(loc_map[j]);
+      { fvf(j) += fac * fvc(loc_map[j]); }
     reqs[0] = MPI_REQUEST_NULL; MyMPI_WaitAll(reqs);
-    // cout << "x fine: " << endl << fvf << endl;
   }
 
-  
+
   INLINE Timer & timer_hack_ctrmat (int nr) {
     switch(nr) {
     case (0): { static Timer t("CtrMap::AssembleMatrix"); return t; }
