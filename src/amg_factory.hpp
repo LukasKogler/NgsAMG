@@ -43,7 +43,7 @@ namespace amg
   protected:
 
     // e.g NV for H1 amg
-    virtual size_t GetMeshMeasure (TMESH & m) const = 0;
+    virtual size_t ComputeMeshMeasure (const TMESH & m) const = 0;
 
     struct Capsule
     {
@@ -56,12 +56,12 @@ namespace amg
     // recursive setup method - sets up one more level and calls itself
     Array<shared_ptr<BaseSparseMatrix>> RSU (Capsule cap, shared_ptr<DOFMap> dof_map);
     
-    virtual shared_ptr<ParallelDofs> BuildParDofs (shared_ptr<TMESH> amesh) const = 0;
+    virtual shared_ptr<ParallelDofs> BuildParallelDofs (shared_ptr<TMESH> amesh) const = 0;
 
-    virtual void SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts, shared_ptr<TMESH> mesh) const = 0;
+    virtual void SetCoarseningOptions (VWCoarseningData::Options & opts, shared_ptr<TMESH> mesh) const = 0;
 
     virtual shared_ptr<CoarseMap<TMESH>> BuildCoarseMap  (shared_ptr<TMESH> mesh) const = 0;
-    virtual shared_ptr<TSPM_TM> BuildPWProl (shared_ptr<GridContractMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd) const = 0;
+    virtual shared_ptr<TSPM_TM> BuildPWProl (shared_ptr<CoarseMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd) const = 0;
     virtual void SmoothProlongation (shared_ptr<ProlMap<TSPM_TM>> pmap, shared_ptr<TMESH> mesh) const = 0;
 
     virtual shared_ptr<GridContractMap<TMESH>> BuildContractMap (double factor, shared_ptr<TMESH> mesh) const;
@@ -85,7 +85,7 @@ namespace amg
     NodalAMGFactory (shared_ptr<TMESH> _finest_mesh, shared_ptr<Options> _opts,
 		     shared_ptr<BaseDOFMapStep> _embed_step = nullptr);
 
-    virtual shared_ptr<ParallelDofs> BuildParDofs (shared_ptr<TMESH> amesh) const override;
+    virtual shared_ptr<ParallelDofs> BuildParallelDofs (shared_ptr<TMESH> amesh) const override;
 
     static void SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix = "ngs_amg_");
 
@@ -110,7 +110,7 @@ namespace amg
 
     static void SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix = "ngs_amg_");
 
-    virtual size_t GetMeshMeasure (TMESH & m) const override;
+    virtual size_t ComputeMeshMeasure (const TMESH & m) const override;
 
   protected:
     shared_ptr<BitArray> free_vertices;
@@ -118,7 +118,7 @@ namespace amg
 
     virtual shared_ptr<CoarseMap<TMESH>> BuildCoarseMap  (shared_ptr<TMESH> mesh) const override;
 
-    virtual shared_ptr<TSPM_TM> BuildPWProl (shared_ptr<GridContractMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd) const override;
+    virtual shared_ptr<TSPM_TM> BuildPWProl (shared_ptr<CoarseMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd) const override;
 
     virtual void SmoothProlongation (shared_ptr<ProlMap<TSPM_TM>> pmap, shared_ptr<TMESH> mesh) const override;
   };

@@ -10,6 +10,7 @@ namespace amg
   struct AMGFactory<TMESH, TM> :: Options
   {
     /** Level-control **/
+    size_t max_n_levels = 10;            // maximun number of multigrid levels (counts first level, so at least 2)
     size_t max_meas = 50;                // maximal maesure of coarsest mesh
     double aaf = 0.1;                    // assemble after factor
     double first_aaf = 0.05;             // (smaller) factor for first level. -1 for dont use
@@ -38,15 +39,42 @@ namespace amg
     double rbmaf = 0.01;                 // rebuild mesh after measure decreases by this factor
     double first_rbmaf = 0.005;          // see first_aaf
     double rbmaf_scale = 1;              // see aaf_scale
-    std::function<shared_ptr<TMESH>(shared_ptr<TMESH>, shared_ptr<TSPM_TM>)> rebuild_mesh =
-      [](shared_ptr<TMESH> mesh, shared_ptr<TSPM_TM> mat) { return mesh; };
+    std::function<shared_ptr<TMESH>(shared_ptr<TMESH>, shared_ptr<BaseSparseMatrix>)> rebuild_mesh =
+      [](shared_ptr<TMESH> mesh, shared_ptr<BaseSparseMatrix> mat) { return mesh; };
   };
 
 
   template<class TMESH, class TM>
   void AMGFactory<TMESH, TM> :: SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix)
   {
-    // TODO: implement this ...
+    auto set_bool = [&](auto& v, string key) {
+      if (v) { v = !flags.GetDefineFlagX(prefix + key).IsFalse(); }
+      else { v = flags.GetDefineFlagX(prefix + key).IsTrue(); }
+    };
+
+    auto set_num = [&](auto& v, string key)
+      { v = flags.GetNumFlag(prefix + key, v); };
+
+    set_num(opts.max_n_levels, "max_levels");
+    set_num(opts.max_meash, "max_coarse_size");
+    set_num(opts.aaf, "aaf");
+    set_num(opts.aaf, "first_aaf");
+    set_num(opts.aaf, "aaf_scale");
+
+    set_bool(opts.enable_ctr, "enable_redist");
+    set_num(opts.ctraf, "rdaf");
+    set_num(opts.first_ctraf, "first_rdaf");
+    set_num(opts.ctraf_scale, "rdaf_scale");
+    set_num(opts.ctr_pfac, "rdaf_pfac");
+    set_num(opts.ctr_min_nv, "rd_seq");
+    set_num(opts.ctr_seq_nv, "rd_min_size");
+
+    set_bool(opts.enable_sm, "enable_sp");
+
+    set_bool(opts.enable_rbm, "enable_rbm");
+    set_num(opts.rbmaf, "rbm_af");
+    set_num(opts.rbmaf, "rbm_first_af");
+    set_num(opts.rbmaf, "rbm_af_scale");
   }
 
 
@@ -102,7 +130,7 @@ namespace amg
   {
     /** Contract **/
     bool first_ctr_used = false;
-    size_t last_nv_ctr;
+    size_t last_ctr_nv;
 
     /** Rebuild Mesh **/
     bool first_rbm_used = false;
@@ -129,7 +157,7 @@ namespace amg
     
     // these are in reverse order
     auto rev_mats = RSU({ 0, finest_mesh, mats[0]->GetParallelDofs(), mats[0] }, dof_map);
-    mats.SetSize(rev_mats);
+    mats.SetSize(rev_mats.Size());
     for (auto k : Range(mats.Size()))
       { mats[k] = rev_mats[mats.Size()-1-k]; }
 
@@ -145,17 +173,17 @@ namespace amg
     shared_ptr<TMESH> fmesh = cap.mesh, cmesh = cap.mesh;
     shared_ptr<ParallelDofs> fpds = cap.pardofs, cpds = nullptr;
     shared_ptr<BaseSparseMatrix> cmat = cap.mat;
-    size_t curr_meas = GetMeshMeasure(*fmesh);
+    size_t curr_meas = ComputeMeshMeasure(*fmesh);
 
     if (cap.level == 0) { // (re-) initialize book-keeping
       state = make_shared<State>();
       state->first_ctr_used = state->first_rbm_used = false;
-      state->last_nv_ctr = fmesh->template GetNNGlobal<NT_VERTEX>();
+      state->last_ctr_nv = fmesh->template GetNNGlobal<NT_VERTEX>();
       state->last_meas_rbm = curr_meas;
     }
 
-    double af = (cap.level == 0) ? options->first_aaf : ( pow(options->aaf_scale, cap.level - (options->first_aaf == -1) ? 1 : 0) * options->aaf );
-    size_t goal_meas = max( min(af, 0.9) * curr_meas, max(options->max_meas, 1));
+    double af = (cap.level == 0) ? options->first_aaf : ( pow(options->aaf_scale, cap.level - ( (options->first_aaf == -1) ? 1 : 0) ) * options->aaf );
+    size_t goal_meas = max( size_t(min(af, 0.9) * curr_meas), max(options->max_meas, size_t(1)));
 
     INT<3> level = { cap.level, 0, 0 }; // coarse / sub-coarse / ctr 
 
@@ -174,9 +202,9 @@ namespace amg
 	  { break; }
 
 
-	auto _cmesh = const_pointer_cast<TMESH>(grid_step->GetMappedMesh());
+	auto _cmesh = static_pointer_cast<TMESH>(grid_step->GetMappedMesh());
 
-	crs_meas_fac = ComputeMeasure(_cmesh) / (1.0 * curr_meas);
+	crs_meas_fac = ComputeMeshMeasure(*_cmesh) / (1.0 * curr_meas);
 
 	if (crs_meas_fac > 0.95)
 	  { throw Exception("no proper check in place here"); }
@@ -192,7 +220,7 @@ namespace amg
 	conc_pwp = (conc_pwp == nullptr) ? pwp : MatMultAB(*conc_pwp, *pwp);
 	cpds = BuildParallelDofs(fmesh);
 
-	curr_meas = ComputeMeasure(*cmesh);
+	curr_meas = ComputeMeshMeasure(*cmesh);
 
 	level[1]++;
       } // inner while - we PROBABLY have a coarse map
@@ -225,8 +253,8 @@ namespace amg
       }
       
       if (options->enable_ctr) { // if we are stuck coarsening wise, or if we have reached a threshhold, redistribute
-	double af = (cap.level == 0) ? options->first_ctraf : ( pow(options->ctraf_scale, cap.level - (options->first_ctraf == -1) ? 1 : 0) * options->ctraf );
-	size_t goal_nv = max( min(af, 0.9) * state->last_ctr_nv, max(options->ctr_seq_nv, 1));
+	double af = (cap.level == 0) ? options->first_ctraf : ( pow(options->ctraf_scale, cap.level - ( (options->first_ctraf == -1) ? 1 : 0) ) * options->ctraf );
+	size_t goal_nv = max( size_t(min(af, 0.9) * state->last_ctr_nv), max(options->ctr_seq_nv, size_t(1)));
 	if ( (crs_meas_fac > options->ctr_crs_thresh) ||
 	     (goal_nv > cmesh->template GetNNGlobal<NT_VERTEX>() ) ) {
 
@@ -238,7 +266,7 @@ namespace amg
 	  
 	  auto ctr_map = BuildContractMap(ctr_factor, cmesh);
 
-	  cmesh = ctr_map->GetMappedMesh();
+	  cmesh = static_pointer_cast<TMESH>(ctr_map->GetMappedMesh());
 
 	  auto ds = BuildDOFContractMap(ctr_map, fpds);
 
@@ -266,15 +294,15 @@ namespace amg
     // coarse level matrix
 
     if (options->enable_rbm) {
-      double af = (cap.level == 0) ? options->first_rbmaf : ( pow(options->rbmaf_scale, cap.level - (options->first_rbmaf == -1) ? 1 : 0) * options->aaf );
-      size_t goal_meas = max( min(af, 0.9) * state->last_meas_rbm, max(options->max_meas, 1));
+      double af = (cap.level == 0) ? options->first_rbmaf : ( pow(options->rbmaf_scale, cap.level - ( (options->first_rbmaf == -1) ? 1 : 0) ) * options->aaf );
+      size_t goal_meas = max( size_t(min(af, 0.9) * state->last_meas_rbm), max(options->max_meas, size_t(1)));
       if (curr_meas < goal_meas)
 	{ cmesh = options->rebuild_mesh(cmesh, cmat); state->last_meas_rbm = curr_meas; }
     }
 
     bool do_more_levels = (cmesh != nullptr) &&
       (cap.level < options->max_n_levels) &&
-      (options->max_meas > GetMeshMeasure (*cmesh) );
+      (options->max_meas > ComputeMeshMeasure (*cmesh) );
     
     if (do_more_levels) {
       // recursively call setup
@@ -298,7 +326,7 @@ namespace amg
   {
     static Timer t("BuildContractMap"); RegionTimer rt(t);
     // at least 2 groups - dont send everything from 1 to 0 for no reason
-    int n_groups = (factor == -1) ? 2 : max2(2, 1 + std::round( (mesh->GetEQCHierarchy()->GetCommunicator().Size()-1) * factor));
+    int n_groups = (factor == -1) ? 2 : max2(int(2), int(1 + std::round( (mesh->GetEQCHierarchy()->GetCommunicator().Size()-1) * factor)));
     Table<int> groups = PartitionProcsMETIS (*mesh, n_groups);
     return make_shared<GridContractMap<TMESH>>(move(groups), mesh);
   }
@@ -315,7 +343,7 @@ namespace amg
 
 
   template<NODE_TYPE NT, class TMESH, class TM>
-  shared_ptr<ParallelDofs> NodalAMGFactory<NT, TMESH, TM> :: BuildParDofs (shared_ptr<TMESH> amesh) const
+  shared_ptr<ParallelDofs> NodalAMGFactory<NT, TMESH, TM> :: BuildParallelDofs (shared_ptr<TMESH> amesh) const
   {
     const auto & mesh = *amesh;
     const auto & eqc_h = *mesh.GetEQCHierarchy();
@@ -345,7 +373,7 @@ namespace amg
     if (cmap->IsMaster()) {
       // const TMESH& cmesh(*static_cast<const TMESH&>(*grid_step->GetMappedMesh()));
       shared_ptr<TMESH> cmesh = static_pointer_cast<TMESH>(cmap->GetMappedMesh());
-      cpd = BuildParDofs(cmesh);
+      cpd = BuildParallelDofs(cmesh);
       Array<int> perow (group.Size()); perow = 0;
       for (auto k : Range(group.Size())) perow[k] = cmap->template GetNodeMap<NT>(k).Size();
       dof_maps = Table<int>(perow);
@@ -370,7 +398,7 @@ namespace amg
 
 
   template<class FACTORY_CLASS, class TMESH, class TM>
-  size_t VertexBasedAMGFactory<FACTORY_CLASS, TMESH, TM> :: GetMeshMeasure (TMESH & m) const
+  size_t VertexBasedAMGFactory<FACTORY_CLASS, TMESH, TM> :: ComputeMeshMeasure (const TMESH & m) const
   {
     return m.template GetNNGlobal<NT_VERTEX>();
   }
@@ -382,7 +410,7 @@ namespace amg
     static Timer t("BuildCoarseMap"); RegionTimer rt(t);
     auto coarsen_opts = make_shared<typename HierarchicVWC<TMESH>::Options>();
     coarsen_opts->free_verts = free_vertices;
-    SetCoarseningOptions(*coarsen_opts, mesh);
+    this->SetCoarseningOptions(*coarsen_opts, mesh);
     shared_ptr<VWiseCoarsening<TMESH>> calg;
     calg = make_shared<BlockVWC<TMESH>> (coarsen_opts);
     return calg->Coarsen(mesh);
@@ -391,7 +419,7 @@ namespace amg
 
   template<class FACTORY_CLASS, class TMESH, class TM>
   shared_ptr<typename VertexBasedAMGFactory<FACTORY_CLASS, TMESH, TM>::TSPM_TM>
-  VertexBasedAMGFactory<FACTORY_CLASS, TMESH, TM> :: BuildPWProl (shared_ptr<GridContractMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd) const
+  VertexBasedAMGFactory<FACTORY_CLASS, TMESH, TM> :: BuildPWProl (shared_ptr<CoarseMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd) const
   {
     const FACTORY_CLASS & self = static_cast<const FACTORY_CLASS&>(*this);
     const CoarseMap<TMESH> & rcmap(*cmap);
@@ -447,11 +475,11 @@ namespace amg
 
     const FACTORY_CLASS & self = static_cast<const FACTORY_CLASS&>(*this);
     const TMESH & fmesh(*mesh); fmesh.CumulateData();
-    const auto & fecon = fmesh.GetEdgeCM();
+    const auto & fecon = *fmesh.GetEdgeCM();
     const auto & eqc_h(*fmesh.GetEQCHierarchy()); // coarse eqch==fine eqch !!
     const TSPM_TM & pwprol = *pmap->GetProl();
 
-    Options& O (*const_cast<Options*>(options.get()));
+    Options &O (static_cast<Options&>(*options));
     const double MIN_PROL_FRAC = O.min_prol_frac;
     const int MAX_PER_ROW = O.max_per_row;
     const double omega = O.sp_omega;
