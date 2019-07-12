@@ -31,7 +31,7 @@ namespace amg
     size_t ctr_min_nv = 500;             // re-distribute such that at least this many NV per proc remain
     size_t ctr_seq_nv = 500;             // re-distribute to sequential once NV reaches this threshhold
 
-    /** Prolongation smoothing **/
+    /** Smoothed Prolongation **/
     bool enable_sm = true;               // emable prolongation-smoothing
 
     /** Build a new mesh from a coarse level matrix**/
@@ -266,7 +266,7 @@ namespace amg
       
       if ( (options->enable_ctr) && (level[2] == 0)
 	   && (cmesh->GetEQCHierarchy()->GetCommunicator().Size() > 2) ) { // if we are stuck coarsening wise, or if we have reached a threshhold, redistribute
-	double af = (cap.level == 0) ? options->first_ctraf : ( pow(options->ctraf_scale, cap.level - ( (options->first_ctraf == -1) ? 1 : 0) ) * options->ctraf );
+	double af = (cap.level == 0) ? options->first_ctraf : ( pow(options->ctraf_scale, cap.level - ( (options->first_ctraf == -1) ? 0 : 1) ) * options->ctraf );
 	size_t goal_nv = max( size_t(min(af, 0.9) * state->last_ctr_nv), max(options->ctr_seq_nv, size_t(1)));
 	if ( (crs_meas_fac > options->ctr_crs_thresh) ||
 	     (goal_nv > cmesh->template GetNNGlobal<NT_VERTEX>() ) ) {
@@ -323,7 +323,7 @@ namespace amg
     // coarse level matrix
 
     if (options->enable_rbm) {
-      double af = (cap.level == 0) ? options->first_rbmaf : ( pow(options->rbmaf_scale, cap.level - ( (options->first_rbmaf == -1) ? 1 : 0) ) * options->aaf );
+      double af = (cap.level == 0) ? options->first_rbmaf : ( pow(options->rbmaf_scale, cap.level - ( (options->first_rbmaf == -1) ? 0 : 1) ) * options->aaf );
       size_t goal_meas = max( size_t(min(af, 0.9) * state->last_meas_rbm), max(options->max_meas, size_t(1)));
       if (curr_meas < goal_meas)
 	{ cmesh = options->rebuild_mesh(cmesh, cmat); state->last_meas_rbm = curr_meas; }
