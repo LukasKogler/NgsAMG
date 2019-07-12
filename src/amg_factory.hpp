@@ -64,7 +64,7 @@ namespace amg
     virtual void SmoothProlongation (shared_ptr<ProlMap<TSPM_TM>> pmap, shared_ptr<TMESH> mesh) const = 0;
 
     virtual shared_ptr<GridContractMap<TMESH>> BuildContractMap (double factor, shared_ptr<TMESH> mesh) const;
-    virtual shared_ptr<BaseDOFMapStep> BuildDOFContractMap (shared_ptr<GridContractMap<TMESH>> cmap) const = 0;
+    virtual shared_ptr<BaseDOFMapStep> BuildDOFContractMap (shared_ptr<GridContractMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd) const = 0;
 
   };
 
@@ -85,8 +85,10 @@ namespace amg
 
     virtual void SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix = "ngs_amg_") const;
 
-    virtual shared_ptr<BaseDOFMapStep> BuildDOFContractMap (shared_ptr<GridContractMap<TMESH>> cmap) const override;
+    virtual shared_ptr<BaseDOFMapStep> BuildDOFContractMap (shared_ptr<GridContractMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd) const override;
 
+  protected:
+    using BASE::options;
   };
 
 
@@ -105,6 +107,7 @@ namespace amg
 
   protected:
     shared_ptr<BitArray> free_vertices;
+    using BASE::options;
 
     virtual shared_ptr<CoarseMap<TMESH>> BuildCoarseMap  (shared_ptr<TMESH> mesh) const override;
 

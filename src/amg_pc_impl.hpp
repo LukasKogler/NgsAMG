@@ -8,15 +8,15 @@ namespace amg
   struct BaseEmbedAMGOptions
   {
     /** Which subset of DOFs to perform the coarsening on **/
-    enum DOF_SUBSET : char = { RANGE = 0,        // use Union { [ranges[i][0], ranges[i][1]) }
-			       SELECTED = 1 };   // given by bitarray
-    DOF_SUBSET subset = RANGE;
+    enum DOF_SUBSET : char { RANGE_SUBSET = 0,        // use Union { [ranges[i][0], ranges[i][1]) }
+			     SELECTED_SUBSET = 1 };   // given by bitarray
+    DOF_SUBSET subset = RANGE_SUBSET;
     Array<INT<2>> ss_ranges;
     shared_ptr<BitArray> ss_select;
     
     /** How the DOFs in the subset are mapped to vertices **/
-    enum DOF_ORDERING : char = { REGULAR = 0,
-				 VARIBALE = 1 };
+    enum DOF_ORDERING : char { REGULAR_ORDERING = 0,
+			       VARIBALE_ORDERING = 1 };
     /**	REGULAR: sum(block_s) DOFs per "vertex", determined by ss_select and block_s
 	   e.g: block_s = [2,3], then we have NV blocks of 2 vertices, then NV blocks of 3 vertices
 	   each block is increasing and continuous (neither DOFs [12,18] nor DOFs [5,4] are valid blocks) 
@@ -24,31 +24,28 @@ namespace amg
 	VARIABLE: DOFs for vertex k: v_blocks[k] (not conistently implemented)
 	subset must be consistent for all dofs in each block ( so we cannot have a block of DOFs [12,13], but DOF 13 not in subet
     **/
-    DOF_ORDERING dof_ordering = REGULAR;
+    DOF_ORDERING dof_ordering = REGULAR_ORDERING;
     Array<int> block_s; // we are computing NV from this, so don't put freedofs in here, one BS per given range
     Table<int> v_blocks;
 
     /** How do we define the topology ? **/
-    enum TOPOLOGY : char = { ALG = 0,        // by en entry in the finest level sparse matrix (restricted to subset)
-			     MESH = 1,       // via the mesh
-			     ELMAT = 2 };    // via element matrices
-    TOPOLOGY topo = ALG;
+    enum TOPO : char { ALG_TOPO = 0,        // by en entry in the finest level sparse matrix (restricted to subset)
+		       MESH_TOPO = 1,       // via the mesh
+		       ELMAT_TOPO = 2 };    // via element matrices
+    TOPO topo = ALG_TOPO;
 
     /** How do we compute vertex positions (if we need them) **/
-    enum VERTEX_POSITION : char { VERTEX = 0,    // take from mesh vertex-positions
-				  GIVEN = 1 };   // supplied from outside
-    VERTEX_POSITION v_pos = VERTEX;
+    enum POSITION : char { VERTEX_POS = 0,    // take from mesh vertex-positions
+			   GIVEN_POS = 1 };   // supplied from outside
+    POSITION v_pos = VERTEX_POS;
     FlatArray<Vec<3>> v_pos_array;
 
     /** How do we compute the replacement matrix **/
-    enum ENERGY : char { TRIVIAL = 0,     // uniform weights
-			 ALG = 1,         // from the sparse matrix
-			 ELMAT = 2 };     // from element matrices
-    ENERGY energy;
+    enum ENERGY : char { TRIV_ENERGY = 0,     // uniform weights
+			 ALG_ENERGY = 1,         // from the sparse matrix
+			 ELMAT_ENERGY = 2 };     // from element matrices
+    ENERGY energy = ALG_ENERGY;
   };
-
-
-  /** EmbedVAMG **/
 
 
   template<class Factory>
@@ -61,8 +58,11 @@ namespace amg
   };
 
 
+  /** EmbedVAMG **/
+
+
   template<class Factory>
-  void EmbedVAMG<Factory> :: MakeOptionsFromFlags (const Flags & flags, string prefix)
+  shared_ptr<typename EmbedVAMG<Factory>::Options> EmbedVAMG<Factory> :: MakeOptionsFromFlags (const Flags & flags, string prefix)
   {
     auto opts = make_shared<Factory::Options>();
 
@@ -76,13 +76,15 @@ namespace amg
   void EmbedVAMG<Factory> :: SetOptionsFromFlags (Options & O, const Flags & flags, string prefix)
   {
 
-    Factory::SetOptionsFromFlags(O, flags, frefix);
+    Factory::SetOptionsFromFlags(O, flags, prefix);
+
+    auto pfit = [prefix] (string x) { return prefix + x; };
 
     auto set_enum_opt = [&] (auto & opt, string key, Array<string> vals, auto default_val) {
-      string val = flags.GetStringFlag(prefix+key, "");
+      string val = flags.GetStringFlag(pfit(key), "");
       bool found = false;
       for (auto k : Range(vals)) {
-	if (v == vals[k]) {
+	if (val == vals[k]) {
 	  found = true;
 	  opt = decltype(opt)(k);
 	  break;
@@ -92,45 +94,45 @@ namespace amg
 	{ opt = default_val; }
     };
 
-    auto pfit = [] (string x) { return prefix + x; };
+    typedef BaseEmbedAMGOptions BAO;
 
-    set_enum_opt(O.subset, "on_dofs", {"range", "selected"}, RANGE);
+    set_enum_opt(O.subset, "on_dofs", {"range", "selected"}, BAO::RANGE_SUBSET);
 
     switch (O.subset) {
-    case (RANGE) : {
+    case (BAO::RANGE_SUBSET) : {
       auto low = flags.GetNumListFlag(pfit("lower"));
       if (low.Size()) { // defined on multiple ranges
 	auto up = flags.GetNumListFlag(pfit("upper"));
-	ss_ranges.SetSize(low.Size());
+	O.ss_ranges.SetSize(low.Size());
 	for (auto k : Range(low.Size()))
-	  { ss_ranges[k] = { size_t(low[k]), size_t(up[k]) }; }
+	  { O.ss_ranges[k] = { size_t(low[k]), size_t(up[k]) }; }
       }
       else { // a single range
-	ss_ranges.SetSize(1);
 	size_t lowi = flags.GetNumFlag(pfit("lower"), 0);
 	size_t upi = flags.GetNumFlag(pfit("upper"), bfa->GetFESpace()->GetNDof());
 	// coarsen low order part, except if we are explicitely told not to
 	if ( (lowi == 0) && (upi == bfa->GetFESpace()->GetNDof()) &&
 	     (!flags.GetDefineFlagX(pfit("lo")).IsFalse()) )
 	  if (auto lospace = bfa->GetFESpace()->LowOrderFESpacePtr()) // e.g compound has no LO space
-	    { min_def_dof = 0; max_def_dof = lospace->GetNDof(); }
-	ss_ranges[0] = { lowis, upi };
+	    { lowi = 0; upi = lospace->GetNDof(); }
+	O.ss_ranges.SetSize(1);
+	O.ss_ranges[0] = { lowi, upi };
       }
       break;
     }
       // case(SELECTED) :
-    default: { raise Exception("Not implemented"); break; }
+    default: { throw Exception("Not implemented"); break; }
     }
       
-    set_enum_opt(O.dof_ordering, "dof_order", {"regular", "variable"}, REGULAR);
+    set_enum_opt(O.dof_ordering, "dof_order", {"regular", "variable"}, REGULAR_ORDERING);
 
-    set_enum_opt(O.topo, "edges", {"alg", "mesh", "elmat"}, ALG);
+    set_enum_opt(O.topo, "edges", {"alg", "mesh", "elmat"}, ALG_TOPO);
 
-    set_enum_opt(O.v_pos, "vpos", {"vertex", "given"}, VERTEX);
+    set_enum_opt(O.v_pos, "vpos", {"vertex", "given"}, VERTEX_POS);
 
-    set_enum_opt(O.energy, "energy", {"triv", "alg", "elmat"}, ALG);
+    set_enum_opt(O.energy, "energy", {"triv", "alg", "elmat"}, ALG_ENERGY);
 
-} // EmbedVAMG::MakeOptionsFromFlags
+  } // EmbedVAMG::MakeOptionsFromFlags
 
 
   template<class Factory>
@@ -274,9 +276,9 @@ namespace amg
     /** Build inital Mesh Topology **/
     shared_ptr<BlockTM> top_mesh;
     switch(O.topo) {
-    case(MESH): { top_mesh = BTM_Mesh(eqc_h); break; }
-    case(ELMAT): { top_mesh = BTM_Elmat(eqc_h); break; }
-    case(ALG): { top_mesh = BTM_Alg(eqc_h); break; }
+    case(MESH_TOPO): { top_mesh = BTM_Mesh(eqc_h); break; }
+    case(ELMAT_TOPO): { top_mesh = BTM_Elmat(eqc_h); break; }
+    case(ALG_TOPO): { top_mesh = BTM_Alg(eqc_h); break; }
     }
 
     /** vertex positions, if we need them **/
@@ -374,8 +376,8 @@ namespace amg
 				     [](auto node_num, auto id) { /* dont care about edge-sort! */ });
       }; // create_edges
 
-    if (O.dof_ordering == REGULAR) {
-      if (O.subset == RANGE) {
+    if (O.dof_ordering == REGULAR_ORDERING) {
+      if (O.subset == RANGE_SUBSET) {
 	auto r0 = O.ss_ranges[0];
 	const auto fes_bs = fpd->GetEntrySize();
 	const auto bs0 = O.block_s[0]; // is this not kind of redundant ?
@@ -431,7 +433,7 @@ namespace amg
   EmbedWithElmats<Factory, HTVD, HTED> :: EmbedWithElmats (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string aname = "precond")
     : EmbedVAMG<Factory>(bfa, aflags, aname)
   {
-    if (options->energy == ELMATS) {
+    if (options->energy == ELMAT_ENERGY) {
       shared_ptr<FESpace> lofes = fes;
       if (auto V = lofes->LowOrderFESpacePtr())
 	{ lofes = V; }

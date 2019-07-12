@@ -29,7 +29,10 @@ namespace amg
     /** Constraints for contract **/
     size_t ctr_min_nv = 500;             // re-distribute such that at least this many NV per proc remain
     size_t ctr_seq_nv = 500;             // re-distribute to sequential once NV reaches this threshhold
-      
+
+    /** Prolongation smoothing **/
+    bool enable_sm = true;               // emable prolongation-smoothing
+
     /** Build a new mesh from a coarse level matrix**/
     bool enable_rbm = false;             // probably only necessary on coarse levels
     double rbmaf = 0.01;                 // rebuild mesh after measure decreases by this factor
@@ -64,7 +67,9 @@ namespace amg
   template<class FACTORY_CLASS, class TMESH, class TM>
   struct VertexBasedAMGFactory<FACTORY_CLASS, TMESH, TM> :: Options : public NodalAMGFactory<NT_VERTEX, TMESH, TM>::Options
   {
-
+    double min_prol_frac = 0.1;          // min. (relative) wt to include an edge
+    int max_per_row = 3;                 // maximum entries per row (should be >= 2!)
+    double sp_omega = 1.0;               // relaxation parameter for prol-smoothing
   };
 
 
@@ -72,6 +77,13 @@ namespace amg
   void VertexBasedAMGFactory<FACTORY_CLASS, TMESH, TM> :: SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix) const
   {
     BASE :: SetOptionsFromFlags (opts, flags, prefix);
+    
+    auto set_num = [&](auto& v, string key)
+      { v = opts.GetNumFlag(prefix + key, v); };
+    
+    set_num(opts.min_prol_frac, "sp_thresh");
+    set_num(opts.max_per_row, "sp_max_per_row");
+    set_num(opts.sp_omega, "sp_omega");
   }
 
 
@@ -79,7 +91,7 @@ namespace amg
 
 
   template<class TMESH, class TM>
-  struct AMGFactory<TMESH> :: State
+  struct AMGFactory<TMESH, TM> :: State
   {
     /** Contract **/
     bool first_ctr_used = false;
@@ -96,7 +108,7 @@ namespace amg
 
   template<class TMESH, class TM>
   AMGFactory<TMESH, TM> :: AMGFactory (shared_ptr<TMESH> _finest_mesh, shared_ptr<BaseDOFMapStep> _embed_step, shared_ptr<Options> _opts)
-    : opts(_opts), finest_mesh(_finest_mesh), embed_step(_embed_step), state(make_shared<State>())
+    : options(_opts), finest_mesh(_finest_mesh), embed_step(_embed_step)
   { ; }
 
 
@@ -106,18 +118,19 @@ namespace amg
     
     shared_ptr<BaseDOFMapStep> ds;
 
-    shared_ptr<TMESH> fmesh = capsule.mesh, cmesh = capsule.mesh;
-    shared_ptr<ParallelDofs> fpds = capsule.pardofs, cpds = nullptr;
-    shared_ptr<BaseSparseMatrix> cmat = capsule.mat;
+    shared_ptr<TMESH> fmesh = cap.mesh, cmesh = cap.mesh;
+    shared_ptr<ParallelDofs> fpds = cap.pardofs, cpds = nullptr;
+    shared_ptr<BaseSparseMatrix> cmat = cap.mat;
     size_t curr_meas = GetMeshMeasure(*fmesh);
 
     if (cap.level == 0) { // (re-) initialize book-keeping
+      state = make_shared<State>();
       state->first_ctr_used = state->first_rbm_used = false;
       state->last_nv_ctr = fmesh->template GetNNGlobal<NT_VERTEX>();
-      state->last_meas_rbm = curr_mesh;
+      state->last_meas_rbm = curr_meas;
     }
 
-    double af = (cap.level == 0) ? options->first_aaf : ( pow(options_aaf_scale, cap.level - (options->first_aaf == -1) ? 1 : 0) * options->aaf );
+    double af = (cap.level == 0) ? options->first_aaf : ( pow(options->aaf_scale, cap.level - (options->first_aaf == -1) ? 1 : 0) * options->aaf );
     size_t goal_meas = max( min(af, 0.9) * curr_meas, max(options->max_meas, 1));
 
     INT<3> level = { cap.level, 0, 0 }; // coarse / sub-coarse / ctr 
@@ -131,13 +144,13 @@ namespace amg
 
       while (curr_meas > goal_meas) {
 
-	auto grid_step = BuildCoarseMap (cmesh, (level[0] == level[1] == 0) ? finest_free_verts : nullptr );
+	auto grid_step = BuildCoarseMap (cmesh);
 
 	if (grid_step == nullptr)
 	  { break; }
 
 
-	auto _cmesh = const_pointer_cast<TMESH>(gstep->GetMappedMesh());
+	auto _cmesh = const_pointer_cast<TMESH>(grid_step->GetMappedMesh());
 
 	crs_meas_fac = ComputeMeasure(_cmesh) / (1.0 * curr_meas);
 
@@ -147,12 +160,12 @@ namespace amg
 	bool non_acceptable = false; // i guess implement sth like that at some point ?
 	if (non_acceptable)
 	  { break; }
-s
+
 	cmesh = _cmesh;
 
-	auto pwp = BuildPWProl(gstep, fpds);
+	auto pwp = BuildPWProl(grid_step, fpds);
 
-	conc_prol = (conc_prol == nullptr) ? pwp : MatMultAB(*conc_prol, *pwp);
+	conc_pwp = (conc_pwp == nullptr) ? pwp : MatMultAB(*conc_pwp, *pwp);
 	cpds = BuildParallelDofs(fmesh);
 
 	curr_meas = ComputeMeasure(*cmesh);
@@ -160,11 +173,14 @@ s
 	level[1]++;
       } // inner while - we PROBABLY have a coarse map
 
-      if(conc_prol != nullptr) {
+      if(conc_pwp != nullptr) {
 	
+	auto pstep = make_shared<ProlMap<TSPM_TM>> (conc_pwp, fpds, cpds, true);
+
+	if (options->enable_sm)
+	  { SmoothProlongation(pstep, cap.mesh); }
+
 	fpds = cpds; conc_pwp = nullptr; fmesh = cmesh;
-	auto pstep = make_shared<ProlMap<TSPM_TM>> (pwp, fpds, cpds, true);
-	SmoothProlongation(pstep, capsule.mesh);
 
 	if (embed_step != nullptr) {
 	  auto real_step = embed_step->Concatenate(pstep);
@@ -185,24 +201,34 @@ s
       }
       
       if (options->enable_ctr) { // if we are stuck coarsening wise, or if we have reached a threshhold, redistribute
-	double af = (cap.level == 0) ? options->first_ctraf : ( pow(options_ctraf_scale, cap.level - (options->first_ctraf == -1) ? 1 : 0) * options->ctraf );
+	double af = (cap.level == 0) ? options->first_ctraf : ( pow(options->ctraf_scale, cap.level - (options->first_ctraf == -1) ? 1 : 0) * options->ctraf );
 	size_t goal_nv = max( min(af, 0.9) * state->last_ctr_nv, max(options->ctr_seq_nv, 1));
 	if ( (crs_meas_fac > options->ctr_crs_thresh) ||
-	     (goal_nv > cmesh->GetNNGlobal<NT_VERTEX>() ) ) {
+	     (goal_nv > cmesh->template GetNNGlobal<NT_VERTEX>() ) ) {
 
 	  double fac = options->ctr_pfac;
+	  auto next_nv = cmesh->template GetNNGlobal<NT_VERTEX>();
 	  auto ccomm = cmesh->GetEQCHierarchy()->GetCommunicator();
-	  double ctr_factor = (cmesh->GetNNGlobal<NT_VERTEX>() < options->ctr_seq_nv) ? -1 :
+	  double ctr_factor = (next_nv < options->ctr_seq_nv) ? -1 :
 	    min2(fac, double(next_nv) / options->ctr_min_nv / ccomm.Size());
 	  
 	  auto ctr_map = BuildContractMap(ctr_factor, cmesh);
 
 	  cmesh = ctr_map->GetMappedMesh();
 
-	  auto ds = BuildDOFContractMap(ctr_map);
-	  sub_steps.Append(ds);
+	  auto ds = BuildDOFContractMap(ctr_map, fpds);
 
-	  cmat = ds->AssembleMatrix(cmat);
+	  fpds = ds->GetMappedParDofs(); cpds = nullptr;
+
+	  if (embed_step != nullptr) { // i guess if we cannot coarsen at all in the beginning we should start with embedded contract
+	    auto real_step = embed_step->Concatenate(ds);
+	    sub_steps.Append(real_step);
+	    embed_step = nullptr; 
+	  }
+	  else { sub_steps.Append(ds); }
+
+	  cmat = sub_steps.Last()->AssembleMatrix(cmat);
+	  
 	}
       }
       else { break; } // outer loop not useful
@@ -216,7 +242,7 @@ s
     // coarse level matrix
 
     if (options->enable_rbm) {
-      double af = (cap.level == 0) ? options->first_rbmaf : ( pow(options_rbmaf_scale, cap.level - (options->first_rbmaf == -1) ? 1 : 0) * options->aaf );
+      double af = (cap.level == 0) ? options->first_rbmaf : ( pow(options->rbmaf_scale, cap.level - (options->first_rbmaf == -1) ? 1 : 0) * options->aaf );
       size_t goal_meas = max( min(af, 0.9) * state->last_meas_rbm, max(options->max_meas, 1));
       if (curr_meas < goal_meas)
 	{ cmesh = options->rebuild_mesh(cmesh, cmat); state->last_meas_rbm = curr_meas; }
@@ -228,8 +254,7 @@ s
     
     if (do_more_levels) {
       // recursively call setup
-      cap.level++; cap.mesh = cmesh; cap.mat = cmat; cap.
-      auto cmats = RSU( {cap.level + 1, cmesh, cmat, cpds, nullptr}, dof_map );
+      auto cmats = RSU( {cap.level + 1, cmesh, cpds, cmat}, dof_map );
       cmats.Append(cmat);
       return cmats;
     }
@@ -245,14 +270,11 @@ s
 
 
   template<class TMESH, class TM>
-  shared_ptr<GridContractMap<TMESH>> AMGFactory<TMESH, TM> :: BuildContractMap (shared_ptr<TMESH> mesh) const
+  shared_ptr<GridContractMap<TMESH>> AMGFactory<TMESH, TM> :: BuildContractMap (double factor, shared_ptr<TMESH> mesh) const
   {
     static Timer t("BuildContractMap"); RegionTimer rt(t);
-    int n_groups;
-
-    if (this->ctr_factor == -1 ) { n_groups = 2; }
-    else { n_groups = 1 + std::round( (mesh->GetEQCHierarchy()->GetCommunicator().Size()-1) * this->ctr_factor) ; }
-    n_groups = max2(2, n_groups); // dont send everything from 1 to 0 for no reason
+    // at least 2 groups - dont send everything from 1 to 0 for no reason
+    int n_groups = (factor == -1) ? 2 : max2(2, 1 + std::round( (mesh->GetEQCHierarchy()->GetCommunicator().Size()-1) * factor));
     Table<int> groups = PartitionProcsMETIS (*mesh, n_groups);
     return make_shared<GridContractMap<TMESH>>(move(groups), mesh);
   }
@@ -261,8 +283,8 @@ s
   /** --- NodalAMGFactory --- **/
   
 
-  template<NODE_TYPE NT, class TMESH, class TM> shared_ptr<BaseDOFMapStep>
-  NodalAMGFactory<NT, TMESH, TM> :: BuildParDofs (shared_ptr<TMESH> amesh) const
+  template<NODE_TYPE NT, class TMESH, class TM>
+  shared_ptr<ParallelDofs> NodalAMGFactory<NT, TMESH, TM> :: BuildParDofs (shared_ptr<TMESH> amesh) const
   {
     const auto & mesh = *amesh;
     const auto & eqc_h = *mesh.GetEQCHierarchy();
@@ -278,12 +300,12 @@ s
 	}
       }
     }
-    return make_shared<ParallelDofs> (eqc_h.GetCommunicator(), cdps.MoveTable(), DPN, false);
+    return make_shared<ParallelDofs> (eqc_h.GetCommunicator(), cdps.MoveTable(), mat_traits<TM>::HEIGHT, false);
   }
 
 
-  template<NODE_TYPE NT, class TMESH, class TM> shared_ptr<BaseDOFMapStep>
-  NodalAMGFactory<NT, TMESH, TM> :: BuildDOFContractMap (shared_ptr<GridContractMap<TMESH>> cmap) const
+  template<NODE_TYPE NT, class TMESH, class TM>
+  shared_ptr<BaseDOFMapStep> NodalAMGFactory<NT, TMESH, TM> :: BuildDOFContractMap (shared_ptr<GridContractMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd) const
   {
     auto fg = cmap->GetGroup();
     Array<int> group(fg.Size()); group = fg;
@@ -298,7 +320,7 @@ s
       dof_maps = Table<int>(perow);
       for (auto k : Range(group.Size())) dof_maps[k] = cmap->template GetNodeMap<NT>(k);
     }
-    auto ctr_map = make_shared<CtrMap<typename strip_vec<Vec<DPN, double>>::type>> (fpd, cpd, move(group), move(dof_maps));
+    auto ctr_map = make_shared<CtrMap<typename strip_vec<Vec<mat_traits<TM>::HEIGHT, double>>::type>> (fpd, cpd, move(group), move(dof_maps));
     if (cmap->IsMaster()) {
       ctr_map->_comm_keepalive_hack = cmap->GetMappedEQCHierarchy()->GetCommunicator();
     }
@@ -312,7 +334,7 @@ s
   template<class FACTORY_CLASS, class TMESH, class TM>
   size_t VertexBasedAMGFactory<FACTORY_CLASS, TMESH, TM> :: GetMeshMeasure (TMESH & m) const
   {
-    return m.GetNNGlobal<NT_VERTEX>();
+    return m.template GetNNGlobal<NT_VERTEX>();
   }
 
 
@@ -321,7 +343,7 @@ s
   {
     static Timer t("BuildCoarseMap"); RegionTimer rt(t);
     auto coarsen_opts = make_shared<typename HierarchicVWC<TMESH>::Options>();
-    coarsen_opts->free_verts = free_verts;
+    coarsen_opts->free_verts = free_vertices;
     SetCoarseningOptions(*coarsen_opts, mesh);
     shared_ptr<VWiseCoarsening<TMESH>> calg;
     calg = make_shared<BlockVWC<TMESH>> (coarsen_opts);
@@ -330,18 +352,19 @@ s
 
 
   template<class FACTORY_CLASS, class TMESH, class TM>
-  shared_ptr<TSPM_TM> VertexBasedAMGFactory<FACTORY_CLASS, TMESH, TM> :: BuildPWProl (shared_ptr<GridConctractMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd) const
+  shared_ptr<typename VertexBasedAMGFactory<FACTORY_CLASS, TMESH, TM>::TSPM_TM>
+  VertexBasedAMGFactory<FACTORY_CLASS, TMESH, TM> :: BuildPWProl (shared_ptr<GridContractMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd) const
   {
-    const FACTORY_CLASS & self = static_cast<const AMG_CLASS&>(*this);
-    const CoarseMap<TMESH> & cmap(*_cmap);
-    const TMESH & fmesh = static_cast<TMESH&>(*cmap.GetMesh()); fmesh.CumulateData();
-    const TMESH & cmesh = static_cast<TMESH&>(*cmap.GetMappedMesh()); cmesh.CumulateData();
+    const FACTORY_CLASS & self = static_cast<const FACTORY_CLASS&>(*this);
+    const CoarseMap<TMESH> & rcmap(*cmap);
+    const TMESH & fmesh = static_cast<TMESH&>(*rcmap.GetMesh()); fmesh.CumulateData();
+    const TMESH & cmesh = static_cast<TMESH&>(*rcmap.GetMappedMesh()); cmesh.CumulateData();
 
     size_t NV = fmesh.template GetNN<NT_VERTEX>();
     size_t NCV = cmesh.template GetNN<NT_VERTEX>();
 
     // Alloc Matrix
-    auto vmap = cmap.template GetMap<NT_VERTEX>();
+    auto vmap = rcmap.template GetMap<NT_VERTEX>();
     Array<int> perow (NV); perow = 0;
     // -1 .. cant happen, 0 .. locally single, 1+ ..locally merged
     // -> cumulated: 0..single, 1+..merged
@@ -367,7 +390,7 @@ s
 	  SetIdentity(rv[0]);
 	}
 	else { // merged vertex
-	  self.CalcPWPBlock (fmesh, cmesh, cmap, vnr, cvnr, rv[0]);
+	  self.CalcPWPBlock (fmesh, cmesh, rcmap, vnr, cvnr, rv[0]);
 	}
       }
     }
@@ -384,15 +407,16 @@ s
   {
     static Timer t("SmoothProlongation"); RegionTimer rt(t);
 
-    const FACTORY_CLASS & self = static_cast<const AMG_CLASS&>(*this);
-    const TMESH & fmesh(*afmesh); fmesh.CumulateData();
-    const auto & fecon = *fmesh.GetEdgeCM();
+    const FACTORY_CLASS & self = static_cast<const FACTORY_CLASS&>(*this);
+    const TMESH & fmesh(*mesh); fmesh.CumulateData();
+    const auto & fecon = fmesh.GetEdgeCM();
     const auto & eqc_h(*fmesh.GetEQCHierarchy()); // coarse eqch==fine eqch !!
     const TSPM_TM & pwprol = *pmap->GetProl();
 
-    const double MIN_PROL_FRAC = options->min_prol_frac;
-    const int MAX_PER_ROW = options->max_per_row;
-    const double omega = options->sp_omega;
+    Options& O (*const_cast<Options*>(options.get()));
+    const double MIN_PROL_FRAC = O.min_prol_frac;
+    const int MAX_PER_ROW = O.max_per_row;
+    const double omega = O.sp_omega;
 
     // Construct vertex-map from prol graph (can be concatenated)
     size_t NFV = fmesh.template GetNN<NT_VERTEX>();
@@ -505,7 +529,7 @@ s
     LocalHeap lh(2000000, "Tobias", false); // ~2 MB LocalHeap
     Array<INT<2,size_t>> uve(30); uve.SetSize(0);
     Array<int> used_verts(20), used_edges(20);
-    TMAT id; SetIdentity(id);
+    TM id; SetIdentity(id);
     for (int V:Range(NFV)) {
       auto CV = vmap[V];
       if (is_invalid(CV)) continue; // grounded -> TODO: do sth. here if we are free?
@@ -538,8 +562,8 @@ s
 	
 	auto posV = find_in_sorted_array(int(V), used_verts);
       	size_t unv = used_verts.Size(); // # of vertices used
-	FlatMatrix<TMAT> mat (1,unv,lh); mat(0, posV) = 0;
-	FlatMatrix<TMAT> block (2,2,lh);
+	FlatMatrix<TM> mat (1,unv,lh); mat(0, posV) = 0;
+	FlatMatrix<TM> block (2,2,lh);
 	for (auto l:Range(unv)) {
 	  if (l==posV) continue;
 	  self.CalcRMBlock (fmesh, all_fedges[used_edges[l]], block);
@@ -548,15 +572,15 @@ s
 	  mat(0,posV) += block(brow,brow); // diag-entry
 	}
 
-	TMAT diag;
+	TM diag;
 	double tr = 1;
-	if constexpr(mat_traits<TMAT>::HEIGHT == 1) {
+	if constexpr(mat_traits<TM>::HEIGHT == 1) {
 	    diag = mat(0, posV);
 	  }
 	else {
 	  diag = mat(0, posV);
-	  tr = 0; Iterate<mat_traits<TMAT>::HEIGHT>([&](auto i) { tr += diag(i.value,i.value); });
-	  tr /= mat_traits<TMAT>::HEIGHT;
+	  tr = 0; Iterate<mat_traits<TM>::HEIGHT>([&](auto i) { tr += diag(i.value,i.value); });
+	  tr /= mat_traits<TM>::HEIGHT;
 	  diag /= tr;
 	  // if (sing_diags) {
 	  //   self.RegDiag(diag);
