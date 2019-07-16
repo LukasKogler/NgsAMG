@@ -73,10 +73,12 @@ namespace amg
 
     shared_ptr<FACTORY> factory;
 
+    // I) new options II) call SetDefault III) call SetFromFlags IV) call Modify  (modify and default differ by being called before/after setfromflags)
     virtual shared_ptr<Options> MakeOptionsFromFlags (const Flags & flags, string prefix = "ngs_amg_");
     virtual void SetOptionsFromFlags (Options& O, const Flags & flags, string prefix = "ngs_amg_");
 
     // I do not want to derive from this class, instead I hook up specific options here. dummy-implementation in impl-header, specialize in cpp
+    virtual void SetDefaultOptions (Options& O);
     virtual void ModifyOptions (Options & O, const Flags & flags, string prefix = "ngs_amg_");
     
     virtual shared_ptr<BlockTM> BuildTopMesh (); // implemented once for all AMG_CLASS

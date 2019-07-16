@@ -30,7 +30,8 @@ namespace amg
       if constexpr(NT==NT_FACE) return faces;
       if constexpr(NT==NT_CELL) return cells;
     }
-    virtual shared_ptr<SparseMatrix<double>> GetEdgeCM() const;
+    virtual shared_ptr<SparseMatrix<double>> GetEdgeCM () const;
+    virtual void ResetEdgeCM () const { econ = nullptr; }
     friend std::ostream & operator<<(std::ostream &os, const TopologicMesh& p);
   protected:
     bool has_nodes[4] = {false, false, false, false};
@@ -504,6 +505,7 @@ namespace amg
     void SetMesh (BlockTM * _mesh) { mesh = _mesh; }
     PARALLEL_STATUS GetParallelStatus () const { return stat; }
     void SetParallelStatus (PARALLEL_STATUS astat) { stat = astat; }
+    Array<T> & GetModData () { return data; }
     FlatArray<T> Data () const { return data; }
     template<class TMESH>
     INLINE void map_data (const GridContractMap<TMESH> & map, CRTP & cdata) const

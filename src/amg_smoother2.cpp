@@ -41,20 +41,28 @@ namespace amg
     auto fvx = x.FV<TV>();
     auto fvb = b.FV<TV>();
 
-    auto up_row = [&](auto rownr) {
+    auto up_row = [&](auto rownr) LAMBDA_INLINE {
       auto r = fvb(rownr) - A.RowTimesVector(rownr, fvx);
       fvx(rownr) += dinv[rownr] * r;
     };
 
     if (!backwards) {
       for (size_t rownr = 0; rownr<H; rownr++)
-	if (!fds || fds->Test(rownr))
+	if (!fds || fds->Test(rownr)) {
+	  A.PrefetchRow(rownr);
+	  // if (rownr + 1 < H)
+	  //   A.PrefetchRow(rownr+1);
 	  up_row(rownr);
+	}
     }
     else {
       for (int rownr = H-1; rownr>=0; rownr--)
-	if (!fds || fds->Test(rownr))
+	if (!fds || fds->Test(rownr)) {
+	  A.PrefetchRow(rownr);
+	  // if (rownr > 1)
+	  //   A.PrefetchRow(rownr-1);
 	  up_row(rownr);
+	}
     }
 
   } // SmoothRHSInternal
@@ -73,7 +81,7 @@ namespace amg
     auto fvx = x.FV<TV>();
     auto fvr = res.FV<TV>();
 
-    auto up_row = [&](auto rownr) {
+    auto up_row = [&](auto rownr) LAMBDA_INLINE {
       auto w = -dinv[rownr] * fvr(rownr);
       A.AddRowTransToVector(rownr, w, fvr);
       fvx(rownr) -= w;
@@ -81,13 +89,17 @@ namespace amg
     
     if (!backwards) {
       for (size_t rownr = 0; rownr<H; rownr++)
-	if (!fds || fds->Test(rownr))
+	if (!fds || fds->Test(rownr)) {
+	  A.PrefetchRow(rownr);
 	  up_row(rownr);
+	}
     }
     else {
       for (int rownr = H-1; rownr>=0; rownr--)
-	if (!fds || fds->Test(rownr))
+	if (!fds || fds->Test(rownr)) {
+	  A.PrefetchRow(rownr);
 	  up_row(rownr);
+	}
     }
 
   } // SmoothRESInternal
@@ -364,6 +376,8 @@ namespace amg
 
       M = make_shared<SparseMatrix<TM>>(perow);
 
+      cout << "M NZE : " << M->NZE() << endl;
+
       iterate_rowinds([&](auto rownr, const auto & matis, const auto & rowis) {
 	  auto ris = M->GetRowIndices(rownr); ris = rowis;
 	  auto rvs = M->GetRowValues(rownr); rvs = 0;
@@ -545,7 +559,7 @@ namespace amg
 				     BaseVector &res, bool res_updated,
 				     bool update_res, bool x_zero) const
   {
-    SmoothInternal(smooth_symmetric ? 3 : 1, x, b, res, res_updated, update_res, x_zero);
+    SmoothInternal(smooth_symmetric ? 2 : 1, x, b, res, res_updated, update_res, x_zero);
   }
 
 
@@ -572,6 +586,17 @@ namespace amg
       else
   	{ res = b - *A * x; } // what about freedofs?
       SmoothInternal(type, x, b, res, true, update_res, x_zero);
+      return;
+    }
+
+    if (type == 2) {
+      SmoothInternal(0, x, b, res, res_updated, update_res, x_zero);
+      SmoothInternal(1, x, b, res, res_updated, update_res, false);
+      return;
+    }
+    else if (type == 3) {
+      SmoothInternal(1, x, b, res, res_updated, update_res, x_zero);
+      SmoothInternal(0, x, b, res, res_updated, update_res, false);
       return;
     }
 
@@ -621,32 +646,21 @@ namespace amg
       }
     }
     
-    switch(type) {
-    case(0) : {
+    if (type == 0) {
       if (update_res)
 	{ SmoothRESLocal(xloc, resloc); }
       else
 	{ SmoothLocal(xloc, (S == nullptr) ? bloc : resloc); }
-      break;
     }
-    case(1) : {
+    else if (type == 1) {
       if (update_res)
 	{ SmoothBackRESLocal(xloc, resloc); }
       else
 	{ SmoothBackLocal(xloc, (S == nullptr) ? bloc : resloc); }
-      break;
     }
-    // case(2) : { // implement at some point please...
-    //   break;
-    // }
-    // case(3) : {
-    //   break;
-    // }
-    default : {
+    else {
       throw Exception("GSS invalid type");
-      break;
     }
-    } // switch(type)
 
     { // scatter updates and finish update residuum, res -= S * (x - x_old)
       RegionTimer rt(tpost);

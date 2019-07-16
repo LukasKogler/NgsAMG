@@ -81,6 +81,8 @@ namespace amg
   {
     auto opts = make_shared<Options>();
 
+    SetDefaultOptions(*opts);
+
     SetOptionsFromFlags(*opts, flags, prefix);
 
     auto set_bool = [&](auto& v, string key) {
@@ -89,11 +91,16 @@ namespace amg
     };
     
     set_bool(opts->old_smoothers, "oldsm");
-    set_bool(opts->old_smoothers, "symsm");
+    set_bool(opts->smooth_symmetric, "symsm");
 
     return opts;
   }
   
+
+  template<class FACTORY>
+  void EmbedVAMG<FACTORY> :: SetDefaultOptions (Options& O)
+  { ; }
+
 
   template<class FACTORY>
   void EmbedVAMG<FACTORY> :: SetOptionsFromFlags (Options & O, const Flags & flags, string prefix)
@@ -517,12 +524,10 @@ namespace amg
       }; // create_edges
 
     if (O.dof_ordering == BAO::REGULAR_ORDERING) {
-      cout << "case 1 " << endl;
       const auto fes_bs = fpd->GetEntrySize();
       int dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
       const auto bs0 = O.block_s[0]; // is this not kind of redundant ?
       if (O.subset == BAO::RANGE_SUBSET) {
-      cout << "case 1 " << endl;
 	auto r0 = O.ss_ranges[0];
 	int dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
 	n_verts = (r0[1] - r0[0]) * fes_bs / bs0;
@@ -532,7 +537,6 @@ namespace amg
 	create_edges ( v2d , d2v );
       }
       else { // SELECTED, subset by bitarray (is this tested??)
-      cout << "case 2 " << endl;
 	size_t maxset = 0;
 	auto sz = O.ss_select->Size();
 	for (auto k : Range(sz--))
@@ -552,7 +556,6 @@ namespace amg
       }
     }
     else { // VARIABLE, subset given via table anyways (is this even tested??)
-      cout << "case 2 " << endl;
       auto& vblocks = O.v_blocks;
       n_verts = vblocks.Size();
       auto v2d = [&](auto v) { return vblocks[v][0]; };

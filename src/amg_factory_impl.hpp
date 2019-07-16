@@ -39,8 +39,8 @@ namespace amg
     double rbmaf = 0.01;                 // rebuild mesh after measure decreases by this factor
     double first_rbmaf = 0.005;          // see first_aaf
     double rbmaf_scale = 1;              // see aaf_scale
-    std::function<shared_ptr<TMESH>(shared_ptr<TMESH>, shared_ptr<BaseSparseMatrix>)> rebuild_mesh =
-      [](shared_ptr<TMESH> mesh, shared_ptr<BaseSparseMatrix> mat) { return mesh; };
+    std::function<shared_ptr<TMESH>(shared_ptr<TMESH>, shared_ptr<BaseSparseMatrix>, shared_ptr<ParallelDofs>)> rebuild_mesh =
+      [](shared_ptr<TMESH> mesh, shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs>) { return mesh; };
   };
 
 
@@ -72,9 +72,9 @@ namespace amg
     set_bool(opts.enable_sm, "enable_sp");
 
     set_bool(opts.enable_rbm, "enable_rbm");
-    set_num(opts.rbmaf, "rbm_af");
-    set_num(opts.rbmaf, "rbm_first_af");
-    set_num(opts.rbmaf, "rbm_af_scale");
+    set_num(opts.rbmaf, "rbmaf");
+    set_num(opts.first_rbmaf, "first_rbmaf");
+    set_num(opts.rbmaf_scale, "rbmaf_scale");
   }
 
 
@@ -100,8 +100,8 @@ namespace amg
     double min_vcw = 0.3;
 
     /** Smoothed Prolongation **/
-    double min_prol_frac = 0.1;          // min. (relative) wt to include an edge
-    int max_per_row = 3;                 // maximum entries per row (should be >= 2!)
+    double sp_min_frac = 0.1;          // min. (relative) wt to include an edge
+    int sp_max_per_row = 3;                 // maximum entries per row (should be >= 2!)
     double sp_omega = 1.0;               // relaxation parameter for prol-smoothing
   };
 
@@ -117,7 +117,7 @@ namespace amg
     set_num(opts.min_ecw, "edge_thresh");
     set_num(opts.min_vcw, "vert_thresh");
     set_num(opts.min_prol_frac, "sp_thresh");
-    set_num(opts.max_per_row, "sp_max_per_row");
+    set_num(opts.sp_max_per_row, "sp_max_per_row");
     set_num(opts.sp_omega, "sp_omega");
   }
 
@@ -200,7 +200,8 @@ namespace amg
     shared_ptr<TSPM_TM> conc_pwp;
 
     double crs_meas_fac = 1;
-
+    auto old_meas = curr_meas;
+    
     while (curr_meas > goal_meas) {
 
       while (curr_meas > goal_meas) {
@@ -236,6 +237,9 @@ namespace amg
 	level[1]++;
       } // inner while - we PROBABLY have a coarse map
 
+      cout << "actual meas : " << double(curr_meas)/old_meas << endl;
+
+
       if(conc_pwp != nullptr) {
 	
 	cout << "take a prol: " << conc_pwp->Height() << " -> " << conc_pwp->Width() << endl;
@@ -243,6 +247,25 @@ namespace amg
 
 	if (options->enable_sm)
 	  { cout << "smoothit!" << endl; SmoothProlongation(pstep, cap.mesh); }
+
+	{
+	  cout << "prol etr p row: " << endl;
+	  Array<size_t> cats(20); cats = 0;
+	  size_t cnt = 0, cnt2 = 0;
+	  auto p = pstep->GetProl();
+	  if (p != nullptr) {
+	    for (auto k : Range(p->Height())) {
+	      auto ri = p->GetRowIndices(k);
+	      if (ri.Size()) cnt++;
+	      cnt2 += ri.Size();
+	      cats[ri.Size()]++;
+	    }
+	    if (cnt == 0) cnt++;
+	    cout << "simple avg per row: " << double(cnt2)/max2(p->Height(), 1) << endl;
+	    cout << "avg per row: " << double(cnt2)/max2(cnt, size_t(1)) << endl;
+	    prow2(cats); cout << endl;
+	  }
+	}
 
 	fpds = cpds; conc_pwp = nullptr; fmesh = cmesh;
 
@@ -254,6 +277,25 @@ namespace amg
 	else { sub_steps.Append(pstep); }
 
 	cmat = sub_steps.Last()->AssembleMatrix(cmat);
+
+
+	if (cmat != nullptr)
+      	{
+	  cout << "CMAT etr p row: " << endl;
+	  Array<size_t> cats(300); cats = 0;
+	  size_t cnt = 0, cnt2 = 0;
+	  for (auto k : Range(cmat->Height())) {
+	    auto ri = cmat->GetRowIndices(k);
+	    if (ri.Size()) cnt++;
+	    cnt2 += ri.Size();
+	    cats[ri.Size()]++;
+	  }
+	  if (cnt == 0) cnt++;
+	  cout << "simple avg per row: " << double(cnt2)/max2(cmat->Height(), 1) << endl;
+	  cout << "avg per row: " << double(cnt2)/max2(cnt, size_t(1)) << endl;
+	  prow2(cats); cout << endl;
+	}
+
       }
       else if (!options->enable_ctr) { // throw exceptions here for now, but in principle just break is also fine i think
 	throw Exception("Could not coarsen, and cannot contract (it is disabled)");
@@ -326,13 +368,14 @@ namespace amg
       double af = (cap.level == 0) ? options->first_rbmaf : ( pow(options->rbmaf_scale, cap.level - ( (options->first_rbmaf == -1) ? 0 : 1) ) * options->aaf );
       size_t goal_meas = max( size_t(min(af, 0.9) * state->last_meas_rbm), max(options->max_meas, size_t(1)));
       if (curr_meas < goal_meas)
-	{ cmesh = options->rebuild_mesh(cmesh, cmat); state->last_meas_rbm = curr_meas; }
+	{ cmesh = options->rebuild_mesh(cmesh, cmat, cpds); state->last_meas_rbm = curr_meas; }
     }
 
     bool do_more_levels = (cmesh != nullptr) &&
-      (cap.level < options->max_n_levels) &&
+      (cap.level + 2 < options->max_n_levels) &&
       (options->max_meas < ComputeMeshMeasure (*cmesh) );
 
+    cout << "level / max " << cap.level << " " << options->max_n_levels << endl;
     cout << "cmesh meas " << ComputeMeshMeasure (*cmesh) << endl;
     
     if (do_more_levels) {
@@ -514,8 +557,8 @@ namespace amg
     const TSPM_TM & pwprol = *pmap->GetProl();
 
     Options &O (static_cast<Options&>(*options));
-    const double MIN_PROL_FRAC = O.min_prol_frac;
-    const int MAX_PER_ROW = O.max_per_row;
+    const double MIN_PROL_FRAC = O.sp_min_frac;
+    const int MAX_PER_ROW = O.sp_max_per_row;
     const double omega = O.sp_omega;
 
     // Construct vertex-map from prol graph (can be concatenated)
