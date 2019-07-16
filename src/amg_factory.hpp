@@ -20,15 +20,19 @@ namespace amg
   public:
     using TSPM_TM = stripped_spm_tm<TM>;
 
-    class Options; // configurable from the outside
+    struct Options;    // configurable from the outside
 
-    class State; // some internal book-keeping
+    class Logger;     // logging and printing of information
+
+    struct State;      // some internal book-keeping
 
   protected:
     shared_ptr<Options> options;
+    shared_ptr<Logger> logger;
+    shared_ptr<State> state;
+
     shared_ptr<TMESH> finest_mesh;
     shared_ptr<BaseDOFMapStep> embed_step;
-    shared_ptr<State> state;
 
   public:
 

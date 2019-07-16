@@ -28,7 +28,7 @@ namespace amg
     using TMESH = typename FACTORY::TMESH;
 
     struct Options;
-    
+
     EmbedVAMG (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string name = "precond");
 
     EmbedVAMG (const PDE & apde, const Flags & aflags, const string aname = "precond")

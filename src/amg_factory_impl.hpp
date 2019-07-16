@@ -10,37 +10,46 @@ namespace amg
   struct AMGFactory<TMESH, TM> :: Options
   {
     /** Level-control **/
-    size_t max_n_levels = 10;            // maximun number of multigrid levels (counts first level, so at least 2)
-    size_t max_meas = 50;                // maximal maesure of coarsest mesh
-    double aaf = 0.1;                    // assemble after factor
-    double first_aaf = 0.05;             // (smaller) factor for first level. -1 for dont use
-    double aaf_scale = 1;                // scale aaf, e.g if 2:   first_aaf, aaf, 2*aaf, 4*aaf, .. (or aaf, 2*aaf, ...)
+    size_t max_n_levels = 10;                   // maximun number of multigrid levels (counts first level, so at least 2)
+    size_t max_meas = 50;                       // maximal maesure of coarsest mesh
+    double aaf = 0.1;                           // assemble after factor
+    double first_aaf = 0.05;                    // (smaller) factor for first level. -1 for dont use
+    double aaf_scale = 1;                       // scale aaf, e.g if 2:   first_aaf, aaf, 2*aaf, 4*aaf, .. (or aaf, 2*aaf, ...)
     
     /** Discard - not back yet  **/
 
     /** Contract (Re-Distribute) **/
     bool enable_ctr = true;
     /** WHEN to contract **/
-    double ctraf = 0.05;                 // contract after reducing measure by this factor
-    double first_ctraf = 0.025;          // see first_aaf
-    double ctraf_scale = 1;              // see aaf_scale
-    double ctr_crs_thresh = 0.7;         // if coarsening slows down more than this, contract one step
+    double ctraf = 0.05;                        // contract after reducing measure by this factor
+    double first_ctraf = 0.025;                 // see first_aaf
+    double ctraf_scale = 1;                     // see aaf_scale
+    double ctr_crs_thresh = 0.7;                // if coarsening slows down more than this, contract one step
     /** HOW AGGRESSIVELY to contract **/
-    double ctr_pfac = 0.25;              // reduce active NP by this factor (ctr_pfac / ctraf should be << 1 !)
+    double ctr_pfac = 0.25;                     // reduce active NP by this factor (ctr_pfac / ctraf should be << 1 !)
     /** Constraints for contract **/
-    size_t ctr_min_nv = 500;             // re-distribute such that at least this many NV per proc remain
-    size_t ctr_seq_nv = 500;             // re-distribute to sequential once NV reaches this threshhold
+    size_t ctr_min_nv = 500;                    // re-distribute such that at least this many NV per proc remain
+    size_t ctr_seq_nv = 500;                    // re-distribute to sequential once NV reaches this threshhold
 
     /** Smoothed Prolongation **/
-    bool enable_sm = true;               // emable prolongation-smoothing
+    bool enable_sm = true;                      // emable prolongation-smoothing
 
     /** Build a new mesh from a coarse level matrix**/
-    bool enable_rbm = false;             // probably only necessary on coarse levels
-    double rbmaf = 0.01;                 // rebuild mesh after measure decreases by this factor
-    double first_rbmaf = 0.005;          // see first_aaf
-    double rbmaf_scale = 1;              // see aaf_scale
+    bool enable_rbm = false;                    // probably only necessary on coarse levels
+    double rbmaf = 0.01;                        // rebuild mesh after measure decreases by this factor
+    double first_rbmaf = 0.005;                 // see first_aaf
+    double rbmaf_scale = 1;                     // see aaf_scale
     std::function<shared_ptr<TMESH>(shared_ptr<TMESH>, shared_ptr<BaseSparseMatrix>, shared_ptr<ParallelDofs>)> rebuild_mesh =
       [](shared_ptr<TMESH> mesh, shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs>) { return mesh; };
+
+    /** Logging **/
+    enum LOG_LEVEL : char { NONE   = 0,         // nothing
+			    BASIC  = 1,         // summary info
+			    NORMAL = 2,         // global level-wise info
+			    EXTRA  = 3};        // local level-wise info
+    LOG_LEVEL log_level = LOG_LEVEL::NORMAL;    // how much info do we collect
+    bool print_log = true;                      // print log to shell
+    string log_file = "";                       // which file to print log to (none if empty)
   };
 
 
@@ -116,10 +125,181 @@ namespace amg
     
     set_num(opts.min_ecw, "edge_thresh");
     set_num(opts.min_vcw, "vert_thresh");
-    set_num(opts.min_prol_frac, "sp_thresh");
+    set_num(opts.sp_min_frac, "sp_thresh");
     set_num(opts.sp_max_per_row, "sp_max_per_row");
     set_num(opts.sp_omega, "sp_omega");
   }
+
+
+  /** --- Logging --- **/
+
+  template<class TMESH, class TM>
+  class AMGFactory<TMESH, TM> :: Logger
+  {
+  public:
+    using LOG_LEVEL = typename AMGFactory<TMESH, TM>::Options::LOG_LEVEL;
+
+    Logger (LOG_LEVEL _lev, int max_levels = 10)
+      : lev(_lev), ready(false)
+    { Alloc(max_levels); }
+
+    void LogLevel (AMGFactory<TMESH, TM>::Capsule cap);
+
+    void Finalize ();
+
+    void PrintLog (ostream & out);
+
+    void PrintToFile (string file_name);
+
+  protected:
+    LOG_LEVEL lev;
+    bool ready;
+
+    void Alloc (int N);
+
+    /** BASIC level - summary info **/
+    double v_comp;
+    double op_comp;
+
+    /** NORMAL level - global info per level **/
+    Array<double> vcc;                   // vertex complexity components
+    Array<double> occ;                   // operator complexity components
+    Array<size_t> NVs;                   // # of vertices
+    Array<size_t> NEs;                   // # of edges
+    Array<size_t> NPs;                   // # of active procs
+    Array<size_t> NZEs;                  // # of NZEs (can be != occ for systems)
+
+    /** EXTRA level - local info per level **/
+    int vccl_rank;                       // rank with max/min local vertex complexity
+    double vccl;                         // max. loc vertex complexity
+    Array<double> vccl_comp;             // components for vccl
+    int occl_rank;                       // rank with max/min local operator complexity
+    double occl;                         // max. loc operator complexity
+    Array<double> occl_comp;             // components for occl
+
+    /** internal **/
+    NgsAMG_Comm comm;
+  }; // class Logger
+
+
+  template<class TMESH, class TM>
+  void AMGFactory<TMESH, TM>::Logger :: Alloc (int N)
+  {
+    auto lam = [N](auto & a) { a.SetSize(N); a.SetSize0(); };
+
+    lam(vcc); lam(occ); // need it as work array even for basic
+
+    if ( (lev == LOG_LEVEL::NONE) || (lev == LOG_LEVEL::BASIC) )
+      { return; }
+
+    lam(NVs);
+    lam(NEs);
+    lam(NPs);
+
+    if (lev == LOG_LEVEL::NORMAL)
+      { return; }
+
+    lam(vccl_comp);
+    lam(occl_comp);
+  } // Logger::Alloc
+
+
+  template<class TMESH, class TM>
+  void AMGFactory<TMESH, TM>::Logger :: LogLevel (AMGFactory<TMESH, TM>::Capsule cap)
+  {
+    ready = false;
+    
+    if (cap.level == 0)
+      { comm = cap.mesh->GetEQCHierarchy()->GetCommunicator(); }
+
+    if (lev == LOG_LEVEL::NONE)
+      { return; }
+
+    auto lev_comm = cap.mesh->GetEQCHierarchy()->GetCommunicator();
+
+    vcc.Append(cap.mesh->template GetNNGlobal<NT_VERTEX>());
+    occ.Append(lev_comm.Reduce(cap.mat->NZE() * GetEntrySize(cap.mat.get()), MPI_SUM, 0));
+    
+    if (lev == LOG_LEVEL::BASIC)
+      { return; }
+
+    NVs.Append(cap.mesh->template GetNNGlobal<NT_VERTEX>());
+    NEs.Append(cap.mesh->template GetNNGlobal<NT_EDGE>());
+    NPs.Append(cap.mesh->GetEQCHierarchy()->GetCommunicator().Size());
+    NZEs.Append(lev_comm.Reduce(cap.mat->NZE(), MPI_SUM, 0));
+
+    if (lev == LOG_LEVEL::NORMAL)
+      { return; }
+
+  } // Logger::LogLevel
+
+
+  template<class TMESH, class TM>
+  void AMGFactory<TMESH, TM>::Logger :: Finalize ()
+  {
+    ready = true;
+
+    if (lev == LOG_LEVEL::NONE)
+      { return; }
+
+    op_comp = v_comp = 0;
+    if (comm.Rank() == 0) { // only 0 has op-comp
+      double vcc0 = vcc[0];
+      for (auto& v : vcc)
+	{ v /= vcc0; v_comp += v; }
+      double occ0 = occ[0];
+      for (auto& v : occ)
+	{ v /= occ0; op_comp += v;}
+    }
+
+    if (lev == LOG_LEVEL::BASIC)
+      { return; }
+
+    if (lev == LOG_LEVEL::NORMAL)
+      { return; }
+  } // Logger::Finalize
+
+
+  template<class TMESH, class TM>
+  void AMGFactory<TMESH, TM>::Logger :: PrintLog (ostream & out)
+  {
+    if (!ready)
+      { Finalize(); }
+
+    if (comm.Rank() != 0)
+      { return; }
+
+    if (lev == LOG_LEVEL::NONE)
+      { return; }
+
+    out << endl << " ---------- AMG Summary ---------- " << endl;
+
+    if (lev >= LOG_LEVEL::BASIC) {
+      out << "Vertex complexity: " << v_comp << endl;
+      out << "Operator complexity: " << op_comp << endl;
+    }
+
+    if (lev >= LOG_LEVEL::NORMAL) {
+      out << "Vertex complexity components: "; prow(vcc, out); out << endl;
+      out << "Operator complexity components: "; prow(occ, out); out << endl;
+      out << "# vertices "; prow(NVs); out << endl;
+      out << "# edges "; prow(NEs); out << endl;
+      out << "# procs "; prow(NPs); out << endl;
+      out << "NZEs "; prow(NZEs); out << endl;
+    }
+
+    out << " ---------- AMG Summary End ---------- " << endl << endl;
+  } // Logger::PrintLog
+
+
+  template<class TMESH, class TM>
+  void AMGFactory<TMESH, TM>::Logger :: PrintToFile (string file_name)
+  {
+    if (comm.Rank() == 0) {
+      ofstream out(file_name, ios::out);
+      PrintLog(out);
+    }
+  } // Logger::PrintToFile
 
 
   /** --- State --- **/
@@ -155,16 +335,25 @@ namespace amg
     if(mats.Size() != 1)
       { throw Exception("SetupLevels needs a finest level mat!"); }
     
-    // these are in reverse order
+    logger = make_shared<Logger>(options->log_level);
+
     auto fmat = mats[0];
     shared_ptr<ParallelDofs> fpds = (embed_step == nullptr) ? fmat->GetParallelDofs() : BuildParallelDofs(finest_mesh);
-    auto coarse_mats = RSU({ 0, finest_mesh, fpds, fmat }, dof_map);
-    cout << "coarse mats: " << endl; prow2(coarse_mats); cout << endl;
+
+    auto coarse_mats = RSU( { 0, finest_mesh, fpds, fmat }, dof_map);
+
+    // coarse mats in reverse order
     mats.SetSize(coarse_mats.Size() + 1);
     for (auto k : Range(mats.Size() - 1))
       { mats[k+1] = coarse_mats[coarse_mats.Size()-1-k]; }
     mats[0] = fmat;
-    cout << "mats total: "; prow2(mats); cout << endl;
+
+    if (options->print_log)
+      { logger->PrintLog(cout); }
+    if (options->log_file.size() > 0)
+      { logger->PrintToFile(options->log_file); }
+    logger = nullptr;
+      
   }
 
 
@@ -172,6 +361,8 @@ namespace amg
   Array<shared_ptr<BaseSparseMatrix>> AMGFactory<TMESH, TM> :: RSU (Capsule cap, shared_ptr<DOFMap> dof_map)
   {
     
+    logger->LogLevel(cap);
+
     shared_ptr<BaseDOFMapStep> ds;
 
     shared_ptr<TMESH> fmesh = cap.mesh, cmesh = cap.mesh;
@@ -186,14 +377,17 @@ namespace amg
       state->last_meas_rbm = curr_meas;
     }
 
+    auto comm = fmesh->GetEQCHierarchy()->GetCommunicator();
+    
     double af = (cap.level == 0) ? options->first_aaf : ( pow(options->aaf_scale, cap.level - ( (options->first_aaf == -1) ? 0 : 1) ) * options->aaf );
-
-    cout << "using AF " << af << " from " << options->first_aaf << " " << options->aaf_scale << " " << options->aaf << endl;
 
     size_t goal_meas = max( size_t(min(af, 0.9) * curr_meas), max(options->max_meas, size_t(1)));
 
-    cout << "goal is: " << goal_meas << endl;
-    
+    if (comm.Rank() == 0) {
+      cout << "using AF " << af << " from " << options->first_aaf << " " << options->aaf_scale << " " << options->aaf << endl;
+      cout << "goal is: " << goal_meas << endl;
+    }
+
     INT<3> level = { cap.level, 0, 0 }; // coarse / sub-coarse / ctr 
 
     Array<shared_ptr<BaseDOFMapStep>> sub_steps;
@@ -201,7 +395,7 @@ namespace amg
 
     double crs_meas_fac = 1;
     auto old_meas = curr_meas;
-    
+
     while (curr_meas > goal_meas) {
 
       while (curr_meas > goal_meas) {
@@ -211,12 +405,12 @@ namespace amg
 	if (grid_step == nullptr)
 	  { break; }
 
-
 	auto _cmesh = static_pointer_cast<TMESH>(grid_step->GetMappedMesh());
 
 	crs_meas_fac = ComputeMeshMeasure(*_cmesh) / (1.0 * curr_meas);
 
-	cout << "coarsen fac " << crs_meas_fac << ", went from " << curr_meas << " to " << ComputeMeshMeasure(*_cmesh) << endl;
+	if (comm.Rank() == 0)
+	  { cout << "coarsen fac " << crs_meas_fac << ", went from " << curr_meas << " to " << ComputeMeshMeasure(*_cmesh) << endl; }
 
 	if (crs_meas_fac > 0.95)
 	  { throw Exception("no proper check in place here"); }
@@ -237,35 +431,35 @@ namespace amg
 	level[1]++;
       } // inner while - we PROBABLY have a coarse map
 
-      cout << "actual meas : " << double(curr_meas)/old_meas << endl;
+      if (comm.Rank() == 0)
+	{ cout << "actual meas : " << double(curr_meas)/old_meas << endl; }
 
 
       if(conc_pwp != nullptr) {
 	
-	cout << "take a prol: " << conc_pwp->Height() << " -> " << conc_pwp->Width() << endl;
 	auto pstep = make_shared<ProlMap<TSPM_TM>> (conc_pwp, fpds, cpds);
 
 	if (options->enable_sm)
-	  { cout << "smoothit!" << endl; SmoothProlongation(pstep, cap.mesh); }
+	  { SmoothProlongation(pstep, cap.mesh); }
 
-	{
-	  cout << "prol etr p row: " << endl;
-	  Array<size_t> cats(20); cats = 0;
-	  size_t cnt = 0, cnt2 = 0;
-	  auto p = pstep->GetProl();
-	  if (p != nullptr) {
-	    for (auto k : Range(p->Height())) {
-	      auto ri = p->GetRowIndices(k);
-	      if (ri.Size()) cnt++;
-	      cnt2 += ri.Size();
-	      cats[ri.Size()]++;
-	    }
-	    if (cnt == 0) cnt++;
-	    cout << "simple avg per row: " << double(cnt2)/max2(p->Height(), 1) << endl;
-	    cout << "avg per row: " << double(cnt2)/max2(cnt, size_t(1)) << endl;
-	    prow2(cats); cout << endl;
-	  }
-	}
+	// {
+	//   cout << "prol etr p row: " << endl;
+	//   Array<size_t> cats(20); cats = 0;
+	//   size_t cnt = 0, cnt2 = 0;
+	//   auto p = pstep->GetProl();
+	//   if (p != nullptr) {
+	//     for (auto k : Range(p->Height())) {
+	//       auto ri = p->GetRowIndices(k);
+	//       if (ri.Size()) cnt++;
+	//       cnt2 += ri.Size();
+	//       cats[ri.Size()]++;
+	//     }
+	//     if (cnt == 0) cnt++;
+	//     cout << "simple avg per row: " << double(cnt2)/max2(p->Height(), 1) << endl;
+	//     cout << "avg per row: " << double(cnt2)/max2(cnt, size_t(1)) << endl;
+	//     prow2(cats); cout << endl;
+	//   }
+	// }
 
 	fpds = cpds; conc_pwp = nullptr; fmesh = cmesh;
 
@@ -279,22 +473,22 @@ namespace amg
 	cmat = sub_steps.Last()->AssembleMatrix(cmat);
 
 
-	if (cmat != nullptr)
-      	{
-	  cout << "CMAT etr p row: " << endl;
-	  Array<size_t> cats(300); cats = 0;
-	  size_t cnt = 0, cnt2 = 0;
-	  for (auto k : Range(cmat->Height())) {
-	    auto ri = cmat->GetRowIndices(k);
-	    if (ri.Size()) cnt++;
-	    cnt2 += ri.Size();
-	    cats[ri.Size()]++;
-	  }
-	  if (cnt == 0) cnt++;
-	  cout << "simple avg per row: " << double(cnt2)/max2(cmat->Height(), 1) << endl;
-	  cout << "avg per row: " << double(cnt2)/max2(cnt, size_t(1)) << endl;
-	  prow2(cats); cout << endl;
-	}
+	// if (cmat != nullptr)
+      	// {
+	//   cout << "CMAT etr p row: " << endl;
+	//   Array<size_t> cats(300); cats = 0;
+	//   size_t cnt = 0, cnt2 = 0;
+	//   for (auto k : Range(cmat->Height())) {
+	//     auto ri = cmat->GetRowIndices(k);
+	//     if (ri.Size()) cnt++;
+	//     cnt2 += ri.Size();
+	//     cats[ri.Size()]++;
+	//   }
+	//   if (cnt == 0) cnt++;
+	//   cout << "simple avg per row: " << double(cnt2)/max2(cmat->Height(), 1) << endl;
+	//   cout << "avg per row: " << double(cnt2)/max2(cnt, size_t(1)) << endl;
+	//   prow2(cats); cout << endl;
+	// }
 
       }
       else if (!options->enable_ctr) { // throw exceptions here for now, but in principle just break is also fine i think
@@ -319,7 +513,8 @@ namespace amg
 	  double ctr_factor = (next_nv < options->ctr_seq_nv) ? -1 :
 	    min2(fac, double(next_nv) / options->ctr_min_nv / ccomm.Size());
 	  
-	  cout << "contract by factor " << ctr_factor << endl;
+	  if (comm.Rank() == 0)
+	    { cout << "contract by factor " << ctr_factor << endl; }
 
 	  auto ctr_map = BuildContractMap(ctr_factor, cmesh);
 
@@ -343,7 +538,8 @@ namespace amg
 	  if (cmesh == nullptr)
 	    { break; }
 
-	  cout << "NP down to " << cmesh->GetEQCHierarchy()->GetCommunicator().Size() << endl;
+	  if (comm.Rank() == 0)
+	    { cout << "NP down to " << cmesh->GetEQCHierarchy()->GetCommunicator().Size() << endl; }
 
 	}
 
@@ -354,46 +550,43 @@ namespace amg
 
     if (sub_steps.Size() > 0) { // we were able to do some sort of step
       shared_ptr<BaseDOFMapStep> tot_step = (sub_steps.Size() > 1) ? make_shared<ConcDMS>(sub_steps) : sub_steps[0];
-      cout << "add step do dof map " << typeid(*tot_step).name() << endl;
-      cout << "pds: " << tot_step->GetParDofs() << " " << tot_step->GetMappedParDofs() << endl;
       dof_map->AddStep(tot_step);
     }
     
     if (cmesh == nullptr) // i drop out!
       { return Array<shared_ptr<BaseSparseMatrix>>({ nullptr }); }
 
-    // coarse level matrix
-
-    if (options->enable_rbm) {
-      double af = (cap.level == 0) ? options->first_rbmaf : ( pow(options->rbmaf_scale, cap.level - ( (options->first_rbmaf == -1) ? 0 : 1) ) * options->aaf );
-      size_t goal_meas = max( size_t(min(af, 0.9) * state->last_meas_rbm), max(options->max_meas, size_t(1)));
-      if (curr_meas < goal_meas)
-	{ cmesh = options->rebuild_mesh(cmesh, cmat, cpds); state->last_meas_rbm = curr_meas; }
-    }
-
-    bool do_more_levels = (cmesh != nullptr) &&
-      (cap.level + 2 < options->max_n_levels) &&
-      (options->max_meas < ComputeMeshMeasure (*cmesh) );
-
-    cout << "level / max " << cap.level << " " << options->max_n_levels << endl;
-    cout << "cmesh meas " << ComputeMeshMeasure (*cmesh) << endl;
+    // cout << "level / max " << cap.level << " " << options->max_n_levels << endl;
+    // cout << "cmesh meas " << ComputeMeshMeasure (*cmesh) << endl;
+    // cout << "max meas " << options->max_meas << endl;
     
-    if (do_more_levels) {
-      // recursively call setup
-      cout << "more levels!! " << endl;
+    if (cmat == nullptr) { // contracted out
+      return Array<shared_ptr<BaseSparseMatrix>> ({cmat});
+    }
+    else if ( (cap.level + 2 == options->max_n_levels) ||              // max n levels reached
+	      (options->max_meas > ComputeMeshMeasure (*cmesh) ) ) {   // max coarse size reached
+
+      
+      if (options->enable_rbm) { // only rebuild mesh if we want to do more levels
+	double af = (cap.level == 0) ? options->first_rbmaf : ( pow(options->rbmaf_scale, cap.level - ( (options->first_rbmaf == -1) ? 0 : 1) ) * options->aaf );
+	size_t goal_meas = max( size_t(min(af, 0.9) * state->last_meas_rbm), max(options->max_meas, size_t(1)));
+	if (curr_meas < goal_meas)
+	  { cmesh = options->rebuild_mesh(cmesh, cmat, cpds); state->last_meas_rbm = curr_meas; }
+      }
+
+      logger->LogLevel ({cap.level + 1, cmesh, cpds, cmat}); // also log coarsest level
+      return Array<shared_ptr<BaseSparseMatrix>> ({cmat});
+    }
+    else if (cmat == cap.mat) { // I could not do anyting, stop coarsening here I guess
+      throw Exception("hold on, is this ok??");
+      return Array<shared_ptr<BaseSparseMatrix>> (0);
+    }
+    else {
       auto cmats = RSU( {cap.level + 1, cmesh, cpds, cmat}, dof_map );
-      cout << "level " << cap.level << ", got cmats from coarse: " << endl; prow2(cmats); cout << endl;
       cmats.Append(cmat);
       return cmats;
     }
-    else if (cmat == cap.mat) { // I could not do anyting, stop coarsening here I guess
-      return Array<shared_ptr<BaseSparseMatrix>> ({cmat});
-    }
-    else {
-      // no more coarse levels
-      cout << " no more coarse, return only " << cmat << endl;
-      return Array<shared_ptr<BaseSparseMatrix>> ({cmat});
-    }
+    
 
   } // AMGFactory::RSU
 
