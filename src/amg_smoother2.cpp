@@ -376,7 +376,7 @@ namespace amg
 
       M = make_shared<SparseMatrix<TM>>(perow);
 
-      cout << "M NZE : " << M->NZE() << endl;
+      // cout << "M NZE : " << M->NZE() << endl;
 
       iterate_rowinds([&](auto rownr, const auto & matis, const auto & rowis) {
 	  auto ris = M->GetRowIndices(rownr); ris = rowis;

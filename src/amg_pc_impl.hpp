@@ -176,16 +176,13 @@ namespace amg
   EmbedVAMG<FACTORY> :: EmbedVAMG (shared_ptr<BilinearForm> blf, const Flags & flags, const string name)
     : Preconditioner(blf, flags, name), bfa(blf)
   {
-    cout << "constr" << endl;
     options = MakeOptionsFromFlags (flags);
-    cout << "have opts" << endl;
   } // EmbedVAMG::EmbedVAMG
 
 
   template<class FACTORY>
   void EmbedVAMG<FACTORY> :: InitLevel (shared_ptr<BitArray> freedofs)
   {
-    cout << "init" << endl;
 
     if (freedofs == nullptr) // postpone to FinalizeLevel
       { return; }
@@ -210,7 +207,6 @@ namespace amg
   template<class FACTORY>
   void EmbedVAMG<FACTORY> :: FinalizeLevel (const BaseMatrix * mat)
   {
-    cout << "finalizelevel" << endl;
 
     if (mat != nullptr)
       { finest_mat = shared_ptr<BaseMatrix>(const_cast<BaseMatrix*>(mat), NOOP_Deleter); }
@@ -225,9 +221,8 @@ namespace amg
   template<class FACTORY>
   void EmbedVAMG<FACTORY> :: Finalize ()
   {
-   cout << "finalize" << endl;
 
-   if (options->sync)
+    if (options->sync)
       {
 	if (auto pds = finest_mat->GetParallelDofs()) {
 	  static Timer t(string("NGsAMG - Initial Sync")); RegionTimer rt(t);
@@ -238,8 +233,6 @@ namespace amg
     if (finest_freedofs == nullptr)
       { finest_freedofs = bfa->GetFESpace()->GetFreeDofs(bfa->UsesEliminateInternal()); }
     
-    cout << "finalize" << endl;
-
     /** Set dummy-ParallelDofs **/
     shared_ptr<BaseMatrix> fine_spm = finest_mat;
     if (auto pmat = dynamic_pointer_cast<ParallelMatrix>(fine_spm))
@@ -252,19 +245,12 @@ namespace amg
       fine_spm->SetParallelDofs(make_shared<ParallelDofs> ( mecomm , move(dps), GetEntryDim(fine_spm.get()), false));
     }
 
-    cout << "finalize" << endl;
-
     auto mesh = BuildInitialMesh();
 
-    cout << "finalize" << endl;
     factory = BuildFactory(mesh);
-
-    cout << "finalize" << endl;
-    // set mesh-rebuild here i guess
 
     /** Set up Smoothers **/
     BuildAMGMat();
-    cout << "finalize" << endl;
     
   } // EmbedVAMG::Finalize
 
@@ -306,21 +292,12 @@ namespace amg
     auto dof_map = make_shared<DOFMap>();
     factory->SetupLevels(mats, dof_map);
 
-    cout << "got mats: " << endl; prow2(mats); cout << endl;
-   
     // Set up smoothers
-
-    cout << "ff: " << finest_freedofs << endl;
-    if (finest_freedofs) cout << "ff set: " << finest_freedofs->NumSet() << " of " << finest_freedofs->Size() << endl;
 
     Array<shared_ptr<BaseSmoother>> smoothers(mats.Size()-1);
     for (auto k : Range(size_t(0), mats.Size()-1)) {
-      cout << " mat " << k << " = " << mats[k] << endl;
-      cout << mats[k]->Height() << " x " << mats[k]->Width() << endl;
-      cout << "pds " << dof_map->GetParDofs(k) << endl;
       smoothers[k] = BuildSmoother (mats[k], dof_map->GetParDofs(k), (k==0) ? finest_freedofs : nullptr);
       smoothers[k]->Finalize(); // do i even need this anymore ?
-      cout << "ok " << endl;
     }
 
     amg_mat = make_shared<AMGMatrix> (dof_map, smoothers);
@@ -330,8 +307,6 @@ namespace amg
     if (mats.Last() == nullptr) // we drop out because of redistribution at some point
       { return; }
     
-    cout << "cinv " << endl;
-
     if (options->clev == BaseEmbedAMGOptions::INV_CLEV) {
       shared_ptr<BaseMatrix> coarse_inv;
 
@@ -372,8 +347,6 @@ namespace amg
       amg_mat->SetCoarseInv(coarse_inv);
     }
 
-    cout << "amg mat ok " << endl;
-
   } // EmbedVAMG::BuildAMGMat
 
 
@@ -382,8 +355,6 @@ namespace amg
   {
     static Timer t("BuildTopMesh"); RegionTimer rt(t);
 
-    cout << "top mesh" << endl;
-    
     auto & O(*options);
 
     typedef BaseEmbedAMGOptions BAO;
@@ -401,7 +372,6 @@ namespace amg
 	  { maxset = k+1; break; }
       break;
     } }
-    cout << "maxset " << maxset << " " << fpd->GetNDofLocal() << endl;
 
     eqc_h = make_shared<EQCHierarchy>(fpd, true, maxset);
 
@@ -432,8 +402,6 @@ namespace amg
 	{ fvs->Set(vsort[k]); }
     free_verts = fvs;
 
-    cout << "top mesh done" << endl;
-
     return top_mesh;
   }; //  EmbedVAMG::BuildTopMesh
 
@@ -441,7 +409,7 @@ namespace amg
   template<class FACTORY>
   shared_ptr<BlockTM> EmbedVAMG<FACTORY> :: BTM_Mesh (shared_ptr<EQCHierarchy> eqc_h)
   {
-    cout << "Topmesh mesh" << endl;
+    static Timer t("BTM_Mesh"); RegionTimer rt(t);
 
     node_sort.SetSize(4);
 
@@ -466,6 +434,7 @@ namespace amg
   template<class FACTORY>
   shared_ptr<BlockTM> EmbedVAMG<FACTORY> :: BTM_Alg (shared_ptr<EQCHierarchy> eqc_h)
   {
+    static Timer t("BTM_Alg"); RegionTimer rt(t);
 
     node_sort.SetSize(4);
 
@@ -566,12 +535,10 @@ namespace amg
       create_edges ( v2d , d2v );
     }
 
-    if (NgMPI_Comm(MPI_COMM_WORLD).Rank() == 1) {
-      cout << "AMG performed on " << n_verts << " vertices, ndof local is: " << fpd->GetNDofLocal() << endl;
-      cout << "free dofs " << finest_freedofs->NumSet() << " ndof local is: " << fpd->GetNDofLocal() << endl;
-    }
-
-    cout << "Topmesh alg done" << endl;
+    // if (NgMPI_Comm(MPI_COMM_WORLD).Rank() == 1) {
+    //   cout << "AMG performed on " << n_verts << " vertices, ndof local is: " << fpd->GetNDofLocal() << endl;
+    //   cout << "free dofs " << finest_freedofs->NumSet() << " ndof local is: " << fpd->GetNDofLocal() << endl;
+    // }
 
     return top_mesh;
   } // EmbedVAMG :: BTM_Alg
