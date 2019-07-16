@@ -1,0 +1,376 @@
+#define FILE_AMGH1_CPP
+
+#include "amg.hpp"
+#include "amg_factory_impl.hpp"
+#include "amg_pc_impl.hpp"
+
+namespace amg
+{
+
+  /** H1AMGFactory **/
+
+
+  H1AMGFactory :: H1AMGFactory (shared_ptr<H1AMGFactory::TMESH> mesh,  shared_ptr<H1AMGFactory::Options> opts,
+				shared_ptr<BaseDOFMapStep> embed_step)
+    : BASE(mesh, opts, embed_step)
+  { ; }
+
+
+  void H1AMGFactory :: SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix)
+  {
+    BASE::SetOptionsFromFlags(opts, flags, prefix);
+  }
+
+
+  void H1AMGFactory :: SetCoarseningOptions (VWCoarseningData::Options & opts, shared_ptr<H1Mesh> mesh) const
+  {
+    static Timer t("SetCoarseningOptions"); RegionTimer rt(t);
+    const H1Mesh & rmesh(*mesh);
+    const H1AMGFactory & self(*this);
+    const auto & options = static_cast<const Options&>(*this->options);
+    opts.free_verts = free_verts; const_cast<H1AMGFactory&>(*this).free_verts = nullptr; //TODO: hacky!
+    auto NV = rmesh.template GetNN<NT_VERTEX>();
+    auto NE = rmesh.template GetNN<NT_EDGE>();
+    rmesh.CumulateData();
+    Array<double> vcw(NV); vcw = 0;
+    rmesh.template Apply<NT_EDGE>([&](const auto & edge) LAMBDA_INLINE {
+	auto ew = self.template GetWeight<NT_EDGE>(rmesh, edge);
+	vcw[edge.v[0]] += ew;
+	vcw[edge.v[1]] += ew;
+      }, true);
+    rmesh.template AllreduceNodalData<NT_VERTEX>(vcw, [](auto & in) LAMBDA_INLINE { return sum_table(in); }, false);
+    rmesh.template Apply<NT_VERTEX>([&](auto v) LAMBDA_INLINE { vcw[v] += self.template GetWeight<NT_VERTEX>(rmesh, v); });
+    Array<double> ecw(NE);
+    rmesh.template Apply<NT_EDGE>([&](const auto & edge) LAMBDA_INLINE {
+	double vw = min(vcw[edge.v[0]], vcw[edge.v[1]]);
+	ecw[edge.id] = self.template GetWeight<NT_EDGE>(rmesh, edge) / vw;
+      }, false);
+    for (auto v : Range(NV))
+      { vcw[v] = self.template GetWeight<NT_VERTEX>(rmesh, v)/vcw[v]; }
+    opts.vcw = move(vcw);
+    opts.min_vcw = options.min_vcw;
+    opts.ecw = move(ecw);
+    opts.min_ecw = options.min_ecw;
+  }
+
+
+  /** EmbedVAMG<H1AMGFactory> **/
+
+
+  template<>
+  void EmbedVAMG<H1AMGFactory> :: SetDefaultOptions (Options& O)
+  {
+    /** Level-control **/
+    // O.first_aaf = 1/pow(3, ma->GetDimension());
+    O.first_aaf = (ma->GetDimension() == 3) ? 0.05 : 0.1;
+    O.aaf = 1/pow(2, ma->GetDimension());
+
+    /** Redistribute **/
+    O.enable_ctr = true;
+    O.ctraf = 0.05;
+    O.first_ctraf = O.aaf * O.first_aaf;
+    O.ctraf_scale = 1;
+    O.ctr_crs_thresh = 0.7;
+    O.ctr_min_nv = 500;
+    O.ctr_seq_nv = 2000;
+    
+    /** Smoothed Prolongation **/
+    O.enable_sm = true;
+    O.sp_min_frac = (ma->GetDimension() == 3) ? 0.08 : 0.15;
+    O.sp_omega = 1;
+    O.sp_max_per_row = 1 + ma->GetDimension();
+
+    /** Rebuild Mesh**/
+    O.enable_rbm = true;
+    O.rbmaf = O.aaf * O.aaf;
+    O.first_rbmaf = O.aaf * O.first_aaf;
+
+    /** Embed **/
+    O.block_s = { 1 }; // scalar, so always one dof per vertex
+  } // EmbedVAMG<H1AMGFactory>::SetDefaultOptions 
+
+
+  template<>
+  void EmbedVAMG<H1AMGFactory> :: ModifyOptions (Options & O, const Flags & flags, string prefix)
+  {
+    static Timer t_rbm("Rebuild Mesh");
+    O.rebuild_mesh = [&](shared_ptr<H1Mesh> mesh, shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs> pardofs) {
+      RegionTimer rt(t_rbm);
+      /** New edges **/
+      if (mesh->GetEQCHierarchy()->GetCommunicator().Rank() == 0)
+	{ cout << "REBUILD MESH, NV = " << mesh->GetNNGlobal<NT_VERTEX>() << ", NE = " << mesh->GetNNGlobal<NT_EDGE>() << endl; }
+
+      auto n_verts = mesh->GetNN<NT_VERTEX>();
+      auto traverse_graph = [&](const auto& g, auto fun) LAMBDA_INLINE { // vertex->dof,  // dof-> vertex
+	for (auto row : Range(n_verts)) {
+	  auto ri = g.GetRowIndices(row);
+	  auto pos = find_in_sorted_array(int(row), ri); // no duplicates
+	  if (pos+1 < ri.Size())
+	    for (auto j : ri.Part(pos+1))
+	      { fun(row,j); }
+	}
+      }; // traverse_graph
+      const auto& cspm = static_cast<SparseMatrixTM<double>&>(*mat);
+      size_t n_edges = 0;
+      traverse_graph(cspm, [&](auto vk, auto vj) LAMBDA_INLINE { n_edges++; });
+      Array<decltype(AMG_Node<NT_EDGE>::v)> epairs(n_edges);
+      n_edges = 0;
+      traverse_graph(cspm, [&](auto vk, auto vj) LAMBDA_INLINE {
+	  if (vk < vj) { epairs[n_edges++] = {int(vk), int(vj)}; }
+	  else { epairs[n_edges++] = {int(vj), int(vk)}; }
+	});
+      mesh->SetNodes<NT_EDGE> (n_edges, [&](auto num) LAMBDA_INLINE { return epairs[num]; }, // (already v-sorted)
+			       [](auto node_num, auto id) { /* dont care about edge-sort! */ });
+      mesh->ResetEdgeCM();
+
+      n_edges = mesh->GetNN<NT_EDGE>();
+      
+      if (mesh->GetEQCHierarchy()->GetCommunicator().Rank() == 0)
+	{ cout << "REBUILT MESH, NV = " << mesh->GetNNGlobal<NT_VERTEX>() << ", NE = " << mesh->GetNNGlobal<NT_EDGE>() << endl; }
+
+      /** New weights **/
+      auto avd = get<0>(mesh->Data()); avd->SetParallelStatus(DISTRIBUTED);
+      auto vdata = avd->Data(); vdata = 0;
+      avd->Cumulate();
+      // for (auto k : Range(mat->Height())) {
+      // 	double rs = 0;
+      // 	for(auto v : cspm.GetRowValues(k))
+      // 	  { rs += v; }
+      // 	vdata[k] = rs;
+      // }
+
+      auto aed = get<1>(mesh->Data()); aed->SetParallelStatus(DISTRIBUTED);
+      auto & edata = aed->GetModData(); edata.SetSize(n_edges);
+      // off-diag entry -> is edge weight
+      auto edges = mesh->GetNodes<NT_EDGE>();
+      for (auto & e : edges)
+	{ edata[e.id] = fabs(cspm(e.v[0], e.v[1])); }
+      aed->Cumulate();
+
+      return mesh;
+    };
+  }
+
+  template<> shared_ptr<EmbedVAMG<H1AMGFactory>::TMESH>
+  EmbedVAMG<H1AMGFactory> :: BuildAlgMesh (shared_ptr<BlockTM> top_mesh) const
+  {
+    typedef BaseEmbedAMGOptions BAO;
+    const auto &O(*options);
+
+    auto a = new H1VData(Array<double>(top_mesh->GetNN<NT_VERTEX>()), DISTRIBUTED);
+    auto b = new H1EData(Array<double>(top_mesh->GetNN<NT_EDGE>()), DISTRIBUTED);
+    if (O.energy == BAO::TRIV_ENERGY) {
+      a->Data() = 0.0; b->Data() = 1.0;
+    }
+    else if (O.energy == BAO::ALG_ENERGY) {
+      // TODO: ONLY WORKS FOR ACTUAL 0..nv DOF ORDERING!! (should be fine most of the time..)
+      FlatArray<int> vsort = node_sort[NT_VERTEX];
+      Array<int> rvsort(vsort.Size());
+      for (auto k : Range(vsort.Size()))
+	rvsort[vsort[k]] = k;
+      // sum up rows -> rest is vertex weight
+      auto NV = vsort.Size();
+      shared_ptr<BaseMatrix> fseqmat = finest_mat;
+      if (auto fpm = dynamic_pointer_cast<ParallelMatrix>(finest_mat))
+	fseqmat = fpm->GetMatrix();
+      auto fspm = dynamic_pointer_cast<SparseMatrix<double>>(fseqmat);
+      auto ad = a->Data();
+      for (auto k : Range(NV)) {
+	auto rvs = fspm->GetRowValues(k);
+	auto ris = fspm->GetRowIndices(k);
+	double sum = 0;
+	for (auto j : Range(ris)) {
+	  if (ris[j] < NV)  // constant vec only has LO dof vals...
+	    { sum += rvs[j]; }
+	}
+	ad[rvsort[k]] = fabs(sum);
+      }
+
+      // off-diag entry -> is edge weight
+      auto edges = top_mesh->GetNodes<NT_EDGE>();
+      const auto & cspm(*fspm);
+      auto bd = b->Data();
+      for (auto & e : edges) {
+	bd[e.id] = fabs(cspm(rvsort[e.v[0]], rvsort[e.v[1]]));
+      }
+    }
+    else
+      { throw Exception("Cannot deal with this energy!"); }
+
+    auto mesh = make_shared<H1Mesh>(move(*top_mesh), a, b);
+    return mesh;
+  } // EmbedVAMG<H1AMGFactory>::BuildAlgMesh
+
+
+  template<> shared_ptr<BaseDOFMapStep> EmbedVAMG<H1AMGFactory> :: BuildEmbedding ()
+  {
+    typedef BaseEmbedAMGOptions BAO;
+    const auto &O(*options);
+
+    auto & vsort = node_sort[NT_VERTEX];
+    shared_ptr<ParallelDofs> fpds = finest_mat->GetParallelDofs();
+    auto emb_mat = BuildPermutationMatrix<double>(vsort);
+
+    if (O.subset == BAO::RANGE_SUBSET) {
+      if ( (O.ss_ranges[0][0] != 0) || (O.ss_ranges[0][1] != fpds->GetNDofLocal()) ) { // otherwise, dont need additional cutoff
+	Array<int> perow(fpds->GetNDofLocal()); perow = 0;
+	for (auto r : O.ss_ranges) {
+	  for (auto l : Range(r[0], r[1]))
+	    perow[l] = 1;
+	}
+	auto mat = make_shared<SparseMatrixTM<double>>(perow, fpds->GetNDofLocal());
+	int cnt = 0;
+	for (auto k : Range(fpds->GetNDofLocal())) {
+	  auto ri = mat->GetRowIndices(k);
+	  if (ri.Size()) {
+	    ri[0] = cnt++;
+	    mat->GetRowValues(k) = 1;
+	  }
+	}
+	emb_mat = MatMultAB(*mat, *emb_mat);
+      }
+    }
+    else if (O.subset == BAO::SELECTED_SUBSET) { // embed this
+      Array<int> perow(fpds->GetNDofLocal());
+      for (auto k : Range(fpds->GetNDofLocal()))
+	perow[k] = O.ss_select->Test(k) ? 1 : 0;
+      auto mat = make_shared<SparseMatrixTM<double>>(perow, fpds->GetNDofLocal());
+      int cnt = 0;
+      for (auto k : Range(fpds->GetNDofLocal()))
+	if (O.ss_select->Test(k)) {
+	  mat->GetRowIndices(k) = cnt++;
+	  mat->GetRowValues(k) = 1;
+	}
+      emb_mat = MatMultAB(*mat, *emb_mat);
+    }
+    else if (vsort.Size() != fpds->GetNDofLocal())
+      { throw Exception("When seem to not be working on the full space, but we do not know where!"); }
+
+    if (fpds->GetNDofLocal() != emb_mat->Height())
+      throw Exception(string("EMBED MAT H does not fit: ") + to_string(fpds->GetNDofLocal()) + string("!=") + to_string(emb_mat->Height()));
+    if (vsort.Size() != emb_mat->Width())
+      throw Exception(string("EMBED MAT W does not fit: ") + to_string(vsort.Size()) + string("!=") + to_string(emb_mat->Height()));
+
+    auto pmap = make_shared<ProlMap<SparseMatrixTM<double>>>(emb_mat, fpds, nullptr);
+
+    return pmap;
+  } // EmbedVAMG<H1AMGFactory>::BuildEmbedding
+
+
+  template<> shared_ptr<BaseSmoother> EmbedVAMG<H1AMGFactory> :: BuildSmoother (shared_ptr<BaseSparseMatrix> m, shared_ptr<ParallelDofs> pds,
+										shared_ptr<BitArray> freedofs) const
+  {
+    shared_ptr<SparseMatrix<double>> spmat = dynamic_pointer_cast<SparseMatrix<double>> (m);
+    if (options->old_smoothers) {
+      auto sm = make_shared<HybridGSS<1>> (spmat, pds, freedofs);
+      sm->SetSymmetric(options->smooth_symmetric);
+      return sm;
+    }
+    else {
+      auto parmat = make_shared<ParallelMatrix>(spmat, pds, pds, C2D);
+      auto sm = make_shared<HybridGSS2<double>> (parmat, freedofs);
+      sm->SetSymmetric(options->smooth_symmetric);
+      return sm;
+    }
+  }
+
+
+  /** EmbedWithElmats<H1AMGFactory> **/
+
+
+  template<> shared_ptr<H1Mesh> EmbedWithElmats<H1AMGFactory, double, double> :: BuildAlgMesh (shared_ptr<BlockTM> top_mesh) const
+  {
+    typedef BaseEmbedAMGOptions BAO;
+    const auto &O(*options);
+
+    if (O.energy != BAO::ELMAT_ENERGY) {
+      return EmbedVAMG<H1AMGFactory> :: BuildAlgMesh(top_mesh);
+    }
+
+    auto a = new H1VData(Array<double>(top_mesh->GetNN<NT_VERTEX>()), DISTRIBUTED);
+    auto b = new H1EData(Array<double>(top_mesh->GetNN<NT_EDGE>()), DISTRIBUTED);
+
+    FlatArray<int> vsort = node_sort[NT_VERTEX];
+    Array<int> rvsort(vsort.Size());
+    for (auto k : Range(vsort.Size()))
+      rvsort[vsort[k]] = k;
+    auto ad = a->Data();
+    for (auto key_val : *ht_vertex) {
+      ad[rvsort[get<0>(key_val)]] = get<1>(key_val);
+    }
+    auto bd = b->Data();
+    auto edges = top_mesh->GetNodes<NT_EDGE>();
+    for (auto & e : edges) {
+      bd[e.id] = (*ht_edge)[INT<2,int>(rvsort[e.v[0]], rvsort[e.v[1]]).Sort()];
+    }
+
+    auto mesh = make_shared<H1Mesh>(move(*top_mesh), a, b);
+    return mesh;
+  } // EmbedWithElmats<H1AMGFactory, double, double>::BuildAlgMesh
+
+
+  template<> void EmbedWithElmats<H1AMGFactory, double, double> :: AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
+										     ElementId ei, LocalHeap & lh)
+  {
+    typedef BaseEmbedAMGOptions BAO;
+    const auto &O(*options);
+
+    if (O.energy != BAO::ELMAT_ENERGY)
+      { return; }
+
+    // vertex weights
+    static Timer t("AddElementMatrix");
+    static Timer t1("AddElementMatrix - inv");
+    static Timer t3("AddElementMatrix - v-schur");
+    static Timer t5("AddElementMatrix - e-schur");
+    RegionTimer rt(t);
+    size_t ndof = dnums.Size();
+    BitArray used(ndof, lh);
+    FlatMatrix<double> ext_elmat(ndof+1, ndof+1, lh);
+    {
+      ThreadRegionTimer reg (t5, TaskManager::GetThreadId());
+      ext_elmat.Rows(0,ndof).Cols(0,ndof) = elmat;
+      ext_elmat.Row(ndof) = 1;
+      ext_elmat.Col(ndof) = 1;
+      ext_elmat(ndof, ndof) = 0;
+      CalcInverse (ext_elmat);
+    }
+    {
+      RegionTimer reg (t1);
+      for (size_t i = 0; i < dnums.Size(); i++)
+        {
+          Mat<2,2,double> ai;
+          ai(0,0) = ext_elmat(i,i);
+          ai(0,1) = ai(1,0) = ext_elmat(i, ndof);
+          ai(1,1) = ext_elmat(ndof, ndof);
+          ai = Inv(ai);
+          double weight = fabs(ai(0,0));
+          // vertex_weights_ht.Do(INT<1>(dnums[i]), [weight] (auto & v) { v += weight; });
+          (*ht_vertex)[dnums[i]] += weight;
+        }
+    }
+    {
+      RegionTimer reg (t3);
+      for (size_t i = 0; i < dnums.Size(); i++)
+        for (size_t j = 0; j < i; j++)
+          {
+            Mat<3,3,double> ai;
+            ai(0,0) = ext_elmat(i,i);
+            ai(1,1) = ext_elmat(j,j);
+            ai(0,1) = ai(1,0) = ext_elmat(i,j);
+            ai(2,2) = ext_elmat(ndof,ndof);
+            ai(0,2) = ai(2,0) = ext_elmat(i,ndof);
+            ai(1,2) = ai(2,1) = ext_elmat(j,ndof);
+            ai = Inv(ai);
+            double weight = fabs(ai(0,0));
+            // edge_weights_ht.Do(INT<2>(dnums[j], dnums[i]).Sort(), [weight] (auto & v) { v += weight; });
+	    (*ht_edge)[INT<2, int>(dnums[j], dnums[i]).Sort()] += weight;
+          }
+    }
+  } // EmbedWithElmats<H1AMGFactory, double, double>::AddElementMatrix
+
+  RegisterPreconditioner<EmbedWithElmats<H1AMGFactory, double, double>> register_h1amg_scal("ngs_amg.h1_scal");
+
+} // namespace amg
+
+#include "amg_tcs.hpp"
