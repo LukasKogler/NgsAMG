@@ -7,7 +7,7 @@ namespace amg {
     if (wcomm.Size() == 1)
       { return NgsAMG_Comm(wcomm); }
     else {
-      netgen::Array<int> me(1); me[0] = wcomm.Rank();
+      netgen::NgArray<int> me(1); me[0] = wcomm.Rank();
       return NgsAMG_Comm(netgen::MyMPI_SubCommunicator(wcomm, me ), true);
     }
   }

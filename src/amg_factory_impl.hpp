@@ -564,7 +564,7 @@ namespace amg
       return Array<shared_ptr<BaseSparseMatrix>> ({cmat});
     }
     else if ( (cap.level + 2 == options->max_n_levels) ||              // max n levels reached
-	      (options->max_meas > ComputeMeshMeasure (*cmesh) ) ) {   // max coarse size reached
+	      (options->max_meas >= ComputeMeshMeasure (*cmesh) ) ) {   // max coarse size reached
 
       
       if (options->enable_rbm) { // only rebuild mesh if we want to do more levels

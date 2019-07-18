@@ -70,6 +70,8 @@ namespace amg
     bool old_smoothers = false;
     bool smooth_symmetric = false;
 
+    bool do_test = false;
+    bool smooth_lo_only = false;
   };
 
 
@@ -92,6 +94,8 @@ namespace amg
     
     set_bool(opts->old_smoothers, "oldsm");
     set_bool(opts->smooth_symmetric, "symsm");
+    set_bool(opts->do_test, "do_test");
+    set_bool(opts->smooth_lo_only, "smooth_lo_only");
 
     return opts;
   }
@@ -187,16 +191,24 @@ namespace amg
     if (freedofs == nullptr) // postpone to FinalizeLevel
       { return; }
 
-    if (bfa->UsesEliminateInternal()) {
+    if (bfa->UsesEliminateInternal() || options->smooth_lo_only) {
       auto fes = bfa->GetFESpace();
+      auto lofes = fes->LowOrderFESpacePtr();
       finest_freedofs = make_shared<BitArray>(*freedofs);
       auto& ofd(*finest_freedofs);
-      for (auto k : Range(freedofs->Size()))
-	if (ofd.Test(k)) {
-	  COUPLING_TYPE ct = fes->GetDofCouplingType(k);
-	  if ((ct & CONDENSABLE_DOF) != 0)
-	    ofd.Clear(k);
-	}
+      if (bfa->UsesEliminateInternal() ) { // clear freedofs on eliminated DOFs
+	auto rmax = (options->smooth_lo_only && (lofes != nullptr) ) ? lofes->GetNDof() : freedofs->Size();
+	for (auto k : Range(rmax))
+	  if (ofd.Test(k)) {
+	    COUPLING_TYPE ct = fes->GetDofCouplingType(k);
+	    if ((ct & CONDENSABLE_DOF) != 0)
+	      ofd.Clear(k);
+	  }
+      }
+      if (options->smooth_lo_only && (lofes != nullptr) ) { // clear freedofs on all high-order DOFs
+	for (auto k : Range(lofes->GetNDof(), freedofs->Size()))
+	  { ofd.Clear(k); }
+      }
     }
     else
       { finest_freedofs = freedofs; }
@@ -347,6 +359,13 @@ namespace amg
       amg_mat->SetCoarseInv(coarse_inv);
     }
 
+    if (options->do_test)
+      {
+	printmessage_importance = 1;
+	netgen::printmessage_importance = 1;
+	Test();
+      }
+
   } // EmbedVAMG::BuildAMGMat
 
 
@@ -471,7 +490,7 @@ namespace amg
 		fun(vert_sort[k],vert_sort[j]);
 	      }
 	      // else {
-	      //   cout << "dont use " << row << " " << j << " with dof " << col << endl;
+	      // cout << "dont use " << row << " " << j << " with dof " << col << endl;
 	      // }
 	    }
 	  }
@@ -497,11 +516,12 @@ namespace amg
       int dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
       const auto bs0 = O.block_s[0]; // is this not kind of redundant ?
       if (O.subset == BAO::RANGE_SUBSET) {
-	auto r0 = O.ss_ranges[0];
+	auto r0 = O.ss_ranges[0]; const auto maxd = r0[1];
+	const int stride = bs0/fes_bs; // probably 1
 	int dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
-	n_verts = (r0[1] - r0[0]) * fes_bs / bs0;
-	auto d2v = [&](auto d) LAMBDA_INLINE -> int { return ( (d%(fes_bs/bs0)) == 0) ? d*fes_bs/bs0 : -1; };
-	auto v2d = [&](auto v) LAMBDA_INLINE { return bs0/fes_bs * v; };
+	n_verts = (r0[1] - r0[0]) / stride;
+	auto d2v = [&](auto d) LAMBDA_INLINE -> int { return ( (d % stride == 0) && (d < r0[1]) && (r0[0] <= d) ) ? d/stride : -1; };
+	auto v2d = [&](auto v) LAMBDA_INLINE { return r0[0] + v * stride; };
 	set_vs (n_verts, v2d);
 	create_edges ( v2d , d2v );
       }

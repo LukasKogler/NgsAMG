@@ -1465,10 +1465,7 @@ namespace amg {
 		 { throw Exception("wrong mat type for hgss"); }
 	       Array<int> perow (spm->Height() ); perow = 0;
 	       Table<int> pds (perow);
-	       NgsMPI_Comm c(MPI_COMM_WORLD);
-	       netgen::Array<int> me(1); me[0] = c.Rank();
-	       MPI_Comm mecomm = (c.Size() == 1) ? MPI_COMM_WORLD : netgen::MyMPI_SubCommunicator(c, me );
-	       pardofs = make_shared<ParallelDofs> ( mecomm , move(pds), GetEntryDim(spm.get()), false);
+	       pardofs = make_shared<ParallelDofs> ( AMG_ME_COMM , move(pds), GetEntryDim(spm.get()), false);
 	     }
 	     auto sm = make_shared<HybridGSS<1>>(spm, pardofs, freedofs);
 	     BaseSmoother & bsm(*sm); bsm.Finalize();
@@ -1508,10 +1505,7 @@ namespace amg {
 		 { throw Exception("wrong mat type for hgss"); }
 	       Array<int> perow (spm->Height() ); perow = 0;
 	       Table<int> pds (perow);
-	       NgsMPI_Comm c(MPI_COMM_WORLD);
-	       netgen::Array<int> me(1); me[0] = c.Rank();
-	       MPI_Comm mecomm = (c.Size() == 1) ? MPI_COMM_WORLD : netgen::MyMPI_SubCommunicator(c, me );
-	       pardofs = make_shared<ParallelDofs> ( mecomm , move(pds), GetEntryDim(spm.get()), false);
+	       pardofs = make_shared<ParallelDofs> ( AMG_ME_COMM , move(pds), GetEntryDim(spm.get()), false);
 	     }
 	     auto sm = make_shared<HybridGSS<3>>(spm, pardofs, freedofs);
 	     BaseSmoother & bsm(*sm); bsm.Finalize();

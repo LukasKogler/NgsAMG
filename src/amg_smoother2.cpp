@@ -694,7 +694,7 @@ namespace amg
 
     if (pardofs != nullptr)
       for (auto k : Range(M.Height()))
-	if (pardofs->IsMasterDof(k))
+	if ( ((!_subset) || (_subset->Test(k))) && (pardofs->IsMasterDof(k)) )
 	  M(k,k) += add_diag[k];
 
 
@@ -707,11 +707,16 @@ namespace amg
       }
     }
 
+    // if (_subset)
+    //   { cout << "smooth on " << mss->NumSet() << " of " << mss->Size() << " dofs!" << endl; }
+    // else
+    //   { cout << "smooth on all " << A->GetM()->Height() << "dofs!!" << endl; }
+
     jac = make_shared<GSS2<TM>>(A->GetM(), mss);
 
     if (pardofs != nullptr)
       for (auto k : Range(M.Height()))
-	if (pardofs->IsMasterDof(k))
+	if ( ((!_subset) || (_subset->Test(k))) && (pardofs->IsMasterDof(k)) )
 	  M(k,k) -= add_diag[k];
 
   }

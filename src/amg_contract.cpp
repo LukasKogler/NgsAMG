@@ -1041,7 +1041,7 @@ namespace amg
     }
     
     /** New MPI-Comm **/
-    netgen::Array<int> cmembs(groups.Size()); // haha, this has to be a netgen-array
+    netgen::NgArray<int> cmembs(groups.Size()); // haha, this has to be a netgen-array
     for (auto k : Range(groups.Size())) cmembs[k] = groups[k][0];
     NgsAMG_Comm c_comm(netgen::MyMPI_SubCommunicator(comm, cmembs), true);
 
