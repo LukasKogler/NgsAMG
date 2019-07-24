@@ -28,7 +28,7 @@ namespace amg
 	vertices can (depending on the coarsening algorithm) change equivalence class between levels.
     **/
     INLINE void map_data (const BaseCoarseMap & cmap, H1VData & ch1v) const;
-  };
+  }; // class H1VData
 
 
   /** data which we attach to each edge in the mesh **/
@@ -38,7 +38,7 @@ namespace amg
     using AttachedNodeData<NT_EDGE, double, H1EData>::map_data;
     H1EData (Array<double> && _data, PARALLEL_STATUS _stat) : AttachedNodeData<NT_EDGE, double, H1EData>(move(_data), _stat) {}
     INLINE void map_data (const BaseCoarseMap & cmap, H1EData & ch1e) const;
-  };
+  }; // class H1EData
 
 
   using H1Mesh = BlockAlgMesh<H1VData, H1EData>;
@@ -66,7 +66,7 @@ namespace amg
 
     INLINE void CalcRMBlock (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge, FlatMatrix<double> mat) const;
 
-  };
+  }; // class H1AMGFactory
 
 
 } // namespace amg

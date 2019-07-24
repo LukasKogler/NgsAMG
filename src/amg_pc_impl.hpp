@@ -14,6 +14,11 @@ namespace amg
 			     SELECTED_SUBSET = 1 };   // given by bitarray
     DOF_SUBSET subset = RANGE_SUBSET;
     Array<INT<2, size_t>> ss_ranges; // ranges must be non-overlapping and incresing
+    /** special subsets **/
+    enum SPECIAL_SUBSET : char { SPECSS_NONE = 0,
+				 SPECSS_FREE = 1,            // take free-dofs as subset
+				 SPECSS_NODALP2 = 2 };       // 0..nv, and then first DOF of each edge
+    SPECIAL_SUBSET spec_ss = SPECSS_NONE;
     shared_ptr<BitArray> ss_select;
     
     /** How the DOFs in the subset are mapped to vertices **/
@@ -92,6 +97,7 @@ namespace amg
       else { v = flags.GetDefineFlagX(prefix + key).IsTrue(); }
     };
     
+    set_bool(opts->sync, "sync");
     set_bool(opts->old_smoothers, "oldsm");
     set_bool(opts->smooth_symmetric, "symsm");
     set_bool(opts->do_test, "do_test");
@@ -130,7 +136,7 @@ namespace amg
 
     typedef BaseEmbedAMGOptions BAO;
 
-    set_enum_opt(O.subset, "on_dofs", {"range", "selected"}, BAO::RANGE_SUBSET);
+    set_enum_opt(O.subset, "on_dofs", {"range", "select"}, BAO::RANGE_SUBSET);
 
     switch (O.subset) {
     case (BAO::RANGE_SUBSET) : {
@@ -140,6 +146,7 @@ namespace amg
 	O.ss_ranges.SetSize(low.Size());
 	for (auto k : Range(low.Size()))
 	  { O.ss_ranges[k] = { size_t(low[k]), size_t(up[k]) }; }
+	cout << IM(3) << "subset for coarsening defined by ranges, first range is [" << low[0] << ", " << up[0] << ")" << endl;
       }
       else { // a single range
 	size_t lowi = flags.GetNumFlag(pfit("lower"), 0);
@@ -151,10 +158,32 @@ namespace amg
 	    { lowi = 0; upi = lospace->GetNDof(); }
 	O.ss_ranges.SetSize(1);
 	O.ss_ranges[0] = { lowi, upi };
+	cout << IM(3) << "subset for coarsening defined by range [" << lowi << ", " << upi << ")" << endl;
       }
       break;
     }
-      // case(SELECTED) :
+    case (BAO::SELECTED_SUBSET) : {
+      set_enum_opt(O.spec_ss, "subset", {"__DO_NOT_SET_THIS_FROM_FLAGS_PLEASE_I_DO_NOT_THINK_THAT_IS_A_GOOD_IDEA__",
+	    "free", "nodalp2"}, BAO::SPECSS_NONE);
+      cout << IM(3) << "subset for coarsening defined by bitarray" << endl;
+      // NONE - set somewhere else. FREE - set in initlevel 
+      if (O.spec_ss == BAO::SPECSS_NODALP2) {
+	cout << IM(3) << "taking nodalp2 subset for coarsening" << endl;
+	auto fes = bfa->GetFESpace();
+	O.ss_select = make_shared<BitArray>(fes->GetNDof());
+	O.ss_select->Clear();
+	for (auto k : Range(ma->GetNV()))
+	  { O.ss_select->Set(k); }
+	Array<DofId> dns;
+	for (auto k : Range(ma->GetNEdges())) {
+	  fes->GetDofNrs(NodeId(NT_EDGE, k), dns);
+	  if (dns.Size())
+	    { O.ss_select->Set(dns[0]); }
+	}
+	cout << IM(3) << "nodalp2 set: " << O.ss_select->NumSet() << " of " << O.ss_select->Size() << endl;
+      }
+      break;
+    }
     default: { throw Exception("Not implemented"); break; }
     }
       
@@ -213,6 +242,10 @@ namespace amg
     else
       { finest_freedofs = freedofs; }
 
+    if (options->spec_ss == BaseEmbedAMGOptions::SPECSS_FREE) {
+      cout << IM(3) << "taking subset for coarsening from freedofs" << endl;
+      options->ss_select = finest_freedofs;
+    }
   } // EmbedVAMG::InitLevel
 
 
@@ -237,7 +270,7 @@ namespace amg
     if (options->sync)
       {
 	if (auto pds = finest_mat->GetParallelDofs()) {
-	  static Timer t(string("NGsAMG - Initial Sync")); RegionTimer rt(t);
+	  static Timer t(string("Sync1")); RegionTimer rt(t);
 	  pds->GetCommunicator().Barrier();
 	}
       }
@@ -286,8 +319,9 @@ namespace amg
   template<class FACTORY>
   void EmbedVAMG<FACTORY> :: BuildAMGMat ()
   {
+    static Timer t("BuildAMGMat"); RegionTimer rt(t);
     /** Build coarse level matrices and grid-transfer **/
-
+    
     if (finest_mat == nullptr)
       { throw Exception("Do not have a finest level matrix!"); }
 
@@ -306,58 +340,74 @@ namespace amg
 
     // Set up smoothers
 
+    static Timer tsync("Sync2");
+    static Timer tsm("SetupSmoothers");
+    if (options->sync)
+      { RegionTimer rt(tsync); dof_map->GetParDofs(0)->GetCommunicator().Barrier(); }
+    tsm.Start();
+
     Array<shared_ptr<BaseSmoother>> smoothers(mats.Size()-1);
     for (auto k : Range(size_t(0), mats.Size()-1)) {
       smoothers[k] = BuildSmoother (mats[k], dof_map->GetParDofs(k), (k==0) ? finest_freedofs : nullptr);
       smoothers[k]->Finalize(); // do i even need this anymore ?
     }
 
+    if (options->sync)
+      { RegionTimer rt(tsync); dof_map->GetParDofs(0)->GetCommunicator().Barrier(); }
+    tsm.Stop();
+
     amg_mat = make_shared<AMGMatrix> (dof_map, smoothers);
+
 
     // Coarsest level setup
 
-    if (mats.Last() == nullptr) // we drop out because of redistribution at some point
-      { return; }
+    if (mats.Last() != nullptr) { // we might drop out because of redistribution at some point
     
-    if (options->clev == BaseEmbedAMGOptions::INV_CLEV) {
-      shared_ptr<BaseMatrix> coarse_inv;
+      if (options->clev == BaseEmbedAMGOptions::INV_CLEV) {
 
-      auto cpds = dof_map->GetMappedParDofs();
-      auto comm = cpds->GetCommunicator();
-      auto cspm = mats.Last();
+	static Timer t("CoarseInv"); RegionTimer rt(t);
 
-      cspm = RegularizeMatrix(cspm, cpds);
+	shared_ptr<BaseMatrix> coarse_inv;
 
-      if constexpr(MAX_SYS_DIM < mat_traits<typename FACTORY::TM>::HEIGHT) {
-	  throw Exception(string("MAX_SYS_DIM = ") + to_string(MAX_SYS_DIM) + string(", need at least ") +
-			  to_string(mat_traits<typename FACTORY::TM>::HEIGHT) + string(" for coarsest level exact Inverse!"));
+	auto cpds = dof_map->GetMappedParDofs();
+	auto comm = cpds->GetCommunicator();
+	auto cspm = mats.Last();
+
+	cspm = RegularizeMatrix(cspm, cpds);
+
+	if constexpr(MAX_SYS_DIM < mat_traits<typename FACTORY::TM>::HEIGHT) {
+	    throw Exception(string("MAX_SYS_DIM = ") + to_string(MAX_SYS_DIM) + string(", need at least ") +
+			    to_string(mat_traits<typename FACTORY::TM>::HEIGHT) + string(" for coarsest level exact Inverse!"));
+	  }
+
+	if (comm.Size() > 2) { // parallel inverse
+	  auto parmat = make_shared<ParallelMatrix> (cspm, cpds, cpds, C2D);
+	  parmat->SetInverseType(options->cinv_type);
+	  coarse_inv = parmat->InverseMatrix();
+	}
+	else if ( (comm.Size() == 1) ||
+		  ( (comm.Size() == 2) && (comm.Rank() == 1) ) ) { // local inverse
+	  cspm->SetInverseType(options->cinv_type_loc);
+	  auto cinv = cspm->InverseMatrix();
+	  if (comm.Size() > 1)
+	    { coarse_inv = make_shared<ParallelMatrix> (cinv, cpds, cpds, C2C); } // dummy parmat
+	  else
+	    { coarse_inv = cinv; }
+	}
+	else if (comm.Rank() == 0) { // some dummy matrix
+	  Array<int> perow(0);
+	  auto cinv = make_shared<SparseMatrix<double>>(perow);
+	  if (comm.Size() > 1)
+	    { coarse_inv = make_shared<ParallelMatrix> (cinv, cpds, cpds, C2C); } // dummy parmat
+	  else
+	    { coarse_inv = cinv; }
 	}
 
-      if (comm.Size() > 2) { // parallel inverse
-	auto parmat = make_shared<ParallelMatrix> (cspm, cpds, cpds, C2D);
-	parmat->SetInverseType(options->cinv_type);
-	coarse_inv = parmat->InverseMatrix();
-      }
-      else if ( (comm.Size() == 1) ||
-	   ( (comm.Size() == 2) && (comm.Rank() == 1) ) ) { // local inverse
-	cspm->SetInverseType(options->cinv_type_loc);
-	auto cinv = cspm->InverseMatrix();
-	if (comm.Size() > 1)
-	  { coarse_inv = make_shared<ParallelMatrix> (cinv, cpds, cpds, C2C); } // dummy parmat
-	else
-	  { coarse_inv = cinv; }
-      }
-      else if (comm.Rank() == 0) { // some dummy matrix
-	Array<int> perow(0);
-	auto cinv = make_shared<SparseMatrix<double>>(perow);
-	if (comm.Size() > 1)
-	  { coarse_inv = make_shared<ParallelMatrix> (cinv, cpds, cpds, C2C); } // dummy parmat
-	else
-	  { coarse_inv = cinv; }
+	amg_mat->SetCoarseInv(coarse_inv);
       }
 
-      amg_mat->SetCoarseInv(coarse_inv);
-    }
+    } // mats.Last() != nullptr
+
 
     if (options->do_test)
       {
@@ -370,56 +420,18 @@ namespace amg
 
 
   template<class FACTORY>
-  shared_ptr<BlockTM> EmbedVAMG<FACTORY> :: BuildTopMesh ()
+  shared_ptr<BlockTM> EmbedVAMG<FACTORY> :: BuildTopMesh (shared_ptr<EQCHierarchy> eqc_h)
   {
-    static Timer t("BuildTopMesh"); RegionTimer rt(t);
-
+    typedef BaseEmbedAMGOptions BAO;
     auto & O(*options);
 
-    typedef BaseEmbedAMGOptions BAO;
-
-    /** Build inital EQC-Hierarchy **/
-    shared_ptr<EQCHierarchy> eqc_h;
-    auto fpd = finest_mat->GetParallelDofs();
-    size_t maxset = 0;
-    switch (O.subset) {
-    case(BAO::RANGE_SUBSET): { maxset = O.ss_ranges.Last()[1]; break; }
-    case(BAO::SELECTED_SUBSET): {
-      auto sz = O.ss_select->Size();
-      for (auto k : Range(sz--))
-	if (O.ss_select->Test(sz--))
-	  { maxset = k+1; break; }
-      break;
-    } }
-
-    eqc_h = make_shared<EQCHierarchy>(fpd, true, maxset);
-
-    /** Build inital Mesh Topology **/
     shared_ptr<BlockTM> top_mesh;
     switch(O.topo) {
     case(BAO::MESH_TOPO): { top_mesh = BTM_Mesh(eqc_h); break; }
-    case(BAO::ELMAT_TOPO): { top_mesh = BTM_Elmat(eqc_h); break; }
     case(BAO::ALG_TOPO): { top_mesh = BTM_Alg(eqc_h); break; }
+    case(BAO::ELMAT_TOPO): { throw Exception("cannot do topology from elmats!"); break; }
+    default: { throw Exception("invalid topology type!"); break; }
     }
-
-    /** vertex positions, if we need them **/
-    if (O.keep_vp) {
-      node_pos.SetSize(1);
-      auto & vsort = node_sort[0]; // also kinda hard coded for vertex-vertex pos, and no additional permutation
-      auto & vpos(node_pos[NT_VERTEX]); vpos.SetSize(top_mesh->template GetNN<NT_VERTEX>());
-      for (auto k : Range(vpos.Size()))
-	ma->GetPoint(k,vpos[vsort[k]]);
-    }
-		
-    /** Convert FreeDofs to FreeVerts (should probably do this above where I have v2d mapping1)**/
-
-    // TODO:: this is hardcoded, but whatever ... 
-    auto fvs = make_shared<BitArray>(top_mesh->GetNN<NT_VERTEX>()); fvs->Clear();
-    auto & vsort = node_sort[NT_VERTEX];
-    for (auto k : Range(top_mesh->GetNN<NT_VERTEX>()))
-      if (finest_freedofs->Test(k))
-	{ fvs->Set(vsort[k]); }
-    free_verts = fvs;
 
     return top_mesh;
   }; //  EmbedVAMG::BuildTopMesh
@@ -436,17 +448,30 @@ namespace amg
 
     const auto &O(*options);
 
+    shared_ptr<BlockTM> top_mesh;
+
     switch (O.v_pos) {
     case(BAO::VERTEX_POS): {
-      return MeshAccessToBTM (ma, eqc_h, node_sort[0], true, node_sort[1],
-			      false, node_sort[2], false, node_sort[3]);
+      top_mesh = MeshAccessToBTM (ma, eqc_h, node_sort[0], true, node_sort[1],
+				  false, node_sort[2], false, node_sort[3]);
+      break;
     }
     case(BAO::GIVEN_POS): {
       throw Exception("Cannot combine custom vertices with topology from mesh");
-      return nullptr;
+      break;
     }
-    default: { throw Exception("kinda unexpected case"); return nullptr; }
+    default: { throw Exception("kinda unexpected case"); break; }
     }
+
+    // this only works for the simplest case anyways...
+    auto fvs = make_shared<BitArray>(top_mesh->template GetNN<NT_VERTEX>()); fvs->Clear();
+    auto & vsort = node_sort[NT_VERTEX];
+    for (auto k : Range(top_mesh->template GetNN<NT_VERTEX>()))
+      if (finest_freedofs->Test(k))
+	{ fvs->Set(vsort[k]); }
+    free_verts = fvs;
+
+    return top_mesh;
   } // EmbedVAMG::BTM_Mesh
     
 
@@ -468,11 +493,20 @@ namespace amg
 
     auto fpd = finest_mat->GetParallelDofs();
 
+    // this only works for the simplest case anyways...
+
     // vertices
     auto set_vs = [&](auto nv, auto v2d) {
       vert_sort.SetSize(nv);
       top_mesh->SetVs (nv, [&](auto vnr) LAMBDA_INLINE -> FlatArray<int> { return fpd->GetDistantProcs(v2d(vnr)); },
 		       [&vert_sort](auto i, auto j){ vert_sort[i] = j; });
+      free_verts = make_shared<BitArray>(nv);
+      for (auto k : Range(nv)) {
+	if (finest_freedofs->Test(v2d(k)))
+	  { free_verts->Set(vert_sort[k]); }
+	else
+	  { free_verts->Clear(vert_sort[k]); }
+      }
     };
 
     // edges 
@@ -490,7 +524,7 @@ namespace amg
 		fun(vert_sort[k],vert_sort[j]);
 	      }
 	      // else {
-	      // cout << "dont use " << row << " " << j << " with dof " << col << endl;
+	      // 	cout << "dont use " << row << " " << j << " with dof " << col << endl;
 	      // }
 	    }
 	  }
@@ -509,6 +543,7 @@ namespace amg
 	  });
 	top_mesh->SetNodes<NT_EDGE> (n_edges, [&](auto num) LAMBDA_INLINE { return epairs[num]; }, // (already v-sorted)
 				     [](auto node_num, auto id) { /* dont care about edge-sort! */ });
+      cout << "final n_edges: " << top_mesh->GetNN<NT_EDGE>() << endl;
       }; // create_edges
 
     if (O.dof_ordering == BAO::REGULAR_ORDERING) {
@@ -528,20 +563,23 @@ namespace amg
       else { // SELECTED, subset by bitarray (is this tested??)
 	size_t maxset = 0;
 	auto sz = O.ss_select->Size();
-	for (auto k : Range(sz--))
-	  if (O.ss_select->Test(sz--))
-	    { maxset = k+1; break; }
+	for (auto k : Range(sz))
+	  if (O.ss_select->Test(--sz))
+	    { maxset = sz+1; break; }
+	// cout << "maxset " << maxset << endl;
 	n_verts = O.ss_select->NumSet() * fes_bs / dpv;
+	// cout << "n_verts " << n_verts << endl;
 	Array<int> first_dof(n_verts);
 	Array<int> compress(maxset); compress = -1;
 	for (size_t k = 0, j = 0; k < n_verts; j += bs0 / fes_bs)
 	  if (O.ss_select->Test(j))
 	    { first_dof[k] = j; compress[j] = k++; }
-	auto d2v = [&](auto d) LAMBDA_INLINE -> int { return (d+1 > compress.Size()) ? -1 : compress[d]; };
+	// cout << "first_dof  "; prow(first_dof); cout << endl << endl;
+	// cout << "compress  "; prow(compress); cout << endl << endl;
+	auto d2v = [&](auto d) LAMBDA_INLINE -> int { return (d+1 > maxset) ? -1 : compress[d]; };
 	auto v2d = [&](auto v) LAMBDA_INLINE { return first_dof[v]; };
 	set_vs (n_verts, v2d);
 	create_edges ( v2d , d2v );
-	
       }
     }
     else { // VARIABLE, subset given via table anyways (is this even tested??)
@@ -555,13 +593,138 @@ namespace amg
       create_edges ( v2d , d2v );
     }
 
-    // if (NgMPI_Comm(MPI_COMM_WORLD).Rank() == 1) {
-    //   cout << "AMG performed on " << n_verts << " vertices, ndof local is: " << fpd->GetNDofLocal() << endl;
-    //   cout << "free dofs " << finest_freedofs->NumSet() << " ndof local is: " << fpd->GetNDofLocal() << endl;
-    // }
+    cout << IM(3) << "AMG performed on " << n_verts << " vertices, ndof local is: " << fpd->GetNDofLocal() << endl;
+    cout << IM(3) << "free dofs " << finest_freedofs->NumSet() << " ndof local is: " << fpd->GetNDofLocal() << endl;
 
     return top_mesh;
   } // EmbedVAMG :: BTM_Alg
+
+
+  template<class FACTORY>
+  shared_ptr<typename FACTORY::TMESH> EmbedVAMG<FACTORY> :: BuildInitialMesh ()
+  {
+    static Timer t("BuildInitialMesh"); RegionTimer rt(t);
+
+    typedef BaseEmbedAMGOptions BAO;
+    auto & O(*options);
+
+    /** Build inital EQC-Hierarchy **/
+    shared_ptr<EQCHierarchy> eqc_h;
+    auto fpd = finest_mat->GetParallelDofs();
+    size_t maxset = 0;
+    switch (O.subset) {
+    case(BAO::RANGE_SUBSET): { maxset = O.ss_ranges.Last()[1]; break; }
+    case(BAO::SELECTED_SUBSET): {
+      auto sz = O.ss_select->Size();
+      for (auto k : Range(sz))
+	if (O.ss_select->Test(--sz))
+	  { maxset = sz+1; break; }
+      break;
+    } }
+
+    eqc_h = make_shared<EQCHierarchy>(fpd, true, maxset);
+
+    auto top_mesh = BuildTopMesh(eqc_h);
+
+    /** vertex positions, if we need them **/
+    if (O.keep_vp) {
+      node_pos.SetSize(1);
+      auto & vsort = node_sort[0]; // also kinda hard coded for vertex-vertex pos, and no additional permutation
+      auto & vpos(node_pos[NT_VERTEX]); vpos.SetSize(top_mesh->template GetNN<NT_VERTEX>());
+      for (auto k : Range(vpos.Size()))
+	ma->GetPoint(k,vpos[vsort[k]]);
+    }
+    
+    /** Convert FreeDofs to FreeVerts (should probably do this above where I have v2d mapping1)**/
+
+    return BuildAlgMesh(top_mesh);
+  }
+
+
+  template<class FACTORY>
+  shared_ptr<typename FACTORY::TMESH> EmbedVAMG<FACTORY> :: BuildAlgMesh (shared_ptr<BlockTM> top_mesh)
+  {
+    typedef BaseEmbedAMGOptions BAO;
+    auto & O(*options);
+
+    shared_ptr<TMESH> alg_mesh;
+
+    switch(O.energy) {
+    case(BAO::TRIV_ENERGY): { alg_mesh = BuildAlgMesh_TRIV(top_mesh); break; }
+    case(BAO::ALG_ENERGY): { alg_mesh = BuildAlgMesh_ALG(top_mesh); break; }
+    case(BAO::ELMAT_ENERGY): { throw Exception("Cannot do elmat energy!"); }
+    default: { throw Exception("Invalid Energy!"); break; }
+    }
+
+    return alg_mesh;
+  } // EmbedVAMG::BuildAlgMesh
+
+
+  template<class FACTORY>
+  shared_ptr<typename FACTORY::TMESH> EmbedVAMG<FACTORY> :: BuildAlgMesh_ALG (shared_ptr<BlockTM> top_mesh)
+  {
+    typedef BaseEmbedAMGOptions BAO;
+    auto & O(*options);
+
+    shared_ptr<TMESH> alg_mesh;
+
+    switch(O.dof_ordering) {
+    case(BAO::VARIBALE_ORDERING): {
+      throw Exception("not implemented (but easy)");
+      break;
+    }
+    case(BAO::REGULAR_ORDERING): {
+      shared_ptr<BaseSparseMatrix> spmat;
+      if (auto parmat = dynamic_pointer_cast<ParallelMatrix>(finest_mat))
+	{ spmat = dynamic_pointer_cast<BaseSparseMatrix>(parmat->GetMatrix()); }
+      else
+	{ spmat = dynamic_pointer_cast<BaseSparseMatrix>(finest_mat); }
+
+      const int dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
+      const auto& block_sizes = O.block_s;
+      const int nblocks = block_sizes.Size();
+
+      if (dpv == 1) { // most of the time - tone DOF per vertex (can be multidim DOF)
+	auto n_verts = top_mesh->GetNN<NT_VERTEX>();
+	auto& vsort = node_sort[NT_VERTEX];
+	Array<int> d2v_array(bfa->GetFESpace()->GetNDof());
+	Array<int> v2d_array(n_verts);
+
+	if (O.subset == BAO::RANGE_SUBSET) {
+	  const auto start = O.ss_ranges[0][0];
+	  for (auto k : Range(n_verts)) {
+	    auto svnr = vsort[k];
+	    auto d = start + k;
+	    d2v_array[d] = svnr;
+	    v2d_array[svnr] = d;
+	  }
+	}
+	else { // BAO::SELECTED_SUBSET
+	  auto& subset = *O.ss_select;
+	  for (int j = 0, k = 0; k < n_verts; j++) {
+	    if (subset.Test(j)) {
+	      auto d = j; auto svnr = vsort[k++];
+	      d2v_array[d] = svnr;
+	      v2d_array[svnr] = d;
+	    }
+	  }
+	}
+
+	auto d2v = [&](auto d) LAMBDA_INLINE -> int { return d2v_array[d]; };
+	auto v2d = [&](auto v) LAMBDA_INLINE -> int { return v2d_array[v]; };
+	alg_mesh = BuildAlgMesh_ALG_scal(top_mesh, spmat, d2v, v2d);
+	break;
+      }
+      else { // probably only compound spaces
+	throw Exception("Compound FESpaces todo - but should be easy!! ");
+	break;
+      }
+    } // case(BAO::REGULAR_ORDERING)
+    default: { throw Exception("Invalid DOF_ORDERING!"); break; }
+    } // switch(O.dof_ordering)
+
+    return alg_mesh;
+  } // EmbedVAMG::BuildAlgMesh_ALG
 
 
   /** EmbedWithElmats **/
@@ -590,6 +753,49 @@ namespace amg
     if (ht_vertex != nullptr) delete ht_vertex;
     if (ht_edge   != nullptr) delete ht_edge;
   }
+
+
+  template<class FACTORY, class HTVD, class HTED>
+  shared_ptr<BlockTM> EmbedWithElmats<FACTORY, HTVD, HTED> :: BuildTopMesh (shared_ptr<EQCHierarchy> eqc_h)
+  {
+    typedef BaseEmbedAMGOptions BAO;
+    auto & O(*options);
+
+    shared_ptr<BlockTM> top_mesh;
+    switch(O.topo) {
+    case(BAO::MESH_TOPO): { top_mesh = this->BTM_Mesh(eqc_h); break; }
+    case(BAO::ALG_TOPO): { top_mesh = this->BTM_Alg(eqc_h); break; }
+    case(BAO::ELMAT_TOPO): { top_mesh = BTM_Elmat(eqc_h); break; }
+    }
+
+    return top_mesh;
+  }; //  EmbedVAMG::BuildTopMesh
+
+
+  template<class FACTORY, class HTVD, class HTED>
+  shared_ptr<BlockTM> EmbedWithElmats<FACTORY, HTVD, HTED> ::  BTM_Elmat (shared_ptr<EQCHierarchy> eqc_h)
+  {
+    throw Exception("topo from elmat TODO"); return nullptr;
+  }
+
+
+  template<class FACTORY, class HTVD, class HTED>
+  shared_ptr<typename EmbedWithElmats<FACTORY, HTVD, HTED>::TMESH> EmbedWithElmats<FACTORY, HTVD, HTED> ::  BuildAlgMesh (shared_ptr<BlockTM> top_mesh)
+  {
+    typedef BaseEmbedAMGOptions BAO;
+    auto & O(*options);
+
+    shared_ptr<TMESH> alg_mesh;
+
+    switch(O.energy) {
+    case(BAO::TRIV_ENERGY): { alg_mesh = this->BuildAlgMesh_TRIV(top_mesh); break; }
+    case(BAO::ALG_ENERGY): { alg_mesh = this->BuildAlgMesh_ALG(top_mesh); break; }
+    case(BAO::ELMAT_ENERGY): { alg_mesh = BuildAlgMesh_ELMAT(top_mesh); break; }
+    default: { throw Exception("Invalid Energy!"); break; }
+    }
+
+    return alg_mesh;
+  } // EmbedVAMG::BuildAlgMesh
 
 
 } // namespace amg

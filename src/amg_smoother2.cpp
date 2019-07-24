@@ -492,6 +492,9 @@ namespace amg
   template<class TM> void
   HybridMatrix<TM> :: scatter_vec (const BaseVector & vec) const
   {
+    if (!scatter_done)
+      { finish_scatter(); }
+
     if (dummy)
       { return; }
 
@@ -509,12 +512,12 @@ namespace amg
     parvec->SetParallelStatus(CUMULATED); parvec->Distribute();
 
     for (auto kkp : Range(nexp_larger))
-      { parvec->ISend(ex_procs[nexp_smaller + kkp], rr_gather[kkp]); }
+      { parvec->ISend(ex_procs[nexp_smaller + kkp], rr_gather[kkp], true); }
 
     for (auto kp : Range(nexp_smaller))
       { parvec->IRecvVec(ex_procs[kp], rr_scatter[kp]); }
 
-    MyMPI_WaitAll(rr_gather);
+    // MyMPI_WaitAll(rr_gather);
 
     for (auto j : Range(nexp_smaller)) {
       auto kp = MyMPI_WaitAny(rr_scatter);
@@ -523,6 +526,14 @@ namespace amg
 
     parvec->SetParallelStatus(CUMULATED);
   } // scatter_vec
+
+
+  template<class TM> void
+  HybridMatrix<TM> :: finish_scatter () const
+  {
+    MyMPI_WaitAll(rr_gather);
+    scatter_done = true;
+  } // finish_scatter
 
     
   /** HybridSmoother **/

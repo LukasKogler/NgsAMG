@@ -236,6 +236,14 @@ namespace amg
   BlockTM* BlockTM :: MapBTM (const BaseCoarseMap & cmap) const
   {
     static Timer t("MapBTM"); RegionTimer rt(t);
+    static Timer t1("MapBTM-1");
+    static Timer t2("MapBTM-2");
+    static Timer t3("MapBTM-3");
+    static Timer t4("MapBTM-4");
+    static Timer t5("MapBTM-5");
+
+    t1.Start();
+
     // cout << "map mesh " << *this << endl;
     auto coarse_mesh = new BlockTM(this->eqc_h);
     const auto & eqc_h = *this->eqc_h;
@@ -261,8 +269,12 @@ namespace amg
       if (eqc_h.IsMasterOfEQC(eqc)) cmesh.nnodes_glob[NT_VERTEX] += nn;
       cmesh.nnodes_eqc[NT_VERTEX][eqc] = nn;
     }
+    t1.Stop();
+    t2.Start();
     cmesh.nnodes_glob[NT_VERTEX] = comm.AllReduce(cmesh.nnodes_glob[NT_VERTEX], MPI_SUM);
     // cout << "cmesh glob NV: " << cmesh.nnodes_glob[NT_VERTEX] << endl;
+    t2.Stop();
+    t3.Start();
     cmesh.nnodes_cross[NT_VERTEX].SetSize(0); cmesh.nnodes_cross[NT_VERTEX] = 0;
     cmesh.eqc_verts = FlatTable<AMG_Node<NT_VERTEX>> (neqcs, &cmesh.disp_eqc[NT_VERTEX][0], &cmesh.verts[0]);
     // edges
@@ -279,6 +291,8 @@ namespace amg
     disp_eeq.SetSize(neqcs+1); disp_eeq = cmap.GetMappedEqcFirsti<NT_EDGE>();
     cmesh.nnodes_glob[NT_EDGE] = 0;
     cmesh.nnodes_eqc[NT_EDGE].SetSize(neqcs);
+    t3.Stop();
+    t4.Start();
     for (auto eqc : Range(neqcs)) {
       auto nn = disp_eeq[eqc+1] - disp_eeq[eqc];
       if (eqc_h.IsMasterOfEQC(eqc)) cmesh.nnodes_glob[NT_EDGE] += nn;
@@ -294,11 +308,14 @@ namespace amg
       if (eqc_h.IsMasterOfEQC(eqc)) cmesh.nnodes_glob[NT_EDGE] += nn;
       cmesh.nnodes_cross[NT_EDGE][eqc] = nn;
     }
+    t4.Stop();
+    t5.Start();
     cmesh.nnodes_glob[NT_EDGE] = comm.AllReduce(cmesh.nnodes_glob[NT_EDGE], MPI_SUM);
     cmesh.cross_edges = FlatTable<AMG_Node<NT_EDGE>> (neqcs, &cmesh.disp_cross[NT_EDGE][0], &cmesh.edges[cmesh.disp_eqc[NT_EDGE].Last()]);
     // faces/cells (dummy)
     cmesh.nnodes[NT_FACE] = cmap.GetMappedNN<NT_FACE>();
     cmesh.nnodes[NT_CELL] = cmap.GetMappedNN<NT_CELL>();
+    t5.Stop();
     return coarse_mesh;
   }
 

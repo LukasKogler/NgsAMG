@@ -151,55 +151,67 @@ namespace amg
     };
   }
 
-  template<> shared_ptr<EmbedVAMG<H1AMGFactory>::TMESH>
-  EmbedVAMG<H1AMGFactory> :: BuildAlgMesh (shared_ptr<BlockTM> top_mesh) const
+
+  template<> shared_ptr<H1Mesh>
+  EmbedVAMG<H1AMGFactory> :: BuildAlgMesh_TRIV (shared_ptr<BlockTM> top_mesh)
   {
-    typedef BaseEmbedAMGOptions BAO;
-    const auto &O(*options);
+    /**
+       vertex-weights are 0
+       edge-weihts are 1
+     **/
 
-    auto a = new H1VData(Array<double>(top_mesh->GetNN<NT_VERTEX>()), DISTRIBUTED);
-    auto b = new H1EData(Array<double>(top_mesh->GetNN<NT_EDGE>()), DISTRIBUTED);
-    if (O.energy == BAO::TRIV_ENERGY) {
-      a->Data() = 0.0; b->Data() = 1.0;
-    }
-    else if (O.energy == BAO::ALG_ENERGY) {
-      // TODO: ONLY WORKS FOR ACTUAL 0..nv DOF ORDERING!! (should be fine most of the time..)
-      FlatArray<int> vsort = node_sort[NT_VERTEX];
-      Array<int> rvsort(vsort.Size());
-      for (auto k : Range(vsort.Size()))
-	rvsort[vsort[k]] = k;
-      // sum up rows -> rest is vertex weight
-      auto NV = vsort.Size();
-      shared_ptr<BaseMatrix> fseqmat = finest_mat;
-      if (auto fpm = dynamic_pointer_cast<ParallelMatrix>(finest_mat))
-	fseqmat = fpm->GetMatrix();
-      auto fspm = dynamic_pointer_cast<SparseMatrix<double>>(fseqmat);
-      auto ad = a->Data();
-      for (auto k : Range(NV)) {
-	auto rvs = fspm->GetRowValues(k);
-	auto ris = fspm->GetRowIndices(k);
-	double sum = 0;
-	for (auto j : Range(ris)) {
-	  if (ris[j] < NV)  // constant vec only has LO dof vals...
-	    { sum += rvs[j]; }
-	}
-	ad[rvsort[k]] = fabs(sum);
-      }
+    auto a = new H1VData(Array<double>(top_mesh->GetNN<NT_VERTEX>()), CUMULATED); a->Data() = 0.0; 
+    auto b = new H1EData(Array<double>(top_mesh->GetNN<NT_EDGE>()), CUMULATED); b->Data() = 1.0;
+    auto mesh = make_shared<H1Mesh>(move(*top_mesh), a, b);
+    return mesh;
+  }
 
-      // off-diag entry -> is edge weight
-      auto edges = top_mesh->GetNodes<NT_EDGE>();
-      const auto & cspm(*fspm);
-      auto bd = b->Data();
-      for (auto & e : edges) {
-	bd[e.id] = fabs(cspm(rvsort[e.v[0]], rvsort[e.v[1]]));
-      }
+
+  template<> template<class TD2V, class TV2D> shared_ptr<H1Mesh>
+  EmbedVAMG<H1AMGFactory> :: BuildAlgMesh_ALG_scal (shared_ptr<BlockTM> top_mesh, shared_ptr<BaseSparseMatrix> spmat, TD2V D2V, TV2D V2D) const
+  {
+    /**
+       vertex-weights are absolute values of row-sums (only entries for nodal base functions). without l2-term they should be 0 (because grad(constant) = 0)
+       edge-weihts are absolute values of off-diagonal entries
+     **/
+
+    static_assert(is_same<int, decltype(D2V(0))>::value, "D2V mismatch");
+    static_assert(is_same<int, decltype(V2D(0))>::value, "V2D mismatch");
+
+    auto dspm = dynamic_pointer_cast<SparseMatrix<double>>(spmat);
+    if (dspm == nullptr)
+      { throw Exception("Could not cast sparse matrix!"); }
+
+    const auto& cspm = *dspm;
+    auto a = new H1VData(Array<double>(top_mesh->GetNN<NT_VERTEX>()), DISTRIBUTED); auto ad = a->Data();
+    auto b = new H1EData(Array<double>(top_mesh->GetNN<NT_EDGE>()), DISTRIBUTED); auto bd = b->Data();
+
+    for (auto k : Range(top_mesh->GetNN<NT_VERTEX>()))
+      { auto d = V2D(k); ad[k] = cspm(d,d); }
+
+
+    // cout << endl << endl << "spmat: " << endl << *spmat << endl << endl;
+
+    // cout << endl << "diag VW: "; prow2(ad); cout << endl << endl;
+
+    auto edges = top_mesh->GetNodes<NT_EDGE>();
+    for (auto & e : edges) {
+      auto di = V2D(e.v[0]); auto dj = V2D(e.v[1]); auto v = cspm(di, dj);
+      // cout << "edge " << e << ", add " << v << " from " << di << " " << dj << endl;
+      bd[e.id] = fabs(v); ad[e.v[0]] += v; ad[e.v[1]] += v;
+      // cout << ad[di] << " " << ad[dj] << endl;
     }
-    else
-      { throw Exception("Cannot deal with this energy!"); }
+    
+    for (auto k : Range(top_mesh->GetNN<NT_VERTEX>()))
+      { ad[k] = fabs(ad[k]); }
+
+    // cout << endl << "inital VW: "; prow2(ad); cout << endl << endl;
+    // cout << endl << "inital EW: "; prow2(bd); cout << endl << endl;
+
 
     auto mesh = make_shared<H1Mesh>(move(*top_mesh), a, b);
     return mesh;
-  } // EmbedVAMG<H1AMGFactory>::BuildAlgMesh
+  }
 
 
   template<> shared_ptr<BaseDOFMapStep> EmbedVAMG<H1AMGFactory> :: BuildEmbedding ()
@@ -278,14 +290,13 @@ namespace amg
   /** EmbedWithElmats<H1AMGFactory> **/
 
 
-  template<> shared_ptr<H1Mesh> EmbedWithElmats<H1AMGFactory, double, double> :: BuildAlgMesh (shared_ptr<BlockTM> top_mesh) const
+  template<> shared_ptr<H1Mesh> EmbedWithElmats<H1AMGFactory, double, double> :: BuildAlgMesh_ELMAT (shared_ptr<BlockTM> top_mesh)
   {
     typedef BaseEmbedAMGOptions BAO;
     const auto &O(*options);
 
-    if (O.energy != BAO::ELMAT_ENERGY) {
-      return EmbedVAMG<H1AMGFactory> :: BuildAlgMesh(top_mesh);
-    }
+    if ( (ht_vertex == nullptr) || (ht_edge == nullptr) )
+      { throw Exception("elmat-energy, but have to HTs! (HOW)"); }
 
     auto a = new H1VData(Array<double>(top_mesh->GetNN<NT_VERTEX>()), DISTRIBUTED);
     auto b = new H1EData(Array<double>(top_mesh->GetNN<NT_EDGE>()), DISTRIBUTED);

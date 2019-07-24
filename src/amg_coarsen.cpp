@@ -692,6 +692,15 @@ namespace amg
        Add offstes to get the final map!
     **/
     // cout << "CoarseMap - map edges" << endl;
+    static Timer t1("CoarseMap - map edges - 1");
+    static Timer t2("CoarseMap - map edges - 2");
+    static Timer t3("CoarseMap - map edges - 3");
+    static Timer t4("CoarseMap - map edges - 4");
+    static Timer t5("CoarseMap - map edges - 5");
+    static Timer teq("CoarseMap - map edges - one eq");
+
+    t1.Start();
+
     static Timer t("CoarseMap - map edges");
     RegionTimer rt(t);
     const BlockTM & bmesh = *mesh;
@@ -709,6 +718,7 @@ namespace amg
     size_t neqcs = eqc_h.GetNEQCS();
     Array<size_t> eqcs(neqcs);
     for (auto k:Range(neqcs)) eqcs[k] = k;
+    
     // eqc-changing coarse edges
     // cout << "check coll " << endl;
     // for (const auto & e : bmesh.template GetNodes<NT_EDGE>())
@@ -755,6 +765,9 @@ namespace amg
       }
       tadd_edges = ct.MoveTable();
     }
+    t1.Stop();
+    t2.Start();
+    
     // cout << "tadd_edges: " << endl << tadd_edges << endl;
     auto add_edges = ReduceTable<AMG_CNode<NT_EDGE>,AMG_CNode<NT_EDGE>>(tadd_edges, eqcs, sp_eqc_h, [](const auto & tab) {
     	Array<AMG_CNode<NT_EDGE>> out;
@@ -779,18 +792,26 @@ namespace amg
     auto & disp_ce = mapped_cross_firsti[NT_EDGE];
     disp_ce.SetSize(neqcs+1);
     disp_ce = 0;
+    Array<int> hts1(neqcs), hts2(neqcs);
+    hts1 = 0; hts2 = 0;
     for (auto k:Range(neqcs)) {
       size_t c1 = 0;
       for (const auto & v:add_edges[k]) if (v.eqc[0]==v.eqc[1]) c1++;
       FlatTM block = bmesh.GetBlock(k);
-      size_t nie_max = c1 + block.GetNN<NT_EDGE>() * 1.2;
-      hash_ie[k] = new HT1(nie_max);
-      size_t nce_max = add_edges[k].Size() - c1 + block.GetCNN<NT_EDGE>() * 1.2;
-      hash_ce[k] = new HT2(nce_max);
+      size_t nie_max = c1; // + block.GetNN<NT_EDGE>() * 1.2;
+      hash_ie[k] = new HT1(3*nie_max);
+      hts1[k] = 3*nie_max;
+      size_t nce_max = add_edges[k].Size() - c1; // + block.GetCNN<NT_EDGE>() * 1.2;
+      hash_ce[k] = new HT2(3*nce_max);
+      hts2[k] = 3*nce_max;
     }
     size_t pos = 0;
-    for (auto eqc:Range(neqcs)) {
+    t2.Stop();
+    t5.Start();
+    
+   for (auto eqc:Range(neqcs)) {
       auto row = add_edges[eqc];
+      RegionTimer rt(teq);
       for (auto j:Range(row.Size())) {
     	auto e = row[j];
     	auto eq0id = e.eqc[0];
@@ -818,21 +839,63 @@ namespace amg
     	}
       }
     }
+     t5.Stop();
+    t3.Start();
     // local-eqc-map
     Array<INT<3,int> > node_map2(NNODES); // in/cross; eqc; loc-nr
     node_map2 = -1;
+
+    // set map for an edge, and also for all neighbouring edges that map to the same
+    //  (only works for mini agglomerates)
+    const auto& econ = *bmesh.GetEdgeCM();
+
+    int cadv = 0; Array<INT<2>> advs(20);
+    auto map_neibs = [&](auto& e) LAMBDA_INLINE {
+      /** Also set neighbours. This works because only mini-agglomerates. Also because when we have both vertices of an edge
+	  we also ALWAYS HAVE THE EDGE!! (relevant for MPI) 
+	  A ---- B    Say we map A--B:
+	  |  \   |       - if B-D is collaped, also map A--D            (B collapses to B-D, A-D exists -> map it)
+	  |   \  |       - if A-C is collapsed, no extra action         (A collapses to A-C, C-B does not exist -> do nothing)
+	  C ---- D       - if A-C and B-D are collapsed, also map C-D   (A to A-C, B to B-D, C-D exists -> map it)
+	  Note: in 3d, or on coarse levels, C-B might also exist in addition to A-D. I do not think there can be more edges involved.
+      **/
+      auto map_if_exists = [&](auto i, auto j) LAMBDA_INLINE {
+	auto pos = find_in_sorted_array(j, econ.GetRowIndices(i));
+	if (pos != -1)
+	  { node_map2[int(econ.GetRowValues(i)[pos])] = node_map2[e.id]; }
+      };
+      if (coll.IsVertexCollapsed(e.v[0])) {
+	auto & cole0 = coll.CollapsedEdge(e.v[0]);
+	auto ov0 = (cole0.v[0] == e.v[0]) ? cole0.v[1] : cole0.v[0];
+	map_if_exists(ov0, e.v[1]);
+	if (coll.IsVertexCollapsed(e.v[1])) {
+	  auto & cole1 = coll.CollapsedEdge(e.v[1]);
+	  auto ov1 = (cole1.v[0] == e.v[1]) ? cole1.v[1] : cole1.v[0];
+	  map_if_exists(ov1, e.v[0]);
+	  map_if_exists(ov0, ov1);
+	}
+      }
+      else if (coll.IsVertexCollapsed(e.v[1])) {
+	auto & cole1 = coll.CollapsedEdge(e.v[1]);
+	auto ov1 = (cole1.v[0] == e.v[1]) ? cole1.v[1] : cole1.v[0];
+	map_if_exists(ov1, e.v[0]);
+      }
+    };
+
     auto fine_nodes = bmesh.template GetNodes<NT_EDGE>();
     for (const auto & e : fine_nodes) {
-      if ( coll.IsEdgeCollapsed(e) || (vmap[e.v[0]]==-1) || (vmap[e.v[1]]==-1) )
-    	continue;
-      int vc0 = vmap[e.v[0]];
-      int vc1 = vmap[e.v[1]];
-      int vc0_loc = CN_to_EQC<NT_VERTEX>(vc0);
-      int vc1_loc = CN_to_EQC<NT_VERTEX>(vc1);
-      int eq0 = EQC_of_CN<NT_VERTEX>(vc0);
-      int eq1 = EQC_of_CN<NT_VERTEX>(vc1);
-      int eq0id = eqc_h.GetEQCID(eq0);
-      int eq1id = eqc_h.GetEQCID(eq1);
+      if ( coll.IsEdgeCollapsed(e) || (vmap[e.v[0]]==-1) || (vmap[e.v[1]]==-1) ) // collapsed or connected to dropped vertex
+    	{ continue; }
+      if (node_map2[e.id][2] != -1) // already mapped via a neighbour
+	{ continue; }
+      auto vc0 = vmap[e.v[0]];
+      auto vc1 = vmap[e.v[1]];
+      auto vc0_loc = CN_to_EQC<NT_VERTEX>(vc0);
+      auto vc1_loc = CN_to_EQC<NT_VERTEX>(vc1);
+      auto eq0 = EQC_of_CN<NT_VERTEX>(vc0);
+      auto eq1 = EQC_of_CN<NT_VERTEX>(vc1);
+      auto eq0id = eqc_h.GetEQCID(eq0);
+      auto eq1id = eqc_h.GetEQCID(eq1);
       if ( (vc0_loc>vc1_loc) ||
     	  ( (vc0_loc==vc1_loc) && (eq0id > eq1id)) ) {
     	swap(vc0,vc1);
@@ -847,27 +910,47 @@ namespace amg
     	auto & hash = *hash_ie[eq];
     	auto & count = disp_ie[eq+1];
     	INT<2, int> ec(vc0_loc, vc1_loc);
-    	if (hash.PositionCreate(ec,pos)) {
-    	  node_map2[e.id][2] = count;
-    	  hash.SetData(pos, count++);
-    	}
-    	else {
-    	  hash.GetData(pos, node_map2[e.id][2]);
-    	}
+	auto pos = hash.Position(ec);
+	if (pos != -1)
+	  { hash.GetData(pos, node_map2[e.id][2]); }
+	else {
+	  // hash.PositionCreate(ec,pos);
+   	  // node_map2[e.id][2] = count;
+    	  // hash.SetData(pos, count++);
+	  node_map2[e.id][2] = count++;
+	  map_neibs(e);
+	}
       }
       else {
     	auto & hash = *hash_ce[eq];
     	auto & count = disp_ce[eq+1];
     	INT<4, int> ec(eq0id, eq1id, vc0_loc, vc1_loc);
-    	if (hash.PositionCreate(ec,pos)) {
-    	  node_map2[e.id][2] = count;
-    	  hash.SetData(pos, count++);
-    	}
-    	else {
-    	  hash.GetData(pos, node_map2[e.id][2]);
-    	}
+	auto pos = hash.Position(ec);
+	if (pos != -1)
+	  { hash.GetData(pos, node_map2[e.id][2]); }
+	else {
+	  // hash.PositionCreate(ec,pos);
+    	  // node_map2[e.id][2] = count;
+    	  // hash.SetData(pos, count++);
+	  node_map2[e.id][2] = count++;
+	  map_neibs(e);
+	}
       }
     }
+    t3.Stop();
+    t4.Start();
+
+    // cout << endl << "-------------" << endl;
+    // for (auto k : Range(neqcs)) {
+    //   double r1 = (disp_ie[k+1] == 0) ? 10 : double(hts1[k])/disp_ie[k+1];
+    //   double r2 = (disp_ce[k+1] == 0) ? 10 : double(hts2[k])/disp_ce[k+1];
+    //   cout << "eq " << k << " " << r1 << " " << r2 << " ";
+    //   if (r1 < 2 || r2 < 2)
+    // 	cout << "WARNING!!";
+    //   cout << endl;
+    // }
+    // cout << "-------------" << endl;
+    
     for (auto k:Range(size_t(1), neqcs+1)) {
       disp_ie[k] += disp_ie[k-1];
     }
@@ -880,6 +963,9 @@ namespace amg
     // cout << "NECI NECC " << NECI << " " << NECC << endl;
     NNODES_COARSE = NECI + NECC;
     coarse_nodes.SetSize(NNODES_COARSE);
+
+    
+    
     for (auto k:Range(NNODES)) {
       const auto & node = fine_nodes[k];
       auto t = node_map2[k];
@@ -928,6 +1014,8 @@ namespace amg
     	}
       }
     }
+    t4.Stop();
+    
     // dont need mapped_eqc_nodes ?
     for (auto x : hash_ie) delete x;
     for (auto x : hash_ce) delete x;

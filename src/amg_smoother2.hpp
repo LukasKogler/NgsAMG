@@ -74,6 +74,7 @@ namespace amg
   {
   protected:
     bool dummy = false;
+    mutable bool scatter_done = true;
     shared_ptr<SparseMatrix<TM>> M; // the master-master block
     shared_ptr<BaseMatrix> S; // master-slave and slave-master blocks
     shared_ptr<ParallelDofs> pardofs;
@@ -92,7 +93,8 @@ namespace amg
 
     void gather_vec (const BaseVector & vec) const;
     void scatter_vec (const BaseVector & vec) const;
-
+    void finish_scatter () const;
+    
     virtual bool IsComplex() const override { return is_same<double, TSCAL>::value ? false : true; }
 
     virtual int VHeight () const override { return M->Height(); }

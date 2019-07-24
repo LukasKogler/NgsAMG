@@ -24,12 +24,14 @@ namespace amg
     double ctraf = 0.05;                        // contract after reducing measure by this factor
     double first_ctraf = 0.025;                 // see first_aaf
     double ctraf_scale = 1;                     // see aaf_scale
-    double ctr_crs_thresh = 0.7;                // if coarsening slows down more than this, contract one step
+    double ctr_crs_thresh = 0.7;                // if coarsening slows down more than this, redistribute
+    double ctr_loc_thresh = 0.5;                // if less than this fraction of vertices are purely local, redistribute
     /** HOW AGGRESSIVELY to contract **/
-    double ctr_pfac = 0.25;                     // reduce active NP by this factor (ctr_pfac / ctraf should be << 1 !)
-    /** Constraints for contract **/
-    size_t ctr_min_nv = 500;                    // re-distribute such that at least this many NV per proc remain
-    size_t ctr_seq_nv = 500;                    // re-distribute to sequential once NV reaches this threshhold
+    double ctr_pfac = 0.25;                     // per default, reduce active NP by this factor (ctr_pfac / ctraf should be << 1 !)
+    /** additional constraints for contract **/
+    size_t ctr_min_nv = 500;                    // always re-distribute such that at least this many NV per proc remain
+    size_t ctr_seq_nv = 1000;                   // always re-distribute to sequential once NV reaches this threshhold
+    double ctr_loc_gl = 0.8;                    // always try to redistribute such that at least this fraction will be local
 
     /** Smoothed Prolongation **/
     bool enable_sm = true;                      // emable prolongation-smoothing
@@ -56,6 +58,14 @@ namespace amg
   template<class TMESH, class TM>
   void AMGFactory<TMESH, TM> :: SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix)
   {
+    auto set_enum_opt = [&] (auto & opt, string key, Array<string> vals) {
+      string val = flags.GetStringFlag(prefix + key, "");
+      for (auto k : Range(vals)) {
+	if (val == vals[k])
+	  { opt = decltype(opt)(k); return; }
+      }
+    };
+
     auto set_bool = [&](auto& v, string key) {
       if (v) { v = !flags.GetDefineFlagX(prefix + key).IsFalse(); }
       else { v = flags.GetDefineFlagX(prefix + key).IsTrue(); }
@@ -84,6 +94,8 @@ namespace amg
     set_num(opts.rbmaf, "rbmaf");
     set_num(opts.first_rbmaf, "first_rbmaf");
     set_num(opts.rbmaf_scale, "rbmaf_scale");
+
+    set_enum_opt(opts.log_level, "log_level", {"none", "basic", "normal", "extra"});
   }
 
 
@@ -171,11 +183,11 @@ namespace amg
 
     /** EXTRA level - local info per level **/
     int vccl_rank;                       // rank with max/min local vertex complexity
-    double vccl;                         // max. loc vertex complexity
-    Array<double> vccl_comp;             // components for vccl
+    double v_comp_l;                     // max. loc vertex complexity
+    Array<double> vccl;                  // components for vccl
     int occl_rank;                       // rank with max/min local operator complexity
-    double occl;                         // max. loc operator complexity
-    Array<double> occl_comp;             // components for occl
+    double op_comp_l;                    // max. loc operator complexity
+    Array<double> occl;                  // components for occl
 
     /** internal **/
     NgsAMG_Comm comm;
@@ -199,8 +211,8 @@ namespace amg
     if (lev == LOG_LEVEL::NORMAL)
       { return; }
 
-    lam(vccl_comp);
-    lam(occl_comp);
+    lam(vccl);
+    lam(occl);
   } // Logger::Alloc
 
 
@@ -231,6 +243,9 @@ namespace amg
     if (lev == LOG_LEVEL::NORMAL)
       { return; }
 
+    vccl.Append(cap.mesh->template GetNN<NT_VERTEX>());
+    occl.Append(cap.mat->NZE());
+
   } // Logger::LogLevel
 
 
@@ -257,6 +272,29 @@ namespace amg
 
     if (lev == LOG_LEVEL::NORMAL)
       { return; }
+
+    auto alam = [&](auto & rk, auto & val, auto & array) {
+      auto maxval = comm.AllReduce(val, MPI_MAX);
+      rk = comm.AllReduce( (val == maxval) ? (int)comm.Rank() : (int)comm.Size(), MPI_MIN);
+      if ( (comm.Rank() == 0) && (rk != 0) )
+	{ comm.Recv(array, rk, MPI_TAG_AMG); }
+      else if ( (comm.Rank() == rk) && (rk != 0) )
+	{ comm.Send(array, 0, MPI_TAG_AMG); }
+      val = maxval;
+    };
+    
+    v_comp_l = 0;
+    double vccl0 = max2(vccl[0], 1.0);
+    for (auto& v : vccl)
+      { v /= vccl0; v_comp_l += v; }
+    alam(vccl_rank, v_comp_l, vccl);
+    
+    op_comp_l = 0;
+    double occl0 = max2(occl[0], 1.0);
+    for (auto& v : occl)
+      { v /= occl0; op_comp_l += v; }
+    alam(occl_rank, op_comp_l, occl);
+
   } // Logger::Finalize
 
 
@@ -283,9 +321,16 @@ namespace amg
       out << "Vertex complexity components: "; prow(vcc, out); out << endl;
       out << "Operator complexity components: "; prow(occ, out); out << endl;
       out << "# vertices "; prow(NVs); out << endl;
-      out << "# edges "; prow(NEs); out << endl;
-      out << "# procs "; prow(NPs); out << endl;
-      out << "NZEs "; prow(NZEs); out << endl;
+      out << "# edges: "; prow(NEs); out << endl;
+      out << "# procs: "; prow(NPs); out << endl;
+      out << "NZEs:"; prow(NZEs); out << endl;
+    }
+
+    if (lev >= LOG_LEVEL::EXTRA) {
+      out << "max. loc. vertex complexity is " << v_comp_l << " on rank " << vccl_rank << endl;
+      out << "max. loc. vertex complexity components: "; prow(vccl, out); out << endl;
+      out << "max. loc. operator complexity is " << op_comp_l << " on rank " << occl_rank << endl;
+      out << "max. loc. operator complexity components: "; prow(occl, out); out << endl;
     }
 
     out << " ---------- AMG Summary End ---------- " << endl << endl;
@@ -315,6 +360,9 @@ namespace amg
     /** Rebuild Mesh **/
     bool first_rbm_used = false;
     size_t last_meas_rbm;
+
+    /** hacky stuff **/
+    bool coll_cross = false;
   };
   
   
@@ -375,11 +423,13 @@ namespace amg
       state->first_ctr_used = state->first_rbm_used = false;
       state->last_ctr_nv = fmesh->template GetNNGlobal<NT_VERTEX>();
       state->last_meas_rbm = curr_meas;
+      state->coll_cross = false;
     }
 
     auto comm = fmesh->GetEQCHierarchy()->GetCommunicator();
     
-    double af = (cap.level == 0) ? options->first_aaf : ( pow(options->aaf_scale, cap.level - ( (options->first_aaf == -1) ? 0 : 1) ) * options->aaf );
+    double af = ( (cap.level == 0) && (options->first_aaf != -1) ) ?
+      options->first_aaf : ( pow(options->aaf_scale, cap.level - ( (options->first_aaf == -1) ? 0 : 1) ) * options->aaf );
 
     size_t goal_meas = max( size_t(min(af, 0.9) * curr_meas), max(options->max_meas, size_t(1)));
 
@@ -393,14 +443,20 @@ namespace amg
     Array<shared_ptr<BaseDOFMapStep>> sub_steps;
     shared_ptr<TSPM_TM> conc_pwp;
 
-    double crs_meas_fac = 1;
+    double frac_loc = -1;
+    double crs_meas_fac = 0;
     auto old_meas = curr_meas;
 
-    while (curr_meas > goal_meas) {
+    while (curr_meas > goal_meas) { // outer loop - when inner loop is stuck, try to redistribute
 
-      while (curr_meas > goal_meas) {
+      while (curr_meas > goal_meas) { // inner loop - do coarsening until stuck
+
+	if ( (level[1] != 0) && (crs_meas_fac > 0.6) )
+	  { state->coll_cross = true; }
 
 	auto grid_step = BuildCoarseMap (cmesh);
+
+	state->coll_cross = false;
 
 	if (grid_step == nullptr)
 	  { break; }
@@ -409,14 +465,12 @@ namespace amg
 
 	crs_meas_fac = ComputeMeshMeasure(*_cmesh) / (1.0 * curr_meas);
 
-	if (comm.Rank() == 0)
-	  { cout << "coarsen fac " << crs_meas_fac << ", went from " << curr_meas << " to " << ComputeMeshMeasure(*_cmesh) << endl; }
+	frac_loc = _cmesh->GetEQCHierarchy()->GetCommunicator().AllReduce(double(_cmesh->template GetNN<NT_VERTEX>() > 0 ? _cmesh->template GetENN<NT_VERTEX>(0) : 0), MPI_SUM) / _cmesh->template GetNNGlobal<NT_VERTEX>();
+	cout << IM(4) << "coarsen fac " << crs_meas_fac << ", went from " << curr_meas << " to " << ComputeMeshMeasure(*_cmesh) << ", frac loc " << frac_loc << endl;
 
-	if (crs_meas_fac > 0.95)
-	  { throw Exception("no proper check in place here"); }
-
-	bool non_acceptable = false; // i guess implement sth like that at some point ?
-	if (non_acceptable)
+	if ( (options->enable_ctr) && // break out of inner coarsening loop due to slow-down
+	     ( (crs_meas_fac > options->ctr_crs_thresh) ||
+	       (frac_loc < options->ctr_loc_thresh) ) )
 	  { break; }
 
 	cmesh = _cmesh;
@@ -431,35 +485,17 @@ namespace amg
 	level[1]++;
       } // inner while - we PROBABLY have a coarse map
 
-      if (comm.Rank() == 0)
-	{ cout << "actual meas : " << double(curr_meas)/old_meas << endl; }
-
+      cout << IM(4) << "actual meas : " << double(curr_meas)/old_meas << endl;
 
       if(conc_pwp != nullptr) {
 	
 	auto pstep = make_shared<ProlMap<TSPM_TM>> (conc_pwp, fpds, cpds);
 
-	if (options->enable_sm)
-	  { SmoothProlongation(pstep, cap.mesh); }
-
-	// {
-	//   cout << "prol etr p row: " << endl;
-	//   Array<size_t> cats(20); cats = 0;
-	//   size_t cnt = 0, cnt2 = 0;
-	//   auto p = pstep->GetProl();
-	//   if (p != nullptr) {
-	//     for (auto k : Range(p->Height())) {
-	//       auto ri = p->GetRowIndices(k);
-	//       if (ri.Size()) cnt++;
-	//       cnt2 += ri.Size();
-	//       cats[ri.Size()]++;
-	//     }
-	//     if (cnt == 0) cnt++;
-	//     cout << "simple avg per row: " << double(cnt2)/max2(p->Height(), 1) << endl;
-	//     cout << "avg per row: " << double(cnt2)/max2(cnt, size_t(1)) << endl;
-	//     prow2(cats); cout << endl;
-	//   }
-	// }
+	if (options->enable_sm) {
+	  if ( (options->enable_rbm) && (level[0] != 0) )
+	    { fmesh = options->rebuild_mesh(fmesh, cmat, fpds); }
+	  SmoothProlongation(pstep, fmesh);
+	}
 
 	fpds = cpds; conc_pwp = nullptr; fmesh = cmesh;
 
@@ -472,53 +508,72 @@ namespace amg
 
 	cmat = sub_steps.Last()->AssembleMatrix(cmat);
 
-
-	// if (cmat != nullptr)
-      	// {
-	//   cout << "CMAT etr p row: " << endl;
-	//   Array<size_t> cats(300); cats = 0;
-	//   size_t cnt = 0, cnt2 = 0;
-	//   for (auto k : Range(cmat->Height())) {
-	//     auto ri = cmat->GetRowIndices(k);
-	//     if (ri.Size()) cnt++;
-	//     cnt2 += ri.Size();
-	//     cats[ri.Size()]++;
-	//   }
-	//   if (cnt == 0) cnt++;
-	//   cout << "simple avg per row: " << double(cnt2)/max2(cmat->Height(), 1) << endl;
-	//   cout << "avg per row: " << double(cnt2)/max2(cnt, size_t(1)) << endl;
-	//   prow2(cats); cout << endl;
-	// }
-
       }
       else if (!options->enable_ctr) { // throw exceptions here for now, but in principle just break is also fine i think
-	throw Exception("Could not coarsen, and cannot contract (it is disabled)");
+	throw Exception("Could not coarsen at all, and cannot contract (it is disabled)");
 	// break;
       }
       else if (cmesh->GetEQCHierarchy()->GetCommunicator().Size() == 2) {
-	throw Exception("Could not coarsen, and cannot contract (only 2 NP left!)");
+	throw Exception("Could not coarsen at all, and cannot contract any more (only 2 NP left!)");
 	// break;
       }
       
-      if ( (options->enable_ctr) && (level[2] == 0)
-	   && (cmesh->GetEQCHierarchy()->GetCommunicator().Size() > 2) ) { // if we are stuck coarsening wise, or if we have reached a threshhold, redistribute
-	double af = (cap.level == 0) ? options->first_ctraf : ( pow(options->ctraf_scale, cap.level - ( (options->first_ctraf == -1) ? 0 : 1) ) * options->ctraf );
-	size_t goal_nv = max( size_t(min(af, 0.9) * state->last_ctr_nv), max(options->ctr_seq_nv, size_t(1)));
-	if ( (crs_meas_fac > options->ctr_crs_thresh) ||
-	     (goal_nv > cmesh->template GetNNGlobal<NT_VERTEX>() ) ) {
+      if ( (options->enable_ctr) && // (level[2] == 0) && // only contract at most once per step
+	   (cmesh->GetEQCHierarchy()->GetCommunicator().Size() > 2) ) { // if we are stuck coarsening wise, or if we have reached a threshhold, redistribute
 
-	  double fac = options->ctr_pfac;
-	  auto next_nv = cmesh->template GetNNGlobal<NT_VERTEX>();
-	  auto ccomm = cmesh->GetEQCHierarchy()->GetCommunicator();
-	  double ctr_factor = (next_nv < options->ctr_seq_nv) ? -1 :
-	    min2(fac, double(next_nv) / options->ctr_min_nv / ccomm.Size());
+	auto ccomm = cmesh->GetEQCHierarchy()->GetCommunicator();
+
+	double fac = options->ctr_pfac;
+	auto next_nv = cmesh->template GetNNGlobal<NT_VERTEX>();
+
+	double af = ( (!state->first_ctr_used) && (options->first_ctraf != -1) ) ?
+	  options->first_ctraf : ( pow(options->ctraf_scale, cap.level - ( (options->first_ctraf == -1) ? 0 : 1) ) * options->ctraf );
+	size_t goal_nv = max( size_t(min(af, 0.9) * state->last_ctr_nv), max(options->ctr_seq_nv, size_t(1)));
+	double ctr_factor = 1;
+
+	cout << IM(5) << "ctr goal from " << state->first_ctr_used << " " << options->first_ctraf << " " << options->ctraf_scale << " "
+	     << cap.level - ( (options->first_ctraf == -1) ? 0 : 1) << " " << options->ctraf << endl;
+	cout << IM(5) << "goal " << goal_nv << endl;
+
+	if (next_nv < options->ctr_seq_nv) // sequential threshold reached
+	  { ctr_factor = -1; }
+	else if ( (crs_meas_fac > options->ctr_crs_thresh) ||              // coarsening slows down
+		  (goal_nv > cmesh->template GetNNGlobal<NT_VERTEX>()) ||  // static redistribute every now and then
+		  (frac_loc < options->ctr_loc_thresh) ) {                 // not enough local vertices
+
+	  cout << IM(5) << " ctr bc " << crs_meas_fac  << " > " << options->ctr_crs_thresh << endl;
+	  cout << IM(5) << " ctr bc " <<  goal_nv << " > " << cmesh->template GetNNGlobal<NT_VERTEX>() << endl;
+	  cout << IM(5) << " ctr bc " << frac_loc << " < " << options->ctr_loc_thresh << endl;
+
+	  ctr_factor = min2(fac, double(next_nv) / options->ctr_min_nv / ccomm.Size());
+
+	  if (frac_loc < options->ctr_loc_gl) {
+	    size_t NP = ccomm.Size();
+	    size_t NF = ccomm.AllReduce (cmesh->GetEQCHierarchy()->GetDistantProcs().Size(), MPI_SUM) / 2; // every face counted twice
+	    double F = frac_loc;
+	    double FGOAL = options->ctr_loc_gl; // we want to achieve this large of a frac of local verts
+	    double FF = (1-frac_loc) / NF; // avg frac of a face
+
+	    if (F + NP/2 * FF > FGOAL) // merge 2 -> one face per group becomes local
+	      { ctr_factor = 0.5; }
+	    else if (F + NP/4 * 5 * FF > FGOAL) // merge 4 -> probably 4(2x2) to 6(tet) faces
+	      { ctr_factor = 0.25; }
+	    else // merge 8, in 3d probably 12 edges (2x2x2) probably never want to do more than that
+	      { ctr_factor = 0.125; }
+	  }
+	}
+
+	if (ctr_factor != 1) {
+
+	  state->first_ctr_used = true;
+
+	  ctr_factor = min2(0.5, ctr_factor); // ALWAYS at least factor 2
 	  
-	  if (comm.Rank() == 0)
-	    { cout << "contract by factor " << ctr_factor << endl; }
+	  cout << IM(4) << "contract by factor " << ctr_factor << endl;
 
 	  auto ctr_map = BuildContractMap(ctr_factor, cmesh);
 
-	  cmesh = static_pointer_cast<TMESH>(ctr_map->GetMappedMesh());
+	  fmesh = cmesh = static_pointer_cast<TMESH>(ctr_map->GetMappedMesh());
 
 	  auto ds = BuildDOFContractMap(ctr_map, fpds);
 
@@ -538,12 +593,13 @@ namespace amg
 	  if (cmesh == nullptr)
 	    { break; }
 
-	  if (comm.Rank() == 0)
-	    { cout << "NP down to " << cmesh->GetEQCHierarchy()->GetCommunicator().Size() << endl; }
+	  double frac_loc = cmesh->GetEQCHierarchy()->GetCommunicator().AllReduce(double(cmesh->template GetNN<NT_VERTEX>() > 0 ? cmesh->template GetENN<NT_VERTEX>(0) : 0), MPI_SUM) / cmesh->template GetNNGlobal<NT_VERTEX>();
+
+	  cout << IM(4) << "NP down to " << cmesh->GetEQCHierarchy()->GetCommunicator().Size() << ", frac loc " << frac_loc << endl;
 
 	}
 
-      }
+      } // ctr_enabled
       else // if contract disabled/not possible, the outer loop is not useful
 	{ break; }
     } // outher while
@@ -565,15 +621,6 @@ namespace amg
     }
     else if ( (cap.level + 2 == options->max_n_levels) ||              // max n levels reached
 	      (options->max_meas >= ComputeMeshMeasure (*cmesh) ) ) {   // max coarse size reached
-
-      
-      if (options->enable_rbm) { // only rebuild mesh if we want to do more levels
-	double af = (cap.level == 0) ? options->first_rbmaf : ( pow(options->rbmaf_scale, cap.level - ( (options->first_rbmaf == -1) ? 0 : 1) ) * options->aaf );
-	size_t goal_meas = max( size_t(min(af, 0.9) * state->last_meas_rbm), max(options->max_meas, size_t(1)));
-	if (curr_meas < goal_meas)
-	  { cmesh = options->rebuild_mesh(cmesh, cmat, cpds); state->last_meas_rbm = curr_meas; }
-      }
-
       logger->LogLevel ({cap.level + 1, cmesh, cpds, cmat}); // also log coarsest level
       return Array<shared_ptr<BaseSparseMatrix>> ({cmat});
     }
@@ -582,6 +629,23 @@ namespace amg
       return Array<shared_ptr<BaseSparseMatrix>> (0);
     }
     else {
+      
+      // if (options->enable_rbm) { // only rebuild mesh if we want to do more levels
+      // 	double af = ( (!state->first_rbm_used) && (options->first_rbmaf != -1) ) ?
+      // 	  options->first_rbmaf : ( pow(options->rbmaf_scale, cap.level - ( (options->first_rbmaf == -1) ? 0 : 1) ) * options->rbmaf );
+      // 	size_t goal_meas = max( size_t(min(af, 0.9) * state->last_meas_rbm), max(options->max_meas, size_t(1)));
+      // 	if (cap.mesh->GetEQCHierarchy()->GetCommunicator().Rank() == 0) {
+      // 	  cout << "from : " << state->first_rbm_used << " " << options->first_rbmaf << " " << options->rbmaf_scale << " "
+      // 	       << cap.level - ( (options->first_rbmaf == -1) ? 0 : 1) << endl;
+      // 	  cout << "rbm af " << af << endl << "goal " << goal_meas << ", curr " << curr_meas << endl;
+      // 	}
+      // 	if (curr_meas < goal_meas) {
+      // 	  cmesh = options->rebuild_mesh(cmesh, cmat, cpds);
+      // 	  state->last_meas_rbm = curr_meas;
+      // 	  state->first_rbm_used = true;
+      // 	}
+      // }
+
       auto cmats = RSU( {cap.level + 1, cmesh, cpds, cmat}, dof_map );
       cmats.Append(cmat);
       return cmats;
@@ -678,11 +742,19 @@ namespace amg
   shared_ptr<CoarseMap<TMESH>> VertexBasedAMGFactory<FACTORY_CLASS, TMESH, TM> :: BuildCoarseMap  (shared_ptr<TMESH> mesh) const
   {
     static Timer t("BuildCoarseMap"); RegionTimer rt(t);
-    auto coarsen_opts = make_shared<typename HierarchicVWC<TMESH>::Options>();
-    // coarsen_opts->free_verts = free_vertices;
-    this->SetCoarseningOptions(*coarsen_opts, mesh);
     shared_ptr<VWiseCoarsening<TMESH>> calg;
-    calg = make_shared<BlockVWC<TMESH>> (coarsen_opts);
+    if (this->state->coll_cross) {
+      if (mesh->GetEQCHierarchy()->GetCommunicator().Rank() == 0)
+	{ cout << "collapse cross!" << endl; }
+      auto coarsen_opts = make_shared<typename HierarchicVWC<TMESH>::Options>();
+      this->SetCoarseningOptions(*coarsen_opts, mesh);
+      calg = make_shared<HierarchicVWC<TMESH>> (coarsen_opts);
+    }
+    else {
+      auto coarsen_opts = make_shared<typename BlockVWC<TMESH>::Options>();
+      this->SetCoarseningOptions(*coarsen_opts, mesh);
+      calg = make_shared<BlockVWC<TMESH>> (coarsen_opts);
+    }
     return calg->Coarsen(mesh);
   }
 

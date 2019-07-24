@@ -4,6 +4,7 @@ project(ngs_amg)
 cmake_minimum_required(VERSION 3.8)
 
 option( ELASTICITY   "Enable Elasticity AMG" OFF)
+option( TAU   "Enable TAU instrumentation" OFF)
 
 
 set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH}" "${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_modules")
