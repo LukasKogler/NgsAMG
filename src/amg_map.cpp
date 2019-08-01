@@ -1,6 +1,11 @@
 #define FILE_AMGMAP_CPP
 
+#ifdef USE_TAU
+#include "TAU.h"
+#endif
+
 #include "amg.hpp"
+
 
 namespace amg
 {
@@ -45,6 +50,10 @@ namespace amg
 
   void ConcDMS :: TransferF2C (const BaseVector * x_fine, BaseVector * x_coarse) const
   {
+#ifdef USE_TAU
+    TAU_PROFILE("ConcDMS::TransferF2C", TAU_CT(*this), TAU_DEFAULT);
+#endif
+
     if (sub_steps.Size() == 1)
       { sub_steps[0]->TransferF2C(x_fine, x_coarse); }
     else {
@@ -58,6 +67,9 @@ namespace amg
 
   void ConcDMS :: AddF2C (double fac, const BaseVector * x_fine, BaseVector * x_coarse) const
   {
+#ifdef USE_TAU
+    TAU_PROFILE("ConcDMS::AddF2C", TAU_CT(*this), TAU_DEFAULT);
+#endif
     if (sub_steps.Size() == 1)
       { sub_steps[0]->AddF2C(fac, x_fine, x_coarse); }
     else {
@@ -71,6 +83,10 @@ namespace amg
 
   void ConcDMS :: TransferC2F (BaseVector * x_fine, const BaseVector * x_coarse) const
   {
+#ifdef USE_TAU
+    TAU_PROFILE("ConcDMS::TransferC2F", TAU_CT(*this), TAU_DEFAULT);
+#endif
+
     if (sub_steps.Size() == 1)
       { sub_steps[0]->TransferC2F(x_fine, x_coarse); }
     else {
@@ -84,6 +100,10 @@ namespace amg
 
   void ConcDMS :: AddC2F (double fac, BaseVector * x_fine, const BaseVector * x_coarse) const
   {
+#ifdef USE_TAU
+    TAU_PROFILE("ConcDMS::AddC2F", TAU_CT(*this), TAU_DEFAULT);
+#endif
+
     if (sub_steps.Size() == 1)
       { sub_steps[0]->AddC2F(fac, x_fine, x_coarse); }
     else {
@@ -109,6 +129,10 @@ namespace amg
   template<class TMAT>
   void ProlMap<TMAT> :: TransferF2C (const BaseVector * x_fine, BaseVector * x_coarse) const
   {
+#ifdef USE_TAU
+    TAU_PROFILE("ProlMap::TransferF2C", TAU_CT(*this), TAU_DEFAULT);
+#endif
+
     RegionTimer rt(timer_hack_prol_f2c());
     x_fine->Distribute();
     prol_trans->Mult(*x_fine, *x_coarse);
@@ -119,6 +143,10 @@ namespace amg
   template<class TMAT>
   void ProlMap<TMAT> :: AddF2C (double fac, const BaseVector * x_fine, BaseVector * x_coarse) const
   {
+#ifdef USE_TAU
+    TAU_PROFILE("ProlMap::AddF2C", TAU_CT(*this), TAU_DEFAULT);
+#endif
+
     RegionTimer rt(timer_hack_prol_f2c());
     x_fine->Distribute(); x_coarse->Distribute();
     prol_trans->MultAdd(fac, *x_fine, *x_coarse);
@@ -127,6 +155,10 @@ namespace amg
   template<class TMAT>
   void ProlMap<TMAT> :: TransferC2F (BaseVector * x_fine, const BaseVector * x_coarse) const
   {
+#ifdef USE_TAU
+    TAU_PROFILE("ProlMap::TransferC2F", TAU_CT(*this), TAU_DEFAULT);
+#endif
+
     RegionTimer rt(timer_hack_prol_c2f());
     x_coarse->Cumulate();
     prol->Mult(*x_coarse, *x_fine);
@@ -137,6 +169,10 @@ namespace amg
   template<class TMAT>
   void ProlMap<TMAT> :: AddC2F (double fac, BaseVector * x_fine, const BaseVector * x_coarse) const
   {
+#ifdef USE_TAU
+    TAU_PROFILE("ProlMap::AddC2F", TAU_CT(*this), TAU_DEFAULT);
+#endif
+
     RegionTimer rt(timer_hack_prol_c2f());
     x_coarse->Cumulate(); x_fine->Cumulate();
     prol->MultAdd(fac, *x_coarse, *x_fine);

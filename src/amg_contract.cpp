@@ -1,9 +1,14 @@
 #define FILE_AMGCTR_CPP
 
+#ifdef USE_TAU
+#include "TAU.h"
+#endif
+
 #include "amg.hpp"
 
 #include <metis.h>
 typedef idx_t idxtype;   
+
 
 namespace amg
 {
@@ -193,6 +198,10 @@ namespace amg
   template<class TV>
   void CtrMap<TV> :: TransferF2C (const BaseVector * x_fine, BaseVector * x_coarse) const
   {
+#ifdef USE_TAU
+    TAU_PROFILE("CtrMap::TransferF2C", TAU_CT(*this), TAU_DEFAULT);
+#endif
+
     RegionTimer rt(timer_hack_ctr_f2c());
     if (x_coarse != nullptr)
       { x_coarse->FVDouble() = 0; x_coarse->SetParallelStatus(DISTRIBUTED); }
@@ -203,6 +212,10 @@ namespace amg
   template<class TV>
   void CtrMap<TV> :: AddF2C (double fac, const BaseVector * x_fine, BaseVector * x_coarse) const
   {
+#ifdef USE_TAU
+    TAU_PROFILE("CtrMap::AddF2C", TAU_CT(*this), TAU_DEFAULT);
+#endif
+
     RegionTimer rt(timer_hack_ctr_f2c());
     /** 
 	We can have DOFs that cannot be mapped "within-group-locally".
@@ -241,6 +254,10 @@ namespace amg
   template<class TV>
   void CtrMap<TV> :: TransferC2F (BaseVector * x_fine, const BaseVector * x_coarse) const
   {
+#ifdef USE_TAU
+    TAU_PROFILE("CtrMap::TransferC2F", TAU_CT(*this), TAU_DEFAULT);
+#endif
+
     RegionTimer rt(timer_hack_ctr_c2f());
     auto& comm(pardofs->GetCommunicator());
     x_fine->Cumulate();
@@ -270,6 +287,10 @@ namespace amg
   template<class TV>
   void CtrMap<TV> :: AddC2F (double fac, BaseVector * x_fine, const BaseVector * x_coarse) const
   {
+#ifdef USE_TAU
+    TAU_PROFILE("CtrMap::AddC2F", TAU_CT(*this), TAU_DEFAULT);
+#endif
+
     /**
        some values are transfered to multiple ranks 
        does not matter because coarse grid vectors are typically CUMULATED

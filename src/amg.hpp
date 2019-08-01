@@ -8,6 +8,10 @@ namespace amg {
   using namespace ngcomp;
 }
 
+#ifdef USE_TAU
+#include "TAU.h"
+#endif
+
 #include "mpiwrap_extension.hpp"
 #include "amg_typedefs.hpp"  
 #include "amg_spmstuff.hpp"  
@@ -20,6 +24,7 @@ namespace amg {
 #include "amg_contract.hpp"
 #include "amg_smoother.hpp"
 #include "amg_smoother2.hpp"
+#include "amg_smoother3.hpp"
 #include "amg_matrix.hpp"
 // #include "amg_precond.hpp"
 // #include "amg_h1.hpp"

@@ -155,6 +155,8 @@ namespace amg
   template<> shared_ptr<H1Mesh>
   EmbedVAMG<H1AMGFactory> :: BuildAlgMesh_TRIV (shared_ptr<BlockTM> top_mesh)
   {
+    static Timer t("BuildAlgMesh_TRIV"); RegionTimer rt(t);
+
     /**
        vertex-weights are 0
        edge-weihts are 1
@@ -170,6 +172,8 @@ namespace amg
   template<> template<class TD2V, class TV2D> shared_ptr<H1Mesh>
   EmbedVAMG<H1AMGFactory> :: BuildAlgMesh_ALG_scal (shared_ptr<BlockTM> top_mesh, shared_ptr<BaseSparseMatrix> spmat, TD2V D2V, TV2D V2D) const
   {
+    static Timer t("BuildAlgMesh_ALG_scal"); RegionTimer rt(t);
+
     /**
        vertex-weights are absolute values of row-sums (only entries for nodal base functions). without l2-term they should be 0 (because grad(constant) = 0)
        edge-weihts are absolute values of off-diagonal entries
@@ -279,9 +283,16 @@ namespace amg
       return sm;
     }
     else {
+
       auto parmat = make_shared<ParallelMatrix>(spmat, pds, pds, C2D);
-      auto sm = make_shared<HybridGSS2<double>> (parmat, freedofs);
+
+      // auto sm = make_shared<HybridGSS2<double>> (parmat, freedofs);
+      // sm->SetSymmetric(options->smooth_symmetric);
+
+      auto eqc_h = make_shared<EQCHierarchy>(pds, false); // todo: get rid of these!
+      auto sm = make_shared<HybridGSS3<double>> (parmat, eqc_h, freedofs);
       sm->SetSymmetric(options->smooth_symmetric);
+
       return sm;
     }
   }

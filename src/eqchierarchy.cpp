@@ -337,8 +337,9 @@ namespace amg {
     static Timer t("EQCHierarchy::SetupFromDPs"); RegionTimer rt(t);
     Table<int> new_dps = move(anew_dps);
     Array<int> perm(new_dps.Size());
-    for (auto k : Range(new_dps.Size())) perm[k] = k;
-    QuickSort(perm, [new_dps](auto l, auto j) -> bool {
+    for (auto k : Range(new_dps.Size()))
+      { perm[k] = k; }
+    QuickSort(perm, [&new_dps](auto l, auto j) LAMBDA_INLINE -> bool {
 	auto dp1 = new_dps[l]; auto dps1 = dp1.Size();
 	auto dp2 = new_dps[j]; auto dps2 = dp2.Size();
     	if (dps1 > dps2) return false;

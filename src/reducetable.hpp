@@ -71,6 +71,9 @@ namespace amg
     RegionTimer rt(RTTimerHack());
     RegionTimer rt1(tt);
 
+#ifdef USE_TAU
+    TAU_PROFILE(tname.c_str(), " ", TAU_DEFAULT);
+#endif
     // cout << "reduce table; rank " << rank << " of " << np << " on comm " << comm << endl;
     
     //cout << "DP-table: " << endl << const_cast<EQCHierarchy*>(eqc_h.get())->GetDPTable() << endl;

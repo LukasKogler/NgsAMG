@@ -45,9 +45,9 @@ namespace amg
 
     shared_ptr<BitArray> GetFreeDofs () const { return freedofs; }
 
-  protected:
-    void SmoothInternal (int type, BaseVector  &x, const BaseVector &b, BaseVector &res,
-			 bool res_updated = false, bool update_res = true, bool x_zero = false) const;
+  // protected:
+    // void SmoothInternal (int type, BaseVector  &x, const BaseVector &b, BaseVector &res,
+    // 			 bool res_updated = false, bool update_res = true, bool x_zero = false) const;
 
   };
 

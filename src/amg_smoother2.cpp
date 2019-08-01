@@ -1,6 +1,11 @@
 
 #define FILE_AMGSM2_CPP
 
+#ifdef USE_TAU
+#include <Profile/Profiler.h>
+// #include "TAU.h"
+#endif
+
 #include "amg.hpp"
 
 namespace amg
@@ -31,6 +36,10 @@ namespace amg
   template<class TM>
   void GSS2<TM> :: SmoothRHSInternal (BaseVector &x, const BaseVector &b, bool backwards) const
   {
+#ifdef USE_TAU
+    TAU_PROFILE("SmoothRHSInternal", TAU_CT(*this), TAU_DEFAULT);
+#endif
+
     static Timer t(string("GSS2<bs=")+to_string(BS())+">::SmoothRHS");
     RegionTimer rt(t);
 
@@ -71,6 +80,10 @@ namespace amg
   template<class TM>
   void GSS2<TM> :: SmoothRESInternal (BaseVector &x, BaseVector &res, bool backwards) const
   {
+#ifdef USE_TAU
+    TAU_PROFILE("SmoothRESInternal", TAU_CT(*this), TAU_DEFAULT);
+#endif
+
     static Timer t(string("GSS2<bs=")+to_string(BS())+">::SmoothRES");
     RegionTimer rt(t);
 
@@ -456,6 +469,10 @@ namespace amg
   template<class TM>
   void HybridMatrix<TM> :: gather_vec (const BaseVector & vec) const
   {
+#ifdef USE_TAU
+    TAU_PROFILE("gather_vec", TAU_CT(*this), TAU_DEFAULT);
+#endif
+
     if (dummy)
       { return; }
 
@@ -492,8 +509,12 @@ namespace amg
   template<class TM> void
   HybridMatrix<TM> :: scatter_vec (const BaseVector & vec) const
   {
-    if (!scatter_done)
-      { finish_scatter(); }
+#ifdef USE_TAU
+    TAU_PROFILE("scatter_vec", TAU_CT(*this), TAU_DEFAULT);
+#endif
+
+    // if (!scatter_done)
+    //   { finish_scatter(); }
 
     if (dummy)
       { return; }
@@ -517,7 +538,7 @@ namespace amg
     for (auto kp : Range(nexp_smaller))
       { parvec->IRecvVec(ex_procs[kp], rr_scatter[kp]); }
 
-    // MyMPI_WaitAll(rr_gather);
+    MyMPI_WaitAll(rr_gather);
 
     for (auto j : Range(nexp_smaller)) {
       auto kp = MyMPI_WaitAny(rr_scatter);

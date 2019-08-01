@@ -14,12 +14,19 @@ add_ngsolve_python_module(ngs_amg SHARED
   amg_coarsen.cpp amg_h1_v2.cpp python_amg.cpp
   amg_spmstuff.cpp amg_map.cpp amg_smoother.cpp
   amg_matrix.cpp amg_contract.cpp amg_elast.cpp
-  boomer.cpp amg_smoother2.cpp)
+  boomer.cpp amg_smoother2.cpp amg_smoother3.cpp)
 
 include_directories(${MPI_CXX_INCLUDE_DIRS})
 
 if (USE_BOOMER)
    target_link_libraries(ngs_amg ${BOOMER_LIBRARIES})
 endif (USE_BOOMER)
+
+if(USE_TAU)
+  target_link_libraries(ngs_amg TAU)
+  if (TAU_PRELOAD_LIB)
+    target_link_libraries(ngs_amg ${TAU_PRELOAD_LIB})
+  endif (TAU_PRELOAD_LIB)
+endif(USE_TAU)
 
 install(TARGETS ngs_amg DESTINATION ${CMAKE_INSTALL_PREFIX})

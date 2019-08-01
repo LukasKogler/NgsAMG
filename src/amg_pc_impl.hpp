@@ -55,7 +55,8 @@ namespace amg
 
     /** What we do on the coarsest level **/
     enum CLEVEL : char { INV_CLEV = 0,        // invert coarsest level
-			 SMOOTH_CLEV = 1 };   // smooth coarsest level
+			 SMOOTH_CLEV = 1,    // smooth coarsest level
+			 NO_CLEV = 2 };
     CLEVEL clev = INV_CLEV;
     INVERSETYPE cinv_type = MASTERINVERSE;
     INVERSETYPE cinv_type_loc = SPARSECHOLESKY;
@@ -194,6 +195,8 @@ namespace amg
     set_enum_opt(O.v_pos, "vpos", {"vertex", "given"}, BAO::VERTEX_POS);
 
     set_enum_opt(O.energy, "energy", {"triv", "alg", "elmat"}, BAO::ALG_ENERGY);
+
+    set_enum_opt(O.clev, "clev", {"inv", "sm", "none"}, BAO::INV_CLEV);
 
     ModifyOptions(O, flags, prefix);
 
@@ -500,12 +503,12 @@ namespace amg
       vert_sort.SetSize(nv);
       top_mesh->SetVs (nv, [&](auto vnr) LAMBDA_INLINE -> FlatArray<int> { return fpd->GetDistantProcs(v2d(vnr)); },
 		       [&vert_sort](auto i, auto j){ vert_sort[i] = j; });
-      free_verts = make_shared<BitArray>(nv);
+      free_verts = make_shared<BitArray>(nv); free_verts->Clear();
       for (auto k : Range(nv)) {
 	if (finest_freedofs->Test(v2d(k)))
 	  { free_verts->Set(vert_sort[k]); }
-	else
-	  { free_verts->Clear(vert_sort[k]); }
+	// else
+	//   { free_verts->Clear(vert_sort[k]); }
       }
     };
 
@@ -543,7 +546,7 @@ namespace amg
 	  });
 	top_mesh->SetNodes<NT_EDGE> (n_edges, [&](auto num) LAMBDA_INLINE { return epairs[num]; }, // (already v-sorted)
 				     [](auto node_num, auto id) { /* dont care about edge-sort! */ });
-      cout << "final n_edges: " << top_mesh->GetNN<NT_EDGE>() << endl;
+      // cout << "final n_edges: " << top_mesh->GetNN<NT_EDGE>() << endl;
       }; // create_edges
 
     if (O.dof_ordering == BAO::REGULAR_ORDERING) {
@@ -593,8 +596,10 @@ namespace amg
       create_edges ( v2d , d2v );
     }
 
-    cout << IM(3) << "AMG performed on " << n_verts << " vertices, ndof local is: " << fpd->GetNDofLocal() << endl;
-    cout << IM(3) << "free dofs " << finest_freedofs->NumSet() << " ndof local is: " << fpd->GetNDofLocal() << endl;
+    cout << IM(3) << "AMG performed on " << top_mesh->GetNNGlobal<NT_VERTEX>() << " vertices, ndof local is: " << fpd->GetNDofGlobal() << endl;
+    cout << IM(3) << "AMG performed on " << top_mesh->GetNNGlobal<NT_EDGE>() << " edges" << endl;
+    if (top_mesh->GetEQCHierarchy()->GetCommunicator().Size() == 1) // this is only loc info
+      { cout << IM(3) << "free dofs " << finest_freedofs->NumSet() << " ndof local is: " << fpd->GetNDofLocal() << endl; }
 
     return top_mesh;
   } // EmbedVAMG :: BTM_Alg
@@ -663,6 +668,8 @@ namespace amg
   template<class FACTORY>
   shared_ptr<typename FACTORY::TMESH> EmbedVAMG<FACTORY> :: BuildAlgMesh_ALG (shared_ptr<BlockTM> top_mesh)
   {
+    static Timer t("BuildAlgMesh_ALG"); RegionTimer rt(t);
+
     typedef BaseEmbedAMGOptions BAO;
     auto & O(*options);
 

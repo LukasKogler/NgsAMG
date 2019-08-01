@@ -230,7 +230,10 @@ namespace amg
     auto lev_comm = cap.mesh->GetEQCHierarchy()->GetCommunicator();
 
     vcc.Append(cap.mesh->template GetNNGlobal<NT_VERTEX>());
-    occ.Append(lev_comm.Reduce(cap.mat->NZE() * GetEntrySize(cap.mat.get()), MPI_SUM, 0));
+    if (lev_comm.Rank() == 0)
+      { occ.Append(lev_comm.Reduce(cap.mat->NZE() * GetEntrySize(cap.mat.get()), MPI_SUM, 0)); }
+    else
+      { lev_comm.Reduce(cap.mat->NZE() * GetEntrySize(cap.mat.get()), MPI_SUM, 0); }
     
     if (lev == LOG_LEVEL::BASIC)
       { return; }
