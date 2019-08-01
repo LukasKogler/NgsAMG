@@ -10,10 +10,18 @@
 
 namespace amg
 {
+  // like parallelvector.hpp, but force inline
+  INLINE ParallelBaseVector * dynamic_cast_ParallelBaseVector2 (BaseVector * x)
+  {
+    if (AutoVector * ax = dynamic_cast<AutoVector*> (x))
+      { return dynamic_cast<ParallelBaseVector*> (&**ax); }
+    return dynamic_cast<ParallelBaseVector*> (x);
+  }
+
   // FML i hate this
   INLINE BaseVector* get_loc_ptr (const BaseVector& x)
   {
-    if (auto parvec = dynamic_cast_ParallelBaseVector(const_cast<BaseVector*>(&x)) )
+    if (auto parvec = dynamic_cast_ParallelBaseVector2(const_cast<BaseVector*>(&x)) )
       { return parvec->GetLocalVector().get(); }
     else
       { return const_cast<BaseVector*>(&x); }
@@ -22,7 +30,7 @@ namespace amg
   // FML i hate this
   INLINE BaseVector& get_loc_ref (const BaseVector& x)
   {
-    if (auto parvec = dynamic_cast_ParallelBaseVector(const_cast<BaseVector*>(&x)) )
+    if (auto parvec = dynamic_cast_ParallelBaseVector2(const_cast<BaseVector*>(&x)) )
       { return *parvec->GetLocalVector(); }
     else
       { return const_cast<BaseVector&>(x); }
@@ -449,7 +457,7 @@ namespace amg
     auto ex_procs = eqc_h->GetDistantProcs();
     auto nexp = ex_procs.Size();
 
-    cout << " ChunkedDCCMap on EQCH: " << endl << *eqc_h << endl;
+    // cout << " ChunkedDCCMap on EQCH: " << endl << *eqc_h << endl;
     
     // clear non-local dofs from master_of, and split into eqc-blocks
     m_dofs = make_shared<BitArray>(pardofs->GetNDofLocal()); m_dofs->Set();
@@ -474,7 +482,7 @@ namespace amg
 	{ QuickSort(row); }
     }
 
-    cout << "eq_ex_dofs" << endl << eq_ex_dofs << endl;
+    // cout << "eq_ex_dofs" << endl << eq_ex_dofs << endl;
 
     Table<int> members; // ALL members of each eqc
     Table<int> chunk_so; // for each eqc: chunk0-size, chunk1-size, ... ()
@@ -520,8 +528,8 @@ namespace amg
 	});
     }
 
-    cout << "members" << endl << members << endl << endl;
-    cout << "chunk_so" << endl << chunk_so << endl << endl;
+    // cout << "members" << endl << members << endl << endl;
+    // cout << "chunk_so" << endl << chunk_so << endl << endl;
 
     // I think we are ready to construct m_ex_dofs and g_ex_dofs !!
     {
@@ -568,8 +576,8 @@ namespace amg
 	{ QuickSort(row); }
     }
 
-    cout << "m_ex_dofs" << endl << m_ex_dofs << endl << endl;
-    cout << "g_ex_dofs" << endl << g_ex_dofs << endl << endl;
+    // cout << "m_ex_dofs" << endl << m_ex_dofs << endl << endl;
+    // cout << "g_ex_dofs" << endl << g_ex_dofs << endl << endl;
 
   } // ChunkedDCCMap::CalcDOFMasters
 
@@ -586,9 +594,7 @@ namespace amg
       if (auto loc_spmat = dynamic_pointer_cast<SparseMatrix<TM>> (parmat->GetMatrix())) {
 	pardofs = parmat->GetParallelDofs();
 	SetParallelDofs(pardofs);
-	cout << "piep hm2 " << endl;
 	SetUpMats(loc_spmat);
-	cout << "piep hm2 " << endl;
 	g_zero = false;
 	int nzg = (G != nullptr) ? 1 : 0;
 	nzg = parmat->GetParallelDofs()->GetCommunicator().AllReduce(nzg, MPI_SUM);
@@ -670,7 +676,6 @@ namespace amg
       for (auto kp : Range(nexp))
 	{
 	  comm.Recv(recv_mats[kp], ex_procs[kp], MPI_TAG_AMG);
-	  cout << "mat from " << ex_procs[kp] << endl << *recv_mats[kp] << endl;
 	}
     }
 
@@ -678,9 +683,6 @@ namespace amg
       static Timer t(cn + "::SetUpMats - merge"); RegionTimer rt(t);
 
       auto& mf_dofs = *dcc_map->GetMasterDOFs();
-
-      cout << "mf_dofs: " << dcc_map->GetMasterDOFs() << endl;
-      cout << "mf_dofs: " << endl << mf_dofs << endl;
 
       Array<int> perow(H); perow = 0;
       Array<size_t> at_row(nexp);
@@ -694,7 +696,6 @@ namespace amg
 	  if (mf_dofs.Test(rownr)) { // I am master of this dof - merge recved rows with part of original row
 	    row_matis.SetSize0(); // which mats I received have this row?
 	    if (pds.GetDistantProcs(rownr).Size()) { // local master
-	      cout << "mf ex " << rownr << endl;
 	      for (auto kp : Range(nexp)) {
 		auto exds = dcc_map->GetMDOFs(kp);
 		if (at_row[kp] == exds.Size()) continue; // no more rows to take from there
@@ -781,8 +782,8 @@ namespace amg
 
     } // merge diag-mats
 
-    cout << endl << "ORIG A MAT: " << endl << A << endl << endl ;
-    cout << endl  << "M done: " << endl << *M << endl << endl ;
+    // cout << endl << "ORIG A MAT: " << endl << A << endl << endl ;
+    // cout << endl  << "M done: " << endl << *M << endl << endl ;
     
     { // build G-matrix
       static Timer t(cn + "::SetUpMats - S-mat"); RegionTimer rt(t);
@@ -816,7 +817,7 @@ namespace amg
 	});
     } // build G-matrix
 
-    cout << endl  << "G done: " << endl << *G << endl << endl ;
+    // cout << endl  << "G done: " << endl << *G << endl << endl ;
 
     {
       static Timer t(cn + "::SetUpMats - finish send"); RegionTimer rt(t);
@@ -837,13 +838,9 @@ namespace amg
     x.Cumulate();
     y.Distribute();
 
-    cout << " x y " << &x << " " << &y << endl;
-    cout << " MA stats " << x.GetParallelStatus() << " " << y.GetParallelStatus() << endl;
     M->MultAdd(s, get_loc_ref(x), get_loc_ref(y));
-    cout << " MA stats " << x.GetParallelStatus() << " " << y.GetParallelStatus() << endl;
     if (G != nullptr)
       { G->MultAdd(s, get_loc_ref(x), get_loc_ref(y)); }
-    cout << " MA stats " << x.GetParallelStatus() << " " << y.GetParallelStatus() << endl;
   }
 
   template<class TM>
@@ -854,9 +851,10 @@ namespace amg
 
     x.Cumulate();
     y.Distribute();
-    M->MultAdd(s, x, y);
+
+    M->MultAdd(s, get_loc_ref(x), get_loc_ref(y));
     if (G != nullptr)
-      { G->MultAdd(s, x, y); }
+      { G->MultAdd(s, get_loc_ref(x), get_loc_ref(y)); }
   }
 
   template<class TM>
@@ -868,13 +866,9 @@ namespace amg
     x.Cumulate();
     y.SetParallelStatus(DISTRIBUTED);
 
-    cout << " x y " << &x << " " << &y << endl;
-    cout << " M stats " << x.GetParallelStatus() << " " << y.GetParallelStatus() << endl;
     M->Mult(get_loc_ref(x), get_loc_ref(y));
-    cout << " M stats " << x.GetParallelStatus() << " " << y.GetParallelStatus() << endl;
     if (G != nullptr)
       { G->MultAdd(1.0, get_loc_ref(x), get_loc_ref(y)); }
-    cout << " M stats " << x.GetParallelStatus() << " " << y.GetParallelStatus() << endl;
   }
 
   template<class TM>
@@ -885,9 +879,9 @@ namespace amg
 
     x.Cumulate();
     y.Distribute();
-    M->MultTransAdd(s, x, y);
+    M->MultTransAdd(s, get_loc_ref(x), get_loc_ref(y));
     if (G != nullptr)
-      { G->MultTransAdd(s, x, y); }
+      { G->MultTransAdd(s, get_loc_ref(x), get_loc_ref(y)); }
   }
 
   template<class TM>
@@ -898,9 +892,9 @@ namespace amg
 
     x.Cumulate();
     y.Distribute();
-    M->MultTransAdd(s, x, y);
+    M->MultTransAdd(s, get_loc_ref(x), get_loc_ref(y));
     if (G != nullptr)
-      { G->MultTransAdd(s, x, y); }
+      { G->MultTransAdd(s, get_loc_ref(x), get_loc_ref(y)); }
   }
 
   template<class TM>
@@ -912,9 +906,9 @@ namespace amg
     x.Cumulate();
     y.SetParallelStatus(DISTRIBUTED);
 
-    M->MultTrans(x, y);
+    M->MultTrans(get_loc_ref(x), get_loc_ref(y));
     if (G != nullptr)
-      { G->MultTransAdd(1.0, x, y); }
+      { G->MultTransAdd(1.0, get_loc_ref(x), get_loc_ref(y)); }
   }
 
 
@@ -1067,9 +1061,6 @@ namespace amg
     	else
     	  { SmoothBackLocal(stage, xloc, use_b ? ncbloc : resloc); }
       }
-      else {
-    	throw Exception("GSS invalid type");
-      }
     };
 
     // if (dcc_map != nullptr)
@@ -1177,9 +1168,8 @@ namespace amg
     	res.Distribute();
     	if (G != nullptr) {
     	  if (!x_zero) // stashed G*x_old
-    	    { cout << "App stashed gx" << endl; resloc += Gxloc; }
-	  cout << " subs gxold" << endl;
-    	  G->MultAdd(-1, xloc, resloc);
+    	    { resloc += Gxloc; }
+	  G->MultAdd(-1, xloc, resloc);
     	}
       }
     }
@@ -1201,14 +1191,10 @@ namespace amg
 
     auto m_dofs = A->GetMap()->GetMasterDOFs();
 
-    cout << "M: " << endl << M << endl << endl;
-
     if (pardofs != nullptr)
       for (auto k : Range(add_diag.Size()))
 	if ( ((!_subset) || (_subset->Test(k))) && ((!m_dofs) || (m_dofs->Test(k))) )
-	  { cout << " MOD " << k << endl; M(k,k) += add_diag[k]; }
-
-    cout << "piep hgss3" << endl;
+	  { M(k,k) += add_diag[k]; }
 
     shared_ptr<BitArray> loc = _subset, ex = nullptr;
     if (pardofs != nullptr) {
@@ -1228,12 +1214,12 @@ namespace amg
       }
     }
 
-    if (_subset)
-      { cout << "subset: " << endl << *_subset << endl; }
-    else
-      { cout << " NO SUBSET!" << endl; }
+    // if (_subset)
+    //   { cout << "subset: " << endl << *_subset << endl; }
+    // else
+    //   { cout << " NO SUBSET!" << endl; }
 
-    cout << "m_dofs: " << endl << *m_dofs << endl;
+    // cout << "m_dofs: " << endl << *m_dofs << endl;
 
     jac_loc = make_shared<GSS3<TM>>(A->GetM(), loc);
     if ( (pardofs != nullptr) && (ex->NumSet() != 0) )
