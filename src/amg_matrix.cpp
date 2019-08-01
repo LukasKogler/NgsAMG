@@ -61,7 +61,7 @@ namespace amg
 	xl.SetParallelStatus(CUMULATED);
 
 	rl.FVDouble() = bl.FVDouble();
-	rl.SetParallelStatus(rhs_level[level]->GetParallelStatus());
+	rl.SetParallelStatus(bl.GetParallelStatus());
 
 	smoothers[level]->Smooth(xl, bl, rl, true, true, true);
 
@@ -87,7 +87,9 @@ namespace amg
 	t4.Stop();
       }
       else {
-	throw Exception("Coarsest level smooth kind of not implemented ...");
+	// throw Exception("Coarsest level smooth kind of not implemented ...");
+	*x_level[n_levels-1] = 0;
+	x_level[n_levels-1]->Cumulate();
       }
     }
 
