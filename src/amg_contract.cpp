@@ -203,6 +203,11 @@ namespace amg
 #endif
 
     RegionTimer rt(timer_hack_ctr_f2c());
+    /** 
+	We HAVE to null out coarse vec, because there are DOFs that get vals from multiple
+	sources that have to be added up, and because we can have DOFs that cannot be mapped "within-group-locally".
+	These DOFs have to be nulled so we have no garbage vals left.
+     **/
     if (x_coarse != nullptr)
       { x_coarse->FVDouble() = 0; x_coarse->SetParallelStatus(DISTRIBUTED); }
     AddF2C(1.0, x_fine, x_coarse);
@@ -260,7 +265,7 @@ namespace amg
 
     RegionTimer rt(timer_hack_ctr_c2f());
     auto& comm(pardofs->GetCommunicator());
-    x_fine->Cumulate();
+    x_fine->SetParallelStatus(CUMULATED);
     auto fvf = x_fine->FV<TV>();
     if (!is_gm)
       {
