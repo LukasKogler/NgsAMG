@@ -1,6 +1,8 @@
 #ifndef FILE_AMGSM3
 #define FILE_AMGSM3
 
+#include <condition_variable>
+
 namespace amg
 {
 
@@ -17,6 +19,7 @@ namespace amg
     shared_ptr<BitArray> freedofs;
     Array<TM> dinv;
     size_t first_free, next_free;
+    Array<int> row_nrs;
 
   public:
     using TSCAL = typename mat_traits<TM>::TSCAL;
@@ -51,6 +54,51 @@ namespace amg
 			 bool res_updated = false, bool update_res = true, bool x_zero = false) const;
 
   }; // class GSS3
+
+
+  /** 
+      Sequential Gauss-Seidel. Can update residual during computation.
+      If add_diag is given, adds uses (D + add_D)^-1 instead if D^-1
+      Compresses rows/cols from orig. sparse mat that it needs.
+      Only use this for "small" blocks
+  **/
+  template<class TM>
+  class GSS4
+  {
+  protected:
+    Array<int> xdofs/*, resdofs*/;        // dofnrs we upadte, dofnrs we need (so also all neibs)
+    shared_ptr<SparseMatrix<TM>> cA;  // compressed A
+    Array<TM> dinv;
+
+  public:
+    using TSCAL = typename mat_traits<TM>::TSCAL;
+    static constexpr int BS () { return mat_traits<TM>::HEIGHT; }
+    using TV = typename strip_vec<Vec<BS(),TSCAL>> :: type;
+
+    GSS4 (shared_ptr<SparseMatrix<TM>> A, shared_ptr<BitArray> subset = nullptr,
+	   FlatArray<TM> add_diag = FlatArray<TM>(0, nullptr));
+
+  protected:
+
+    template<class TLAM> INLINE void iterate_rows (TLAM lam, bool bw) const;
+      
+    virtual void SmoothRESInternal (BaseVector &x, BaseVector &res, bool backwards) const;
+    virtual void SmoothRHSInternal (BaseVector &x, const BaseVector &b, bool backwards) const;
+
+  public:
+    // smooth with RHS
+    virtual void Smooth (BaseVector &x, const BaseVector &b) const
+    { cout << "gss4 Smooth" << endl; SmoothRHSInternal(x, b, false); }
+    virtual void SmoothBack (BaseVector &x, const BaseVector &b) const
+    { cout << "gss4 SmoothBack" << endl; SmoothRHSInternal(x, b, true); }
+
+    // smooth with residual and keep it up do date
+    virtual void SmoothRES (BaseVector &x, BaseVector &res) const
+    { SmoothRESInternal(x, res, false); }
+    virtual void SmoothBackRES (BaseVector &x, BaseVector &res) const
+    { SmoothRESInternal(x, res, true); }
+
+  }; // class GSS4
 
 
   /**
@@ -96,13 +144,11 @@ namespace amg
     FlatArray<int> GetMDOFs (int kp) { return m_ex_dofs[kp]; }
     FlatArray<int> GetGDOFs (int kp) { return g_ex_dofs[kp]; }
 
-  protected:
+    void mpi_thread_met ();
 
-    /** Call in constructor to allocate MPI requests and buffers **/
-    void AllocMPIStuff ();
-
-    /** Overload and Call in constructor, decide who is master of which DOFs (constructs m_dofs, m_ex_dofs, g_ex_dofs) **/
-    virtual void CalcDOFMasters (shared_ptr<EQCHierarchy> eqc_h) = 0;
+    /** used for DIS2CO and CO2CU **/
+    void WaitM ();
+    void WaitG ();
 
     /** used for DIS2CO **/
     void BufferG (BaseVector & vec);
@@ -112,11 +158,25 @@ namespace amg
     void BufferM (BaseVector & vec);
     void ApplyG (BaseVector & vec);
 
+  protected:
+
+    /** Call in constructor to allocate MPI requests and buffers **/
+    void AllocMPIStuff ();
+
+    /** Overload and Call in constructor, decide who is master of which DOFs (constructs m_dofs, m_ex_dofs, g_ex_dofs) **/
+    virtual void CalcDOFMasters (shared_ptr<EQCHierarchy> eqc_h) = 0;
+
+
+
     shared_ptr<ParallelDofs> pardofs;
 
     int block_size;
 
     bool inthread;
+    bool thread_ready, thread_done, end_thread;
+    std::condition_variable cv;
+    std::mutex m;
+    std::thread* mpi_thread;
 
     shared_ptr<BitArray> m_dofs;
 
@@ -292,7 +352,8 @@ namespace amg
 
     using HybridSmoother2<TM>::A;
 
-    shared_ptr<GSS3<TM>> jac_loc, jac_ex;
+    shared_ptr<GSS3<TM>> jac_loc, jac_exo;
+    shared_ptr<GSS4<TM>> jac_ex;
 
     virtual void SmoothLocal (int stage, BaseVector &x, const BaseVector &b) const override;
     virtual void SmoothBackLocal (int stage, BaseVector &x, const BaseVector &b) const override;

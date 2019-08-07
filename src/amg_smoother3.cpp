@@ -1,4 +1,3 @@
-
 #define FILE_AMGSM3_CPP
 
 #ifdef USE_TAU
@@ -8,8 +7,63 @@
 
 #include "amg.hpp"
 
+#include "amg_smoother_impl.hpp"
+
 namespace amg
 {
+
+  static mutex glob_mut;
+  static bool thread_ready = true, thread_done = false, end_thread = false;
+  static function<void(void)> thread_exec_fun = [](){};
+  static std::condition_variable cv;
+
+  
+  void thread_fpf () {
+    cout << " thread_fpf!!!! " << endl;
+#ifdef USE_TAU
+    cout << " call reg thread main" << endl;
+    // TAU_REGISTER_THREAD();
+    cout << " call set node thread" << endl;
+    TAU_PROFILE_SET_NODE(NgMPI_Comm(MPI_COMM_WORLD).Rank());
+#endif
+    while( !end_thread ) {
+      // cout << "--- ulock" << endl;
+      std::unique_lock<std::mutex> lk(glob_mut);
+      // cout << "--- wait" << endl;
+      cv.wait(lk, [&](){ return thread_ready; });
+      // cout << "--- woke up,  " << thread_ready << " " << thread_done << " " << end_thread << endl;
+      if (!end_thread && !thread_done) {
+	thread_exec_fun();
+	thread_done = true; thread_ready = false;
+	cv.notify_one();
+      }
+    }
+    // cout << "--- am done!" << endl;
+  }
+
+  static std::thread glob_mpi_thread = std::thread(thread_fpf);
+
+  class ThreadGuard {
+  public:
+    std::thread * t;
+    // ThreadGuard(std::thread* at) : t(at) { ; }
+    ThreadGuard(std::thread* at) : t(at) {
+      cout << " MAKE class ThreadGuard !!!" << endl;
+#ifdef USE_TAU
+      // has nothing to do with the MPI thread itself
+					       // TAU_ENABLE_INSTRUMENTATION();
+      cout << " call reg thread main" << endl;
+					 // TAU_REGISTER_THREAD();
+      cout << " call set node main" << endl;
+      TAU_PROFILE_SET_NODE(NgMPI_Comm(MPI_COMM_WORLD).Rank());
+#endif
+    }
+    ~ThreadGuard () { thread_ready = true; end_thread = true; cv.notify_one(); t->join(); }
+  };
+
+  static ThreadGuard tg(&glob_mpi_thread);
+
+
   // like parallelvector.hpp, but force inline
   INLINE ParallelBaseVector * dynamic_cast_ParallelBaseVector2 (BaseVector * x)
   {
@@ -55,6 +109,7 @@ namespace amg
   	  { dinv[i] = TM(0.0); }
       });
 
+    auto numset = freedofs ? freedofs->NumSet() : A.Height();
     first_free = 0; next_free = A.Height();
     if (freedofs != nullptr) {
       if (freedofs->NumSet() == 0)
@@ -76,9 +131,16 @@ namespace amg
 	}
       }
     }
-    cout << " set " << ( (freedofs != nullptr) ? to_string(freedofs->NumSet()) : string("ALL!")) << endl;
 
-    cout << " first next " << first_free << " " << next_free << " height " << A.Height() << endl;
+
+    if ( numset < 0.2 * A.Height()) {
+      row_nrs.SetSize(numset); numset = 0;
+      for (auto k : Range(A.Height()))
+	if (freedofs->Test(k))
+	  { row_nrs[numset++] = k; }
+    }
+    // cout << " set " << ( (freedofs != nullptr) ? to_string(freedofs->NumSet()) : string("ALL!")) << endl;
+    // cout << " first next " << first_free << " " << next_free << " height " << A.Height() << endl;
 
   } // GSS3 (..)
 
@@ -99,9 +161,20 @@ namespace amg
 
     auto fvx = x.FV<TV>();
     auto fvb = b.FV<TV>();
-
+    bool out = false;
     auto up_row = [&](auto rownr) LAMBDA_INLINE {
       auto r = fvb(rownr) - A.RowTimesVector(rownr, fvx);
+      // if (out)
+      // 	{ cout << "gss3 up row " << rownr << " dof " << rownr << " res " << fvb(rownr) << " " << A.RowTimesVector(rownr, fvx) << " " << r << " update " << dinv[rownr] * r << endl; }
+      // 	if (rownr == 20295) {
+      // 	  auto ri = A.GetRowIndices(rownr);
+      // 	  auto rv = A.GetRowValues(rownr);
+      // 	  cout << "row: " << endl;
+      // 	  for (auto j : Range(ri)) {
+      // 	    cout << "[" << j << " " << ri[j] << " " << rv[j] << " " << fvx(ri[j]) <<  "] ";
+      // 	  }
+      // 	      cout << endl;
+      // 	}
       fvx(rownr) += dinv[rownr] * r;
     };
 
@@ -122,6 +195,8 @@ namespace amg
       const int use_next = min2(next, next_free);
       // const int use_first = 0;
       // const int use_next = A.Height();
+      out = (first == 0) && (next == A.Height());
+      // cout << " gss 3 rhs back " << first << " " << next << " " << A.Height() << endl;
       for (int rownr = use_next - 1; rownr >= use_first; rownr--)
 	if (!fds || fds->Test(rownr)) {
 	  A.PrefetchRow(rownr);
@@ -154,38 +229,255 @@ namespace amg
       fvx(rownr) -= w;
     };
     
+    double ti = MPI_Wtime();
+    double tl = 0;
 
-    if (!backwards) {
-      const size_t use_first = max2(first, first_free);
-      const size_t use_next = min2(next, next_free);
-      // const size_t use_first = 0;
-      // const size_t use_next = A.Height();
-      for (size_t rownr = use_first; rownr < use_next; rownr++)
-	if (!fds || fds->Test(rownr)) {
-	  A.PrefetchRow(rownr);
-	  up_row(rownr);
+    double nrows = 0;
+
+    if (row_nrs.Size()) {
+      tl = MPI_Wtime();
+      if (!backwards) {
+	if (row_nrs.Size() > 1) {
+	  for (auto k : Range(row_nrs.Size()-1)) {
+	    A.PrefetchRow(row_nrs[k+1]);
+	    up_row(row_nrs[k]);
+	  }
 	}
+	if (row_nrs.Size())
+	  { up_row(row_nrs.Last()); }
+      }
+      else {
+	for (int k = row_nrs.Size() - 1; k > 0; k--) {
+	  A.PrefetchRow(row_nrs[k-1]);
+	  up_row(row_nrs[k]);
+	}
+	if (row_nrs.Size())
+	  { up_row(row_nrs[0]); }
+      }
+      tl = MPI_Wtime()-tl;
     }
     else {
-      const int use_first = max2(first, first_free);
-      const int use_next = min2(next, next_free);
-      // const int use_first = 0;
-      // const int use_next = A.Height();
-      for (int rownr = use_next - 1; rownr >= use_first; rownr--)
-	if (!fds || fds->Test(rownr)) {
-	  A.PrefetchRow(rownr);
-	  up_row(rownr);
-	}
+      if (!backwards) {
+	const size_t use_first = max2(first, first_free);
+	const size_t use_next = min2(next, next_free);
+	nrows = use_next - use_first;
+	// const size_t use_first = 0;
+	// const size_t use_next = A.Height();
+	tl = MPI_Wtime();
+	for (size_t rownr = use_first; rownr < use_next; rownr++)
+	  if (!fds || fds->Test(rownr)) {
+	    A.PrefetchRow(rownr);
+	    up_row(rownr);
+	  }
+	tl = MPI_Wtime() - tl;
+      }
+      else {
+	const int use_first = max2(first, first_free);
+	const int use_next = min2(next, next_free);
+	nrows = use_next - use_first;
+	// const int use_first = 0;
+	// const int use_next = A.Height();
+	tl = MPI_Wtime();
+	for (int rownr = use_next - 1; rownr >= use_first; rownr--)
+	  if (!fds || fds->Test(rownr)) {
+	    A.PrefetchRow(rownr);
+	    up_row(rownr);
+	  }
+	tl = MPI_Wtime() - tl;
+      }
     }
+
+    // double nrows = fds ? fds->NumSet() : A.Height();
+    // nrows = fds ? fds->NumSet() : A.Height();
+    ti = MPI_Wtime() - ti;
+
+    // if (nrows) {
+    //   cout << endl << "-------" << endl;
+    //   cout << "rows " << nrows << ", secs " << ti << " " << tl << endl;
+    //   cout << "tot K rows/sec " << nrows / 1000 / ti << endl;
+    //   cout << "loop K rows/sec " << nrows / 1000 / tl << endl;
+    //   cout << "-------" << endl;
+    // }
 
   } // SmoothRESInternal
 
+
+  /** GSS4 **/
+  template<class TM>
+  GSS4<TM> :: GSS4 (shared_ptr<SparseMatrix<TM>> A, shared_ptr<BitArray> subset, FlatArray<TM> add_diag)
+  {
+    if (subset && (subset->NumSet() != A->Height()) ) {
+      /** xdofs / resdofs **/
+      // Array<int> resdofs;
+      size_t cntx = 0, cntres = 0;
+      BitArray res_subset(subset->Size()); res_subset.Clear();
+      for (auto k : Range(A->Height())) {
+	if (subset->Test(k)) {
+	  cntx++; res_subset.Set(k);
+	  for (auto j : A->GetRowIndices(k))
+	    { res_subset.Set(j); }
+	}
+      }
+      xdofs.SetSize(cntx); cntx = 0;
+      // resdofs.SetSize(res_subset->NumSet()); cntres = 0;
+      for (auto k : Range(A->Height())) {
+	if (subset->Test(k))
+	  { xdofs[cntx++] = k; }
+	// if (res_subset->Test(k))
+	//   { resdofs[cntres++] = k; }
+      }
+      /** compress A **/
+      Array<int> perow(xdofs.Size()); perow = 0;
+      for (auto k : Range(xdofs))
+	for (auto col : A->GetRowIndices(xdofs[k]))
+	  { if (res_subset.Test(col)) { perow[k]++; } }
+      cA = make_shared<SparseMatrix<TM>>(perow); perow = 0;
+      for (auto k : Range(xdofs)) {
+	auto ri = cA->GetRowIndices(k);
+	auto rv = cA->GetRowValues(k);
+	auto Ari = A->GetRowIndices(xdofs[k]);
+	auto Arv = A->GetRowValues(xdofs[k]);
+	int c = 0;
+	for (auto j : Range(Ari)) {
+	  auto col = Ari[j];
+	  if (res_subset.Test(col)) {
+	    ri[c] = col;
+	    rv[c++] = Arv[j];
+	  }
+	}
+      }
+    } // if (subset)
+    else {
+      xdofs.SetSize(A->Height()); //resdofs.SetSize(A->Height());
+      for (auto k : Range(A->Height()))
+	{ xdofs[k] = /*resdofs[k] = */ k; }
+      cA = A;
+    }
+    /** invert diag **/
+    const auto& ncA(*A);
+    dinv.SetSize(xdofs.Size());
+    const bool add = add_diag.Size() > 0;
+    for (auto k : Range(xdofs)) {
+      auto dof = xdofs[k];
+      dinv[k] = ncA(dof, dof);
+      if (add)
+	{ dinv[k] += add_diag[dof]; }
+      CalcInverse(dinv[k]);
+    }
+  } // GSS4(..)
+  
+
+  template<class TM>
+  void GSS4<TM> :: SmoothRESInternal (BaseVector &x, BaseVector &res, bool backwards) const
+  {
+#ifdef USE_TAU
+    TAU_PROFILE("GSS4::RES", "", TAU_DEFAULT);
+#endif
+    static Timer t("GSS4::RES"); RegionTimer rt(t);
+
+    const auto& A(*cA);
+    auto fvx = x.FV<TV>();
+    auto fvr = res.FV<TV>();
+    
+    double ti = MPI_Wtime();
+    iterate_rows( [&](auto rownr) LAMBDA_INLINE {
+	auto w = -dinv[rownr] * fvr(xdofs[rownr]);
+	A.AddRowTransToVector(rownr, w, fvr);
+	fvx(xdofs[rownr]) -= w;
+      }, backwards);
+    ti = MPI_Wtime() - ti;
+
+    // double nrows = xdofs.Size();
+    // if (nrows) {
+    //   cout << endl << "--- GSS4 ---" << endl;
+    //   cout << "rows " << nrows / 1000 / ti << endl;
+    //   cout << "K rows/sec " << nrows / 1000 / ti << endl;
+    //   cout << endl << "------" << endl;
+    // }
+
+  } // GSS4::SmoothRESInternal
+
+
+  template<class TM>
+  void GSS4<TM> :: SmoothRHSInternal (BaseVector &x, const BaseVector &b, bool backwards) const
+  {
+#ifdef USE_TAU
+    TAU_PROFILE("GSS4::RHS", "", TAU_DEFAULT);
+#endif
+    static Timer t("GSS4::RHS"); RegionTimer rt(t);
+
+    const auto& A(*cA);
+    auto fvx = x.FV<TV>();
+    auto fvb = b.FV<TV>();
+    iterate_rows([&](auto rownr) LAMBDA_INLINE {
+	auto r = fvb(xdofs[rownr]) - A.RowTimesVector(rownr, fvx);
+	// cout << "gss4 up row " << rownr << " dof " << xdofs[rownr] << " res " << fvb(xdofs[rownr]) << " " << A.RowTimesVector(rownr, fvx) << " " << r << " update " << dinv[rownr] * r << endl;
+
+	// if (rownr == 1246) {
+	//   auto ri = A.GetRowIndices(rownr);
+	//   auto rv = A.GetRowValues(rownr);
+	//   cout << "row: " << endl;
+	//   for (auto j : Range(ri)) {
+	//     cout << "[" << j << " " << ri[j] << " " << rv[j] << " " << fvx(ri[j]) <<  "] ";
+	//   }
+	//       cout << endl;
+	// }
+	
+	fvx(xdofs[rownr]) += dinv[rownr] * r;
+      }, backwards);
+
+  } // GSS4::SmoothRHSInternal
+
+
+#ifdef USE_TAU
+  void tauNTC (string x) {
+    TAU_ENABLE_INSTRUMENTATION();
+    TAU_PROFILE_SET_NODE(NgMPI_Comm(MPI_COMM_WORLD).Rank());
+    int node = TAU_PROFILE_GET_NODE();
+    int thread = TAU_PROFILE_GET_THREAD();
+    cout << x << " TAU node / thread id " << node << " " << thread << endl; 
+  }
+#endif
+
+
+  void thread_fun (std::mutex * m, std::condition_variable * cv, bool * done, bool * ready, bool * end, Array<MPI_Request> * reqs)
+  {
+#ifdef USE_TAU
+    TAU_REGISTER_THREAD();
+    {
+      // tauNTC("--- ");
+      TAU_PROFILE("thread_fun", "", TAU_DEFAULT);
+      // tauNTC("--- ");
+#endif
+
+    // cout << "--- thread makes ulock" << endl;
+    while(!*end) {
+      std::unique_lock<std::mutex> lk(*m);
+      // cout << "--- thread sleep, " << *done << " " << *ready << " " << *end << endl;
+      cv->wait(lk, [ready](){ return *ready; });
+      // cout << "--- thread woke up, " << *done << " " << *ready << " " << *end << endl;
+      if (!*end && !*done) {
+	// cout << "--- thread calls waitall" << endl;
+	MyMPI_WaitAll(*reqs);
+	// cout << "--- thread waitall done, notify" << endl;
+	*done = true; *ready = false;
+	cv->notify_one();
+	// cout << "--- go back to sleep" << endl;
+      }
+    }
+    // cout << "thread finishes" << endl;
+
+#ifdef USE_TAU
+    }
+#endif
+  }
 
   /** DCCMap **/
 
   template<class TSCAL>
   DCCMap<TSCAL> :: DCCMap (shared_ptr<EQCHierarchy> eqc_h, shared_ptr<ParallelDofs> _pardofs, bool _inthread)
-    : pardofs(_pardofs), block_size(_pardofs->GetEntrySize()), inthread(_inthread)
+    : pardofs(_pardofs), block_size(_pardofs->GetEntrySize()), inthread(_inthread),
+      thread_done(false), thread_ready(false), end_thread(false), mpi_thread(nullptr)
   {
     ;
   } // DCCMap (..)
@@ -210,14 +502,66 @@ namespace amg
       alloc_bs(m_buffer, m_ex_dofs); // m_buffer = -1;
       alloc_bs(g_buffer, g_ex_dofs); // g_buffer = -1;
     }
+
+    /** start thread that does backround MPI-communication **/
+    
+    if (inthread) {
+      // mpi_thread = new std::thread(thread_fun, &m, &cv, &thread_done, &thread_ready, &end_thread, &m_reqs);
+      mpi_thread = new std::thread([this](){ this->mpi_thread_met(); });
+    }
   }
+
 
   template<class TSCAL>
   DCCMap<TSCAL> :: ~DCCMap ()
   {
-    MyMPI_WaitAll(m_reqs);
     MyMPI_WaitAll(g_reqs);
     // thread cleanup maybe?
+    if (mpi_thread != nullptr) {
+      {
+	std::lock_guard<std::mutex> lk(m); // get lock
+	thread_ready = true;
+	end_thread = true;
+      }
+      cv.notify_one(); // weak up mpi-thread
+      mpi_thread->join();
+      delete mpi_thread;
+    }
+    else {
+      MyMPI_WaitAll(m_reqs);
+    }
+  }
+
+
+  template<class TSCAL>
+  void DCCMap<TSCAL> :: mpi_thread_met ()
+  {
+#ifdef USE_TAU
+    TAU_PROFILE("mpi_thread_met", TAU_CT(*this), TAU_DEFAULT);
+#endif
+
+    while( !end_thread ) {
+      std::unique_lock<std::mutex> lk(m);
+      cv.wait(lk, [&](){ return thread_ready; });
+      if (!end_thread && !thread_done) {
+
+	auto ex_dofs = pardofs->GetDistantProcs();
+	auto comm = pardofs->GetCommunicator();
+
+	for (auto kp : Range(ex_dofs.Size())) {
+	  if (m_ex_dofs[kp].Size()) // recv M vals
+	    { m_reqs[kp] = MyMPI_IRecv(m_buffer[kp], ex_dofs[kp], MPI_TAG_AMG + 3, comm); }
+	  else
+	    { m_reqs[kp] = MPI_REQUEST_NULL; }
+	}
+	
+	MyMPI_WaitAll(m_reqs);
+
+	thread_done = true; thread_ready = false;
+	cv.notify_one();
+      }
+    }
+
   }
 
 
@@ -225,7 +569,11 @@ namespace amg
   void DCCMap<TSCAL> :: StartDIS2CO (BaseVector & vec)
   {
 #ifdef USE_TAU
+    // tauNTC("");
+
     TAU_PROFILE("StartDIS2CO", TAU_CT(*this), TAU_DEFAULT);
+
+    // tauNTC("");
 #endif
 
     BufferG(vec);
@@ -242,10 +590,20 @@ namespace amg
       else
 	{ g_reqs[kp] = MPI_REQUEST_NULL; }
 
+      if (inthread) { continue; }
+
       if (m_ex_dofs[kp].Size()) // recv M vals
 	{ m_reqs[kp] = MyMPI_IRecv(m_buffer[kp], ex_dofs[kp], MPI_TAG_AMG + 3, comm); }
       else
 	{ m_reqs[kp] = MPI_REQUEST_NULL; }
+    }
+
+    if (inthread) {
+      {
+	std::lock_guard<std::mutex> lk(m);
+	thread_ready = true;
+      }
+      cv.notify_one();
     }
 
   } // DCCMap::StartDIS2CO
@@ -261,7 +619,20 @@ namespace amg
     if (vec.GetParallelStatus() != DISTRIBUTED) // just nulling-out entries is enough
       { vec.SetParallelStatus(DISTRIBUTED); return; }
 
-    MyMPI_WaitAll(m_reqs);
+    if (!inthread)
+      { WaitM(); }
+    else if (mpi_thread != nullptr) {
+      // cout << "get lock (app)" << endl;
+      if (true) {
+	std::unique_lock<std::mutex> lk(m);
+	// cout << "have lock (app), wait" << endl;
+	cv.wait(lk, [&]{ return thread_done; });
+	// cout << "thread done, set thread_done to false" << endl;
+      }
+      thread_done = false;
+    }
+    else
+      { throw Exception("why dont i have a thread?"); }
 
     ApplyM(vec);
 
@@ -376,6 +747,20 @@ namespace amg
 
 
   template<class TSCAL>
+  void DCCMap<TSCAL> :: WaitM ()
+  {
+    MyMPI_WaitAll(m_reqs);
+  }
+
+
+  template<class TSCAL>
+  void DCCMap<TSCAL> :: WaitG ()
+  {
+    MyMPI_WaitAll(g_reqs);
+  }
+
+
+  template<class TSCAL>
   void DCCMap<TSCAL> :: BufferG (BaseVector & vec)
   {
 #ifdef USE_TAU
@@ -470,7 +855,6 @@ namespace amg
 	  Array<int> feqdp({p});
 	  auto face_eq =  eqc_h->FindEQCWithDPs(feqdp);
 	  for (auto d : ex_dofs) {
-	    cout << "ex dof, clear " << d << endl;
 	    m_dofs->Clear(d);
 	    auto dps = pardofs->GetDistantProcs(d);
 	    if (dps.Size() == 1) { create_eq_dofs.Add(face_eq, d); }
@@ -513,10 +897,11 @@ namespace amg
 	    int rest = exds % chunk_size;
 	    // start handing out chunks with an arbitrary member (but no RNG, so it is reproducible)
 	    int start = (1029 * eqc_h->GetEQCID(k) / 7) % nmems;
-	    // for (auto j : Range(n_chunks))
-	    //   { chunk_so[k][(start + j) % nmems] = chunk_size + ( (j < rest) ? 1 : 0 ); }
-	    if (chunk_so[k].Size())
-	      { chunk_so[k][0] = exds; }
+	    for (auto j : Range(n_chunks))
+	      { chunk_so[k][(start + j) % nmems] = chunk_size + ( (j < rest) ? 1 : 0 ); }
+
+	    // if (chunk_so[k].Size())
+	    //   { chunk_so[k][0] = exds; }
 	    
 	  }
 	}
@@ -543,24 +928,24 @@ namespace amg
 	    auto dofsk = eq_ex_dofs[k];
 	    int offset = 0;
 	    for (auto j : Range(csk)) {
-	      cout << "chunk for mem mem " << j << " has sz " << csk[j] << endl;
+	      // cout << "chunk for mem mem " << j << " has sz " << csk[j] << endl;
 	      if (csk[j] > 0) {
 		auto exp = memsk[j];
-		cout << " mem is proc " << exp << endl;
+		// cout << " mem is proc " << exp << endl;
 		if (exp == comm.Rank()) { // MY chunk!
-		  cout << " thats me!" << endl;
+		  // cout << " thats me!" << endl;
 		  for (auto p : dps) {
 		    auto kp = find_in_sorted_array(p, ex_procs);
 		    for (auto l : Range(csk[j])) {
 		      c_m_exd.Add(kp, dofsk[offset + l]);
-		      cout << " my dof, set " << dofsk[offset + l] << endl;
+		      // cout << " my dof, set " << dofsk[offset + l] << endl;
 		      m_dofs->Set(dofsk[offset + l]);
 		    }
 		  }
 		}
 		else { // chunk for someone else
 		  auto kp = find_in_sorted_array(exp, ex_procs);
-		  cout << exp << " is " << kp << " in "; prow2(ex_procs); cout << endl;
+		  // cout << exp << " is " << kp << " in "; prow2(ex_procs); cout << endl;
 		  for (auto l : Range(csk[j]))
 		    { c_g_exd.Add(kp, dofsk[offset + l]); }
 		}
@@ -920,7 +1305,7 @@ namespace amg
 
     shared_ptr<DCCMap<typename mat_traits<TM>::TSCAL>> dcc_map = nullptr;
     if (auto pds = _A->GetParallelDofs())
-      { dcc_map = make_shared<ChunkedDCCMap<typename mat_traits<TM>::TSCAL>>(eqc_h, pds); }
+      { dcc_map = make_shared<ChunkedDCCMap<typename mat_traits<TM>::TSCAL>>(eqc_h, pds, false, 10); }
 
     A = make_shared<HybridMatrix2<TM>> (_A, dcc_map);
     origA = _A;
@@ -958,11 +1343,11 @@ namespace amg
 					     bool res_updated, bool update_res, bool x_zero) const
   {
 
-    static Timer t(string("HybridSmoother2<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::Smooth");
+    static Timer t(string("HybSm<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::Smooth");
     RegionTimer rt(t);
 
-    static Timer tpre(string("HybridSmoother2<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::Smooth - pre");
-    static Timer tpost(string("HybridSmoother2<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::Smooth - post");
+    static Timer tpre(string("HybSm<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::S - pre");
+    static Timer tpost(string("HybSm<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::S - post");
 
     /** most of the time RU == UR, if not, reduce to such a case **/
     if (res_updated && !update_res) { // RU && !UR
@@ -989,6 +1374,10 @@ namespace amg
       SmoothInternal(0, x, b, res, res_updated, update_res, false);
       return;
     }
+
+#ifdef USE_TAU
+    TAU_PROFILE("", TAU_CT(*this), TAU_DEFAULT)
+#endif
 
     // if (!update_res) {
     //   res = b - *A * x;
@@ -1028,6 +1417,10 @@ namespace amg
     // cout << update_res << " " << x_zero << " / " << g_zero << " " << need_gx << " " << use_b << " " << endl;
 
     { // calculate b-Gx as RHS for local smooth if update res, otherwise stash Gx
+#ifdef USE_TAU
+    TAU_PROFILE("PREP", TAU_CT(*this), TAU_DEFAULT)
+#endif
+
       RegionTimer rt(tpre);
 
       x.Cumulate(); // should do nothing most of the time
@@ -1096,33 +1489,96 @@ namespace amg
     // cout << " r in " << endl; prv(res);
 
 
-    if (dcc_map != nullptr) {
-      dcc_map->StartDIS2CO(use_b ? ncb : res);
+    BaseVector * mpivec = use_b ? &ncb : &res;
+    condition_variable* pcv = &cv;
+    bool vals_buffered = false;
+
+    bool in_thread = false;
+    
+    {
+      // cout << "lock for setting fun" << endl;
+      	std::lock_guard<std::mutex> lk(glob_mut); // get lock
+      	thread_done = false; thread_ready = true;
+
+	auto lam1 = [&] () {
+	  // dcc_map->BufferG(*mpivec);
+	  // vals_buffered = true;
+	  // pcv->notify_one();
+	  dcc_map->StartDIS2CO(*mpivec);
+	  dcc_map->WaitM();
+	  dcc_map->WaitG();
+	  // dcc_map->ApplyDIS2CO(*mpivec);
+	  // dcc_map->FinishDIS2CO(false);
+	};
+
+	if (in_thread) {
+	  thread_exec_fun = lam1;
+	  cv.notify_one();
+	}
+	else
+	  { lam1(); }
     }
+  
+    // if (dcc_map != nullptr) {
+    //   dcc_map->StartDIS2CO(use_b ? ncb : res);
+    // }
+
 
     smooth_stage(0);
 
-    if (dcc_map != nullptr) {
-      dcc_map->ApplyDIS2CO(use_b ? ncb : res);
-      dcc_map->FinishDIS2CO(false);
+    // if (dcc_map != nullptr) {
+    //   dcc_map->ApplyDIS2CO(use_b ? ncb : res);
+    //   dcc_map->FinishDIS2CO(false);
+    // }
+
+    if (in_thread) {
+      std::unique_lock<std::mutex> lk(glob_mut);
+      cv.wait(lk, [&]{ return thread_done; });
     }
+    dcc_map->ApplyM(*mpivec);
 
     // cout << "CO r: " << endl; prv(res);
 
     smooth_stage(1);
 
 
-    if (dcc_map != nullptr) {
+    // if (dcc_map != nullptr) {
+    //   x.SetParallelStatus(DISTRIBUTED); cheating a bit here, the nonzero vals get overwritten anyways
+    //   dcc_map->StartCO2CU(x);
+    // }
+
+
+    {
       x.SetParallelStatus(DISTRIBUTED); // cheating a bit here, the nonzero vals get overwritten anyways
-      dcc_map->StartCO2CU(x);
+      mpivec = &x;
+      // // cout << "lock for setting fun" << endl;
+      std::lock_guard<std::mutex> lk(glob_mut); // get lock
+      thread_done = false; thread_ready = true;
+      auto lam2 = [mpivec, dcc_map] () {
+	dcc_map->StartCO2CU(*mpivec);
+	dcc_map->ApplyCO2CU(*mpivec);
+	dcc_map->FinishCO2CU(false); // probably dont take a shortcut ??
+      };
+
+      if (in_thread) {
+	thread_exec_fun = lam2;
+	cv.notify_one();
+      }
+      else
+	{ lam2(); }
     }
 
     smooth_stage(2);
 
-    if (dcc_map != nullptr) {
-      dcc_map->ApplyCO2CU(x);
-      dcc_map->FinishCO2CU(false); // probably dont take a shortcut ??
+    if (in_thread) {
+      std::unique_lock<std::mutex> lk(glob_mut);
+      cv.wait(lk, [&]{ return thread_done; });
     }
+
+    // if (dcc_map != nullptr) {
+    //   dcc_map->ApplyCO2CU(x);
+    //   dcc_map->FinishCO2CU(false); // probably dont take a shortcut ??
+    // }
 
     // if (dcc_map != nullptr) {
     //   dcc_map->FinishDIS2CO(false); // I think i could take a shortcut here
@@ -1164,6 +1620,9 @@ namespace amg
 
     { // scatter updates and finish update residuum, res -= S * (x - x_old)
       RegionTimer rt(tpost);
+#ifdef USE_TAU
+    TAU_PROFILE("POST", TAU_CT(*this), TAU_DEFAULT)
+#endif
       if (update_res && (!g_zero) ) {
     	res.Distribute();
     	if (G != nullptr) {
@@ -1220,15 +1679,24 @@ namespace amg
     //   { cout << " NO SUBSET!" << endl; }
 
     // cout << "m_dofs: " << endl << *m_dofs << endl;
-
+    if (_subset) {
+      cout << "rank " << A->GetParallelDofs()->GetCommunicator().Rank() << " numsets " << loc->NumSet() << " " << ex->NumSet() << " " << loc->Size() << " "
+	   << double(loc->NumSet()) / loc->Size() << " " << double(ex->NumSet()) / ex->Size() << endl;
+    }
+    
     jac_loc = make_shared<GSS3<TM>>(A->GetM(), loc);
-    if ( (pardofs != nullptr) && (ex->NumSet() != 0) )
-      { jac_ex  = make_shared<GSS3<TM>>(A->GetM(), ex); }
+    if ( (pardofs != nullptr) && (ex->NumSet() != 0) ) {
+      jac_exo  = make_shared<GSS3<TM>>(A->GetM(), ex);
+    }
 
     if (pardofs != nullptr)
       for (auto k : Range(add_diag.Size()))
 	if ( ((!_subset) || (_subset->Test(k))) && ((!m_dofs) || (m_dofs->Test(k))) )
 	  { M(k,k) -= add_diag[k]; }
+
+    if ( (pardofs != nullptr) && (ex->NumSet() != 0) ) {
+      jac_ex  = make_shared<GSS4<TM>>(A->GetM(), ex, add_diag);
+    }
 
   } // HybridGSS3 (..)
 
@@ -1292,9 +1760,11 @@ namespace amg
   {
     if (stage == 0)
       { jac_loc->Smooth(0, A->Height()/2, x, b); }
-    else if ( (stage == 1) && (jac_ex != nullptr) )
-      { jac_ex->Smooth(0, A->Height(), x, b); }
-    else if (stage == 2)
+    else if ( (stage == 1) && (jac_ex != nullptr) ) {
+      jac_ex->Smooth(x, b);
+      // jac_exo->Smooth(0, A->Height(), x, b);
+    }
+  else if (stage == 2)
       { jac_loc->Smooth(A->Height()/2, A->Height(), x, b); }
   }
 
@@ -1304,8 +1774,10 @@ namespace amg
   {
     if (stage == 0)
       { jac_loc->SmoothBack(A->Height()/2, A->Height(), x, b); }
-    else if ( (stage == 1) && (jac_ex != nullptr) )
-      { jac_ex->SmoothBack(0, A->Height(), x, b); }
+    else if ( (stage == 1) && (jac_ex != nullptr) ) {
+      jac_ex->SmoothBack(x, b);
+      // jac_exo->SmoothBack(0, A->Height(), x, b);
+    }
     else if (stage == 2)
       { jac_loc->SmoothBack(0, A->Height()/2, x, b); }
   }
@@ -1316,8 +1788,10 @@ namespace amg
   {
     if (stage == 0)
       { jac_loc->SmoothRES(0, A->Height()/2, x, res); }
-    else if ( (stage == 1) && (jac_ex != nullptr) )
-      { jac_ex->SmoothRES(0, A->Height(), x, res); }
+    else if ( (stage == 1) && (jac_ex != nullptr) ) {
+      jac_ex->SmoothRES(x, res);
+      // jac_exo->SmoothRES(0, A->Height(), x, res);
+    }
     else if (stage == 2)
       { jac_loc->SmoothRES(A->Height()/2, A->Height(), x, res); }
   }
@@ -1328,11 +1802,14 @@ namespace amg
   {
     if (stage == 0)
       { jac_loc->SmoothBackRES(A->Height()/2, A->Height(), x, res); }
-    else if ( (stage == 1) && (jac_ex != nullptr) )
-      { jac_ex->SmoothBackRES(0, A->Height(), x, res); }
+    else if ( (stage == 1) && (jac_ex != nullptr) )  {
+      jac_ex->SmoothBackRES(x, res);
+      // jac_exo->SmoothBackRES(0, A->Height(), x, res);
+    }
     else if (stage == 2)
       { jac_loc->SmoothBackRES(0, A->Height()/2, x, res); }
   }
 
   template class HybridGSS3<double>;
+
 } // namespace amg
