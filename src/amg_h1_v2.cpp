@@ -286,12 +286,12 @@ namespace amg
 
       auto parmat = make_shared<ParallelMatrix>(spmat, pds, pds, C2D);
 
-      // auto sm = make_shared<HybridGSS2<double>> (parmat, freedofs);
-      // sm->SetSymmetric(options->smooth_symmetric);
-
-      auto eqc_h = make_shared<EQCHierarchy>(pds, false); // todo: get rid of these!
-      auto sm = make_shared<HybridGSS3<double>> (parmat, eqc_h, freedofs);
+      auto sm = make_shared<HybridGSS2<double>> (parmat, freedofs);
       sm->SetSymmetric(options->smooth_symmetric);
+
+      // auto eqc_h = make_shared<EQCHierarchy>(pds, false); // todo: get rid of these!
+      // auto sm = make_shared<HybridGSS3<double>> (parmat, eqc_h, freedofs);
+      // sm->SetSymmetric(options->smooth_symmetric);
 
       return sm;
     }

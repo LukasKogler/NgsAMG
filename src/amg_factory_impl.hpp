@@ -454,8 +454,8 @@ namespace amg
 
       while (curr_meas > goal_meas) { // inner loop - do coarsening until stuck
 
-	if ( (level[1] != 0) && (crs_meas_fac > 0.6) )
-	  { state->coll_cross = true; }
+	// if ( (level[1] != 0) && (crs_meas_fac > 0.6) )
+	//   { state->coll_cross = true; }
 
 	auto grid_step = BuildCoarseMap (cmesh);
 

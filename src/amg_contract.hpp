@@ -38,12 +38,19 @@ namespace amg
     virtual shared_ptr<BaseDOFMapStep> Concatenate (shared_ptr<BaseDOFMapStep> other) override
     { return nullptr; }
     
+    // prol after contract becomes new prol before new contract
+    shared_ptr<SparseMatrixTM<TM>> SwapWithProl (shared_ptr<SparseMatrixTM<TM>> A);
+
     INLINE bool IsMaster () const { return is_gm; }
 
     // TODO: bad hack because NgsAMG_Comm -> MPI_Comm -> NgsMPI_Comm in pardofs constructor (ownership lost!)
     NgsAMG_Comm _comm_keepalive_hack;
 
   protected:
+
+    /** Allocates MPI-Buffers and sets up MPI-types **/
+    void SetUpMPIStuff ();
+
     shared_ptr<TSPM> DoAssembleMatrix (shared_ptr<TSPM> mat) const;
     using BaseDOFMapStep::pardofs, BaseDOFMapStep::mapped_pardofs;
 

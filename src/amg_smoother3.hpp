@@ -87,15 +87,15 @@ namespace amg
 
   public:
     // smooth with RHS
-    virtual void Smooth (BaseVector &x, const BaseVector &b) const
-    { cout << "gss4 Smooth" << endl; SmoothRHSInternal(x, b, false); }
-    virtual void SmoothBack (BaseVector &x, const BaseVector &b) const
-    { cout << "gss4 SmoothBack" << endl; SmoothRHSInternal(x, b, true); }
+    INLINE void Smooth (BaseVector &x, const BaseVector &b) const
+    { SmoothRHSInternal(x, b, false); }
+    INLINE void SmoothBack (BaseVector &x, const BaseVector &b) const
+    { SmoothRHSInternal(x, b, true); }
 
     // smooth with residual and keep it up do date
-    virtual void SmoothRES (BaseVector &x, BaseVector &res) const
+    INLINE void SmoothRES (BaseVector &x, BaseVector &res) const
     { SmoothRESInternal(x, res, false); }
-    virtual void SmoothBackRES (BaseVector &x, BaseVector &res) const
+    INLINE void SmoothBackRES (BaseVector &x, BaseVector &res) const
     { SmoothRESInternal(x, res, true); }
 
   }; // class GSS4

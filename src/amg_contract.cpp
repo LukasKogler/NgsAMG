@@ -158,29 +158,6 @@ namespace amg
   {
     auto comm = pardofs->GetCommunicator();
     is_gm = comm.Rank() == master;
-
-    // cout << "make ctrmap with grp "; prow(group); cout << endl;
-    // cout << "dof_maps: " << endl << dof_maps << endl;
-
-    if (is_gm) {
-      mpi_types.SetSize(group.Size());
-      Array<int> ones; size_t max_s = 0;
-      for (auto k : Range(group.Size())) max_s = max2(max_s, dof_maps[k].Size());
-      ones.SetSize(max_s); ones = 1;
-      for (auto k : Range(group.Size())) {
-	auto map = dof_maps[k]; auto ms = map.Size();
-	MPI_Type_indexed(ms, &ones[0], &map[0], MyGetMPIType<TV>(), &mpi_types[k]);
-	MPI_Type_commit(&mpi_types[k]);
-      }
-      reqs.SetSize(group.Size()); reqs = MPI_REQUEST_NULL;
-      Array<int> perow(group.Size()); perow[0] = 0;
-      for (auto k : Range(size_t(1), group.Size())) perow[k] = dof_maps[k].Size();
-      buffers = Table<TV>(perow);
-    }
-    else {
-      Array<int> perow(1); perow[0] = pardofs->GetNDofLocal();
-      buffers = Table<TV>(perow);
-    }
   }
 
   template<class TV>
@@ -330,6 +307,114 @@ namespace amg
   }
 
 
+  template<class TV>
+  shared_ptr<SparseMatrixTM<typename CtrMap<TV>::TM>> CtrMap<TV> :: SwapWithProl (shared_ptr<SparseMatrixTM<TM>> P)
+  {
+    NgsAMG_Comm comm = pardofs->GetCommunicator();
+
+    shared_ptr<SparseMatrixTM<TM>> split_A;
+
+    if (!is_gm) {
+      comm.Recv(split_A, master, MPI_TAG_AMG);
+      return split_A;
+    }
+
+    /**
+       For each member:
+         - get rows of P corresponding to it's DOFs (keep col-indices) [Pchunk]
+	 - col-inds in Pchunk are the new DOFs of that member, map them, write new dof_map for that member
+	 - reverse-map col-inds of Pchunk
+	 - send Pchunk to member
+     **/
+
+    const auto& rP(*P);
+    Array<Array<int>> pdm(group.Size()); // dof-maps after prol
+    BitArray colspace(P->Width());
+    Array<int> rmap(P->Width());
+
+    auto get_rows = [&](FlatArray<int> dmap, Array<int> & new_dmap) LAMBDA_INLINE {
+      colspace.Clear();
+      int cnt_cols = 0;
+      Array<int> perow(dmap.Size());
+      for (auto k : Range(dmap)) {
+	auto rownr = dmap[k];
+	auto ri = rP.GetRowIndices(rownr);
+	perow[k] = ri.Size();
+	for (auto col : ri) {
+	  if (!colspace.Test(col))
+	    { colspace.Set(col); cnt_cols++; }
+	}
+      }
+      rmap = -1;
+      new_dmap.SetSize(cnt_cols); cnt_cols = 0;
+      for (auto k : Range(P->Width())) {
+	if (colspace.Test(k))
+	  { rmap[k] = cnt_cols; new_dmap[cnt_cols++] = k; }
+      }
+      auto Pchunk = make_shared<SparseMatrixTM<TM>>(perow, cnt_cols);
+      const auto &rPchunk (*Pchunk);
+      for (auto k : Range(dmap)) {
+	auto rownr = dmap[k];
+	auto ri_o = rP.GetRowIndices(rownr);
+	auto ri_n = rPchunk.GetRowIndices(k);
+	auto rv_o = rP.GetRowValues(rownr);
+	auto rv_n = rPchunk.GetRowValues(k);
+	int c = 0;
+	for (auto j : Range(ri_o)) {
+	  auto newcol = rmap[ri_o[j]];
+	  if (newcol != -1) {
+	    ri_n[c] = newcol;
+	    rv_n[c++] = rv_o[j];
+	  }
+	}
+      }
+      return Pchunk;
+    }; // get_rows
+
+    for (auto kp : Range(group)) {
+      auto Apart = get_rows(dof_maps[kp], pdm[kp]);
+      if (group[kp] == comm.Rank())
+	{ split_A = Apart; }
+      else
+	{ comm.Send(*Apart, group[kp], MPI_TAG_AMG); }
+    }
+
+    Array<int> perow(group.Size());
+    for (auto k : Range(perow))
+      { perow[k] = pdm[k].Size(); }
+    dof_maps = Table<int>(perow);
+    for (auto k : Range(perow))
+      { dof_maps[k] = pdm[k]; }
+
+    return split_A;
+  } // CtrMap::SplitProl
+
+
+  template<class TV>
+  void CtrMap<TV> :: SetUpMPIStuff ()
+  {
+    if (is_gm) {
+      mpi_types.SetSize(group.Size());
+      Array<int> ones; size_t max_s = 0;
+      for (auto k : Range(group.Size())) max_s = max2(max_s, dof_maps[k].Size());
+      ones.SetSize(max_s); ones = 1;
+      for (auto k : Range(group.Size())) {
+	auto map = dof_maps[k]; auto ms = map.Size();
+	MPI_Type_indexed(ms, &ones[0], &map[0], MyGetMPIType<TV>(), &mpi_types[k]);
+	MPI_Type_commit(&mpi_types[k]);
+      }
+      reqs.SetSize(group.Size()); reqs = MPI_REQUEST_NULL;
+      Array<int> perow(group.Size()); perow[0] = 0;
+      for (auto k : Range(size_t(1), group.Size())) perow[k] = dof_maps[k].Size();
+      buffers = Table<TV>(perow);
+    }
+    else {
+      Array<int> perow(1); perow[0] = pardofs->GetNDofLocal();
+      buffers = Table<TV>(perow);
+    }
+  }
+
+
   INLINE Timer & timer_hack_ctrmat (int nr) {
     switch(nr) {
     case (0): { static Timer t("CtrMap::AssembleMatrix"); return t; }
@@ -343,7 +428,8 @@ namespace amg
   template<class TV> shared_ptr<typename CtrMap<TV>::TSPM>
   CtrMap<TV> :: DoAssembleMatrix (shared_ptr<typename CtrMap<TV>::TSPM> mat) const
   {
-    // cout << "contract mat " << mat->Height() << " x " << mat->Width() << endl;
+
+    const_cast<CtrMap<TV>&>(*this).SetUpMPIStuff();
 
     RegionTimer rt(timer_hack_ctrmat(0));
     NgsAMG_Comm comm(pardofs->GetCommunicator());
