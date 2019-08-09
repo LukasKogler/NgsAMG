@@ -19,11 +19,11 @@ namespace amg
 
   
   void thread_fpf () {
-    cout << " thread_fpf!!!! " << endl;
+    // cout << " thread_fpf!!!! " << endl;
 #ifdef USE_TAU
-    cout << " call reg thread main" << endl;
+    // cout << " call reg thread main" << endl;
     // TAU_REGISTER_THREAD();
-    cout << " call set node thread" << endl;
+    // cout << " call set node thread" << endl;
     TAU_PROFILE_SET_NODE(NgMPI_Comm(MPI_COMM_WORLD).Rank());
 #endif
     while( !end_thread ) {
@@ -48,13 +48,13 @@ namespace amg
     std::thread * t;
     // ThreadGuard(std::thread* at) : t(at) { ; }
     ThreadGuard(std::thread* at) : t(at) {
-      cout << " MAKE class ThreadGuard !!!" << endl;
+      // cout << " MAKE class ThreadGuard !!!" << endl;
 #ifdef USE_TAU
       // has nothing to do with the MPI thread itself
-					       // TAU_ENABLE_INSTRUMENTATION();
-      cout << " call reg thread main" << endl;
-					 // TAU_REGISTER_THREAD();
-      cout << " call set node main" << endl;
+      // TAU_ENABLE_INSTRUMENTATION();
+      // cout << " call reg thread main" << endl;
+      // TAU_REGISTER_THREAD();
+      // cout << " call set node main" << endl;
       TAU_PROFILE_SET_NODE(NgMPI_Comm(MPI_COMM_WORLD).Rank());
 #endif
     }

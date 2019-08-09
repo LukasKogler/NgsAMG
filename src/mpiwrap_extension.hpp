@@ -92,15 +92,24 @@ namespace amg
     
   private:
     INLINE Timer& thack_isend_spm () const { static Timer t("ISend SPM"); return t; }
+    mutable Array<size_t*> hacky_w_buffer;
   public:
+    void cleanup_hacky_w_buffer () { hacky_w_buffer = Array<size_t*>(0); }
     template<typename T, typename T2 = decltype(GetMPIType<T>())>
     MPI_Request ISend (const ngla::SparseMatrixTM<T> & spm, int dest, int tag) const {
       RegionTimer rt(thack_isend_spm());
-      size_t H = spm.Height(); size_t W = spm.Width();
-      if (H!=W) throw Exception("cant rly deal with H!=W ISend"); // need to send W, need temporary mem
-      MPI_Request req = MyMPI_ISend (spm.GetFirstArray(), dest, tag, comm);
+      size_t H = spm.Height(); // size_t W = spm.Width();
+
+      size_t * W = new size_t;
+      *W = spm.Width();
+      // if (H != W) throw Exception("cant rly deal with H!=W ISend"); // need to send W, need temporary mem
+      hacky_w_buffer.Append(W);
+      MPI_Request req = MyMPI_ISend (*hacky_w_buffer.Last(), dest, tag, comm);
+
+      MPI_Request_free(&req);
+      req = MyMPI_ISend (spm.GetFirstArray(), dest, tag, comm);
       size_t nzes = spm.GetFirstArray().Last();
-      if (H>0 && W>0) {
+      if ( (H > 0) && (*W > 0) ) {
 	MPI_Request_free(&req);
 	int* cp = &spm.GetRowIndices(0)[0];
 	FlatArray<int> cols(nzes, cp);
@@ -109,7 +118,6 @@ namespace amg
 	T* vp = &spm.GetRowValues(0)[0];
 	FlatArray<T> vals(nzes, vp);
 	req = MyMPI_ISend (vals, dest, tag, comm);
-	return req;
       }
       return req;
     }
@@ -130,15 +138,18 @@ namespace amg
     template<typename T, typename T2 = decltype(GetMPIType<T>())>
     void Recv (shared_ptr<ngla::SparseMatrixTM<T> >& spm, int src, int tag) const {
       RegionTimer rt(thack_recv_spm());
+      size_t W = -1; Recv(W, src, tag);
       Array<size_t> firstia;
       Recv(firstia, src, tag);
-      size_t H = firstia.Size()-1; size_t W = H;
+      size_t H = firstia.Size() - 1;
       Array<int> nperow(H);
-      for (auto k:Range(H)) nperow[k] = firstia[k+1]-firstia[k];
+      for (auto k:Range(H))
+	{ nperow[k] = firstia[k+1]-firstia[k]; }
       spm = make_shared<ngla::SparseMatrixTM<T>>(nperow, W);
-      if (H==0 || W==0) return;
+      if ( (H==0) || (W==0) )
+	{ return; }
       int* cp = &spm->GetRowIndices(0)[0];
-      size_t nzes = 0; for (auto k:Range(H)) nzes += nperow[k];
+      size_t nzes = 0; for (auto k:Range(H)) { nzes += nperow[k]; }
       FlatArray<int> cols(nzes, cp);
       Recv (cols, src, tag);
       T* vp = &spm->GetRowValues(0)[0];

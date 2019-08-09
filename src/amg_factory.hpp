@@ -59,6 +59,8 @@ namespace amg
 
     // recursive setup method - sets up one more level and calls itself
     Array<shared_ptr<BaseSparseMatrix>> RSU (Capsule cap, shared_ptr<DOFMap> dof_map);
+
+    Array<shared_ptr<BaseSparseMatrix>> RSU2 (Capsule cap, shared_ptr<DOFMap> dof_map);
     
     virtual shared_ptr<ParallelDofs> BuildParallelDofs (shared_ptr<TMESH> amesh) const = 0;
 

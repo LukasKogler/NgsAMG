@@ -391,8 +391,11 @@ namespace amg
     auto fmat = mats[0];
     shared_ptr<ParallelDofs> fpds = (embed_step == nullptr) ? fmat->GetParallelDofs() : BuildParallelDofs(finest_mesh);
 
-    auto coarse_mats = RSU( { 0, finest_mesh, fpds, fmat }, dof_map);
+    // auto coarse_mats = RSU2( { 0, finest_mesh, fpds, fmat }, dof_map);
+    auto coarse_mats = RSU2( { 0, finest_mesh, fpds, fmat }, dof_map);
 
+    cout << "RSU done " << endl;
+    
     // coarse mats in reverse order
     mats.SetSize(coarse_mats.Size() + 1);
     for (auto k : Range(mats.Size() - 1))
@@ -656,6 +659,370 @@ namespace amg
     
 
   } // AMGFactory::RSU
+
+
+  template<class TMESH, class TM>
+  Array<shared_ptr<BaseSparseMatrix>> AMGFactory<TMESH, TM> :: RSU2 (Capsule cap, shared_ptr<DOFMap> dof_map)
+  {
+    logger->LogLevel(cap);
+
+    shared_ptr<BaseDOFMapStep> ds;
+
+    shared_ptr<TMESH> fmesh = cap.mesh, cmesh = move(cap.mesh);
+    shared_ptr<ParallelDofs> fpds = move(cap.pardofs), cpds = nullptr;
+    shared_ptr<BaseSparseMatrix> fmat = cap.mat, cmat = move(cap.mat);
+    size_t curr_meas = ComputeMeshMeasure(*fmesh);
+
+    if (cap.level == 0) { // (re-) initialize book-keeping
+      state = make_shared<State>();
+      state->first_ctr_used = state->first_rbm_used = false;
+      state->last_ctr_nv = fmesh->template GetNNGlobal<NT_VERTEX>();
+      state->last_meas_rbm = curr_meas;
+      state->coll_cross = false;
+    }
+
+    auto comm = fmesh->GetEQCHierarchy()->GetCommunicator();
+    
+    double af = ( (cap.level == 0) && (options->first_aaf != -1) ) ?
+      options->first_aaf : ( pow(options->aaf_scale, cap.level - ( (options->first_aaf == -1) ? 0 : 1) ) * options->aaf );
+
+    size_t goal_meas = max( size_t(min(af, 0.9) * curr_meas), max(options->max_meas, size_t(1)));
+
+    if (comm.Rank() == 0) {
+      cout << "using AF " << af << " from " << options->first_aaf << " " << options->aaf_scale << " " << options->aaf << endl;
+      cout << "goal is: " << goal_meas << endl;
+    }
+
+    INT<3> level = { cap.level, 0, 0 }; // coarse / sub-coarse / ctr 
+
+    // Array<shared_ptr<shared_ptr<TMESH>>> sprol_meshes; // meshes we use for prol-smoothing
+    // sprol_meshes.Append(fmesh);
+
+    /**
+       the mesh we use for prol-smoothing
+       [ this can be different from "fmesh" when have to start out with a different map than coarse-map, e.g. contract ]
+    **/
+    shared_ptr<TMESH> sprol_mesh = fmesh;
+    shared_ptr<BaseSparseMatrix> sprol_mat = fmat;
+
+    Array<shared_ptr<BaseDOFMapStep>> sub_steps;
+    shared_ptr<TSPM_TM> conc_pwp;
+
+    double frac_loc = -1;
+    double crs_meas_fac = 0;
+    auto old_meas = curr_meas;
+
+    auto do_coarsen_step = [&] () LAMBDA_INLINE -> bool {
+	// if ( (level[1] != 0) && (crs_meas_fac > 0.6) )
+	//   { state->coll_cross = true; }
+
+	auto grid_step = BuildCoarseMap (cmesh);
+
+	state->coll_cross = false;
+
+	if (grid_step == nullptr) // coarsening did not work - we are stuck!
+	  { return true; }
+
+	auto _cmesh = static_pointer_cast<TMESH>(grid_step->GetMappedMesh());
+
+	crs_meas_fac = ComputeMeshMeasure(*_cmesh) / (1.0 * curr_meas);
+
+	frac_loc = _cmesh->GetEQCHierarchy()->GetCommunicator().AllReduce(double(_cmesh->template GetNN<NT_VERTEX>() > 0 ? _cmesh->template GetENN<NT_VERTEX>(0) : 0), MPI_SUM) / _cmesh->template GetNNGlobal<NT_VERTEX>();
+	cout << IM(4) << "coarsen fac " << crs_meas_fac << ", went from " << curr_meas << " to " << ComputeMeshMeasure(*_cmesh) << ", frac loc " << frac_loc << endl;
+
+	if ( (options->enable_ctr) && // break out of inner coarsening loop due to slow-down
+	     ( (crs_meas_fac > options->ctr_crs_thresh) ||
+	       (frac_loc < options->ctr_loc_thresh) ) )
+	  { return true; }
+
+	cmesh = _cmesh;
+
+	auto pwp = BuildPWProl(grid_step, cpds); // fine pardofs are correct
+
+	conc_pwp = (conc_pwp == nullptr) ? pwp : MatMultAB(*conc_pwp, *pwp);
+	cpds = BuildParallelDofs(cmesh);
+
+	curr_meas = ComputeMeshMeasure(*cmesh);
+
+	level[1]++;
+
+	return false; // not stuck
+    };
+
+
+    auto do_contract_step = [&] () LAMBDA_INLINE -> bool {
+
+      /** cannot redistribute if when is turned off or when we are already basically sequential **/
+      if ( (!options->enable_ctr) || (cmesh->GetEQCHierarchy()->GetCommunicator().Size() <= 2) )
+	{ return false; }
+      
+      /** Find out how rapidly we should redistribute **/
+      auto ccomm = cmesh->GetEQCHierarchy()->GetCommunicator();
+
+      double fac = options->ctr_pfac;
+      auto next_nv = cmesh->template GetNNGlobal<NT_VERTEX>();
+
+      double af = ( (!state->first_ctr_used) && (options->first_ctraf != -1) ) ?
+      options->first_ctraf : ( pow(options->ctraf_scale, cap.level - ( (options->first_ctraf == -1) ? 0 : 1) ) * options->ctraf );
+      size_t goal_nv = max( size_t(min(af, 0.9) * state->last_ctr_nv), max(options->ctr_seq_nv, size_t(1)));
+      double ctr_factor = 1;
+
+      cout << IM(5) << "ctr goal from " << state->first_ctr_used << " " << options->first_ctraf << " " << options->ctraf_scale << " "
+      << cap.level - ( (options->first_ctraf == -1) ? 0 : 1) << " " << options->ctraf << endl;
+      cout << IM(5) << "goal " << goal_nv << endl;
+
+      if (next_nv < options->ctr_seq_nv) // sequential threshold reached
+	{ ctr_factor = -1; }
+      else if ( (crs_meas_fac > options->ctr_crs_thresh) ||              // coarsening slows down
+		(goal_nv > cmesh->template GetNNGlobal<NT_VERTEX>()) ||  // static redistribute every now and then
+		(frac_loc < options->ctr_loc_thresh) ) {                 // not enough local vertices
+
+	cout << IM(5) << " ctr bc " << crs_meas_fac  << " > " << options->ctr_crs_thresh << endl;
+	cout << IM(5) << " ctr bc " <<  goal_nv << " > " << cmesh->template GetNNGlobal<NT_VERTEX>() << endl;
+	cout << IM(5) << " ctr bc " << frac_loc << " < " << options->ctr_loc_thresh << endl;
+
+	ctr_factor = min2(fac, double(next_nv) / options->ctr_min_nv / ccomm.Size());
+
+	if (frac_loc < options->ctr_loc_gl) {
+	  size_t NP = ccomm.Size();
+	  size_t NF = ccomm.AllReduce (cmesh->GetEQCHierarchy()->GetDistantProcs().Size(), MPI_SUM) / 2; // every face counted twice
+	  double F = frac_loc;
+	  double FGOAL = options->ctr_loc_gl; // we want to achieve this large of a frac of local verts
+	  double FF = (1-frac_loc) / NF; // avg frac of a face
+
+	  if (F + NP/2 * FF > FGOAL) // merge 2 -> one face per group becomes local
+	    { ctr_factor = 0.5; }
+	  else if (F + NP/4 * 5 * FF > FGOAL) // merge 4 -> probably 4(2x2) to 6(tet) faces per group
+	    { ctr_factor = 0.25; }
+	  else // merge 8, in 3d probably 12 edges (2x2x2) per group. probably never want to do more than that
+	    { ctr_factor = 0.125; }
+	}
+      }
+
+      ctr_factor = 0.5;
+
+      if (ctr_factor == 1) // should not redistribute
+	{ return false; }
+
+      state->first_ctr_used = true;
+
+      ctr_factor = min2(0.5, ctr_factor); // ALWAYS at least factor 2
+	  
+      cout << IM(4) << "contract by factor " << ctr_factor << endl;
+
+      auto ctr_map = BuildContractMap(ctr_factor, cmesh);
+
+      fmesh = cmesh = static_pointer_cast<TMESH>(ctr_map->GetMappedMesh());
+
+      auto ds = BuildDOFContractMap(ctr_map, fpds);
+
+      fpds = ds->GetMappedParDofs(); cpds = ds->GetMappedParDofs();
+
+      sub_steps.Append(ds);
+
+      level[2]++;
+
+      if (cmesh == nullptr) // dropped out
+	{ return true; }
+
+      double locnvloc = cmesh->template GetNN<NT_VERTEX>() > 0 ? cmesh->template GetENN<NT_VERTEX>(0) : 0;
+      double frac_loc = cmesh->GetEQCHierarchy()->GetCommunicator().AllReduce(locnvloc, MPI_SUM) / cmesh->template GetNNGlobal<NT_VERTEX>();
+
+      cout << IM(4) << "NP down to " << cmesh->GetEQCHierarchy()->GetCommunicator().Size() << ", frac loc " << frac_loc << endl;
+
+      return true;
+    }; // do_contract_step
+
+
+    /** chain maps until we have coarsened the mesh appropiately **/
+    while (curr_meas > goal_meas) { // outer loop - when inner loop is stuck (or done), try to redistribute
+
+      /** inner loop - do coarsening until stuck **/
+      bool stuck = false;
+      int c = 0;
+      while ( (curr_meas > goal_meas) && (!stuck) ) {
+	stuck = do_coarsen_step();
+	c++;
+	if (c == 3) stuck = true;
+      }
+
+      /** we PROBABLY have a coarse map **/
+      if(conc_pwp != nullptr) {
+	sub_steps.Append(make_shared<ProlMap<TSPM_TM>> (conc_pwp, fpds, cpds));
+	fpds = cpds; conc_pwp = nullptr; fmesh = cmesh;
+      }
+
+      /** try contract **/
+      auto ctr_worked = do_contract_step();
+
+      /** contract is first map - need to smooth prol with first mapped mesh **/
+      // if ( ctr_worked && (sub_steps.Size() == 1) )
+      // 	{ sprol_mesh = cmesh; }
+      // ACTUALLY - why?? just swap CP to PC then smooth with orig mesh I think
+
+      /** if contract did not work, or if we are contracted out, break out of loop **/
+      if ( (!ctr_worked) || (cmesh == nullptr))
+	  { break; }
+    }
+
+    cout << " done, steps are " << endl; prow(sub_steps); cout << endl;
+    for (auto step : sub_steps)
+      cout << typeid(*step).name() << endl;
+
+    /**
+       If we were unable to do any maps, we should return here, or maybe do some fallback scheme,
+       like weakening the coarsening criteria.
+    **/
+
+    /** 
+	Swap contracts and prols, from right to left:
+	   I)   P - C - P - C - P    // 
+	   II)  P - C - PP - C       // swapped last C-P to P-C, multiply prols
+	   III) PPP - C - C          // same
+	   IV)  PPP - CC             // (TODO!!) concatenate C-maps 
+
+	If we are contracted out, our last map is a C-map. It might, however, still be
+	followed by a P-map, WHICH WE DON'T KNOW ABOUT!
+
+	
+
+    **/
+    using TCTR = CtrMap<typename strip_vec<Vec<mat_traits<TM>::HEIGHT, double>>::type>;
+    using TCRS = ProlMap<TSPM_TM>;
+    { // swap C/P
+      if ( auto ctr_last = dynamic_pointer_cast<TCTR>(sub_steps.Last()) ) {
+
+	cout << "last step is ctr!" << endl;
+	auto fpd = ctr_last->GetParDofs();
+	cout << " in that comm " << fpd->GetCommunicator().Rank() << " of " << fpd->GetCommunicator().Size() << endl;
+
+	// if there is no prol after it, all members of group enter with false
+	if (ctr_last->DoSwap(false)) { // master must have entered with true - do swap!
+	  cout << "do swap!" << endl;
+	  // auto fpd = ctr_last->GetParDofs();
+	  sub_steps.Append(nullptr);
+	  sub_steps.Last() = sub_steps[sub_steps.Size()-2];
+	  sub_steps[sub_steps.Size()-2] = ctr_last->SwapWithProl(nullptr);
+	}
+	else
+	  { cout << " no swap " << endl; }
+      }
+
+      for (int step_nr = sub_steps.Size() - 1; step_nr > 0; step_nr--) {
+	// if [step_nr - 1, step_nr] are [prol, ctr], swap them
+	auto step_L = sub_steps[step_nr-1];
+	auto step_R = sub_steps[step_nr];
+	cout << " check steps " << step_nr - 1 << " " << step_nr << endl;
+	cout << typeid(*step_L).name() << " " << typeid(*step_R).name() << endl;
+	if ( auto ctr_L = dynamic_pointer_cast<TCTR>(step_L) ) {
+	  if ( auto crs_R = dynamic_pointer_cast<TCRS>(step_R) ) { // C -- P -> swap to P -- C
+	    cout << " case 1!" << endl;
+	    auto fpd = ctr_L->GetParDofs();
+	    cout << "doswap with true!" << endl;
+	    cout << " in that comm " << fpd->GetCommunicator().Rank() << " of " << fpd->GetCommunicator().Size() << endl;
+	    ctr_L->DoSwap(true);
+	    cout << "am back!" << endl;
+	    sub_steps[step_nr-1] = ctr_L->SwapWithProl(crs_R);
+	    sub_steps[step_nr]   = ctr_L;
+	  }
+	  else // TODO: C -- C -> concatenate to single C
+	    { cout << " case CC " << endl;; }
+	}
+	else if ( auto crs_L = dynamic_pointer_cast<TCRS>(step_L) ) {
+	  if ( auto crs_R = dynamic_pointer_cast<TCRS>(step_R) ) { // P -- P, concatenate to single P (actually: P -- nullptr)
+	    cout << " case 2" << endl;
+	    auto conc_P = MatMult(*crs_L->GetProl(), *crs_R->GetProl());
+	    auto conc_map = make_shared<TCRS>(conc_P, crs_L->GetParDofs(), crs_R->GetMappedParDofs());
+	    
+	    sub_steps[step_nr-1] = conc_map;
+	    sub_steps[step_nr] = nullptr;
+	  }
+	  else // P -- C, nothing to do, leave sub_step entries as-is
+	    { cout << " case PC " << endl;; }
+	}
+
+      }
+
+      /**
+	 remove nullptr-maps from sub_steps
+	 now we have P -- C -- C -- C ... (until i can concatenate C -- C to C, then it should really just be just P - C)
+      **/
+      int c = 0;
+      for (int j = 0; j < sub_steps.Size(); j++)
+	if (sub_steps[j] != nullptr)
+	  { sub_steps[c++] = sub_steps[j]; }
+      sub_steps.SetSize(c);
+    } // swap C/P
+
+    /** smooth prolongation **/
+    if (options->enable_sm) {
+      auto pstep = dynamic_pointer_cast<TCRS>(sub_steps[0]);
+      if (pstep == nullptr)
+	{ throw Exception("Something must be broken!!"); }
+      if ( (options->enable_rbm) && (level[0] != 0) )
+	{ sprol_mesh = options->rebuild_mesh(sprol_mesh, sprol_mat, pstep->GetParDofs()); }
+      SmoothProlongation(pstep, sprol_mesh);
+    } // sm-prol
+
+    /** add embed_step in the beginning **/
+    if (embed_step != nullptr) {
+      auto conc_step = embed_step->Concatenate(sub_steps[0]);
+      if (conc_step != nullptr)
+	{ sub_steps[0] = conc_step; }
+      else {
+	sub_steps.Append(nullptr);
+	for (int k = sub_steps.Size()-1; k > 0; k--)
+	  { sub_steps[k] = sub_steps[k-1]; }
+	sub_steps[0] = embed_step;
+      }
+      embed_step = nullptr; 
+    }
+
+    /** assemble coarse matrix and add DOFstep to map **/
+    cout << " sub_steps: " << endl << sub_steps << endl;
+    for (auto step : sub_steps)
+      cout << typeid(*step).name() << endl;
+    shared_ptr<BaseDOFMapStep> tot_step;
+    if (sub_steps.Size() > 1)
+      { tot_step = make_shared<ConcDMS>(sub_steps); }
+    else
+      { tot_step = sub_steps[0]; }
+
+    cout << " ass mat " << endl;
+    cmat = tot_step->AssembleMatrix(cmat);
+    cout << " have ass mat! " << endl;
+
+    dof_map->AddStep(tot_step);
+
+    /** potentially clean up some stuff before recursive call **/
+    fmesh = sprol_mesh = nullptr;
+    fpds = nullptr;
+    bool did_nothing = cmat == fmat;
+    fmat = sprol_mat = nullptr;
+
+    /** recursive setup call **/
+    if (cmesh == nullptr) // I drop out!
+      { return Array<shared_ptr<BaseSparseMatrix>>({ nullptr }); }
+    else if (cmat == nullptr) // contracted out - redundant?
+      { return Array<shared_ptr<BaseSparseMatrix>> ({cmat}); }
+    else if (did_nothing) { // I could not do anyting, stop coarsening here I guess
+      throw Exception("hold on, is this ok??");
+      return Array<shared_ptr<BaseSparseMatrix>> (0);
+    }
+    else if ( (cap.level + 2 == options->max_n_levels) )
+      { return Array<shared_ptr<BaseSparseMatrix>> ({cmat}); }
+    else if ( (cap.level + 2 == options->max_n_levels) ||              // max n levels reached
+    	      (options->max_meas >= ComputeMeshMeasure (*cmesh) ) ) {  // max coarse size reached
+      logger->LogLevel ({cap.level + 1, cmesh, cpds, cmat}); // also log coarsest level
+      return Array<shared_ptr<BaseSparseMatrix>> ({cmat});
+    }
+    else { // actual recursive call
+      auto cmats = RSU2( {cap.level + 1, cmesh, cpds, cmat}, dof_map );
+      cmats.Append(cmat);
+      return cmats;
+    }
+
+  } // AMGFactory::RSU2
 
 
   template<class TMESH, class TM>

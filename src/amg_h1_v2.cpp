@@ -100,6 +100,9 @@ namespace amg
       if (mesh->GetEQCHierarchy()->GetCommunicator().Rank() == 0)
 	{ cout << "REBUILD MESH, NV = " << mesh->GetNNGlobal<NT_VERTEX>() << ", NE = " << mesh->GetNNGlobal<NT_EDGE>() << endl; }
 
+      cout << mesh << " " << mat << " " << pardofs << endl;
+      cout << mesh->GetNN<NT_VERTEX>() << " " << mat->Height() << " " << pardofs->GetNDofLocal() << endl;
+
       auto n_verts = mesh->GetNN<NT_VERTEX>();
       auto traverse_graph = [&](const auto& g, auto fun) LAMBDA_INLINE { // vertex->dof,  // dof-> vertex
 	for (auto row : Range(n_verts)) {
@@ -276,23 +279,31 @@ namespace amg
   template<> shared_ptr<BaseSmoother> EmbedVAMG<H1AMGFactory> :: BuildSmoother (shared_ptr<BaseSparseMatrix> m, shared_ptr<ParallelDofs> pds,
 										shared_ptr<BitArray> freedofs) const
   {
+    cout << "buildsmoother for " << pds->GetNDofGlobal() << "dofs " << endl;
     shared_ptr<SparseMatrix<double>> spmat = dynamic_pointer_cast<SparseMatrix<double>> (m);
     if (options->old_smoothers) {
       auto sm = make_shared<HybridGSS<1>> (spmat, pds, freedofs);
       sm->SetSymmetric(options->smooth_symmetric);
+      cout << "OK buildsmoother for " << pds->GetNDofGlobal() << "dofs " << endl;
       return sm;
     }
     else {
 
       auto parmat = make_shared<ParallelMatrix>(spmat, pds, pds, C2D);
 
+      if (pds->GetNDofGlobal() == 1159) {
+	cout << "mat for sm : " << endl << *parmat << endl;
+      }
+
       auto sm = make_shared<HybridGSS2<double>> (parmat, freedofs);
       sm->SetSymmetric(options->smooth_symmetric);
+
 
       // auto eqc_h = make_shared<EQCHierarchy>(pds, false); // todo: get rid of these!
       // auto sm = make_shared<HybridGSS3<double>> (parmat, eqc_h, freedofs);
       // sm->SetSymmetric(options->smooth_symmetric);
 
+      cout << "OK buildsmoother for " << pds->GetNDofGlobal() << "dofs " << endl;
       return sm;
     }
   }

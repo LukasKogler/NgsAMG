@@ -38,8 +38,10 @@ namespace amg
     virtual shared_ptr<BaseDOFMapStep> Concatenate (shared_ptr<BaseDOFMapStep> other) override
     { return nullptr; }
     
+    bool DoSwap (bool in);
+
     // prol after contract becomes new prol before new contract
-    shared_ptr<SparseMatrixTM<TM>> SwapWithProl (shared_ptr<SparseMatrixTM<TM>> A);
+    shared_ptr<ProlMap<SparseMatrixTM<TM>>> SwapWithProl (shared_ptr<ProlMap<SparseMatrixTM<TM>>> pm);
 
     INLINE bool IsMaster () const { return is_gm; }
 

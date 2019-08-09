@@ -308,85 +308,211 @@ namespace amg
 
 
   template<class TV>
-  shared_ptr<SparseMatrixTM<typename CtrMap<TV>::TM>> CtrMap<TV> :: SwapWithProl (shared_ptr<SparseMatrixTM<TM>> P)
+  bool CtrMap<TV> :: DoSwap (bool in)
   {
+    auto comm = pardofs->GetCommunicator();
+    int doit = in;
+    if (is_gm) {
+      for (auto p : group)
+	if (p != comm.Rank())
+	  { comm.Send(in, p, MPI_TAG_AMG); }
+    }
+    else
+      { comm.Recv(doit, master, MPI_TAG_AMG); }
+    return doit != 0;
+  }
+
+
+  template<class TV>
+  shared_ptr<ProlMap<SparseMatrixTM<typename CtrMap<TV>::TM>>> CtrMap<TV> :: SwapWithProl (shared_ptr<ProlMap<SparseMatrixTM<TM>>> pm_in)
+  {
+
     NgsAMG_Comm comm = pardofs->GetCommunicator();
 
+    cout << "SWAP WITH PROL, AM RANK " << comm.Rank() << " of " << comm.Size() << endl;
+    cout << "loc glob nd " << pardofs->GetNDofLocal() << " " << pardofs->GetNDofGlobal() << endl;
+    
+    // TODO: new (mid) paralleldofs !?
+
     shared_ptr<SparseMatrixTM<TM>> split_A;
+    // shared_ptr<ParallelDofs> mid_pardofs;
+
 
     if (!is_gm) {
-      comm.Recv(split_A, master, MPI_TAG_AMG);
-      return split_A;
-    }
+      cout << " get split A from " << master << endl;
 
-    /**
-       For each member:
+      comm.Recv(split_A, master, MPI_TAG_AMG);
+
+      cout << " got split A: " << endl << *split_A << endl;
+
+      // do sth like that if whe actually need non-dummy ones
+      // Table<int> pd_tab; comm.Recv(pd_tab, master, MPI_TAG_AMG);
+      // mid_pardofs = make_shared<ParallelDofs> (move(pd_tab), comm, pardofs->GetEntrySize(), false);
+    }
+    else { // is_gm
+      cout << "swap 2 " << endl;
+
+      auto P = pm_in->GetProl();
+
+      cout << "prol dims " << P->Height() << " x " << P->Width() << endl;
+      cout << " mapped loc glob nd " << mapped_pardofs->GetNDofLocal() << " " << mapped_pardofs->GetNDofGlobal() << endl;
+    
+    
+      /**
+	 For each member:
          - get rows of P corresponding to it's DOFs (keep col-indices) [Pchunk]
 	 - col-inds in Pchunk are the new DOFs of that member, map them, write new dof_map for that member
 	 - reverse-map col-inds of Pchunk
 	 - send Pchunk to member
-     **/
+      **/
 
-    const auto& rP(*P);
-    Array<Array<int>> pdm(group.Size()); // dof-maps after prol
-    BitArray colspace(P->Width());
-    Array<int> rmap(P->Width());
+      const auto& rP(*P);
+      Array<Array<int>> pdm(group.Size()); // dof-maps after prol
+      BitArray colspace(P->Width());
+      Array<int> rmap(P->Width());
 
-    auto get_rows = [&](FlatArray<int> dmap, Array<int> & new_dmap) LAMBDA_INLINE {
-      colspace.Clear();
-      int cnt_cols = 0;
-      Array<int> perow(dmap.Size());
-      for (auto k : Range(dmap)) {
-	auto rownr = dmap[k];
-	auto ri = rP.GetRowIndices(rownr);
-	perow[k] = ri.Size();
-	for (auto col : ri) {
-	  if (!colspace.Test(col))
-	    { colspace.Set(col); cnt_cols++; }
-	}
-      }
-      rmap = -1;
-      new_dmap.SetSize(cnt_cols); cnt_cols = 0;
-      for (auto k : Range(P->Width())) {
-	if (colspace.Test(k))
-	  { rmap[k] = cnt_cols; new_dmap[cnt_cols++] = k; }
-      }
-      auto Pchunk = make_shared<SparseMatrixTM<TM>>(perow, cnt_cols);
-      const auto &rPchunk (*Pchunk);
-      for (auto k : Range(dmap)) {
-	auto rownr = dmap[k];
-	auto ri_o = rP.GetRowIndices(rownr);
-	auto ri_n = rPchunk.GetRowIndices(k);
-	auto rv_o = rP.GetRowValues(rownr);
-	auto rv_n = rPchunk.GetRowValues(k);
-	int c = 0;
-	for (auto j : Range(ri_o)) {
-	  auto newcol = rmap[ri_o[j]];
-	  if (newcol != -1) {
-	    ri_n[c] = newcol;
-	    rv_n[c++] = rv_o[j];
+      /**
+	 Get rows contained in dmap out of prol, re-map colnrs from 0..N, where N is the number
+	 of DOFs in the pre-image of the rows.
+
+	 Write new dof_map into new_dmap.
+
+	 Also make dp-table for new ParallelDofs.
+      **/
+      auto get_rows = [&](FlatArray<int> dmap, Array<int> & new_dmap, int for_rank) LAMBDA_INLINE {
+	cout << " gr 1 " << endl;
+	colspace.Clear();
+	int cnt_cols = 0;
+	Array<int> perow(dmap.Size());
+	for (auto k : Range(dmap)) {
+	  auto rownr = dmap[k];
+	  auto ri = rP.GetRowIndices(rownr);
+	  perow[k] = ri.Size();
+	  for (auto col : ri) {
+	    if (!colspace.Test(col))
+	      { colspace.Set(col); cnt_cols++; }
 	  }
 	}
+	cout << " gr 2 " << endl;
+	rmap = -1;
+	new_dmap.SetSize(cnt_cols); cnt_cols = 0;
+	for (auto k : Range(P->Width())) {
+	  if (colspace.Test(k))
+	    { rmap[k] = cnt_cols; new_dmap[cnt_cols++] = k; }
+	}
+	cout << " gr 3 " << endl;
+	auto Pchunk = make_shared<SparseMatrixTM<TM>>(perow, cnt_cols);
+	const auto &rPchunk (*Pchunk);
+	for (auto k : Range(dmap)) {
+	  auto rownr = dmap[k];
+	  auto ri_o = rP.GetRowIndices(rownr);
+	  auto ri_n = rPchunk.GetRowIndices(k);
+	  auto rv_o = rP.GetRowValues(rownr);
+	  auto rv_n = rPchunk.GetRowValues(k);
+	  int c = 0;
+	  for (auto j : Range(ri_o)) {
+	    auto newcol = rmap[ri_o[j]];
+	    if (newcol != -1) {
+	      ri_n[c] = newcol;
+	      rv_n[c++] = rv_o[j];
+	    }
+	  }
+	}
+
+	cout << " gr ret " << endl;
+	return Pchunk;
+      }; // get_rows
+      cout << "swap 3 " << endl;
+
+
+      /**
+	 New dist-procs: DUMMIES, should not ever need them
+       
+	 But we could do this if we need them:
+	 -        C
+	 - MID  ---->  FIN
+	 -  ^            ^
+	 P  |            | P_old
+	 -  |            |
+	 - INI  ---->  CRS
+	 -    C_old
+
+	 Have access to INI, CRS and FIN pardofs. Need to construct MID pardofs.
+
+	 For each FIN DOF, masters know who, in their group, has them.
+       
+	 So, for each contracted ex-proc, write pre-contracted members for all ex-dofs into a table
+	 and exchange tables. Merge these tables into one NDOF-sized one, then break that up into
+	 group.Size() small tables which we distribute.
+      **/
+      {
+	// Array<MPI_Request> sreq(group.Size());
+
+	// auot cexps = mapped_pardofs->GetDistantProcs();
+	// Array<int> perow(cexps.Size());
+	// for (auto k : Range(perow))
+	// 	{ perow[k] = 1 + mapped_pardofs->GetExchangeDofs(group[k]).Size(); }
+
+	// auto proc_to_ind = [&](auto p) LAMBDA_INLINE { return find_in_sorted_array(p, cexps); }
+	// auto iterate_dofs = [&](auto fun) LAMBDA_INLINE {
+	// 	for (auto k : Range(group)) {
+	// 	  FlatArray<int> map = dof_maps[k];
+	// 	  for (auto j : Range(map)) {
+	// 	    for (auto p : mapped_parodfs->GetDistantProcs(map[j]))
+	// 	      { fun(map[j], p); }
+	// 	  }
+	// 	}
+	// };
+	// iterate_dofs([&](auto d, auto p) { perow[proc_to_ind(p)]++; });
+	// Table<int> buffers(perow);
+	// for (auto k : Range(perow))
+	// 	{ perow[k] = mapped_pardofs->GetExchangeDofs(group[k]).Size(); }
+	// // "firsti"
+	// iterate_dofs([&](auto d, auto p) { perow[proc_to_ind(p)]++; });
+
+	// MyMPI_WaitAll(sreq);
       }
-      return Pchunk;
-    }; // get_rows
 
-    for (auto kp : Range(group)) {
-      auto Apart = get_rows(dof_maps[kp], pdm[kp]);
-      if (group[kp] == comm.Rank())
-	{ split_A = Apart; }
-      else
-	{ comm.Send(*Apart, group[kp], MPI_TAG_AMG); }
-    }
+      cout << " group "; prow(group); cout << endl;
 
-    Array<int> perow(group.Size());
-    for (auto k : Range(perow))
-      { perow[k] = pdm[k].Size(); }
-    dof_maps = Table<int>(perow);
-    for (auto k : Range(perow))
-      { dof_maps[k] = pdm[k]; }
+      for (auto kp : Range(group)) {
+	cout << " mem " << kp << " rk " << group[kp] << endl;
+	auto Apart = get_rows(dof_maps[kp], pdm[kp], group[kp]);
+	cout << "Apart for mem " << kp << " rk " << group[kp] << ": " << endl;
+	cout << "pchunk dims for mem   " << kp << " rk " << group[kp] << ": " << Apart->Height() << " x " << Apart->Width() << endl;
+	cout << *Apart << endl;
+	if (group[kp] == comm.Rank())
+	  { split_A = Apart; }
+	else
+	  { comm.Send(*Apart, group[kp], MPI_TAG_AMG); }
+	cout << "DONE sending Apart for mem " << kp << " rk " << group[kp] << ": " << endl;
+      }
+      cout << "swap 4 " << endl;
 
-    return split_A;
+      Array<int> perow(group.Size());
+      for (auto k : Range(perow))
+	{ perow[k] = pdm[k].Size(); }
+      dof_maps = Table<int>(perow);
+      for (auto k : Range(perow))
+	{ dof_maps[k] = pdm[k]; }
+      cout << "swap 5 " << endl;
+
+    } // is_gm
+
+    // dummy (!!) pardofs
+    Array<int> perow(split_A->Width()); perow = 0;
+    Table<int> dps(perow);
+    auto mid_pardofs = make_shared<ParallelDofs> (comm, move(dps), pardofs->GetEntrySize(), pardofs->IsComplex());
+ 
+    auto prol_map = make_shared<ProlMap<SparseMatrixTM<TM>>> (split_A, pardofs, mid_pardofs);
+
+    pardofs = mid_pardofs;
+    mapped_pardofs = (pm_in == nullptr) ? nullptr : pm_in->GetMappedParDofs();
+
+    cout << "SWP done " << endl;
+
+    cout << "SPLIT PROL DIMS  " << split_A->Height() << " x " << split_A->Width() << endl;
+    return prol_map;
   } // CtrMap::SplitProl
 
 
@@ -439,14 +565,20 @@ namespace amg
       return nullptr;
     }
 
+    cout << "CTR MAT FOR " << pardofs->GetNDofGlobal() << " NDOF TO " << mapped_pardofs->GetNDofGlobal() << endl;
+    cout << "LOCAL DOFS " << pardofs->GetNDofLocal() << " NDOF TO " << mapped_pardofs->GetNDofLocal() << endl;
+
+    if (pardofs->GetNDofGlobal() < 10000)
+      { cout << "CTR MAT FOR " << pardofs->GetNDofGlobal() << " NDOF " << endl; }
+
     timer_hack_ctrmat(1).Start();
     Array<shared_ptr<TSPM_TM> > dist_mats(group.Size());
     dist_mats[0] = mat;
     for(auto k:Range((size_t)1, group.Size())) {
-      // cout << " get mat from " << k << " of " << group.Size() << endl;
+      cout << " get mat from " << k << " of " << group.Size() << endl;
       comm.Recv(dist_mats[k], group[k], MPI_TAG_AMG);
-      // cout << " got mat from " << k << " of " << group.Size() << ", rank " << group[k] << endl;
-      // cout << *dist_mats[k] << endl;
+      cout << " got mat from " << k << " of " << group.Size() << ", rank " << group[k] << endl;
+      cout << *dist_mats[k] << endl;
     }
     timer_hack_ctrmat(1).Stop();
 
