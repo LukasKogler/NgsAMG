@@ -208,10 +208,8 @@ namespace amg
     self.prol = make_shared<SPM_P>(move(*prol));
     self.prol_trans = make_shared<trans_spm<SPM_P>>(move(*prol_trans));
 
-    cout << prol->Height() << " x " << prol->Width() << endl;
-    cout << tfmat->Height() << " x " << tfmat->Width() << endl;
-    if (prol->Height() == 4652)
-      { print_tm_spmat(cout, *prol); cout << endl; }
+    // cout << prol->Height() << " x " << prol->Width() << endl;
+    // cout << tfmat->Height() << " x " << tfmat->Width() << endl;
     
     auto spm_tm = RestrictMatrixTM<SPM_TM_F, TMAT> (*prol_trans, *tfmat, *prol);
 

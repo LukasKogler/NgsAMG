@@ -71,8 +71,8 @@ namespace amg
     O.first_ctraf = O.aaf * O.first_aaf;
     O.ctraf_scale = 1;
     O.ctr_crs_thresh = 0.7;
-    O.ctr_min_nv = 500;
-    O.ctr_seq_nv = 2000;
+    O.ctr_min_nv_gl = 5000;
+    O.ctr_seq_nv = 5000;
     
     /** Smoothed Prolongation **/
     O.enable_sm = true;
@@ -87,6 +87,7 @@ namespace amg
 
     /** Embed **/
     O.block_s = { 1 }; // scalar, so always one dof per vertex
+
   } // EmbedVAMG<H1AMGFactory>::SetDefaultOptions 
 
 
@@ -279,31 +280,27 @@ namespace amg
   template<> shared_ptr<BaseSmoother> EmbedVAMG<H1AMGFactory> :: BuildSmoother (shared_ptr<BaseSparseMatrix> m, shared_ptr<ParallelDofs> pds,
 										shared_ptr<BitArray> freedofs) const
   {
-    cout << "buildsmoother for " << pds->GetNDofGlobal() << "dofs " << endl;
+    // cout << "buildsmoother for " << pds->GetNDofGlobal() << "dofs " << endl;
     shared_ptr<SparseMatrix<double>> spmat = dynamic_pointer_cast<SparseMatrix<double>> (m);
     if (options->old_smoothers) {
       auto sm = make_shared<HybridGSS<1>> (spmat, pds, freedofs);
       sm->SetSymmetric(options->smooth_symmetric);
-      cout << "OK buildsmoother for " << pds->GetNDofGlobal() << "dofs " << endl;
+      // cout << "OK buildsmoother for " << pds->GetNDofGlobal() << "dofs " << endl;
       return sm;
     }
     else {
 
       auto parmat = make_shared<ParallelMatrix>(spmat, pds, pds, C2D);
 
-      if (pds->GetNDofGlobal() == 1159) {
-	cout << "mat for sm : " << endl << *parmat << endl;
-      }
+      // cout << "OK buildsmoother for " << pds->GetNDofGlobal() << "dofs " << endl;
 
-      auto sm = make_shared<HybridGSS2<double>> (parmat, freedofs);
-      sm->SetSymmetric(options->smooth_symmetric);
-
-
-      // auto eqc_h = make_shared<EQCHierarchy>(pds, false); // todo: get rid of these!
-      // auto sm = make_shared<HybridGSS3<double>> (parmat, eqc_h, freedofs);
+      // auto sm = make_shared<HybridGSS2<double>> (parmat, freedofs);
       // sm->SetSymmetric(options->smooth_symmetric);
 
-      cout << "OK buildsmoother for " << pds->GetNDofGlobal() << "dofs " << endl;
+      auto eqc_h = make_shared<EQCHierarchy>(pds, false); // todo: get rid of these!
+      auto sm = make_shared<HybridGSS3<double>> (parmat, eqc_h, freedofs);
+      sm->SetSymmetric(options->smooth_symmetric);
+
       return sm;
     }
   }

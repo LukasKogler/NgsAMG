@@ -116,8 +116,7 @@ namespace amg
   {
   public:
 
-    DCCMap (shared_ptr<EQCHierarchy> eqc_h, shared_ptr<ParallelDofs> _pardofs,
-	    bool _inthread = false);
+    DCCMap (shared_ptr<EQCHierarchy> eqc_h, shared_ptr<ParallelDofs> _pardofs);
 
     ~DCCMap ();
 
@@ -144,11 +143,10 @@ namespace amg
     FlatArray<int> GetMDOFs (int kp) { return m_ex_dofs[kp]; }
     FlatArray<int> GetGDOFs (int kp) { return g_ex_dofs[kp]; }
 
-    void mpi_thread_met ();
-
     /** used for DIS2CO and CO2CU **/
     void WaitM ();
     void WaitG ();
+    void WaitD2C ();
 
     /** used for DIS2CO **/
     void BufferG (BaseVector & vec);
@@ -172,7 +170,6 @@ namespace amg
 
     int block_size;
 
-    bool inthread;
     bool thread_ready, thread_done, end_thread;
     std::condition_variable cv;
     std::mutex m;
@@ -181,10 +178,12 @@ namespace amg
     shared_ptr<BitArray> m_dofs;
 
     Array<MPI_Request> m_reqs;
+    Array<MPI_Request> m_send, m_recv;
     Table<int> m_ex_dofs;      // master ex-DOFs for each dist-proc (we are master of these)
     Table<TSCAL> m_buffer;    // buffer for master-DOF vals for each dist-proc
 
     Array<MPI_Request> g_reqs;
+    Array<MPI_Request> g_send, g_recv;
     Table<int> g_ex_dofs;      // ghost ex-DOFs  for each dist-proc (they are master of these)
     Table<TSCAL> g_buffer;    // buffer for ghost-DOF vals  for each dist-proc
   };
@@ -209,7 +208,7 @@ namespace amg
   {
   public:
     ChunkedDCCMap (shared_ptr<EQCHierarchy> eqc_h, shared_ptr<ParallelDofs> _pardofs,
-		   bool _inthread = false, int _MIN_CHUNK_SIZE = 50);
+		   int _MIN_CHUNK_SIZE = 50);
 
   protected:
 

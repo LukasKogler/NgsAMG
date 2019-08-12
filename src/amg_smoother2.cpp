@@ -55,6 +55,7 @@ namespace amg
       fvx(rownr) += dinv[rownr] * r;
     };
 
+    double tl = MPI_Wtime();
     if (!backwards) {
       for (size_t rownr = 0; rownr<H; rownr++)
 	if (!fds || fds->Test(rownr)) {
@@ -73,7 +74,10 @@ namespace amg
 	  up_row(rownr);
 	}
     }
+    tl = MPI_Wtime() - tl;
 
+    cout << " rows, K rows / sec : " << H << ", " << double(H) / 1000 / tl << endl;
+    
   } // SmoothRHSInternal
 
 
@@ -657,6 +661,9 @@ namespace amg
 
     { // gather RHS and calculate b-Sx as RHS for local smooth if update res, otherwise stash Sx
       RegionTimer rt(tpre);
+#ifdef USE_TAU
+    TAU_PROFILE("PREP", TAU_CT(*this), TAU_DEFAULT);
+#endif
       x.Cumulate(); // should do nothing most of the time
       if (S != nullptr) {
 	if (!res_updated) { // feed in b-S*x as RHS, not res-update
@@ -696,6 +703,9 @@ namespace amg
 
     { // scatter updates and finish update residuum, res -= S * (x - x_old)
       RegionTimer rt(tpost);
+#ifdef USE_TAU
+    TAU_PROFILE("POST", TAU_CT(*this), TAU_DEFAULT);
+#endif
       A->scatter_vec(x);
       if (S != nullptr) {
 	if (update_res) {

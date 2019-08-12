@@ -29,7 +29,8 @@ namespace amg
     /** HOW AGGRESSIVELY to contract **/
     double ctr_pfac = 0.25;                     // per default, reduce active NP by this factor (ctr_pfac / ctraf should be << 1 !)
     /** additional constraints for contract **/
-    size_t ctr_min_nv = 500;                    // always re-distribute such that at least this many NV per proc remain
+    size_t ctr_min_nv_th = 500;                 // re-distribute when there are less than this many vertices per proc left
+    size_t ctr_min_nv_gl = 500;                 // try to re-distribute such that at least this many NV per proc remain
     size_t ctr_seq_nv = 1000;                   // always re-distribute to sequential once NV reaches this threshhold
     double ctr_loc_gl = 0.8;                    // always try to redistribute such that at least this fraction will be local
 
@@ -85,8 +86,10 @@ namespace amg
     set_num(opts.first_ctraf, "first_rdaf");
     set_num(opts.ctraf_scale, "rdaf_scale");
     set_num(opts.ctr_pfac, "rdaf_pfac");
-    set_num(opts.ctr_min_nv, "rd_seq");
-    set_num(opts.ctr_seq_nv, "rd_min_size");
+    set_num(opts.ctr_min_nv_gl, "rd_min_nv");
+    set_num(opts.ctr_min_nv_th, "rd_min_nv_thr");
+    opts.ctr_min_nv_th = min2(opts.ctr_min_nv_th, opts.ctr_min_nv_gl / 2); // we always contract by at least factor 2
+    set_num(opts.ctr_seq_nv, "rd_seq");
 
     set_bool(opts.enable_sm, "enable_sp");
 
@@ -296,6 +299,10 @@ namespace amg
     double occl0 = max2(occl[0], 1.0);
     for (auto& v : occl)
       { v /= occl0; op_comp_l += v; }
+
+    cout << "loc OCC: " << op_comp_l << endl;
+				       prow(occl); cout << endl;
+
     alam(occl_rank, op_comp_l, occl);
 
   } // Logger::Finalize
@@ -544,6 +551,7 @@ namespace amg
 	if (next_nv < options->ctr_seq_nv) // sequential threshold reached
 	  { ctr_factor = -1; }
 	else if ( (crs_meas_fac > options->ctr_crs_thresh) ||              // coarsening slows down
+		(cmesh->template GetNNGlobal<NT_VERTEX>() < ccomm.Size() * options->ctr_min_nv_th) || // NV/NP too small
 		  (goal_nv > cmesh->template GetNNGlobal<NT_VERTEX>()) ||  // static redistribute every now and then
 		  (frac_loc < options->ctr_loc_thresh) ) {                 // not enough local vertices
 
@@ -551,7 +559,7 @@ namespace amg
 	  cout << IM(5) << " ctr bc " <<  goal_nv << " > " << cmesh->template GetNNGlobal<NT_VERTEX>() << endl;
 	  cout << IM(5) << " ctr bc " << frac_loc << " < " << options->ctr_loc_thresh << endl;
 
-	  ctr_factor = min2(fac, double(next_nv) / options->ctr_min_nv / ccomm.Size());
+	  ctr_factor = min2(fac, double(next_nv) / options->ctr_min_nv_gl / ccomm.Size());
 
 	  if (frac_loc < options->ctr_loc_gl) {
 	    size_t NP = ccomm.Size();
@@ -773,15 +781,16 @@ namespace amg
 
       if (next_nv < options->ctr_seq_nv) // sequential threshold reached
 	{ ctr_factor = -1; }
-      else if ( (crs_meas_fac > options->ctr_crs_thresh) ||              // coarsening slows down
-		(goal_nv > cmesh->template GetNNGlobal<NT_VERTEX>()) ||  // static redistribute every now and then
-		(frac_loc < options->ctr_loc_thresh) ) {                 // not enough local vertices
+      else if ( (crs_meas_fac > options->ctr_crs_thresh) ||                                           // coarsening slows down
+		(cmesh->template GetNNGlobal<NT_VERTEX>() < ccomm.Size() * options->ctr_min_nv_th) || // NV/NP too small
+		(goal_nv > cmesh->template GetNNGlobal<NT_VERTEX>()) ||                               // static redistribute every now and then
+		(frac_loc < options->ctr_loc_thresh) ) {                                              // not enough local vertices
 
 	cout << IM(5) << " ctr bc " << crs_meas_fac  << " > " << options->ctr_crs_thresh << endl;
 	cout << IM(5) << " ctr bc " <<  goal_nv << " > " << cmesh->template GetNNGlobal<NT_VERTEX>() << endl;
 	cout << IM(5) << " ctr bc " << frac_loc << " < " << options->ctr_loc_thresh << endl;
 
-	ctr_factor = min2(fac, double(next_nv) / options->ctr_min_nv / ccomm.Size());
+	ctr_factor = fac;
 
 	if (frac_loc < options->ctr_loc_gl) {
 	  size_t NP = ccomm.Size();
@@ -799,7 +808,7 @@ namespace amg
 	}
       }
 
-      ctr_factor = 0.5;
+      ctr_factor = min2(ctr_factor, double(next_nv) / options->ctr_min_nv_gl / ccomm.Size());
 
       if (ctr_factor == 1) // should not redistribute
 	{ return false; }
@@ -839,11 +848,8 @@ namespace amg
 
       /** inner loop - do coarsening until stuck **/
       bool stuck = false;
-      int c = 0;
       while ( (curr_meas > goal_meas) && (!stuck) ) {
 	stuck = do_coarsen_step();
-	c++;
-	if (c == 3) stuck = true;
       }
 
       /** we PROBABLY have a coarse map **/
@@ -979,18 +985,18 @@ namespace amg
     }
 
     /** assemble coarse matrix and add DOFstep to map **/
-    cout << " sub_steps: " << endl << sub_steps << endl;
-    for (auto step : sub_steps)
-      cout << typeid(*step).name() << endl;
+    // cout << " sub_steps: " << endl << sub_steps << endl;
+    // for (auto step : sub_steps)
+    //   cout << typeid(*step).name() << endl;
     shared_ptr<BaseDOFMapStep> tot_step;
     if (sub_steps.Size() > 1)
       { tot_step = make_shared<ConcDMS>(sub_steps); }
     else
       { tot_step = sub_steps[0]; }
 
-    cout << " ass mat " << endl;
+    // cout << " ass mat " << endl;
     cmat = tot_step->AssembleMatrix(cmat);
-    cout << " have ass mat! " << endl;
+    // cout << " have ass mat! " << endl;
 
     dof_map->AddStep(tot_step);
 

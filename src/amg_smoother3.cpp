@@ -19,11 +19,8 @@ namespace amg
 
   
   void thread_fpf () {
-    // cout << " thread_fpf!!!! " << endl;
 #ifdef USE_TAU
-    // cout << " call reg thread main" << endl;
-    // TAU_REGISTER_THREAD();
-    // cout << " call set node thread" << endl;
+    TAU_REGISTER_THREAD();
     TAU_PROFILE_SET_NODE(NgMPI_Comm(MPI_COMM_WORLD).Rank());
 #endif
     while( !end_thread ) {
@@ -475,8 +472,8 @@ namespace amg
   /** DCCMap **/
 
   template<class TSCAL>
-  DCCMap<TSCAL> :: DCCMap (shared_ptr<EQCHierarchy> eqc_h, shared_ptr<ParallelDofs> _pardofs, bool _inthread)
-    : pardofs(_pardofs), block_size(_pardofs->GetEntrySize()), inthread(_inthread),
+  DCCMap<TSCAL> :: DCCMap (shared_ptr<EQCHierarchy> eqc_h, shared_ptr<ParallelDofs> _pardofs)
+    : pardofs(_pardofs), block_size(_pardofs->GetEntrySize()),
       thread_done(false), thread_ready(false), end_thread(false), mpi_thread(nullptr)
   {
     ;
@@ -486,9 +483,6 @@ namespace amg
   template<class TSCAL>
   void DCCMap<TSCAL> :: AllocMPIStuff ()
   {
-    /** alloc requests **/
-    m_reqs.SetSize(m_ex_dofs.Size()); m_reqs = MPI_REQUEST_NULL;
-    g_reqs.SetSize(g_ex_dofs.Size()); g_reqs = MPI_REQUEST_NULL;
 
     /** alloc buffers **/
     {
@@ -503,65 +497,39 @@ namespace amg
       alloc_bs(g_buffer, g_ex_dofs); // g_buffer = -1;
     }
 
-    /** start thread that does backround MPI-communication **/
-    
-    if (inthread) {
-      // mpi_thread = new std::thread(thread_fun, &m, &cv, &thread_done, &thread_ready, &end_thread, &m_reqs);
-      mpi_thread = new std::thread([this](){ this->mpi_thread_met(); });
+    /** alloc requests **/
+    m_reqs.SetSize(m_ex_dofs.Size()); m_reqs = MPI_REQUEST_NULL;
+    g_reqs.SetSize(g_ex_dofs.Size()); g_reqs = MPI_REQUEST_NULL;
+
+    /** initialize petsistent communication **/
+    m_send.SetSize(m_ex_dofs.Size()); m_recv.SetSize(m_ex_dofs.Size());
+    g_send.SetSize(g_ex_dofs.Size()); g_recv.SetSize(g_ex_dofs.Size());
+
+    int cm = 0, cg = 0;
+    auto comm = pardofs->GetCommunicator();
+    auto ex_procs = pardofs->GetDistantProcs();
+    for (auto kp : Range(ex_procs)) {
+      if (g_ex_dofs[kp].Size()) { // init G send/recv
+	MPI_Send_init( &g_buffer[kp][0], block_size * g_ex_dofs[kp].Size(), MyGetMPIType<TSCAL>(), ex_procs[kp], MPI_TAG_AMG + 4, comm, &g_send[cg]);
+	MPI_Recv_init( &g_buffer[kp][0], block_size * g_ex_dofs[kp].Size(), MyGetMPIType<TSCAL>(), ex_procs[kp], MPI_TAG_AMG + 5, comm, &g_recv[cg]);
+	cg++;
+      }
+      if (m_ex_dofs[kp].Size()) { // init G send/recv
+	MPI_Send_init( &m_buffer[kp][0], block_size * m_ex_dofs[kp].Size(), MyGetMPIType<TSCAL>(), ex_procs[kp], MPI_TAG_AMG + 5, comm, &m_send[cm]);
+	MPI_Recv_init( &m_buffer[kp][0], block_size * m_ex_dofs[kp].Size(), MyGetMPIType<TSCAL>(), ex_procs[kp], MPI_TAG_AMG + 4, comm, &m_recv[cm]);
+	cm++;
+      }
     }
+    g_send.SetSize(cg); g_recv.SetSize(cg);
+    m_send.SetSize(cm); m_recv.SetSize(cm);
   }
 
 
   template<class TSCAL>
   DCCMap<TSCAL> :: ~DCCMap ()
   {
-    MyMPI_WaitAll(g_reqs);
-    // thread cleanup maybe?
-    if (mpi_thread != nullptr) {
-      {
-	std::lock_guard<std::mutex> lk(m); // get lock
-	thread_ready = true;
-	end_thread = true;
-      }
-      cv.notify_one(); // weak up mpi-thread
-      mpi_thread->join();
-      delete mpi_thread;
-    }
-    else {
-      MyMPI_WaitAll(m_reqs);
-    }
-  }
-
-
-  template<class TSCAL>
-  void DCCMap<TSCAL> :: mpi_thread_met ()
-  {
-#ifdef USE_TAU
-    TAU_PROFILE("mpi_thread_met", TAU_CT(*this), TAU_DEFAULT);
-#endif
-
-    while( !end_thread ) {
-      std::unique_lock<std::mutex> lk(m);
-      cv.wait(lk, [&](){ return thread_ready; });
-      if (!end_thread && !thread_done) {
-
-	auto ex_dofs = pardofs->GetDistantProcs();
-	auto comm = pardofs->GetCommunicator();
-
-	for (auto kp : Range(ex_dofs.Size())) {
-	  if (m_ex_dofs[kp].Size()) // recv M vals
-	    { m_reqs[kp] = MyMPI_IRecv(m_buffer[kp], ex_dofs[kp], MPI_TAG_AMG + 3, comm); }
-	  else
-	    { m_reqs[kp] = MPI_REQUEST_NULL; }
-	}
-	
-	MyMPI_WaitAll(m_reqs);
-
-	thread_done = true; thread_ready = false;
-	cv.notify_one();
-      }
-    }
-
+    // MyMPI_WaitAll(g_reqs);
+    // MyMPI_WaitAll(m_reqs);
   }
 
 
@@ -584,27 +552,22 @@ namespace amg
     auto ex_dofs = pardofs->GetDistantProcs();
     auto comm = pardofs->GetCommunicator();
 
-    for (auto kp : Range(ex_dofs.Size())) {
-      if (g_ex_dofs[kp].Size()) // send G vals
-	{ g_reqs[kp] = MyMPI_ISend(g_buffer[kp], ex_dofs[kp], MPI_TAG_AMG + 3, comm); }
-      else
-	{ g_reqs[kp] = MPI_REQUEST_NULL; }
+    if (g_send.Size())
+      { MPI_Startall(g_send.Size(), &g_send[0]); }
+    if (m_recv.Size())
+      { MPI_Startall(m_recv.Size(), &m_recv[0]); }
 
-      if (inthread) { continue; }
+    // for (auto kp : Range(ex_dofs.Size())) {
+    //   if (g_ex_dofs[kp].Size()) // send G vals
+    // 	{ g_reqs[kp] = MyMPI_ISend(g_buffer[kp], ex_dofs[kp], MPI_TAG_AMG + 3, comm); }
+    //   else
+    // 	{ g_reqs[kp] = MPI_REQUEST_NULL; }
 
-      if (m_ex_dofs[kp].Size()) // recv M vals
-	{ m_reqs[kp] = MyMPI_IRecv(m_buffer[kp], ex_dofs[kp], MPI_TAG_AMG + 3, comm); }
-      else
-	{ m_reqs[kp] = MPI_REQUEST_NULL; }
-    }
-
-    if (inthread) {
-      {
-	std::lock_guard<std::mutex> lk(m);
-	thread_ready = true;
-      }
-      cv.notify_one();
-    }
+    //   if (m_ex_dofs[kp].Size()) // recv M vals
+    // 	{ m_reqs[kp] = MyMPI_IRecv(m_buffer[kp], ex_dofs[kp], MPI_TAG_AMG + 3, comm); }
+    //   else
+    // 	{ m_reqs[kp] = MPI_REQUEST_NULL; }
+    // }
 
   } // DCCMap::StartDIS2CO
 
@@ -619,20 +582,7 @@ namespace amg
     if (vec.GetParallelStatus() != DISTRIBUTED) // just nulling-out entries is enough
       { vec.SetParallelStatus(DISTRIBUTED); return; }
 
-    if (!inthread)
-      { WaitM(); }
-    else if (mpi_thread != nullptr) {
-      // cout << "get lock (app)" << endl;
-      if (true) {
-	std::unique_lock<std::mutex> lk(m);
-	// cout << "have lock (app), wait" << endl;
-	cv.wait(lk, [&]{ return thread_done; });
-	// cout << "thread done, set thread_done to false" << endl;
-      }
-      thread_done = false;
-    }
-    else
-      { throw Exception("why dont i have a thread?"); }
+    MyMPI_WaitAll(m_recv);
 
     ApplyM(vec);
 
@@ -646,10 +596,12 @@ namespace amg
     TAU_PROFILE("FinishDIS2CO", TAU_CT(*this), TAU_DEFAULT);
 #endif
 
-    if (shortcut)
-      { for (auto & req : g_reqs) { MPI_Request_free(&req); } }
-    else
-      { MyMPI_WaitAll(g_reqs); }
+    // if (shortcut)
+    //   { for (auto & req : g_reqs) { MPI_Request_free(&req); } }
+    // else
+    //   { MyMPI_WaitAll(g_reqs); }
+
+    MyMPI_WaitAll(g_send);
 
   } // DCCMap::FinishDIS2CO
 
@@ -666,19 +618,24 @@ namespace amg
 
     BufferM(vec);
 
-    auto ex_dofs = pardofs->GetDistantProcs();
-    auto comm = pardofs->GetCommunicator();
-    for (auto kp : Range(ex_dofs.Size())) {
-      if (g_ex_dofs[kp].Size()) // recv G vals
-	{ g_reqs[kp] = MyMPI_IRecv(g_buffer[kp], ex_dofs[kp], MPI_TAG_AMG + 4, comm); }
-      else
-	{ g_reqs[kp] = MPI_REQUEST_NULL; }
+    if (m_send.Size())
+      { MPI_Startall(m_send.Size(), &m_send[0]); }
+    if (g_recv.Size())
+      { MPI_Startall(g_recv.Size(), &g_recv[0]); }
 
-      if (m_ex_dofs[kp].Size()) // send M vals
-	{ m_reqs[kp] = MyMPI_ISend(m_buffer[kp], ex_dofs[kp], MPI_TAG_AMG + 4, comm); }
-      else
-	{ m_reqs[kp] = MPI_REQUEST_NULL; }
-    }
+    // auto ex_dofs = pardofs->GetDistantProcs();
+    // auto comm = pardofs->GetCommunicator();
+    // for (auto kp : Range(ex_dofs.Size())) {
+    //   if (g_ex_dofs[kp].Size()) // recv G vals
+    // 	{ g_reqs[kp] = MyMPI_IRecv(g_buffer[kp], ex_dofs[kp], MPI_TAG_AMG + 4, comm); }
+    //   else
+    // 	{ g_reqs[kp] = MPI_REQUEST_NULL; }
+
+    //   if (m_ex_dofs[kp].Size()) // send M vals
+    // 	{ m_reqs[kp] = MyMPI_ISend(m_buffer[kp], ex_dofs[kp], MPI_TAG_AMG + 4, comm); }
+    //   else
+    // 	{ m_reqs[kp] = MPI_REQUEST_NULL; }
+    // }
 
   } // DCCMap::StartCO2CU
 
@@ -693,7 +650,7 @@ namespace amg
     if (vec.GetParallelStatus() != DISTRIBUTED)
       { return; }
 
-    MyMPI_WaitAll(g_reqs);
+    MyMPI_WaitAll(g_recv);
 
     ApplyG(vec);
 
@@ -708,11 +665,12 @@ namespace amg
     TAU_PROFILE("FinishCO2CU", TAU_CT(*this), TAU_DEFAULT);
 #endif
 
-    if (shortcut)
-      { for (auto & req : m_reqs) { MPI_Request_free(&req); } }
-    else
-      { MyMPI_WaitAll(m_reqs); }
+    // if (shortcut)
+    //   { for (auto & req : m_reqs) { MPI_Request_free(&req); } }
+    // else
+    //   { MyMPI_WaitAll(m_reqs); }
 
+    MyMPI_WaitAll(m_send);
   } // DCCMap::FinishCO2CU
 
 
@@ -745,6 +703,13 @@ namespace amg
     }
   } // iterate_buf_vec
 
+
+  template<class TSCAL>
+  void DCCMap<TSCAL> :: WaitD2C ()
+  {
+    MyMPI_WaitAll(g_send);
+    MyMPI_WaitAll(m_recv);
+  }
 
   template<class TSCAL>
   void DCCMap<TSCAL> :: WaitM ()
@@ -820,8 +785,8 @@ namespace amg
 
   template<class TSCAL>
   ChunkedDCCMap<TSCAL> :: ChunkedDCCMap (shared_ptr<EQCHierarchy> eqc_h, shared_ptr<ParallelDofs> _pardofs,
-		 bool _inthread, int _MIN_CHUNK_SIZE)
-    : DCCMap<TSCAL>(eqc_h, _pardofs, _inthread), MIN_CHUNK_SIZE(_MIN_CHUNK_SIZE)
+		 int _MIN_CHUNK_SIZE)
+    : DCCMap<TSCAL>(eqc_h, _pardofs), MIN_CHUNK_SIZE(_MIN_CHUNK_SIZE)
   {
     /** m_ex_dofs and g_ex_dofs **/
     CalcDOFMasters(eqc_h);
@@ -1305,7 +1270,7 @@ namespace amg
 
     shared_ptr<DCCMap<typename mat_traits<TM>::TSCAL>> dcc_map = nullptr;
     if (auto pds = _A->GetParallelDofs())
-      { dcc_map = make_shared<ChunkedDCCMap<typename mat_traits<TM>::TSCAL>>(eqc_h, pds, false, 10); }
+      { dcc_map = make_shared<ChunkedDCCMap<typename mat_traits<TM>::TSCAL>>(eqc_h, pds, 10); }
 
     A = make_shared<HybridMatrix2<TM>> (_A, dcc_map);
     origA = _A;
@@ -1493,7 +1458,7 @@ namespace amg
     condition_variable* pcv = &cv;
     bool vals_buffered = false;
 
-    bool in_thread = false;
+    bool in_thread = true;
     
     {
       // cout << "lock for setting fun" << endl;
@@ -1505,8 +1470,8 @@ namespace amg
 	  // vals_buffered = true;
 	  // pcv->notify_one();
 	  dcc_map->StartDIS2CO(*mpivec);
-	  dcc_map->WaitM();
-	  dcc_map->WaitG();
+	  // dcc_map->WaitD2C();
+	  dcc_map->WaitD2C();
 	  // dcc_map->ApplyDIS2CO(*mpivec);
 	  // dcc_map->FinishDIS2CO(false);
 	};

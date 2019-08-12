@@ -480,7 +480,7 @@ namespace amg
 	auto Apart = get_rows(dof_maps[kp], pdm[kp], group[kp]);
 	cout << "Apart for mem " << kp << " rk " << group[kp] << ": " << endl;
 	cout << "pchunk dims for mem   " << kp << " rk " << group[kp] << ": " << Apart->Height() << " x " << Apart->Width() << endl;
-	cout << *Apart << endl;
+	// cout << *Apart << endl;
 	if (group[kp] == comm.Rank())
 	  { split_A = Apart; }
 	else
@@ -565,20 +565,19 @@ namespace amg
       return nullptr;
     }
 
-    cout << "CTR MAT FOR " << pardofs->GetNDofGlobal() << " NDOF TO " << mapped_pardofs->GetNDofGlobal() << endl;
-    cout << "LOCAL DOFS " << pardofs->GetNDofLocal() << " NDOF TO " << mapped_pardofs->GetNDofLocal() << endl;
-
-    if (pardofs->GetNDofGlobal() < 10000)
-      { cout << "CTR MAT FOR " << pardofs->GetNDofGlobal() << " NDOF " << endl; }
+    // cout << "CTR MAT FOR " << pardofs->GetNDofGlobal() << " NDOF TO " << mapped_pardofs->GetNDofGlobal() << endl;
+    // cout << "LOCAL DOFS " << pardofs->GetNDofLocal() << " NDOF TO " << mapped_pardofs->GetNDofLocal() << endl;
+    // if (pardofs->GetNDofGlobal() < 10000)
+    //   { cout << "CTR MAT FOR " << pardofs->GetNDofGlobal() << " NDOF " << endl; }
 
     timer_hack_ctrmat(1).Start();
     Array<shared_ptr<TSPM_TM> > dist_mats(group.Size());
     dist_mats[0] = mat;
     for(auto k:Range((size_t)1, group.Size())) {
-      cout << " get mat from " << k << " of " << group.Size() << endl;
+      // cout << " get mat from " << k << " of " << group.Size() << endl;
       comm.Recv(dist_mats[k], group[k], MPI_TAG_AMG);
-      cout << " got mat from " << k << " of " << group.Size() << ", rank " << group[k] << endl;
-      cout << *dist_mats[k] << endl;
+      // cout << " got mat from " << k << " of " << group.Size() << ", rank " << group[k] << endl;
+      // cout << *dist_mats[k] << endl;
     }
     timer_hack_ctrmat(1).Stop();
 
