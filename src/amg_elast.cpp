@@ -9,51 +9,12 @@
 namespace amg
 {
 
-  /** AttachedEVD **/
-
-
-  template<class TMESH> void AttachedEVD :: map_data (const CoarseMap<TMESH> & cmap, AttachedEVD & cevd) const
-  {
-    static Timer t("AttachedEVD::map_data"); RegionTimer rt(t);
-    auto & cdata = cevd.data;
-    Cumulate();
-    // cout << "(cumul) f-pos: " << endl;
-    // for (auto V : Range(data.Size())) cout << V << ": " << data[V].pos << endl;
-    // cout << endl;
-    cdata.SetSize(cmap.template GetMappedNN<NT_VERTEX>()); cdata = 0.0;
-    auto map = cmap.template GetMap<NT_VERTEX>();
-    // cout << "v_map: " << endl; prow2(map); cout << endl << endl;
-    Array<int> touched(map.Size()); touched = 0;
-    mesh->Apply<NT_EDGE>([&](const auto & e) { // set coarse data for all coll. vertices
-	auto CV = map[e.v[0]];
-	if ( (CV == -1) || (map[e.v[1]] != CV) ) return;
-	touched[e.v[0]] = touched[e.v[1]] = 1;
-	cdata[CV].pos = 0.5 * (data[e.v[0]].pos + data[e.v[1]].pos);
-	cdata[CV].wt = data[e.v[0]].wt + data[e.v[1]].wt;
-      }, true); // if stat is CUMULATED, only master of collapsed edge needs to set wt 
-    mesh->AllreduceNodalData<NT_VERTEX>(touched, [](auto & in) { return move(sum_table(in)); } , false);
-    mesh->Apply<NT_VERTEX>([&](auto v) { // set coarse data for all "single" vertices
-	auto CV = map[v];
-	if ( (CV != -1) && (touched[v] == 0) )
-	  { cdata[CV] = data[v]; }
-      }, true);
-    // cout << "(distr) c-pos: " << endl;
-    // for (auto CV : Range(cmap.GetMappedNN<NT_VERTEX>())) cout << CV << ": " << cdata[CV].pos << endl;
-    // cout << endl;
-    cevd.SetParallelStatus(DISTRIBUTED);
-  } // AttachedEVD::map_data
-
-
-  template<> void AttachedEVD :: map_data (const CoarseMap<ElasticityMesh<2>> & cmap, AttachedEVD & cevd) const;
-  template<> void AttachedEVD :: map_data (const CoarseMap<ElasticityMesh<3>> & cmap, AttachedEVD & cevd) const;
-
-
   /** AttachedEED **/
 
 
   template<int D> void AttachedEED<D> :: map_data (const BaseCoarseMap & bcmap, AttachedEED<D> & ceed) const
   {
-    CoarseMap<ElasticityMesh<D>> * pcmap = dynamic_cast<CoarseMap<ElasticityMesh<D>>*>(&bcmap);
+    CoarseMap<ElasticityMesh<D>> * pcmap = dynamic_cast<CoarseMap<ElasticityMesh<D>>*>(const_cast<BaseCoarseMap*>(&bcmap));
     assert(pcmap != nullptr); // "AttachedEED with wrong map, how?!
     auto & cmap(*pcmap);
     // static_assert(std::is_same<TMESH,ElasticityMesh<D>>::value==1, "AttachedEED with wrong map?!");
@@ -644,14 +605,14 @@ namespace amg
     if (O.sm_ver == BAO::SM_VER::VER1) {
       if (auto spmat = dynamic_pointer_cast<SparseMatrix<typename C::TM>>(mat)) {
 	if (O.reg_mats)
-	  { sm = make_shared<StabHGSS<dofpv(D), disppv(D), dofpv(D)>> (spmat, par_dofs, free_dofs); }
+	  { sm = make_shared<StabHGSS<dofpv(C::DIM), disppv(C::DIM), dofpv(C::DIM)>> (spmat, pds, freedofs); }
 	else
-	  { sm = make_shared<HybridGSS<dofpv(D)>> (spmat, par_dofs, free_dofs); }
+	  { sm = make_shared<HybridGSS<dofpv(C::DIM)>> (spmat, pds, freedofs); }
       }
-      else if (auto spmat = dynamic_pointer_cast<SparseMatrix<Mat<disppv(D),disppv(D), double>>>(mat))
-	{ sm = make_shared<HybridGSS<disppv(D)>> (spmat, par_dofs, free_dofs); }
+      else if (auto spmat = dynamic_pointer_cast<SparseMatrix<Mat<disppv(C::DIM),disppv(C::DIM), double>>>(mat))
+	{ sm = make_shared<HybridGSS<disppv(C::DIM)>> (spmat, pds, freedofs); }
       else if (auto spmat = dynamic_pointer_cast<SparseMatrix<double>>(mat))
-	{ sm = make_shared<HybridGSS<1>> (spmat, par_dofs, free_dofs); }
+	{ sm = make_shared<HybridGSS<1>> (spmat, pds, freedofs); }
     }
     else if (O.sm_ver == BAO::SM_VER::VER2) {
       auto parmat = make_shared<ParallelMatrix>(mat, pds, pds, C2D);
@@ -659,34 +620,43 @@ namespace amg
 	if (O.reg_mats)
 	  { throw Exception("V2 regularized diag not implemented"); }
 	else {
-	  auto v2sm = make_shared<HyrbidGSS2<Mat<dofpv(D), dofpv(D), double>>>(spmat, par_dofs, freedofs);
+	  auto v2sm = make_shared<HybridGSS2<Mat<dofpv(C::DIM), dofpv(C::DIM), double>>>(parmat, freedofs);
 	  v2sm->SetSymmetric(O.smooth_symmetric);
 	  sm = v2sm;
 	}
       }
-      else if (auto spmat = dynamic_pointer_cast<SparseMatrix<Mat<disppv(D),disppv(D), double>>>(mat)) {
-	auto v2sm = make_shared<HyrbidGSS2<Mat<disppv(D), disppv(D), double>>>(parmatfreedofs);
+      else if (auto spmat = dynamic_pointer_cast<SparseMatrix<Mat<disppv(C::DIM),disppv(C::DIM), double>>>(mat)) {
+	auto v2sm = make_shared<HybridGSS2<Mat<disppv(C::DIM), disppv(C::DIM), double>>>(parmat, freedofs);
 	v2sm->SetSymmetric(O.smooth_symmetric);
 	sm = v2sm;
       }
       else if (auto spmat = dynamic_pointer_cast<SparseMatrix<double>>(mat)) {
-	auto v2sm = make_shared<HyrbidGSS2<double>>(parmat, freedofs);
+	auto v2sm = make_shared<HybridGSS2<double>>(parmat, freedofs);
 	v2sm->SetSymmetric(O.smooth_symmetric);
 	sm = v2sm;
       }
     }
     else if (O.sm_ver == BAO::SM_VER::VER3) {
       auto parmat = make_shared<ParallelMatrix>(mat, pds, pds, C2D);
+      auto eqc_h = make_shared<EQCHierarchy>(pds, false); // TODO: get rid of these!
       if (auto spmat = dynamic_pointer_cast<SparseMatrix<typename C::TM>>(mat)) {
       	if (O.reg_mats)
 	  { throw Exception("V3 regularized diag not implemented"); }
 	else {
-	  auto v3sm = make_shared<HybridGSS3<Mat<dofpv(D), dofpv(D), double>>>(parmat, freedofs);
+	  auto v3sm = make_shared<HybridGSS3<Mat<dofpv(C::DIM), dofpv(C::DIM), double>>>(parmat, eqc_h, freedofs, O.mpi_overlap, O.mpi_thread);
+	  v3sm->SetSymmetric(options->smooth_symmetric);
+	  sm = v3sm;
 	}
       }
-      else if (auto spmat = dynamic_pointer_cast<SparseMatrix<Mat<disppv(D),disppv(D), double>>>(mat)) {
+      else if (auto spmat = dynamic_pointer_cast<SparseMatrix<Mat<disppv(C::DIM),disppv(C::DIM), double>>>(mat)) {
+	auto v3sm = make_shared<HybridGSS3<Mat<disppv(C::DIM), disppv(C::DIM), double>>>(parmat, eqc_h, freedofs, O.mpi_overlap, O.mpi_thread);
+	v3sm->SetSymmetric(options->smooth_symmetric);
+	sm = v3sm;
       }
       else if (auto spmat = dynamic_pointer_cast<SparseMatrix<double>>(mat)) {
+	auto v3sm = make_shared<HybridGSS3<double>>(parmat, eqc_h, freedofs, O.mpi_overlap, O.mpi_thread);
+	v3sm->SetSymmetric(options->smooth_symmetric);
+	sm = v3sm;
       }
     }
     return sm;
@@ -710,6 +680,9 @@ namespace amg
     ;
   } // EmbedWithElmats::AddElementMatrix
 
+  // i had an undefinde reference to map_data without this
+  template class AttachedEED<2>;
+  template class AttachedEED<3>;
 
   RegisterPreconditioner<EmbedWithElmats<ElasticityAMGFactory<2>, double, double>> register_el2d("ngs_amg.elast2d");
 

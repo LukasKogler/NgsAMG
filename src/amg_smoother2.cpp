@@ -988,3 +988,5 @@ namespace amg
   }
 
 } // namespace amg
+
+#include "amg_tcs.hpp"

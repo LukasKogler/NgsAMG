@@ -45,7 +45,7 @@ namespace amg
     { ; }
 
     // templated because i cant static_cast basecoarsemap to elasticitymesh (dont have dim)
-    template<class TMESH> void map_data (const CoarseMap<TMESH> & cmap, AttachedEVD & cevd) const;
+    template<class TMESH> INLINE void map_data (const CoarseMap<TMESH> & cmap, AttachedEVD & cevd) const;
   }; // class AttachedEVD
 
 
@@ -107,6 +107,36 @@ namespace amg
   }; // class ElasticityAMGFactory
 
 
+  template<class TMESH> void AttachedEVD :: map_data (const CoarseMap<TMESH> & cmap, AttachedEVD & cevd) const
+  {
+    static Timer t("AttachedEVD::map_data"); RegionTimer rt(t);
+    auto & cdata = cevd.data;
+    Cumulate();
+    // cout << "(cumul) f-pos: " << endl;
+    // for (auto V : Range(data.Size())) cout << V << ": " << data[V].pos << endl;
+    // cout << endl;
+    cdata.SetSize(cmap.template GetMappedNN<NT_VERTEX>()); cdata = 0.0;
+    auto map = cmap.template GetMap<NT_VERTEX>();
+    // cout << "v_map: " << endl; prow2(map); cout << endl << endl;
+    Array<int> touched(map.Size()); touched = 0;
+    mesh->Apply<NT_EDGE>([&](const auto & e) { // set coarse data for all coll. vertices
+	auto CV = map[e.v[0]];
+	if ( (CV == -1) || (map[e.v[1]] != CV) ) return;
+	touched[e.v[0]] = touched[e.v[1]] = 1;
+	cdata[CV].pos = 0.5 * (data[e.v[0]].pos + data[e.v[1]].pos);
+	cdata[CV].wt = data[e.v[0]].wt + data[e.v[1]].wt;
+      }, true); // if stat is CUMULATED, only master of collapsed edge needs to set wt 
+    mesh->AllreduceNodalData<NT_VERTEX>(touched, [](auto & in) { return move(sum_table(in)); } , false);
+    mesh->Apply<NT_VERTEX>([&](auto v) { // set coarse data for all "single" vertices
+	auto CV = map[v];
+	if ( (CV != -1) && (touched[v] == 0) )
+	  { cdata[CV] = data[v]; }
+      }, true);
+    // cout << "(distr) c-pos: " << endl;
+    // for (auto CV : Range(cmap.GetMappedNN<NT_VERTEX>())) cout << CV << ": " << cdata[CV].pos << endl;
+    // cout << endl;
+    cevd.SetParallelStatus(DISTRIBUTED);
+  } // AttachedEVD::map_data
 
 } // namespace amg
 

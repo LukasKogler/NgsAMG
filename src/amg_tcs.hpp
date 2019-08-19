@@ -65,6 +65,25 @@ namespace amg
 #endif
 #endif
 
+#if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGSM2_CPP)
+  EXTERN template class HybridGSS2<double>;
+#ifdef ELASTICITY
+  EXTERN template class HybridGSS2<Mat<2,2,double>>;
+  EXTERN template class HybridGSS2<Mat<3,3,double>>;
+  EXTERN template class HybridGSS2<Mat<6,6,double>>;
+#endif
+#endif
+
+#if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGSM3_CPP)
+  EXTERN template class HybridGSS3<double>;
+#ifdef ELASTICITY
+  EXTERN template class HybridGSS3<Mat<2,2,double>>;
+  EXTERN template class HybridGSS3<Mat<3,3,double>>;
+  EXTERN template class HybridGSS3<Mat<6,6,double>>;
+#endif
+#endif
+
+
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGCRS_CPP)
   EXTERN template class SeqVWC<FlatTM>;
   EXTERN template class BlockVWC<H1Mesh>;

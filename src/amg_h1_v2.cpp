@@ -68,7 +68,7 @@ namespace amg
 
 
   template<> template<>
-  shared_ptr<BaseDOFMapStep> EmbedVAMG<H1AMGFactory> :: BuildEmbedding_impl<3> (shared_ptr<H1Mesh> mesh)
+  shared_ptr<BaseDOFMapStep> EmbedVAMG<H1AMGFactory> :: BuildEmbedding_impl<6> (shared_ptr<H1Mesh> mesh)
   { return nullptr; }
 
   template<>

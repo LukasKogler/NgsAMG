@@ -1716,6 +1716,6 @@ namespace amg
       { jac_loc->SmoothBackRES(0, A->Height()/2, x, res); }
   }
 
-  template class HybridGSS3<double>;
-
 } // namespace amg
+
+#include "amg_tcs.hpp"
