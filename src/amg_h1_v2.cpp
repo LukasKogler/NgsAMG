@@ -298,7 +298,7 @@ namespace amg
       // sm->SetSymmetric(options->smooth_symmetric);
 
       auto eqc_h = make_shared<EQCHierarchy>(pds, false); // todo: get rid of these!
-      auto sm = make_shared<HybridGSS3<double>> (parmat, eqc_h, freedofs);
+      auto sm = make_shared<HybridGSS3<double>> (parmat, eqc_h, freedofs, options->mpi_overlap, options->mpi_thread);
       sm->SetSymmetric(options->smooth_symmetric);
 
       return sm;
