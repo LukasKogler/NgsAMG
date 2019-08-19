@@ -83,7 +83,7 @@ namespace amg
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGCTR_CPP)
   EXTERN template class CtrMap<double>;
 #ifdef ELASTICITY
-  EXTERN template class CtrMap<Vec<2,double>>;
+  // EXTERN template class CtrMap<Vec<2,double>>; // why??
   EXTERN template class CtrMap<Vec<3,double>>;
   EXTERN template class CtrMap<Vec<6,double>>;
 #endif
@@ -117,11 +117,13 @@ namespace amg
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGELAST_CPP)
 #ifdef ELASTICITY
   //#ifndef FILE_AMGELAST_CPP
-  EXTERN template class ElasticityAMG<2>;
-  EXTERN template class ElasticityAMG<3>;
+  EXTERN template class ElasticityAMGFactory<2>;
+  EXTERN template class ElasticityAMGFactory<3>;
   //#endif
-  EXTERN template class EmbedVAMG<ElasticityAMG<2>, double, STABEW<2>>;
-  EXTERN template class EmbedVAMG<ElasticityAMG<3>, double, STABEW<3>>;
+  // EXTERN template class EmbedVAMG<ElasticityAMGFactory<2>>;
+  // EXTERN template class EmbedVAMG<ElasticityAMGFactory<3>>;
+  EXTERN template class EmbedWithElmats<ElasticityAMGFactory<2>, double, ElasticityEdgeData<2>>;
+  EXTERN template class EmbedWithElmats<ElasticityAMGFactory<3>, double, ElasticityEdgeData<3>>;
 #endif
 #endif
 

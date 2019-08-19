@@ -61,7 +61,15 @@ namespace amg
     INVERSETYPE cinv_type = MASTERINVERSE;
     INVERSETYPE cinv_type_loc = SPARSECHOLESKY;
     size_t clev_nsteps = 1;                   // if smoothing, how many steps do we do?
-  };
+
+    /** smoother versions **/
+    enum SM_VER : char { VER1 = 0,    // old version
+			 VER2 = 1,    // newer (maybe a bit faster than ver3 without overlap)
+			 VER3 = 2 };  // newest, optional overlap
+    SM_VER sm_ver = VER3;
+    bool mpi_overlap = true;          // overlap communication/computation (only VER3)
+    bool mpi_thread = false;          // do MPI-comm in seperate thread (only VER3)
+  }; // struct BaseEmbedAMGOptions
 
 
   template<class FACTORY>
@@ -103,6 +111,9 @@ namespace amg
     set_bool(opts->smooth_symmetric, "symsm");
     set_bool(opts->do_test, "do_test");
     set_bool(opts->smooth_lo_only, "smooth_lo_only");
+
+    set_bool(opts->mpi_overlap, "sm_mpi_overlap");
+    set_bool(opts->mpi_thread, "sm_mpi_thread");
 
     return opts;
   }
@@ -306,7 +317,7 @@ namespace amg
   template<class FACTORY>
   shared_ptr<FACTORY> EmbedVAMG<FACTORY> :: BuildFactory (shared_ptr<TMESH> mesh)
   {
-    auto emb_step = BuildEmbedding();
+    auto emb_step = BuildEmbedding(mesh);
     auto f = make_shared<FACTORY>(mesh, options, emb_step);
     f->free_verts = free_verts; free_verts = nullptr;
     return f;
@@ -732,6 +743,195 @@ namespace amg
 
     return alg_mesh;
   } // EmbedVAMG::BuildAlgMesh_ALG
+
+
+  template<class FACTORY> shared_ptr<BaseDOFMapStep> EmbedVAMG<FACTORY> :: BuildEmbedding (shared_ptr<TMESH> mesh)
+  {
+    static Timer t("BuildEmbedding"); RegionTimer rt(t);
+
+    typedef BaseEmbedAMGOptions BAO;
+    const auto &O(*options);
+
+    /** Basically just dispatch to templated method **/
+
+    shared_ptr<ParallelDofs> fpds = finest_mat->GetParallelDofs();
+
+    shared_ptr<BaseMatrix> f_loc_mat;
+    if (auto parmat = dynamic_pointer_cast<ParallelMatrix>(finest_mat))
+      { f_loc_mat = parmat->GetMatrix(); }
+    else
+      { f_loc_mat = finest_mat; }
+
+    if (auto spm_tm = dynamic_pointer_cast<SparseMatrix<double>> (f_loc_mat))
+      { return BuildEmbedding_impl<1>(mesh); }
+#ifdef ELASTICITY
+    else if (auto spm_tm = dynamic_pointer_cast<stripped_spm_tm<Mat<2,2,double>>> (f_loc_mat))
+      { return BuildEmbedding_impl<2>(mesh); }
+    else if (auto spm_tm = dynamic_pointer_cast<stripped_spm_tm<Mat<3,3,double>>> (f_loc_mat))
+      { return BuildEmbedding_impl<3>(mesh); }
+    else if (auto spm_tm = dynamic_pointer_cast<stripped_spm_tm<Mat<6,6,double>>> (f_loc_mat))
+      { return BuildEmbedding_impl<6>(mesh); }
+#endif
+    else
+      { throw Exception(string("strange mat, type = ") + typeid(*f_loc_mat).name()); }
+
+    return nullptr;
+  } // EmbedVAMG::BuildEmbedding
+
+
+  template<class FACTORY> template<int N>
+  shared_ptr<BaseDOFMapStep> EmbedVAMG<FACTORY> :: BuildEmbedding_impl (shared_ptr<typename FACTORY::TMESH> mesh)
+  {
+    /**
+       Embedding  = E_SS * E_DOF * P
+       E_S      ... from 0..ndof to subset                                             // N x N
+       E_D      ... disp to disp-rot emb or compound-to multidim, (TODO:rot-ordering)  // N x dofpv
+       P        ... permutation matrix from re-sorting vertex numbers                  // dofpv x dofpv
+    **/
+    
+    shared_ptr<ParallelDofs> fpds = finest_mat->GetParallelDofs();
+
+    shared_ptr<BaseMatrix> f_loc_mat;
+    if (auto parmat = dynamic_pointer_cast<ParallelMatrix>(finest_mat))
+      { f_loc_mat = parmat->GetMatrix(); }
+    else
+      { f_loc_mat = finest_mat; }
+
+    constexpr int M = mat_traits<typename FACTORY::TSPM_TM::TENTRY>::HEIGHT;
+    typedef stripped_spm_tm<typename strip_mat<Mat<N, N, double>>::type> T_E_S;
+    typedef stripped_spm_tm<typename strip_mat<Mat<N, M, double>>::type> T_E_D;
+    typedef typename FACTORY::TSPM_TM T_P;
+
+    /**
+       E_S can be nullptr when subset is all DOFs, which happens when:
+         - fes is low order
+    	 - nodalp2 and fes is order 2
+     **/
+    shared_ptr<T_E_S> E_S = BuildES<N>();
+
+    size_t subset_count = (E_S == nullptr) ? fpds->GetNDofLocal() : E_S->Width();
+
+    /**
+       E_D can be nullptr when N==M and:
+          - fes has same multidim as AMG (N == M), which have the same "meaning"
+    	    as the AMG ones and no sorting within multdim-DOFs is needed (or probably always when N == M == 1)
+     **/
+    shared_ptr<T_E_D> E_D = BuildED<N>(subset_count, mesh);
+
+
+    /**
+       P is nullptr when either sequential or NP==2, in which case rank 1 has everything 
+       need no sorting in those cases!
+     **/
+    shared_ptr<T_P> P = nullptr;
+    if ( fpds->GetCommunicator().Size() > 2) {
+      auto & vsort = node_sort[NT_VERTEX];
+      P = BuildPermutationMatrix<typename T_P::TENTRY>(vsort);
+    }
+
+    auto a_is_b_times_c = [](auto & a, auto & b, auto & c) {
+      if (b != nullptr) {
+    	if (c != nullptr)
+    	  { a = MatMultAB(*b, *c); }
+    	else
+    	  { a = b; }
+      }
+      else
+    	{ a = c; }
+    };
+
+    shared_ptr<T_E_D> E, EDP;
+
+    if constexpr(N == M) {
+    	if constexpr (N == 1) {
+    	    a_is_b_times_c(E, E_S, P);
+    	  }
+    	else {
+    	  if (E_D == nullptr) {
+    	    a_is_b_times_c(E, E_S, P);
+    	  }
+    	  else {
+    	    a_is_b_times_c(EDP, E_D, P);
+    	    a_is_b_times_c(E, E_S, EDP);
+    	  }
+    	}
+      }
+    else {
+      assert(E_D != nullptr); // E_D cannot be nullptr, we must have incorrectly called this method
+      if (P != nullptr)
+	{ EDP = MatMultAB(*E_D, *P); }
+      else
+	{ EDP = E_D; }
+      if (E_S != nullptr)
+	{ E = MatMultAB(*E_S, *EDP); }
+      else
+	{ E = EDP; }
+    }
+
+    shared_ptr<BaseDOFMapStep> emb_step = nullptr;
+
+    if (E != nullptr)
+      { emb_step = make_shared<ProlMap<T_E_D>>(E, fpds, nullptr); }
+
+    return emb_step;
+  } // EmbedVAMG::EmbedBuildEmbedding_impl
+
+
+  template<class FACTORY> template<int N>
+  shared_ptr<stripped_spm_tm<typename strip_mat<Mat<N, N, double>>::type>> EmbedVAMG<FACTORY> :: BuildES ()
+  {
+    typedef BaseEmbedAMGOptions BAO;
+    const auto &O(*options);
+    
+    shared_ptr<ParallelDofs> fpds = finest_mat->GetParallelDofs();
+
+    typedef stripped_spm_tm<typename strip_mat<Mat<N, N, double>>::type> TS;
+    shared_ptr<TS> E_S = nullptr;
+    if (O.subset == BAO::RANGE_SUBSET) {
+      INT<2, size_t> notin_ss = {0, fpds->GetNDofLocal() };
+      for (auto pair : O.ss_ranges) {
+	if (notin_ss[0] == pair[0])
+	  { notin_ss[0] = pair[1]; }
+	else if (notin_ss[1] == pair[1])
+	  { notin_ss[1] = pair[0]; }
+      }
+      int is_triv = ( (notin_ss[1] - notin_ss[0]) == 0 ) ? 1 : 0;
+      fpds->GetCommunicator().AllReduce(is_triv, MPI_SUM);
+      if (is_triv == 0) {
+	int cnt_rows = 0;
+	for (auto pair : O.ss_ranges)
+	  { cnt_rows += pair[1] - pair[0]; }
+	Array<int> perow(cnt_rows); perow = 1;
+	E_S = make_shared<TS>(perow, fpds->GetNDofLocal()); cnt_rows = 0;
+	for (auto pair : O.ss_ranges)
+	  for (auto c : Range(pair[0], pair[1])) {
+	    SetIdentity(E_S->GetRowValues(cnt_rows)[0]);
+	    E_S->GetRowIndices(cnt_rows++)[0] = c;
+	  }
+      }
+    }
+    else if (O.subset == BAO::SELECTED_SUBSET) {
+      if (O.ss_select == nullptr)
+	{ throw Exception("SELECTED_SUBSET, but no ss_select!"); }
+      const auto & SS(*O.ss_select);
+      int is_triv = (SS.NumSet() == SS.Size()) ? 1 : 0;
+      fpds->GetCommunicator().AllReduce(is_triv, MPI_SUM);
+      if (is_triv == 0) {
+	int cnt_rows = SS.NumSet();
+	Array<int> perow(cnt_rows); perow = 1;
+	E_S = make_shared<TS>(perow, fpds->GetNDofLocal()); cnt_rows = 0;
+	for (auto k : Range(fpds->GetNDofLocal())) {
+	  if (SS.Test(k)) {
+	    SetIdentity(E_S->GetRowValues(cnt_rows)[0]);
+	    E_S->GetRowIndices(cnt_rows++)[0] = k;
+	  }
+	}
+      }
+    }
+
+    return E_S;
+  }
+
 
 
   /** EmbedWithElmats **/

@@ -2,606 +2,61 @@
 #define FILE_AMGELAST_CPP
 
 #include "amg.hpp"
-#include "amg_precond_impl.hpp"
+#include "amg_elast_impl.hpp"
+#include "amg_factory_impl.hpp"
+#include "amg_pc_impl.hpp"
 
 namespace amg
 {
-  template<int D> shared_ptr<BaseSmoother>
-  ElasticityAMG<D> :: BuildSmoother  (INT<3> level, shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs> par_dofs,
-				      shared_ptr<BitArray> free_dofs)
+
+  /** AttachedEVD **/
+
+
+  template<class TMESH> void AttachedEVD :: map_data (const CoarseMap<TMESH> & cmap, AttachedEVD & cevd) const
   {
-    auto options = static_pointer_cast<Options>(this->GetOptions());
-    if (shared_ptr<const SparseMatrix<Mat<dofpv(D), dofpv(D), double>>> spmat = dynamic_pointer_cast<SparseMatrix<Mat<dofpv(D), dofpv(D), double>>> (mat)) {
-      if (options->regularize)
-	{ return make_shared<StabHGSS<dofpv(D), disppv(D), dofpv(D)>> (spmat, par_dofs, free_dofs); }
-      else
-	{ return make_shared<HybridGSS<dofpv(D)>> (spmat, par_dofs, free_dofs); }
-    }
-    else if (shared_ptr<const SparseMatrix<Mat<disppv(D), disppv(D), double>>> spmat = dynamic_pointer_cast<SparseMatrix<Mat<disppv(D), disppv(D), double>>> (mat)) {
-      return make_shared<HybridGSS<disppv(D)>> (spmat, par_dofs, free_dofs);
-    }
-    else if (shared_ptr<const SparseMatrix<double>> spmat = dynamic_pointer_cast<SparseMatrix<double>> (mat)) {
-      return make_shared<HybridGSS<1>> (spmat, par_dofs, free_dofs);
-    }
-    throw Exception("Could not build a Smoother, WTF ???");
-    return nullptr;
-  }
-
-
-  template<> shared_ptr<BaseSparseMatrix>
-  ElasticityAMG<3> :: RegularizeMatrix (shared_ptr<BaseSparseMatrix> bspmat, shared_ptr<ParallelDofs> & pardofs) const
-  {
-    auto mat = static_pointer_cast<ElasticityAMG<3>::TSPM>(bspmat);
-    // cout << "reg. mat " << mat->Height() << " x " << mat->Width() << endl;
-    // print_tm_spmat(cout, *mat);
-    // cout << "reg diags: " << endl;
-    // pardofs->GetCommunicator().Barrier();
-
-    auto H = mat->Height();
-    
-    size_t cntex = 0;
-    TableCreator<int> ct;
-    for (; !ct.Done(); ct++) {
-      cntex = 0;
-      for(auto k : Range(H)) {
-	auto dps = pardofs->GetDistantProcs(k);
-	if (!dps.Size()) continue;
-	for (auto p : dps) ct.Add(cntex, p);
-	cntex++;
-      }
-    }
-    constexpr size_t MS = dofpv(3)*dofpv(3);
-    auto block_pds = make_shared<ParallelDofs>(pardofs->GetCommunicator(), ct.MoveTable(), MS, false);
-
-    auto a2b = [&](const auto& a, auto & b) {
-      Iterate<MS>([&](auto i) {
-	  b(i.value) = a(i.value);
-	});
-    };
-
-    auto rank = pardofs->GetCommunicator().Rank();
-
-    ParallelVVector<Vec<MS,double>> pvec(block_pds, DISTRIBUTED);
-    cntex = 0;
-    for(auto k : Range(H)) {
-      auto dps = pardofs->GetDistantProcs(k);
-      if(dps.Size()) a2b((*mat)(k,k), pvec(cntex++));
-    }
-    pvec.Cumulate();
-    cntex = 0;
-    for(auto k : Range(H)) {
-      auto& diag = (*mat)(k,k);
-      auto dps = pardofs->GetDistantProcs(k);
-      bool ex = dps.Size();
-      bool master = !ex || rank < dps[0];
-      if (ex && master) {
-	if (master) { a2b(pvec(cntex++), diag); }
-	else diag = 0;
-      }
-
-      if (master) { RegDiag(diag); }
-      // RegTM<3,3,6>(diag);
-    }
-
-    return mat;
-  }
-
-  template<> shared_ptr<BaseSparseMatrix>
-  ElasticityAMG<2> :: RegularizeMatrix (shared_ptr<BaseSparseMatrix> bspmat, shared_ptr<ParallelDofs> & pardofs) const
-  {
-    // TODO: fix this for MPI-parallel coarse level...
-    auto mat = static_pointer_cast<ElasticityAMG<2>::TSPM>(bspmat);
-    for(auto k : Range(mat->Height())) {
-      auto& diag = (*mat)(k,k);
-      if (diag(2,2) == 0.0) {
-	diag(2,2) = 1.0;
-      }
-    }
-    return mat;
-  }
-
-
-  template<int N> INLINE double CalcMaxEV (const Matrix<double> & A, const Matrix<double> & B)
-  {
-    static Vector<double> v(N), v2(N), vn(N);
-    Iterate<N>([&](auto i){ v[i] = double (rand()) / RAND_MAX; } );
-    auto IP = [&](const auto & a, const auto & b) {
-      vn = B * a;
-      return InnerProduct(vn, b);
-    };
-    double ipv0 = IP(v,v);
-    for (auto k : Range(3)) {
-      v2 = A * v;
-      v2 /= sqrt(IP(v2,v2));
-      v = A * v2;
-    }
-    return sqrt(IP(v,v)/IP(v2,v2));
-  }
-
-  /**
-     returns (approx) inf_x <Ax,x>/<Bx,x> = 1/sup_x <A_inv Bx,x>/<Ax,x>
-   **/
-  template<int N> INLINE double CalcMinGenEV (const Matrix<double> & A, const Matrix<double> & B)
-  {
-    static Timer t("CalcMinGenEV");
-    RegionTimer rt(t);
-    static Matrix<double> Ar(N,N), Ar_inv(N,N), Br(N,N), C(N,N);
-    double trace = 0; Iterate<N>([&](auto i) { trace += A(N*i.value+i.value); });
-    if (trace == 0.0) trace = 1e-2;
-    double eps = max2(1e-3 * trace, 1e-10);
-    Ar = A; Iterate<N>([&](auto i) { Ar(N*i.value+i.value) += eps; });
-    Br = B; Iterate<N>([&](auto i) { Br(N*i.value+i.value) += eps; });
-    // cerr << "B is " << endl << B << endl;
-    // cerr << "A is " << endl << A << endl;
-    // cerr << "calc inv for Ar " << endl << Ar << endl;
-    {
-      static Timer t("CalcMinGenEV - inv");
-      RegionTimer rt(t);
-      CalcInverse(Ar, Ar_inv);
-    }
-    {
-      static Timer t("CalcMinGenEV - mult");
-      RegionTimer rt(t);
-      C = Ar_inv * Br;
-    }
-    double maxev = 0;
-    {
-      static Timer t("CalcMinGenEV - maxev");
-      RegionTimer rt(t);
-      maxev = CalcMaxEV<N>(C, Ar);
-    }
-    return 1/sqrt(maxev);
-  }
-
-  template<int N> INLINE double CalcMinGenEV2 (const Matrix<double> & A, const Matrix<double> & B)
-  {
-    static Timer t("CalcMinGenEV");
-    RegionTimer rt(t);
-    static Timer tlap("CalcMinGenEV::Lapack");
-    static Matrix<double> evecs(N,N), bia(N,N), sqrt_b(N,N);
-    static Vector<double> evals(N);
-    // cerr << "CalcMinGenEV, A: " << endl << A << endl;
-    // cerr << "CalcMinGenEV, B: " << endl << B << endl;
-
-    // LapackEigenValuesSymmetric(A, evals, evecs);
-    // cout << "A evals: " << endl; prow2(evals, cout); cout << endl;
-    // cout << "A evecs: " << endl << evecs;
-
-    // cerr << "LEV B " << endl;
-    tlap.Start();
-    LapackEigenValuesSymmetric(B, evals, evecs);
-    tlap.Stop();
-    // cerr << "B evals: " << endl; prow2(evals, cerr); cerr << endl;
-    // cout << "B evecs: " << endl << evecs;
-    const double tol = 1e-13;
-    for (auto & v : evals) // pseudo inverse ??
-      v = (v>tol) ? 1.0/sqrt(sqrt(v)) : 0;
-    // cerr << "B rescaled evals: " << endl; prow2(evals, cerr); cerr << endl;
-    Iterate<N>([&](auto i) {
-	Iterate<N>([&](auto j) {
-	    evecs(i.value,j.value) *= evals(i.value);
-	  });
-      });
-    sqrt_b = Trans(evecs) * evecs;
-    // cout << "sqrt_inv_B: " << endl << sqrt_b << endl;
-    evecs = A * sqrt_b;
-    bia = sqrt_b * evecs;
-    // cerr << "BinvA: " << endl << bia << endl;
-    // cerr << "LEV BIA " << endl;
-    // cerr << bia << endl;
-    tlap.Start();
-    LapackEigenValuesSymmetric(bia, evals, evecs);
-    tlap.Stop();
-    // cout << "BinvA evals: " << endl; prow2(evals, cout); cout << endl;
-    // cout << "BinvA evecs: " << endl << evecs << endl;
-    double minev = 0;
-    for (auto v : evals) // 0/0 := 1
-      if (fabs(v) > tol) {
-	minev = v;
-	break;
-      }
-    return minev;
-    // return evals(0);
-  };
-
-
-  template<int D> Array<double> 
-  ElasticityAMG<D> :: CalcECWSimple (shared_ptr<TMESH> _mesh) const
-  {
-    const ElasticityMesh<D> & mesh(*_mesh);
-    auto NV = mesh.template GetNN<NT_VERTEX>();
-    auto NE = mesh.template GetNN<NT_EDGE>();
-    auto vdata = get<0>(mesh.Data())->Data();
-    auto edata = get<1>(mesh.Data())->Data();
-    const auto& econ(*mesh.GetEdgeCM());
-    Array<double> ecw(NE);
-    Array<double> vcw(NV); vcw = 0;
-    mesh.template Apply<NT_EDGE>([&](const auto & edge) {
-	auto tr = calc_trace(edata[edge.id]);
-	vcw[edge.v[0]] += tr;
-	vcw[edge.v[1]] += tr;
+    static Timer t("AttachedEVD::map_data"); RegionTimer rt(t);
+    auto & cdata = cevd.data;
+    Cumulate();
+    // cout << "(cumul) f-pos: " << endl;
+    // for (auto V : Range(data.Size())) cout << V << ": " << data[V].pos << endl;
+    // cout << endl;
+    cdata.SetSize(cmap.template GetMappedNN<NT_VERTEX>()); cdata = 0.0;
+    auto map = cmap.template GetMap<NT_VERTEX>();
+    // cout << "v_map: " << endl; prow2(map); cout << endl << endl;
+    Array<int> touched(map.Size()); touched = 0;
+    mesh->Apply<NT_EDGE>([&](const auto & e) { // set coarse data for all coll. vertices
+	auto CV = map[e.v[0]];
+	if ( (CV == -1) || (map[e.v[1]] != CV) ) return;
+	touched[e.v[0]] = touched[e.v[1]] = 1;
+	cdata[CV].pos = 0.5 * (data[e.v[0]].pos + data[e.v[1]].pos);
+	cdata[CV].wt = data[e.v[0]].wt + data[e.v[1]].wt;
+      }, true); // if stat is CUMULATED, only master of collapsed edge needs to set wt 
+    mesh->AllreduceNodalData<NT_VERTEX>(touched, [](auto & in) { return move(sum_table(in)); } , false);
+    mesh->Apply<NT_VERTEX>([&](auto v) { // set coarse data for all "single" vertices
+	auto CV = map[v];
+	if ( (CV != -1) && (touched[v] == 0) )
+	  { cdata[CV] = data[v]; }
       }, true);
-    mesh.template AllreduceNodalData<NT_VERTEX>(vcw, [](auto & in) { return sum_table(in); }, false);
-    mesh.template Apply<NT_EDGE>([&](const auto & edge) {
-	auto tr = calc_trace(edata[edge.id]);
-	double vw = min(vcw[edge.v[0]], vcw[edge.v[1]]);
-	ecw[edge.id] = tr / vw;
-      }, false);
-    return move(ecw);
-  }
-  
-  template<int D> Array<double> 
-  ElasticityAMG<D> :: CalcECWRobust (shared_ptr<TMESH> _mesh) const
+    // cout << "(distr) c-pos: " << endl;
+    // for (auto CV : Range(cmap.GetMappedNN<NT_VERTEX>())) cout << CV << ": " << cdata[CV].pos << endl;
+    // cout << endl;
+    cevd.SetParallelStatus(DISTRIBUTED);
+  } // AttachedEVD::map_data
+
+
+  template<> void AttachedEVD :: map_data (const CoarseMap<ElasticityMesh<2>> & cmap, AttachedEVD & cevd) const;
+  template<> void AttachedEVD :: map_data (const CoarseMap<ElasticityMesh<3>> & cmap, AttachedEVD & cevd) const;
+
+
+  /** AttachedEED **/
+
+
+  template<int D> void AttachedEED<D> :: map_data (const BaseCoarseMap & bcmap, AttachedEED<D> & ceed) const
   {
-    const ElasticityMesh<D> & mesh(*_mesh);
-    auto NV = mesh.template GetNN<NT_VERTEX>();
-    auto NE = mesh.template GetNN<NT_EDGE>();
-    auto vdata = get<0>(mesh.Data())->Data();
-    auto edata = get<1>(mesh.Data())->Data();
-    const auto& econ(*mesh.GetEdgeCM());
-    Array<double> ecw(NE);
-    // TODO: only works "sequential" for now ...
-    Matrix<TMAT> emat(2,2);
-    Matrix<double> schur(dofpv(D), dofpv(D)), emoo(dofpv(D), dofpv(D));
-    Array<TMAT> vblocks(NV); vblocks = 0;
-    auto edges = mesh.template GetNodes<NT_EDGE>();
-    {
-      static Timer t(this->GetName()+string("::SetCoarseningOptions - Collect")); RegionTimer rt(t);
-      mesh.template Apply<NT_EDGE>([&](const auto & edge) {
-	  CalcRMBlock(mesh, edge, emat);
-	  vblocks[edge.v[0]] += emat(0,0);
-	  vblocks[edge.v[1]] += emat(1,1);
-	}, true);
-    }
-    mesh.template AllreduceNodalData<NT_VERTEX, TMAT>(vblocks, [](auto & tab){ return move(sum_table(tab)); });
-    {
-      static Timer t(this->GetName()+string("::SetCoarseningOptions - Calc")); RegionTimer rt(t);
-      mesh.template Apply<NT_EDGE>([&](const auto & edge) {
-	double cws[2] = {0,0};
-  	CalcRMBlock(mesh, edge, emat);
-	double tr = 0; Iterate<dofpv(D)>([&](auto i) { tr += emat(0,0)(i.value,i.value); } );
-	tr /= dofpv(D);
-	emat /= tr;
-	// cout << "edge mat: " << endl; print_tm_mat(cout, emat); cout << endl;
-	Iterate<2>([&](auto i) {
-	    // cout << "edge " << edge << " i " << i.value << endl;
-	    constexpr int j = 1-i;
-	    emoo = vblocks[edge.v[i.value]];
-	    emoo /= tr;
-	    // cout << "invert emoo: " << endl << emoo << endl;
-	    CalcInverse(emoo);
-	    // CalcPseudoInverse<dofpv(D)>(emoo);
-	    // cout << "inverted emoo: " << endl << emoo << endl;
-	    schur = emat(j, j) - emat(j,i.value) * emoo * emat(i.value, j);
-	    emoo = emat(j, j);
-	    // cout << "j-block: " << endl << emoo << endl;
-	    // cout << "schur: " << endl << schur << endl;
-	    cws[i.value] = sqrt(1 - CalcMinGenEV<dofpv(D)>(schur, emoo));
-	  });
-	// ecw[edge.id] = sqrt(cws[0]*cws[1]);
-	ecw[edge.id] = cws[0] + cws[1];
-	// cout << "okj, next edge " << endl;
-      }, false);
-    }
-    return move(ecw);
-  }
-    
-  template<int D>
-  void ElasticityAMG<D> :: SetCoarseningOptions (shared_ptr<VWCoarseningData::Options> & opts,
-						 INT<3> level, shared_ptr<TMESH> _mesh) const
-  {
-    static Timer t(this->GetName()+string("::SetCoarseningOptions")); RegionTimer rt(t);
-    auto &options = static_cast<ElasticityAMG<D>::Options&>(*this->GetOptions());
-    const ElasticityMesh<D> & mesh(*_mesh);
-    mesh.CumulateData();
-    auto NV = mesh.template GetNN<NT_VERTEX>();
-    opts->min_vcw = options.min_vcw;
-    opts->vcw = Array<double>(NV); opts->vcw = 0;
-    opts->min_ecw = options.min_ecw;
-    if (options.soc == "SIMPLE")
-      { opts->ecw = CalcECWSimple(_mesh); }
-    else if (options.soc == "ROBUST")
-      { opts->ecw = CalcECWRobust(_mesh); }
-    else
-      { throw Exception("INVALID SOC!"); }
-  }
-  
-  template<class C, class D, class E>
-  void EmbedVAMG<C, D, E> :: ModifyInitialOptions ()
-  {
-    if (bfa->GetFESpace()->GetDimension() == 1) {
-      options->block_s.SetSize(disppv(C::DIM));
-      options->block_s = 1;
-    }
-    else { // assume that this is ok
-      options->block_s = { disppv(C::DIM) }; // compound
-    }
-
-    options->keep_vp = true;
-    // options->edges = "MESH"; // actually broken for HO
-    options->singular_diag = true; // false anyways
-  }
-
-  INLINE Timer & timer_hack_Hack_BuildAlgMesh () { static Timer t("ElasticityAMG::BuildAlgMesh"); return t; }
-  template<class C, class D, class E> shared_ptr<typename C::TMESH>
-  EmbedVAMG<C, D, E> :: BuildAlgMesh (shared_ptr<BlockTM> top_mesh)
-  {
-    Timer & t(timer_hack_Hack_BuildAlgMesh()); RegionTimer rt(t);
-    auto a = new ElVData(Array<PosWV>(top_mesh->GetNN<NT_VERTEX>()), CUMULATED); // !! otherwise pos is garbage
-    auto b = new ElEData<C::DIM>(Array<STABEW<C::DIM>>(top_mesh->GetNN<NT_EDGE>()), DISTRIBUTED);
-    auto pwv = a->Data();
-    if (options->energy == "ELMAT") {
-      FlatArray<int> vsort = node_sort[NT_VERTEX];
-      auto & vp = node_pos[NT_VERTEX];
-      for (auto k : Range(pwv.Size())) {
-	pwv[vsort[k]].wt = 0.0;
-	pwv[vsort[k]].pos = vp[k];
-      }
-      vp.SetSize(0);
-    }
-    else {
-      auto & vp = node_pos[NT_VERTEX];
-      for (auto k : Range(pwv.Size())) {
-	pwv[k].wt = 0.0;
-	pwv[k].pos = vp[k];
-      }
-      vp.SetSize(0);
-    }
-    auto we = b->Data();
-    if (options->energy == "TRIV") {
-      for (auto & x : we) { SetIdentity(x); }
-      b->SetParallelStatus(CUMULATED);
-    }
-    else if (options->energy == "ELMAT") {
-      FlatArray<int> vsort = node_sort[NT_VERTEX];
-      Array<int> rvsort(vsort.Size());
-      for (auto k : Range(vsort.Size()))
-	rvsort[vsort[k]] = k;
-      auto edges = top_mesh->GetNodes<NT_EDGE>();
-      for (auto & e : edges) {
-	we[e.id] = (*ht_edge)[INT<2,int>(rvsort[e.v[0]], rvsort[e.v[1]]).Sort()];
-      }
-    }
-    else if (options->energy == "ALG")
-      {
-	// if ( (options->block_s.Size() != 1) || (options->block_s[0] != disppv(C::DIM)) )
-	//   throw Exception("ALG WTS for elasticity only mit multidim+disp only (rest TODO).");
-	shared_ptr<BaseMatrix> fseqmat = finest_mat;
-	if (auto fpm = dynamic_pointer_cast<ParallelMatrix>(finest_mat))
-	  fseqmat = fpm->GetMatrix();
-	auto fspm = dynamic_pointer_cast<SparseMatrixTM<Mat<disppv(C::DIM), disppv(C::DIM), double>>>(fseqmat); // jesus this does not work for bddc (converts to SPMDBL)
-	const auto & cspm(*fspm);
-	FlatArray<int> vsort = node_sort[NT_VERTEX];
-	Array<int> rvsort(vsort.Size());
-	for (auto k : Range(vsort.Size()))
-	  rvsort[vsort[k]] = k;
-	auto edges = top_mesh->GetNodes<NT_EDGE>();
-	auto& fvs = *options->free_verts;
-	for (auto & e : edges) {
-	  auto rv0 = rvsort[e.v[0]];
-	  auto rv1 = rvsort[e.v[1]];
-	  double fc = (fvs.Test(rv0) && fvs.Test(rv1)) ? fabsum(cspm(rv0, rv1)) / dofpv(C::DIM) : 1e-4; // after BBDC, diri entries are compressed
-	  auto& emat = we[e.id]; emat = 0;
-	  Iterate<disppv(C::DIM)>([&](auto i) { emat(i.value, i.value) = fc; });
-	  // Iterate<rotpv(C::DIM)>([&](auto i) { emat(disppv(C::DIM)+i.value, disppv(C::DIM)+i.value) = 1e-10 * fc; });
-	}
-      }
-    else
-      { throw Exception(string("Invalid energy type ")+options->energy); }
-    auto mesh = make_shared<ElasticityMesh<C::DIM>>(move(*top_mesh), a, b);
-    return mesh;
-  }
-
-  template<class C, class D, class E> shared_ptr<BaseDOFMapStep>
-  EmbedVAMG<C, D, E> :: BuildEmbedding ()
-  {
-    static Timer t(this->GetName()+string("::BuildEmbedding")); RegionTimer rt(t);
-    auto fpardofs = finest_mat->GetParallelDofs();
-    auto & vsort = node_sort[NT_VERTEX];
-    // cout << "vsort: " << endl; prow2(vsort); cout << endl;
-    if (options->v_dofs == "NODAL") {
-      if (options->block_s.Size() == 1 ) { // ndof/vertex != #kernel vecs
-	if (options->block_s[0] != disppv(C::DIM)) {
-	  // there is really only multidim=dofpv(D) and multidim=disppv(D) that make sense here...
-	  throw Exception("This should not happen ... !");
-	}
-	using TESM = Mat<disppv(C::DIM), dofpv(C::DIM)>;
-	options->regularize = true;
-
-	auto permat = BuildPermutationMatrix<TESM>(vsort);
-	if (options->on_dofs != nullptr) { // embed this
-	  Array<int> perow(fpardofs->GetNDofLocal());
-	  for (auto k : Range(fpardofs->GetNDofLocal()))
-	    perow[k] = options->on_dofs->Test(k) ? 1 : 0;
-	  auto mat = make_shared<SparseMatrixTM<Mat<disppv(C::DIM), disppv(C::DIM)>>>(perow, fpardofs->GetNDofLocal());
-	  int cnt = 0;
-	  for (auto k : Range(fpardofs->GetNDofLocal()))
-	    if (options->on_dofs->Test(k)) {
-	      mat->GetRowIndices(k) = cnt++;
-	      SetIdentity(mat->GetRowValues(k)[0]);
-	    }
-	  permat = MatMultAB(*mat, *permat);
-	}
-	else if (vsort.Size() != fpardofs->GetNDofLocal())
-	  { throw Exception("When seem to not be working on the full space, but we do not know where!"); }
-
-	auto pmap = make_shared<ProlMap<SparseMatrixTM<TESM>>> (permat, fpardofs, nullptr);
-	return pmap;
-      }
-      else if (options->block_s.Size() > 1) {
-	using TESM = Mat<1, dofpv(C::DIM)>;
-	// NOT CORRECT!! just for template insantiation so we get compile time checks
-	auto pmap = make_shared<ProlMap<SparseMatrixTM<TESM>>> (BuildPermutationMatrix<TESM>(vsort), fpardofs, nullptr);
-	throw Exception("Compound FES embedding not implemented, sorry!");
-	return nullptr;
-      }
-      else { // ndof/vertex == #kernel vecs (so we have rotational DOFs)
-	bool need_mat = false;
-	for (int k : Range(vsort.Size()))
-	  if (vsort[k]!=k) { need_mat = true; break; }
-	if (need_mat == false) return nullptr;
-	auto pmap = make_shared<ProlMap<SparseMatrixTM<typename C::TMAT>>>(BuildPermutationMatrix<typename C::TMAT>(vsort), fpardofs, nullptr);
-	return pmap;
-      }
-    }
-    else {
-      throw Exception("variable dofs embedding not implemented, sorry!");
-      return nullptr;
-    }
-  }
-
-  template<class C, class X, class Y> void EmbedVAMG<C, X, Y> ::
-  AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
-		    ElementId ei, LocalHeap & lh)
-  {
-    if (options->energy != "ELMAT") return;
-    static Timer t(string("EmbedVAMG<ElasticityAMG<")+to_string(C::DIM)+">::AddElementMatrix");
-    RegionTimer rt(t);
-    constexpr int D = C::DIM;
-    const bool vmajor = (options->block_s.Size()==1) ? 1 : 0;
-    int ndof_vec = dnums.Size();
-    int ndof = elmat.Height();
-    int perv = 0;
-    if(options->block_s.Size()==0) perv = dofpv(D);
-    else for (auto v : options->block_s) perv += v; 
-    // cout << perv << " " << disppv(D) << endl;
-    if (perv==disppv(D)) {
-      const int nv = ndof / perv;
-      auto & vpos(node_pos[NT_VERTEX]);
-      auto get_dof = [perv](auto v, auto comp) {
-	return perv*v + comp;
-      };
-      // cout << "dnums: "; prow(dnums); cout << endl;
-      // cout << "elmat: " << endl << elmat << endl;
-      // cout << "disppv " << disppv(D) << endl;
-      // cout << "rotpv " << rotpv(D) << endl;
-      // cout << "perv " << perv << endl;
-      // cout << "ndof " << ndof_vec << " " << ndof << endl;
-      // cout << "nv " << nv << endl;
-      int ext_ndof = ndof+disppv(D);
-      FlatMatrix<double> extmat (ext_ndof, ext_ndof, lh);
-      extmat.Rows(0, ndof).Cols(0,ndof) = elmat;
-      extmat.Rows(ndof, ext_ndof) = 0; extmat.Cols(ndof, ext_ndof) = 0;
-      // {u} = 0
-      for (int i : Range(disppv(D)))
-	for (int j : Range(nv))
-	  extmat(ndof+i, get_dof(j, i)) = extmat(get_dof(j, i), ndof+i) = 1.0;
-      double trace = 0;
-      for(auto k : Range(dnums.Size())) trace += elmat(k,k);
-      trace = sqrt(trace/dnums.Size());
-      Vec<3,double> mid = 0;
-      for (int i : Range(nv)) mid += vpos[dnums[i]]; mid /= nv;
-      FlatMatrixFixWidth<rotpv(D), double> rots(ext_ndof, lh); rots = 0;
-      for (int i : Range(nv)) {
-	Vec<3,double> tang = vpos[dnums[i]] - mid;
-	tang *= trace/L2Norm(tang);
-	if constexpr(D==3) {
-	    // (0,-z,y)
-	    rots(get_dof(i,1),0) = -tang(2);
-	    rots(get_dof(i,2),0) =  tang(1);
-	    // (-z,0,x)
-	    rots(get_dof(i,0),1) = -tang(2);
-	    rots(get_dof(i,2),1) =  tang(0);
-	    // (y,-x,0)
-	    rots(get_dof(i,0),2) =  tang(1);
-	    rots(get_dof(i,1),2) = -tang(0);
-	  }
-	else {
-	  // (y, -x)
-	  rots(get_dof(i,0),0) =  tang(1);
-	  rots(get_dof(i,1),0) = -tang(0);
-	}
-      }
-      // cout << "extmat norots " << endl << extmat << endl;
-
-      // FlatMatrix<double> evecs(ndof, ndof, lh);
-      // FlatVector<double> evals(ndof, lh);
-      // LapackEigenValuesSymmetric(elmat, evals, evecs);
-      // cout << "elmat evals: " << endl; prow2(evals); cout << endl;
-
-      // FlatMatrix<double> evecs2(ext_ndof, ext_ndof, lh);
-      // FlatVector<double> evals2(ext_ndof, lh);
-      // LapackEigenValuesSymmetric(extmat, evals2, evecs2);
-      // cout << "extmat 1 evals: " << endl; prow2(evals2); cout << endl;
-
-      extmat += Trans(rots) * rots;
-
-      // LapackEigenValuesSymmetric(extmat, evals2, evecs2);
-      // cout << "extmat 2 evals: " << endl; prow2(evals2); cout << endl;
-
-      CalcInverse(extmat);
-      // cerr << "inv extmat: " << endl << extmat << endl;
-      // LapackEigenValuesSymmetric(extmat, evals2, evecs2);
-      // cout << "inv extmat evecs: " << endl << evecs2 << endl;
-      // cout << "inv extmat evals: " << endl; prow2(evals2); cout << endl;
-      for (int i = 0; i < nv; i++) {
-	for (int j = i+1; j < nv; j++) {
-	  constexpr int small_nd = 2*disppv(D)+disppv(D);
-	  Mat<small_nd, small_nd> schur;
-	  Array<int> inds (small_nd);
-	  Iterate<disppv(D)>([&](auto k) {
-	      inds[k.value] = get_dof(i,k.value);
-	      inds[disppv(D)+k.value] = get_dof(j,k.value);
-	      inds[2*disppv(D)+k.value] = ndof+k.value;
-	    });
-	  schur = extmat.Rows(inds).Cols(inds);
-	  // cout << "i/j " << i << " " << j << endl;
-	  // cout << "di/dj " << dnums[i] << " " << dnums[j] << endl;
-
-	  // FlatMatrix<double> sm(small_nd, small_nd, lh), evecs(small_nd, small_nd, lh);
-	  // FlatVector<double> evals(small_nd, lh);
-	  // sm = extmat.Rows(inds).Cols(inds);
-	  // LapackEigenValuesSymmetric(sm, evals, evecs);
-	  // cout << "small mat evals: " << endl; prow2(evals); cout << endl;
-	  // cout << "small mat evercs: " << endl; cout << evecs; cout << endl;
-
-	  // cout << "schur block: " << endl; print_tm(cout, schur); cout << endl;
-	  CalcInverse(schur);
-	  // cout << endl << "schur block inved: " << endl; print_tm(cout, schur); cout << endl;
-
-	  // sm = schur;
-	  // LapackEigenValuesSymmetric(sm, evals, evecs);
-	  // cout << "inv small mat evals: " << endl; prow2(evals); cout << endl;
-	  // cout << "inv small mat evercs: " << endl; cout << evecs; cout << endl;
-
-	  auto & hte(*ht_edge);
-	  STABEW<D> & elew = hte[INT<2,int>(dnums[i], dnums[j]).Sort()];
-	  // cout << "add to " << INT<2,int>(dnums[i], dnums[j]).Sort() << endl;
-	  double lam = 0; for (auto k : Range(disppv(D))) lam += schur(k,k);
-	  lam /= disppv(D);
-	  Vec<3,double> tang = vpos[dnums[i]] - vpos[dnums[j]];
-	  tang /= L2Norm(tang);
-	  // cout << "lam: " << lam << endl;
-	  // cout << "ELEW bef: " << endl; print_tm(cout, elew); cout << endl;
-	  Iterate<disppv(D)>([&](auto i) {
-	      elew(i.value, i.value) += lam;
-	    });
-	  // Iterate<disppv(D)>([&](auto i) {
-	  //     Iterate<disppv(D)>([&](auto j) {
-	  // 	  // elew(i.value, j.value) += lam * lam * tang(i.value) * tang(j.value); // ??why lam**2??
-	  // 	  elew(i.value, j.value) += lam * tang(i.value) * tang(j.value);
-	  // 	});
-	  //   });
-	  // cout << "ELEW after: " << endl; print_tm(cout, elew); cout << endl;
-	  // Iterate<rotpv(D)>([&](auto i) {
-	  //     elew(disppv(D)+i.value, disppv(D)+i.value) += 1e-10 * lam;
-	  //   });
-	  // if (lam<0) {
-	  //   throw Exception("LAM<0!!");
-	  // }
-	}
-      }
-    }
-    else {
-      throw Exception("sorry, only disp X disp elmats implemented");
-    }
-  }
-
-
-  template<int D> template<class TMESH>
-  void ElEData<D> :: map_data (const CoarseMap<TMESH> & cmap, ElEData<D> & celed) const
-  {
-    static_assert(std::is_same<TMESH,ElasticityMesh<D>>::value==1, "ElEData with wrong map?!");
+    CoarseMap<ElasticityMesh<D>> * pcmap = dynamic_cast<CoarseMap<ElasticityMesh<D>>*>(&bcmap);
+    assert(pcmap != nullptr); // "AttachedEED with wrong map, how?!
+    auto & cmap(*pcmap);
+    // static_assert(std::is_same<TMESH,ElasticityMesh<D>>::value==1, "AttachedEED with wrong map?!");
     // cout << " map edges " << endl;
     static Timer t(string("ElEData<")+to_string(D)+string(">::map_data")); RegionTimer rt(t);
     auto & mesh = static_cast<ElasticityMesh<D>&>(*this->mesh);
@@ -611,13 +66,12 @@ namespace amg
     // eqc_h.GetCommunicator().Barrier();
     auto neqcs = mesh.GetNEqcs();
     const size_t NE = mesh.template GetNN<NT_EDGE>();
-    ElasticityMesh<D> & cmesh = static_cast<ElasticityMesh<D>&>(*celed.mesh);
+    ElasticityMesh<D> & cmesh = static_cast<ElasticityMesh<D>&>(*ceed.mesh);
     const size_t NCE = cmap.template GetMappedNN<NT_EDGE>();
 
     // cout << " NE NCE " << NE << " " << NCE << endl;
 
-    
-    celed.data.SetSize(NCE); celed.data = 0.0;
+    ceed.data.SetSize(NCE); ceed.data = 0.0;
     auto e_map = cmap.template GetMap<NT_EDGE>();
     auto v_map = cmap.template GetMap<NT_VERTEX>();
     // if (v_map.Size() < 2000) cout << "e_map: " << endl; prow2(e_map); cout << endl << endl;
@@ -632,7 +86,7 @@ namespace amg
     // cout << "cumulates done!" << endl;
     auto cvd = get<0>(cmesh.Data())->Data();
     auto fed = this->Data();
-    auto ced = celed.Data();
+    auto ced = ceed.Data();
     auto edges = mesh.template GetNodes<NT_EDGE>();
 
     // cout << "fine edges / mats: " << endl;
@@ -717,7 +171,7 @@ namespace amg
     cmesh.template ApplyEQ<NT_EDGE>(Range(min(neqcs, size_t(1))), [&](auto eqc, const auto & cedge){
 	calc_cemat(cedge, ced[cedge.id], [&](auto fenr) { return true; });
       }, false); // def, false!
-    celed.SetParallelStatus(CUMULATED);
+    ceed.SetParallelStatus(CUMULATED);
 
     // cout << "coarse edges / mats: " << endl;
     // auto cedges = cmesh.template GetNodes<NT_EDGE>();
@@ -728,19 +182,539 @@ namespace amg
     // cout << "wait map edge data " << endl;
     // eqc_h.GetCommunicator().Barrier();
     // cout << "wait map edge data done " << endl;
+  } // AttachedEED::map_data
+
+
+  /** ElasticityAMGFactory **/
+
+
+  template<int D>
+  ElasticityAMGFactory<D> :: ElasticityAMGFactory (shared_ptr<ElasticityAMGFactory<D>::TMESH> mesh, shared_ptr<ElasticityAMGFactory<D>::Options> options,
+						   shared_ptr<BaseDOFMapStep> _embed_step)
+    : BASE(mesh, options, _embed_step)
+  { ; } // ElasticityAMGFactory (..)
+
+
+  template<int D> void ElasticityAMGFactory<D> :: SetOptionsFromFlags (ElasticityAMGFactory<D>::Options & opts, const Flags & flags, string prefix)
+  {
+    BASE::SetOptionsFromFlags(opts, flags, prefix);
+  } // ElasticityAMGFactory::SetOptionsFromFlags
+  
+
+  template<int D> void ElasticityAMGFactory<D> :: SetCoarseningOptions (VWCoarseningData::Options & opts, shared_ptr<ElasticityAMGFactory<D>::TMESH> mesh) const
+  {
+    static Timer t("SetCoarseningOptions"); RegionTimer rt(t);
+    const auto& O = static_cast<const Options&>(*this->options);
+    mesh->CumulateData();
+    auto NV = mesh->template GetNN<NT_VERTEX>();
+    opts.min_vcw = O.min_vcw;
+    opts.vcw = Array<double>(NV); opts.vcw = 0;
+    opts.min_ecw = O.min_ecw;
+    if (O.soc_alg == Options::SOC_ALG::SIMPLE)
+      { opts.ecw = CalcECWSimple(mesh); }
+    else if (O.soc_alg == Options::SOC_ALG::ROBUST)
+      { opts.ecw = CalcECWRobust(mesh); }
+  } // ElasticityAMGFactory::SetCoarseningOptions
+
+
+  template<int D> Array<double> ElasticityAMGFactory<D> :: CalcECWSimple (shared_ptr<TMESH> mesh) const
+  {
+    const TMESH & M(*mesh);
+    auto NV = M.template GetNN<NT_VERTEX>();
+    auto NE = M.template GetNN<NT_EDGE>();
+    auto vdata = get<0>(M.Data())->Data();
+    auto edata = get<1>(M.Data())->Data();
+    const auto& econ(*M.GetEdgeCM());
+    Array<double> ecw(NE);
+    Array<double> vcw(NV); vcw = 0;
+    M.template Apply<NT_EDGE>([&](const auto & edge) {
+	auto tr = calc_trace(edata[edge.id]);
+	vcw[edge.v[0]] += tr;
+	vcw[edge.v[1]] += tr;
+      }, true);
+    M.template AllreduceNodalData<NT_VERTEX>(vcw, [](auto & in) { return sum_table(in); }, false);
+    M.template Apply<NT_EDGE>([&](const auto & edge) {
+	auto tr = calc_trace(edata[edge.id]);
+	double vw = min(vcw[edge.v[0]], vcw[edge.v[1]]);
+	ecw[edge.id] = tr / vw;
+      }, false);
+    return move(ecw);
+  } // ElasticityAMGFactory::CalcECWSimple
+
+
+  template<int D> Array<double> ElasticityAMGFactory<D> :: CalcECWRobust (shared_ptr<TMESH> mesh) const
+  {
+    /**
+       This should detect "edge/corner cases", where vertices are mostly strongly connecyed, but
+       weakly connected in some way (e.g two stiff blocs, connected along an edge or a corner 
+       will be strongly connected in displacements, but weakly in some, or all rotations)
+       
+       I THINK it works in 2d (but it might not). 3d is, I think, broken.
+     **/
+    ElasticityMesh<D> & M(*mesh);
+    // TODO: only works "sequential" for now ...
+    if (mesh->GetEQCHierarchy()->GetCommunicator().Size() > 2)
+      { throw Exception("robust ECW only sequential for now"); } // actually, not sure, it might work
+    auto NV = M.template GetNN<NT_VERTEX>();
+    auto NE = M.template GetNN<NT_EDGE>();
+    auto vdata = get<0>(M.Data())->Data();
+    auto edata = get<1>(M.Data())->Data();
+    const auto& econ(*M.GetEdgeCM());
+    Array<double> ecw(NE);
+    Matrix<TM> emat(2,2);
+    Matrix<double> schur(dofpv(D), dofpv(D)), emoo(dofpv(D), dofpv(D));
+    Array<TM> vblocks(NV); vblocks = 0;
+    auto edges = M.template GetNodes<NT_EDGE>();
+    {
+      static Timer t("SetCoarseningOptions - Collect"); RegionTimer rt(t);
+      M.template Apply<NT_EDGE> ([&](const auto & edge) LAMBDA_INLINE {
+	  CalcRMBlock(M, edge, emat);
+	  vblocks[edge.v[0]] += emat(0,0);
+	  vblocks[edge.v[1]] += emat(1,1);
+	}, true);
+    }
+    M.template AllreduceNodalData<NT_VERTEX, TM> (vblocks, [](auto & tab) LAMBDA_INLINE { return move(sum_table(tab)); });
+    {
+      static Timer t("SetCoarseningOptions - Calc"); RegionTimer rt(t);
+      M.template Apply<NT_EDGE>([&](const auto & edge) {
+	  double cws[2] = {0,0};
+	  CalcRMBlock(M, edge, emat);
+	  double tr = 0; Iterate<dofpv(D)>([&](auto i) { tr += emat(0,0)(i.value,i.value); } );
+	  tr /= dofpv(D);
+	  emat /= tr;
+	  // cout << "edge mat: " << endl; print_tm_mat(cout, emat); cout << endl;
+	  Iterate<2>([&](auto i) {
+	      // cout << "edge " << edge << " i " << i.value << endl;
+	      constexpr int j = 1-i;
+	      emoo = vblocks[edge.v[i.value]];
+	      emoo /= tr;
+	      // cout << "invert emoo: " << endl << emoo << endl;
+	      CalcInverse(emoo);
+	      // CalcPseudoInverse<dofpv(D)>(emoo);
+	      // cout << "inverted emoo: " << endl << emoo << endl;
+	      schur = emat(j, j) - emat(j,i.value) * emoo * emat(i.value, j);
+	      emoo = emat(j, j);
+	      // cout << "j-block: " << endl << emoo << endl;
+	      // cout << "schur: " << endl << schur << endl;
+	      cws[i.value] = sqrt(1 - CalcMinGenEV<dofpv(D)>(schur, emoo));
+	    });
+	  // ecw[edge.id] = sqrt(cws[0]*cws[1]);
+	  ecw[edge.id] = cws[0] + cws[1];
+	  // cout << "okj, next edge " << endl;
+	}, false);
+    }
+    return move(ecw);
+   } // ElasticityAMGFactory::CalcECWRobust
+
+
+  /** EmbedVAMG<ElasticityAMGFactory> **/
+
+  template<class C> void SetEADO (C& O, int D)
+  {
+    /** keep vertex positions! **/
+    O.keep_vp = true;
+
+    /** Level-control **/
+    // O.first_aaf = 1/pow(3, D);
+    O.first_aaf = (D == 3) ? 0.025 : 0.05;
+    O.aaf = 1/pow(2, D);
+
+    /** Redistribute **/
+    O.enable_ctr = true;
+    O.ctraf = 0.05;
+    O.first_ctraf = O.aaf * O.first_aaf;
+    O.ctraf_scale = 1;
+    O.ctr_crs_thresh = 0.7;
+    O.ctr_min_nv_gl = 5000;
+    O.ctr_seq_nv = 5000;
+    
+    /** Smoothed Prolongation **/
+    O.enable_sm = true;
+    O.sp_min_frac = (D == 3) ? 0.08 : 0.15;
+    O.sp_omega = 1;
+    O.sp_max_per_row = 1 + D;
+
+    /** Rebuild Mesh**/
+    O.enable_rbm = true;
+    O.rbmaf = O.aaf * O.aaf;
+    O.first_rbmaf = O.aaf * O.first_aaf;
+
+    /** Embed **/
+    // displacement formulations
+    O.block_s = { 1 };         // mutlidim, default case
+    // O.block_s = { 1, 1, 1 };   // vector-h1 (3 dim)
+    // O.block_s = { disppv(D) }; // reordered vector-h1
+
+    // displacement + rot formulations
+    // O.block_s = { 1 };                    // multidim
+    // O.block_s = { 1, 1, 1, 1, 1, 1 };     // vector-h1 (3 dim)
+    // O.block_s = { disppv(D) + rotpv(D) }; // reordered vector-h1
   }
 
-  
-  template class ElEData<2>;
-  template class ElEData<3>;
-  template void ElEData<2>::map_data (const CoarseMap<ElasticityMesh<2>> & cmap, ElEData<2> & cdata) const;
-  template void ElEData<3>::map_data (const CoarseMap<ElasticityMesh<3>> & cmap, ElEData<3> & cdata) const;
+  template<> void EmbedVAMG<ElasticityAMGFactory<2>> :: SetDefaultOptions (EmbedVAMG<ElasticityAMGFactory<2>>::Options& O)
+  { SetEADO (O, 2); }
+  template<> void EmbedVAMG<ElasticityAMGFactory<3>> :: SetDefaultOptions (EmbedVAMG<ElasticityAMGFactory<3>>::Options& O)
+  { SetEADO (O, 3); }
 
 
-  RegisterPreconditioner<EmbedVAMG<ElasticityAMG<2>, double, STABEW<2>>> register_el_2d("ngs_amg.el_2d");
-  RegisterPreconditioner<EmbedVAMG<ElasticityAMG<3>, double, STABEW<3>>> register_el_3d("ngs_amg.el_3d");
+  template<int DIM, class OPT>
+  void ModEAO (OPT & O, const Flags & flags, string prefix, shared_ptr<BilinearForm> & bfa)
+  {
+    auto pfit = [prefix] (string x) { return prefix + x; };
+
+    auto set_bool = [&](auto& v, string key) {
+      if (v) { v = !flags.GetDefineFlagX(prefix + key).IsFalse(); }
+      else { v = flags.GetDefineFlagX(prefix + key).IsTrue(); }
+    };
+
+    /** keep vertex positions (should still be set from default-opts, but make sure anyways) **/
+    O.keep_vp = true;
+
+    /** block_s **/
+    // TODO: this has to fit with buildembedding !
+    set_bool(O.with_rots, "rots");
+
+    O.reg_mats = !O.with_rots;
+    set_bool(O.reg_mats, "reg_mats");
+
+    O.reg_rmats = !O.with_rots;
+    set_bool(O.reg_rmats, "reg_rmats");
+
+    auto & obs = flags.GetNumListFlag(pfit("block_s"));
+    if (obs.Size()) { // explicitely given
+      O.block_s.SetSize(obs.Size());
+      for (auto k : Range(obs))
+	{ O.block_s[k] = obs[k]; }
+    }
+    else { // try to do the best I can
+      auto fes_dim = bfa->GetFESpace()->GetDimension();
+      if (!O.with_rots) { // displacement formulation
+	if (fes_dim == disppv(DIM))
+	  { O.block_s = { 1 }; }
+	else if (fes_dim == 1) {
+	  O.block_s.SetSize(disppv(DIM));
+	  O.block_s = 1;
+	}
+	else {
+	  throw Exception(string("Wrong multidim for displacement only formulation, have") + to_string(fes_dim)
+			  + string(", expected") + to_string(disppv(DIM)) + string(" (switch to disp+rot with ") + prefix
+			  + string("_rots=True) !"));
+	}
+      }
+      else { // displacement + rotation formulation
+	if (fes_dim == dofpv(DIM))
+	  { O.block_s = { 1 }; }
+	else if (fes_dim == 1) {
+	  O.block_s.SetSize(dofpv(DIM));
+	  O.block_s = 1;
+	}
+	else {
+	  throw Exception(string("Wrong multidim for disp+rot formulation, have") + to_string(fes_dim)
+			  + string(", expected") + to_string(dofpv(DIM)) + string(" (switch to disp inly with ") + prefix
+			  + string("_rots=False) !"));
+	}
+      }
+    }
+
+    /** rebuild mesh - not implemented (also not sure how I would do this ...) **/
+
+  } // EmbedVAMG::ModifyOptions
+
+  template<> void EmbedVAMG<ElasticityAMGFactory<2>> :: ModifyOptions (EmbedVAMG<ElasticityAMGFactory<2>>::Options & O, const Flags & flags, string prefix)
+  { ModEAO<2>(O, flags, prefix, bfa); }
+  template<> void EmbedVAMG<ElasticityAMGFactory<3>> :: ModifyOptions (EmbedVAMG<ElasticityAMGFactory<3>>::Options & O, const Flags & flags, string prefix)
+  { ModEAO<3>(O, flags, prefix, bfa); }
+
+
+  template<class C> shared_ptr<typename C::TMESH>
+  EmbedVAMG<C> :: BuildAlgMesh_TRIV (shared_ptr<BlockTM> top_mesh)
+  {
+    auto a = new AttachedEVD(Array<ElasticityVertexData>(top_mesh->GetNN<NT_VERTEX>()), CUMULATED); // !! otherwise pos is garbage
+    auto vdata = a->Data();
+    FlatArray<int> vsort = node_sort[NT_VERTEX];
+    auto & vp = node_pos[NT_VERTEX];
+    for (auto k : Range(vdata)) {
+      auto& x = vdata[k];
+      x.wt = 0.0;
+      x.pos = vp[k];
+    }
+
+    auto b = new AttachedEED<C::DIM>(Array<ElasticityEdgeData<C::DIM>>(top_mesh->GetNN<NT_EDGE>()), CUMULATED);
+    for (auto & x : b->Data()) { SetIdentity(x); }
+
+    auto mesh = make_shared<typename C::TMESH>(move(*top_mesh), a, b);
+
+    return mesh;
+  } // EmbedVAMG::BuildAlgMesh_TRIV
+
+
+  template<class C> template<class TD2V, class TV2D> shared_ptr<typename C::TMESH>
+  EmbedVAMG<C> :: BuildAlgMesh_ALG_scal (shared_ptr<BlockTM> top_mesh, shared_ptr<BaseSparseMatrix> spmat, TD2V D2V, TV2D V2D) const
+  {
+    if (spmat == nullptr)
+      { throw Exception("BuildAlgMesh_ALG_scal called with no mat!"); }
+
+    auto a = new AttachedEVD(Array<ElasticityVertexData>(top_mesh->GetNN<NT_VERTEX>()), CUMULATED); // !! otherwise pos is garbage
+    auto vdata = a->Data(); // TODO: get penalty dirichlet from row-sums (only taking x/y/z displacement entries)
+    auto & vp = node_pos[NT_VERTEX];
+    for (auto k : Range(vdata)) {
+      auto& x = vdata[k];
+      x.wt = 0.0;
+      x.pos = vp[k];
+    }
+
+    auto b = new AttachedEED<C::DIM>(Array<ElasticityEdgeData<C::DIM>>(top_mesh->GetNN<NT_EDGE>()), CUMULATED);
+    auto edata = b->Data();
+
+    const auto& dof_blocks(options->block_s);
+    auto& fvs = *free_verts;
+    if ( (dof_blocks.Size() == 1) && (dof_blocks[0] == 1) ) { // multidim
+      auto edges = top_mesh->GetNodes<NT_EDGE>();
+      if (auto spm_tm = dynamic_pointer_cast<SparseMatrixTM<Mat<disppv(C::DIM),disppv(C::DIM),double>>>(spmat)) { // disp only
+	const auto& A(*spm_tm);
+	for (auto & e : edges) {
+	  auto di = V2D(e.v[0]); auto dj = V2D(e.v[1]);
+	  double fc = (fvs.Test(di) && fvs.Test(dj)) ? fabsum(A(di, dj)) / disppv(C::DIM) : 1e-4; // after BBDC, diri entries are compressed and mat has no entry 
+	  auto & emat = edata[e.id]; emat = 0;
+	  Iterate<disppv(C::DIM)>([&](auto i) LAMBDA_INLINE { emat(i.value, i.value) = fc; });
+	}
+      }
+      else if (auto spm_tm = dynamic_pointer_cast<SparseMatrixTM<Mat<dofpv(C::DIM),dofpv(C::DIM),double>>>(spmat)) { // disp+rot
+	const auto& A(*spm_tm);
+	for (auto & e : edges) {
+	  auto di = V2D(e.v[0]); auto dj = V2D(e.v[1]);
+	  double fc = (fvs.Test(di) && fvs.Test(dj)) ? fabsum(A(di, dj)) / dofpv(C::DIM) : 1e-4; // after BBDC, diri entries are compressed and mat has no entry 
+	  auto & emat = edata[e.id]; emat = 0;
+	  Iterate<dofpv(C::DIM)>([&](auto i) LAMBDA_INLINE { emat(i.value, i.value) = fc; });
+	}
+      }
+      else
+	{ throw Exception(string("not sure how to compute edge weights from mat of type ") + typeid(*spmat).name() + string("!")); }
+    }
+    else
+      { throw Exception("block_s for compound, but called algmesh_alg_scal!"); }
+
+    auto mesh = make_shared<typename C::TMESH>(move(*top_mesh), a, b);
+
+    return mesh;
+  } // EmbedVAMG::BuildAlgMesh_ALG_scal
+
+
+  template<>
+  shared_ptr<BaseSparseMatrix> EmbedVAMG<ElasticityAMGFactory<2>> :: RegularizeMatrix (shared_ptr<BaseSparseMatrix> mat,
+										       shared_ptr<ParallelDofs> & pardofs) const
+  {
+    auto& A = static_cast<ElasticityAMGFactory<2>::TSPM_TM&>(*mat);
+    if ( (pardofs != nullptr) && (pardofs->GetDistantProcs().Size() != 0) ) {
+      Array<int> is_zero(A.Height());
+      for(auto k : Range(A.Height()))
+	{ is_zero[k] = (A(k,k)(2,2) == 0) ?  1 : 0; }
+      pardofs->ReduceDofData(is_zero, MPI_SUM);
+      for(auto k : Range(A.Height()))
+	if ( (pardofs->IsMasterDof(k)) && (is_zero[k] != 0) )
+	  { A(k,k)(2,2) = 1; }
+    }
+    else {
+      for(auto k : Range(A.Height())) {
+	auto & diag_etr = A(k,k);
+	if (diag_etr(2,2) == 0)
+	  { diag_etr(2,2) = 1; }
+      }
+    }
+    return mat;
+  } // EmbedVAMG<ElasticityAMGFactory<2>>::RegularizeMatrix
+
+
+  template<> shared_ptr<BaseSparseMatrix>
+  EmbedVAMG<ElasticityAMGFactory<3>> :: RegularizeMatrix (shared_ptr<BaseSparseMatrix> mat,
+							  shared_ptr<ParallelDofs> & pardofs) const
+  {
+    auto& A = static_cast<ElasticityAMGFactory<3>::TSPM_TM&>(*mat);
+    typedef ElasticityAMGFactory<3>::TM TM;
+
+    if ( (pardofs != nullptr) && (pardofs->GetDistantProcs().Size() != 0) ) {
+      Array<TM> diags(A.Height());
+      for(auto k : Range(A.Height()))
+	{ diags[k] = A(k,k); }
+      pardofs->ReduceDofData(diags, MPI_SUM);
+      for(auto k : Range(A.Height())) {
+	if (pardofs->IsMasterDof(k)) {
+	  auto & dg_etr = A(k,k);
+	  dg_etr = diags[k];
+	  RegTM<3,3,6>(dg_etr);
+	}
+	else
+	  { A(k,k) = 0; }
+      }
+    }
+    else {
+      for(auto k : Range(A.Height()))
+	{ RegTM<3,3,6>(A(k,k)); }
+    }
+	
+    return mat;
+  } // EmbedVAMG<ElasticityAMGFactory<3>>::RegularizeMatrix
+
+
+  template<> template<>
+  shared_ptr<BaseDOFMapStep> EmbedVAMG<ElasticityAMGFactory<2>> :: BuildEmbedding_impl<6> (shared_ptr<ElasticityMesh<2>> mesh)
+  { return nullptr; }
+
+
+  template<> template<>
+  shared_ptr<BaseDOFMapStep> EmbedVAMG<ElasticityAMGFactory<3>> :: BuildEmbedding_impl<2> (shared_ptr<ElasticityMesh<3>> mesh)
+  { return nullptr; }
+
+
+  template<class C> template<int N>
+  shared_ptr<stripped_spm_tm<typename strip_mat<Mat<N, mat_traits<typename C::TM>::HEIGHT, double>>::type>> EmbedVAMG<C> :: BuildED (size_t subset_count, shared_ptr<typename C::TMESH> mesh)
+  {
+    // static_assert( (N == 1) || (N == disppv(C::DIM)) || (N == dofpv(C::DIM)), "BuildED with nonsensical N.");
+    assert( (N == 1) || (N == disppv(C::DIM)) || (N == dofpv(C::DIM)) ); // "BuildED with nonsensical N."
+
+    static_assert( mat_traits<typename C::TM>::HEIGHT == dofpv(C::DIM), "um what??");
+
+    typedef BaseEmbedAMGOptions BAO;
+    const auto &O(*this->options);
+
+    typedef stripped_spm_tm<typename strip_mat<Mat<N, dofpv(C::DIM), double>>::type> TED;
+
+    shared_ptr<TED> E_D = nullptr;
+    const auto& M(*mesh);
+
+    if constexpr ( N == dofpv(C::DIM) ) {
+      // nothing to do right now. usually, woudl flip/permute rots
+      assert((O.with_rots) && (O.block_s.Size() == 1) && (O.block_s[0] == 1)); // "elasticity BuildED: disp/disp+rot, block_s mismatch");
+      assert(subset_count == M.template GetNN<NT_VERTEX>()); // "elasticity BuildED: subset_count and NV mismatch, what?");
+      E_D = nullptr;
+    }
+
+    if constexpr ( N == disppv(C::DIM)) { // disp -> disp,rot embedding
+      assert((!O.with_rots) && (O.block_s.Size() == 1) && (O.block_s[0] == 1)); // "elasticity BuildED: disp/disp+rot, block_s mismatch");
+      assert(subset_count == M.template GetNN<NT_VERTEX>()); // "elasticity BuildED: subset_count and NV mismatch, what?");
+      Array<int> perow(M.template GetNN<NT_VERTEX>()); perow = 1;
+      E_D = make_shared<TED>(perow, M.template GetNN<NT_VERTEX>());
+      for (auto k : Range(perow)) {
+	E_D->GetRowIndices(k)[0] = k;
+	auto & v = E_D->GetRowValues(k)[0];
+	Iterate<3>([&](auto i) { v(i.value, i.value) = 1; });
+      }
+    }
+
+    if constexpr ( N == 1 ) {
+      /** 2 valid suppoerted block_s: 
+	   - disppv x 1
+	   - (disppv+rotpv) x 1
+	  not supported, but possibly useful:
+	   - { dispv } (reordered disp-only)
+	   - {disppv, rotpv} (strangely reordered disp+rot)
+	   - { disppv x 1, rotpv } (only reordered rot, for some reason)
+      **/
+
+      assert( ( O.with_rots && (O.block_s.Size() == dofpv(C::DIM)) ) ||
+	      ( (!O.with_rots) && (O.block_s.Size() == disppv(C::DIM)) ) ); // "elasticity BuildED: disp/disp+rot mismatch");
+      assert(subset_count == block_s.Size() * M.template GetNN<NT_VERTEX>()); // "elasticity BuildED: subset_cnt and block_s mismatch");
+
+      for (auto v : O.block_s)
+	{ if (v != 1) { throw Exception("this block_s is not supported"); } }
+      Array<int> perow(subset_count); perow = 1;
+      E_D = make_shared<TED>(perow, M.template GetNN<NT_VERTEX>());
+      const auto bss = O.block_s.Size();
+      for (auto k : Range(M.template GetNN<NT_VERTEX>())) {
+	for (auto j : Range(bss)) {
+	  auto row = j * M.template GetNN<NT_VERTEX>() + k;
+	  E_D->GetRowIndices(row)[0] = k;
+	  E_D->GetRowValues(row)[0](j) = 1;
+	}
+      }
+
+    }
+
+    return E_D;
+  }
+
+
+  template<class C> shared_ptr<BaseSmoother>
+  EmbedVAMG<C> :: BuildSmoother (shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs> pds,
+				 shared_ptr<BitArray> freedofs) const
+  {
+    typedef BaseEmbedAMGOptions BAO;
+    const auto &O(*this->options);
+    shared_ptr<BaseSmoother> sm = nullptr;
+    if (O.sm_ver == BAO::SM_VER::VER1) {
+      if (auto spmat = dynamic_pointer_cast<SparseMatrix<typename C::TM>>(mat)) {
+	if (O.reg_mats)
+	  { sm = make_shared<StabHGSS<dofpv(D), disppv(D), dofpv(D)>> (spmat, par_dofs, free_dofs); }
+	else
+	  { sm = make_shared<HybridGSS<dofpv(D)>> (spmat, par_dofs, free_dofs); }
+      }
+      else if (auto spmat = dynamic_pointer_cast<SparseMatrix<Mat<disppv(D),disppv(D), double>>>(mat))
+	{ sm = make_shared<HybridGSS<disppv(D)>> (spmat, par_dofs, free_dofs); }
+      else if (auto spmat = dynamic_pointer_cast<SparseMatrix<double>>(mat))
+	{ sm = make_shared<HybridGSS<1>> (spmat, par_dofs, free_dofs); }
+    }
+    else if (O.sm_ver == BAO::SM_VER::VER2) {
+      auto parmat = make_shared<ParallelMatrix>(mat, pds, pds, C2D);
+      if (auto spmat = dynamic_pointer_cast<SparseMatrix<typename C::TM>>(mat)) {
+	if (O.reg_mats)
+	  { throw Exception("V2 regularized diag not implemented"); }
+	else {
+	  auto v2sm = make_shared<HyrbidGSS2<Mat<dofpv(D), dofpv(D), double>>>(spmat, par_dofs, freedofs);
+	  v2sm->SetSymmetric(O.smooth_symmetric);
+	  sm = v2sm;
+	}
+      }
+      else if (auto spmat = dynamic_pointer_cast<SparseMatrix<Mat<disppv(D),disppv(D), double>>>(mat)) {
+	auto v2sm = make_shared<HyrbidGSS2<Mat<disppv(D), disppv(D), double>>>(parmatfreedofs);
+	v2sm->SetSymmetric(O.smooth_symmetric);
+	sm = v2sm;
+      }
+      else if (auto spmat = dynamic_pointer_cast<SparseMatrix<double>>(mat)) {
+	auto v2sm = make_shared<HyrbidGSS2<double>>(parmat, freedofs);
+	v2sm->SetSymmetric(O.smooth_symmetric);
+	sm = v2sm;
+      }
+    }
+    else if (O.sm_ver == BAO::SM_VER::VER3) {
+      auto parmat = make_shared<ParallelMatrix>(mat, pds, pds, C2D);
+      if (auto spmat = dynamic_pointer_cast<SparseMatrix<typename C::TM>>(mat)) {
+      	if (O.reg_mats)
+	  { throw Exception("V3 regularized diag not implemented"); }
+	else {
+	  auto v3sm = make_shared<HybridGSS3<Mat<dofpv(D), dofpv(D), double>>>(parmat, freedofs);
+	}
+      }
+      else if (auto spmat = dynamic_pointer_cast<SparseMatrix<Mat<disppv(D),disppv(D), double>>>(mat)) {
+      }
+      else if (auto spmat = dynamic_pointer_cast<SparseMatrix<double>>(mat)) {
+      }
+    }
+    return sm;
+  }
+
+
+  /** EmbedWithElmats **/
+
+
+  template<class C, class D, class E> shared_ptr<typename EmbedWithElmats<C,D,E>::TMESH>
+  EmbedWithElmats<C,D,E> :: BuildAlgMesh_ELMAT (shared_ptr<BlockTM> top_mesh)
+  {
+    return nullptr;
+  } // EmbedWithElmats::BuildAlgMesh_ELMAT
+
+
+  template<class C, class D, class E> void EmbedWithElmats<C,D,E> ::
+  AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
+		    ElementId ei, LocalHeap & lh)
+  {
+    ;
+  } // EmbedWithElmats::AddElementMatrix
+
+
+  RegisterPreconditioner<EmbedWithElmats<ElasticityAMGFactory<2>, double, double>> register_el2d("ngs_amg.elast2d");
+
+  RegisterPreconditioner<EmbedWithElmats<ElasticityAMGFactory<3>, double, double>> register_el3d("ngs_amg.elast3d");
 
 } // namespace amg
 
-#include "amg_tcs.hpp"
-#endif // ELASTICITY
+#endif

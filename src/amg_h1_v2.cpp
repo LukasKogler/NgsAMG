@@ -57,6 +57,20 @@ namespace amg
   /** EmbedVAMG<H1AMGFactory> **/
 
 
+  template<> template<>
+  shared_ptr<BaseDOFMapStep> EmbedVAMG<H1AMGFactory> :: BuildEmbedding_impl<2> (shared_ptr<H1Mesh> mesh)
+  { return nullptr; }
+
+
+  template<> template<>
+  shared_ptr<BaseDOFMapStep> EmbedVAMG<H1AMGFactory> :: BuildEmbedding_impl<3> (shared_ptr<H1Mesh> mesh)
+  { return nullptr; }
+
+
+  template<> template<>
+  shared_ptr<BaseDOFMapStep> EmbedVAMG<H1AMGFactory> :: BuildEmbedding_impl<3> (shared_ptr<H1Mesh> mesh)
+  { return nullptr; }
+
   template<>
   void EmbedVAMG<H1AMGFactory> :: SetDefaultOptions (Options& O)
   {
@@ -203,8 +217,10 @@ namespace amg
     // cout << endl << "diag VW: "; prow2(ad); cout << endl << endl;
 
     auto edges = top_mesh->GetNodes<NT_EDGE>();
+    auto& fvs = *free_verts;
     for (auto & e : edges) {
-      auto di = V2D(e.v[0]); auto dj = V2D(e.v[1]); auto v = cspm(di, dj);
+      auto di = V2D(e.v[0]); auto dj = V2D(e.v[1]);
+      double v = ( fvs.Test(di) && fvs.Test(dj) ) ? cspm(di, dj) : 0;
       // cout << "edge " << e << ", add " << v << " from " << di << " " << dj << endl;
       bd[e.id] = fabs(v); ad[e.v[0]] += v; ad[e.v[1]] += v;
       // cout << ad[di] << " " << ad[dj] << endl;
@@ -222,59 +238,60 @@ namespace amg
   }
 
 
-  template<> shared_ptr<BaseDOFMapStep> EmbedVAMG<H1AMGFactory> :: BuildEmbedding ()
-  {
-    typedef BaseEmbedAMGOptions BAO;
-    const auto &O(*options);
+  template<> template<int N>
+  shared_ptr<stripped_spm_tm<typename strip_mat<Mat<N, 1, double>>::type>> EmbedVAMG<H1AMGFactory> :: BuildED (size_t subset_count, shared_ptr<H1Mesh> mesh)
+  { return nullptr; }
 
-    auto & vsort = node_sort[NT_VERTEX];
-    shared_ptr<ParallelDofs> fpds = finest_mat->GetParallelDofs();
-    auto emb_mat = BuildPermutationMatrix<double>(vsort);
 
-    if (O.subset == BAO::RANGE_SUBSET) {
-      if ( (O.ss_ranges[0][0] != 0) || (O.ss_ranges[0][1] != fpds->GetNDofLocal()) ) { // otherwise, dont need additional cutoff
-	Array<int> perow(fpds->GetNDofLocal()); perow = 0;
-	for (auto r : O.ss_ranges) {
-	  for (auto l : Range(r[0], r[1]))
-	    perow[l] = 1;
-	}
-	auto mat = make_shared<SparseMatrixTM<double>>(perow, fpds->GetNDofLocal());
-	int cnt = 0;
-	for (auto k : Range(fpds->GetNDofLocal())) {
-	  auto ri = mat->GetRowIndices(k);
-	  if (ri.Size()) {
-	    ri[0] = cnt++;
-	    mat->GetRowValues(k) = 1;
-	  }
-	}
-	emb_mat = MatMultAB(*mat, *emb_mat);
-      }
-    }
-    else if (O.subset == BAO::SELECTED_SUBSET) { // embed this
-      Array<int> perow(fpds->GetNDofLocal());
-      for (auto k : Range(fpds->GetNDofLocal()))
-	perow[k] = O.ss_select->Test(k) ? 1 : 0;
-      auto mat = make_shared<SparseMatrixTM<double>>(perow, fpds->GetNDofLocal());
-      int cnt = 0;
-      for (auto k : Range(fpds->GetNDofLocal()))
-	if (O.ss_select->Test(k)) {
-	  mat->GetRowIndices(k) = cnt++;
-	  mat->GetRowValues(k) = 1;
-	}
-      emb_mat = MatMultAB(*mat, *emb_mat);
-    }
-    else if (vsort.Size() != fpds->GetNDofLocal())
-      { throw Exception("When seem to not be working on the full space, but we do not know where!"); }
-
-    if (fpds->GetNDofLocal() != emb_mat->Height())
-      throw Exception(string("EMBED MAT H does not fit: ") + to_string(fpds->GetNDofLocal()) + string("!=") + to_string(emb_mat->Height()));
-    if (vsort.Size() != emb_mat->Width())
-      throw Exception(string("EMBED MAT W does not fit: ") + to_string(vsort.Size()) + string("!=") + to_string(emb_mat->Height()));
-
-    auto pmap = make_shared<ProlMap<SparseMatrixTM<double>>>(emb_mat, fpds, nullptr);
-
-    return pmap;
-  } // EmbedVAMG<H1AMGFactory>::BuildEmbedding
+  // template<> shared_ptr<BaseDOFMapStep> EmbedVAMG<H1AMGFactory> :: BuildEmbedding ()
+  // {
+  //   static Timer t("BuildEmbedding"); RegionTimer rt(t);
+  //   typedef BaseEmbedAMGOptions BAO;
+  //   const auto &O(*options);
+  //   auto & vsort = node_sort[NT_VERTEX];
+  //   shared_ptr<ParallelDofs> fpds = finest_mat->GetParallelDofs();
+  //   auto emb_mat = BuildPermutationMatrix<double>(vsort);
+  //   if (O.subset == BAO::RANGE_SUBSET) {
+  //     if ( (O.ss_ranges[0][0] != 0) || (O.ss_ranges[0][1] != fpds->GetNDofLocal()) ) { // otherwise, dont need additional cutoff
+  // 	Array<int> perow(fpds->GetNDofLocal()); perow = 0;
+  // 	for (auto r : O.ss_ranges) {
+  // 	  for (auto l : Range(r[0], r[1]))
+  // 	    perow[l] = 1;
+  // 	}
+  // 	auto mat = make_shared<SparseMatrixTM<double>>(perow, fpds->GetNDofLocal());
+  // 	int cnt = 0;
+  // 	for (auto k : Range(fpds->GetNDofLocal())) {
+  // 	  auto ri = mat->GetRowIndices(k);
+  // 	  if (ri.Size()) {
+  // 	    ri[0] = cnt++;
+  // 	    mat->GetRowValues(k) = 1;
+  // 	  }
+  // 	}
+  // 	emb_mat = MatMultAB(*mat, *emb_mat);
+  //     }
+  //   }
+  //   else if (O.subset == BAO::SELECTED_SUBSET) { // embed this
+  //     Array<int> perow(fpds->GetNDofLocal());
+  //     for (auto k : Range(fpds->GetNDofLocal()))
+  // 	perow[k] = O.ss_select->Test(k) ? 1 : 0;
+  //     auto mat = make_shared<SparseMatrixTM<double>>(perow, fpds->GetNDofLocal());
+  //     int cnt = 0;
+  //     for (auto k : Range(fpds->GetNDofLocal()))
+  // 	if (O.ss_select->Test(k)) {
+  // 	  mat->GetRowIndices(k) = cnt++;
+  // 	  mat->GetRowValues(k) = 1;
+  // 	}
+  //     emb_mat = MatMultAB(*mat, *emb_mat);
+  //   }
+  //   else if (vsort.Size() != fpds->GetNDofLocal())
+  //     { throw Exception("When seem to not be working on the full space, but we do not know where!"); }
+  //   if (fpds->GetNDofLocal() != emb_mat->Height())
+  //     throw Exception(string("EMBED MAT H does not fit: ") + to_string(fpds->GetNDofLocal()) + string("!=") + to_string(emb_mat->Height()));
+  //   if (vsort.Size() != emb_mat->Width())
+  //     throw Exception(string("EMBED MAT W does not fit: ") + to_string(vsort.Size()) + string("!=") + to_string(emb_mat->Height()));
+  //   auto pmap = make_shared<ProlMap<SparseMatrixTM<double>>>(emb_mat, fpds, nullptr);
+  //   return pmap;
+  // } // EmbedVAMG<H1AMGFactory>::BuildEmbedding
 
 
   template<> shared_ptr<BaseSmoother> EmbedVAMG<H1AMGFactory> :: BuildSmoother (shared_ptr<BaseSparseMatrix> m, shared_ptr<ParallelDofs> pds,

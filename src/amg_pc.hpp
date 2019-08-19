@@ -26,6 +26,8 @@ namespace amg
   {
   public:
     using TMESH = typename FACTORY::TMESH;
+    using TSPM_TM = typename FACTORY::TSPM_TM;
+    using TM = typename FACTORY::TM;
 
     struct Options;
 
@@ -125,7 +127,13 @@ namespace amg
 
     /** other stuff  **/
 
-    virtual shared_ptr<BaseDOFMapStep> BuildEmbedding ();
+    virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (shared_ptr<TMESH> mesh); // basically just dispatch to BuildEmbedding_impl
+
+    template<int N> shared_ptr<BaseDOFMapStep> BuildEmbedding_impl (shared_ptr<TMESH> mesh); // generic
+
+    template<int N> shared_ptr<stripped_spm_tm<typename strip_mat<Mat<N, N, double>>::type>> BuildES (); // generic
+
+    template<int N> shared_ptr<stripped_spm_tm<typename strip_mat<Mat<N, mat_traits<TM>::HEIGHT, double>>::type>> BuildED (size_t subset_count, shared_ptr<TMESH> mesh); // seperate
 
     virtual shared_ptr<BaseSparseMatrix> RegularizeMatrix (shared_ptr<BaseSparseMatrix> mat,
 							   shared_ptr<ParallelDofs> & pardofs) const;

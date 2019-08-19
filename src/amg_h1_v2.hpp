@@ -6,7 +6,7 @@ namespace amg
 
   /**
      H1 preconditioner.
-     
+
      The data we need to attach to the mesh is:
      - one double per vertex (for coarsening weights)
      - one double per edge (for coarsening weights)
@@ -64,7 +64,7 @@ namespace amg
     INLINE void CalcPWPBlock (const TMESH & fmesh, const TMESH & cmesh, const CoarseMap<TMESH> & map,
 			      AMG_Node<NT_VERTEX> v, AMG_Node<NT_VERTEX> cv, double & mat) const;
 
-    INLINE void CalcRMBlock (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge, FlatMatrix<double> mat) const;
+    INLINE void CalcRMBlock (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge, FlatMatrix<TM> mat) const;
 
   }; // class H1AMGFactory
 

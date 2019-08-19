@@ -937,7 +937,7 @@ namespace amg
 	else if ( auto crs_L = dynamic_pointer_cast<TCRS>(step_L) ) {
 	  if ( auto crs_R = dynamic_pointer_cast<TCRS>(step_R) ) { // P -- P, concatenate to single P (actually: P -- nullptr)
 	    cout << " case 2" << endl;
-	    auto conc_P = MatMult(*crs_L->GetProl(), *crs_R->GetProl());
+	    auto conc_P = MatMultAB(*crs_L->GetProl(), *crs_R->GetProl());
 	    auto conc_map = make_shared<TCRS>(conc_P, crs_L->GetParDofs(), crs_R->GetMappedParDofs());
 	    
 	    sub_steps[step_nr-1] = conc_map;
