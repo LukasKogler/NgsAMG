@@ -1265,7 +1265,9 @@ namespace amg
   /** HybridSmoother2 **/
 
   template<class TM>
-  HybridSmoother2<TM> :: HybridSmoother2 (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h)
+  HybridSmoother2<TM> :: HybridSmoother2 (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h,
+					  bool _overlap, bool _in_thread)
+    : overlap(_overlap), in_thread(_in_thread)
   {
 
     shared_ptr<DCCMap<typename mat_traits<TM>::TSCAL>> dcc_map = nullptr;
@@ -1458,130 +1460,68 @@ namespace amg
     condition_variable* pcv = &cv;
     bool vals_buffered = false;
 
-    bool in_thread = true;
-    
-    {
-      // cout << "lock for setting fun" << endl;
-      	std::lock_guard<std::mutex> lk(glob_mut); // get lock
-      	thread_done = false; thread_ready = true;
-
-	auto lam1 = [&] () {
-	  // dcc_map->BufferG(*mpivec);
-	  // vals_buffered = true;
-	  // pcv->notify_one();
-	  dcc_map->StartDIS2CO(*mpivec);
-	  // dcc_map->WaitD2C();
-	  dcc_map->WaitD2C();
-	  // dcc_map->ApplyDIS2CO(*mpivec);
-	  // dcc_map->FinishDIS2CO(false);
-	};
-
-	if (in_thread) {
-	  thread_exec_fun = lam1;
-	  cv.notify_one();
-	}
-	else
-	  { lam1(); }
+    if (overlap && in_thread) {
+      std::lock_guard<std::mutex> lk(glob_mut);
+      thread_done = false; thread_ready = true;
+      thread_exec_fun = [&]() {
+	dcc_map->StartDIS2CO(*mpivec);
+	dcc_map->WaitD2C();
+      };
+      cv.notify_one();
     }
+    else
+      { dcc_map->StartDIS2CO(*mpivec); }
   
-    // if (dcc_map != nullptr) {
-    //   dcc_map->StartDIS2CO(use_b ? ncb : res);
-    // }
-
+    if (!overlap)
+      { dcc_map->WaitD2C(); }
 
     smooth_stage(0);
 
-    // if (dcc_map != nullptr) {
-    //   dcc_map->ApplyDIS2CO(use_b ? ncb : res);
-    //   dcc_map->FinishDIS2CO(false);
-    // }
-
-    if (in_thread) {
-      std::unique_lock<std::mutex> lk(glob_mut);
-      cv.wait(lk, [&]{ return thread_done; });
+    if (overlap) {
+      if (in_thread) {
+	std::unique_lock<std::mutex> lk(glob_mut);
+	cv.wait(lk, [&]{ return thread_done; });
+      }
+      else
+	{ dcc_map->WaitD2C(); }
     }
     dcc_map->ApplyM(*mpivec);
 
-    // cout << "CO r: " << endl; prv(res);
-
     smooth_stage(1);
 
+    x.SetParallelStatus(DISTRIBUTED);
+    mpivec = &x;
 
-    // if (dcc_map != nullptr) {
-    //   x.SetParallelStatus(DISTRIBUTED); cheating a bit here, the nonzero vals get overwritten anyways
-    //   dcc_map->StartCO2CU(x);
-    // }
-
-
-    {
-      x.SetParallelStatus(DISTRIBUTED); // cheating a bit here, the nonzero vals get overwritten anyways
-      mpivec = &x;
-      // // cout << "lock for setting fun" << endl;
+    if (overlap && in_thread) {
       std::lock_guard<std::mutex> lk(glob_mut); // get lock
       thread_done = false; thread_ready = true;
-      auto lam2 = [mpivec, dcc_map] () {
+      thread_exec_fun = [mpivec, dcc_map] () {
 	dcc_map->StartCO2CU(*mpivec);
 	dcc_map->ApplyCO2CU(*mpivec);
 	dcc_map->FinishCO2CU(false); // probably dont take a shortcut ??
       };
+      cv.notify_one();
+    }
+    else
+      { dcc_map->StartCO2CU(*mpivec); }
 
-      if (in_thread) {
-	thread_exec_fun = lam2;
-	cv.notify_one();
-      }
-      else
-	{ lam2(); }
+    if (!overlap) {
+      dcc_map->ApplyCO2CU(*mpivec);
+      dcc_map->FinishCO2CU(false); // probably dont take a shortcut ??
     }
 
     smooth_stage(2);
 
-    if (in_thread) {
-      std::unique_lock<std::mutex> lk(glob_mut);
-      cv.wait(lk, [&]{ return thread_done; });
+    if (overlap) {
+      if (in_thread) {
+	std::unique_lock<std::mutex> lk(glob_mut);
+	cv.wait(lk, [&]{ return thread_done; });
+      }
+      else {
+	dcc_map->ApplyCO2CU(*mpivec);
+	dcc_map->FinishCO2CU(false); // probably dont take a shortcut ??
+      }
     }
-
-    // if (dcc_map != nullptr) {
-    //   dcc_map->ApplyCO2CU(x);
-    //   dcc_map->FinishCO2CU(false); // probably dont take a shortcut ??
-    // }
-
-    // if (dcc_map != nullptr) {
-    //   dcc_map->FinishDIS2CO(false); // I think i could take a shortcut here
-    //   x.SetParallelStatus(DISTRIBUTED); // cheating a bit here, the nonzero vals get overwritten anyways
-    //   dcc_map->StartCO2CU(x);
-    // }
-    // else { throw Exception("oops"); }
-
-    // // smooth_stage(2);
-
-    // if (dcc_map != nullptr) {
-    //   dcc_map->ApplyCO2CU(x);
-    //   dcc_map->FinishCO2CU(false); // probably dont take a shortcut ??
-    // }
-    // else { throw Exception("oops"); }
-
-    // if (update_res) {
-    //   // x.Cumulate();
-    //   // b.Distribute();
-    //   // res.SetParallelStatus(DISTRIBUTED);
-    //   // resloc = bloc - *A * xloc;
-    //   cout << "ur1  up stats " << res.GetParallelStatus() << " " << b.GetParallelStatus() << " " << x.GetParallelStatus() << endl;
-    //   cout << "ur1 x: "; prv(x);
-    //   cout << "ur1 b: "; prv(b);
-    //   cout << "ur1 res: "; prv(res);
-    //   // b.Distribute();
-    //   res = b - *(this->A) * x;
-    //   res.Cumulate();
-    // }
-
-    // cout << " smooth, up res done " << update_res << endl;
-    // cout << " x out " << endl; prv(x);
-    // cout << " b out " << endl; prv(b);
-    // cout << " r out " << endl; prv(res);
-
-    // if (update_res) {
-    //   res = b - *A * x;
-    // }
 
     { // scatter updates and finish update residuum, res -= S * (x - x_old)
       RegionTimer rt(tpost);
@@ -1604,8 +1544,9 @@ namespace amg
   /** HybridGSS3 **/
 
   template<class TM>
-  HybridGSS3<TM> :: HybridGSS3 (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h, shared_ptr<BitArray> _subset)
-    : HybridSmoother2<TM>(_A, eqc_h)
+  HybridGSS3<TM> :: HybridGSS3 (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h, shared_ptr<BitArray> _subset,
+				bool _overlap, bool _in_thread)
+    : HybridSmoother2<TM>(_A, eqc_h, _overlap, _in_thread)
   {
     auto& M = *A->GetM();
 

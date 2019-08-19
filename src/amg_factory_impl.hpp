@@ -720,7 +720,7 @@ namespace amg
     double crs_meas_fac = 0;
     auto old_meas = curr_meas;
 
-    auto do_coarsen_step = [&] () LAMBDA_INLINE -> bool {
+    auto do_coarsen_step = [&] () -> bool LAMBDA_INLINE {
 	// if ( (level[1] != 0) && (crs_meas_fac > 0.6) )
 	//   { state->coll_cross = true; }
 
@@ -758,7 +758,7 @@ namespace amg
     };
 
 
-    auto do_contract_step = [&] () LAMBDA_INLINE -> bool {
+    auto do_contract_step = [&] () -> bool LAMBDA_INLINE {
 
       /** cannot redistribute if when is turned off or when we are already basically sequential **/
       if ( (!options->enable_ctr) || (cmesh->GetEQCHierarchy()->GetCommunicator().Size() <= 2) )

@@ -287,7 +287,8 @@ namespace amg
   {
   public:
 
-    HybridSmoother2 (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h);
+    HybridSmoother2 (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h,
+		     bool _overlap = false, bool _in_thread = false);
 
 
     virtual void Smooth (BaseVector  &x, const BaseVector &b,
@@ -310,6 +311,8 @@ namespace amg
     // virtual shared_ptr<BaseMatrix> GetMatrix () const override { return A; }
 
   protected:
+    bool overlap = false;
+    bool in_thread = false;
 
     // type: 0 - FW / 1 - BW / 2 - FW/BW / 3 - BW/FW
     virtual void SmoothInternal (int type, BaseVector  &x, const BaseVector &b, BaseVector &res,
@@ -345,7 +348,8 @@ namespace amg
   public:
     using TV = typename strip_vec<Vec<mat_traits<TM>::HEIGHT,typename mat_traits<TM>::TSCAL>> :: type;
 
-    HybridGSS3 (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h, shared_ptr<BitArray> _subset);
+    HybridGSS3 (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h, shared_ptr<BitArray> _subset,
+		bool _overlap, bool _in_thread);
 
   protected:
 

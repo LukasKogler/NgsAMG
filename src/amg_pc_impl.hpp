@@ -86,6 +86,9 @@ namespace amg
 
     bool do_test = false;
     bool smooth_lo_only = false;
+
+    bool mpi_overlap = true;
+    bool mpi_thread = false;
   };
 
 
@@ -96,21 +99,24 @@ namespace amg
   shared_ptr<typename EmbedVAMG<FACTORY>::Options> EmbedVAMG<FACTORY> :: MakeOptionsFromFlags (const Flags & flags, string prefix)
   {
     auto opts = make_shared<Options>();
+    auto& O(*opts);
 
-    SetDefaultOptions(*opts);
+    SetDefaultOptions(O);
 
-    SetOptionsFromFlags(*opts, flags, prefix);
+    SetOptionsFromFlags(O, flags, prefix);
 
     auto set_bool = [&](auto& v, string key) {
       if (v) { v = !flags.GetDefineFlagX(prefix + key).IsFalse(); }
       else { v = flags.GetDefineFlagX(prefix + key).IsTrue(); }
     };
     
-    set_bool(opts->sync, "sync");
-    set_bool(opts->old_smoothers, "oldsm");
-    set_bool(opts->smooth_symmetric, "symsm");
-    set_bool(opts->do_test, "do_test");
-    set_bool(opts->smooth_lo_only, "smooth_lo_only");
+    set_bool(O.sync, "sync");
+    set_bool(O.old_smoothers, "oldsm");
+    set_bool(O.smooth_symmetric, "symsm");
+    set_bool(O.do_test, "do_test");
+    set_bool(O.smooth_lo_only, "smooth_lo_only");
+    set_bool(O.mpi_overlap, "sm_mpi_overlap");
+    set_bool(O.mpi_thread, "sm_mpi_thread");
 
     set_bool(opts->mpi_overlap, "sm_mpi_overlap");
     set_bool(opts->mpi_thread, "sm_mpi_thread");
@@ -512,7 +518,7 @@ namespace amg
     // vertices
     auto set_vs = [&](auto nv, auto v2d) {
       vert_sort.SetSize(nv);
-      top_mesh->SetVs (nv, [&](auto vnr) LAMBDA_INLINE -> FlatArray<int> { return fpd->GetDistantProcs(v2d(vnr)); },
+      top_mesh->SetVs (nv, [&](auto vnr) -> FlatArray<int> LAMBDA_INLINE { return fpd->GetDistantProcs(v2d(vnr)); },
 		       [&vert_sort](auto i, auto j){ vert_sort[i] = j; });
       free_verts = make_shared<BitArray>(nv); free_verts->Clear();
       for (auto k : Range(nv)) {
@@ -569,7 +575,7 @@ namespace amg
 	const int stride = bs0/fes_bs; // probably 1
 	int dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
 	n_verts = (r0[1] - r0[0]) / stride;
-	auto d2v = [&](auto d) LAMBDA_INLINE -> int { return ( (d % stride == 0) && (d < r0[1]) && (r0[0] <= d) ) ? d/stride : -1; };
+	auto d2v = [&](auto d) -> int LAMBDA_INLINE { return ( (d % stride == 0) && (d < r0[1]) && (r0[0] <= d) ) ? d/stride : -1; };
 	auto v2d = [&](auto v) LAMBDA_INLINE { return r0[0] + v * stride; };
 	set_vs (n_verts, v2d);
 	create_edges ( v2d , d2v );
@@ -590,7 +596,7 @@ namespace amg
 	    { first_dof[k] = j; compress[j] = k++; }
 	// cout << "first_dof  "; prow(first_dof); cout << endl << endl;
 	// cout << "compress  "; prow(compress); cout << endl << endl;
-	auto d2v = [&](auto d) LAMBDA_INLINE -> int { return (d+1 > maxset) ? -1 : compress[d]; };
+	auto d2v = [&](auto d) -> int LAMBDA_INLINE { return (d+1 > maxset) ? -1 : compress[d]; };
 	auto v2d = [&](auto v) LAMBDA_INLINE { return first_dof[v]; };
 	set_vs (n_verts, v2d);
 	create_edges ( v2d , d2v );
@@ -728,8 +734,8 @@ namespace amg
 	  }
 	}
 
-	auto d2v = [&](auto d) LAMBDA_INLINE -> int { return d2v_array[d]; };
-	auto v2d = [&](auto v) LAMBDA_INLINE -> int { return v2d_array[v]; };
+	auto d2v = [&](auto d) -> int LAMBDA_INLINE { return d2v_array[d]; };
+	auto v2d = [&](auto v) -> int LAMBDA_INLINE { return v2d_array[v]; };
 	alg_mesh = BuildAlgMesh_ALG_scal(top_mesh, spmat, d2v, v2d);
 	break;
       }
