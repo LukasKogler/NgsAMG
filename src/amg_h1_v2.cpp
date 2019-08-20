@@ -110,13 +110,10 @@ namespace amg
   {
     static Timer t_rbm("Rebuild Mesh");
     O.rebuild_mesh = [&](shared_ptr<H1Mesh> mesh, shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs> pardofs) {
+      cout << IM(4) << "REBUILD MESH, NV = " << mesh->GetNNGlobal<NT_VERTEX>() << ", NE = " << mesh->GetNNGlobal<NT_EDGE>() << endl;
+
       RegionTimer rt(t_rbm);
       /** New edges **/
-      if (mesh->GetEQCHierarchy()->GetCommunicator().Rank() == 0)
-	{ cout << "REBUILD MESH, NV = " << mesh->GetNNGlobal<NT_VERTEX>() << ", NE = " << mesh->GetNNGlobal<NT_EDGE>() << endl; }
-
-      cout << mesh << " " << mat << " " << pardofs << endl;
-      cout << mesh->GetNN<NT_VERTEX>() << " " << mat->Height() << " " << pardofs->GetNDofLocal() << endl;
 
       auto n_verts = mesh->GetNN<NT_VERTEX>();
       auto traverse_graph = [&](const auto& g, auto fun) LAMBDA_INLINE { // vertex->dof,  // dof-> vertex
@@ -143,8 +140,7 @@ namespace amg
 
       n_edges = mesh->GetNN<NT_EDGE>();
       
-      if (mesh->GetEQCHierarchy()->GetCommunicator().Rank() == 0)
-	{ cout << "REBUILT MESH, NV = " << mesh->GetNNGlobal<NT_VERTEX>() << ", NE = " << mesh->GetNNGlobal<NT_EDGE>() << endl; }
+      cout << IM(4) << "REBUILT MESH, NV = " << mesh->GetNNGlobal<NT_VERTEX>() << ", NE = " << mesh->GetNNGlobal<NT_EDGE>() << endl;
 
       /** New weights **/
       auto avd = get<0>(mesh->Data()); avd->SetParallelStatus(DISTRIBUTED);
@@ -210,7 +206,6 @@ namespace amg
 
     for (auto k : Range(top_mesh->GetNN<NT_VERTEX>()))
       { auto d = V2D(k); ad[k] = cspm(d,d); }
-
 
     // cout << endl << endl << "spmat: " << endl << *spmat << endl << endl;
 

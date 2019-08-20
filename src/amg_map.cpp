@@ -184,7 +184,15 @@ namespace amg
   shared_ptr<BaseDOFMapStep> ProlMap<TMAT> :: Concatenate (shared_ptr<BaseDOFMapStep> other)
   {
     if (auto opmap = dynamic_pointer_cast<ProlMap<SPM_TM_C>>(other)) {
+
+      // cout << "conc prols " << endl;
+      // cout << " left:  " << GetProl()->Height() << " x " << GetProl()->Width() << endl;
+      // cout << " right: " << opmap->GetProl()->Height() << " x " << opmap->GetProl()->Width() << endl;
+
       auto comp_prol = MatMultAB<TMAT, SPM_TM_C> (*prol, *opmap->GetProl());
+
+      // cout << " comp: "  << comp_prol->Height() << " x " << comp_prol->Width() << endl;
+
       auto comp_map = make_shared<ProlMap<mult_spm_tm<TMAT, SPM_TM_C>>> (comp_prol, GetParDofs(), opmap->GetMappedParDofs());
       return comp_map;
     }
@@ -208,8 +216,9 @@ namespace amg
     self.prol = make_shared<SPM_P>(move(*prol));
     self.prol_trans = make_shared<trans_spm<SPM_P>>(move(*prol_trans));
 
-    // cout << prol->Height() << " x " << prol->Width() << endl;
-    // cout << tfmat->Height() << " x " << tfmat->Width() << endl;
+    // cout << "prolmap assmat, type " << typeid(*this).name() << endl;
+    // cout << "prol dims " << prol->Height() << " x " << prol->Width() << endl;
+    // cout << "fmat dims " << tfmat->Height() << " x " << tfmat->Width() << endl;
     
     auto spm_tm = RestrictMatrixTM<SPM_TM_F, TMAT> (*prol_trans, *tfmat, *prol);
 

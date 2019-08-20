@@ -90,6 +90,18 @@ namespace amg
     }
   }
 
+  
+  template<typename T> FlatTable<T> MakeFT (size_t nrows, FlatArray<size_t> firstis, FlatArray<T> data, size_t offset)
+  {
+    if (nrows == 0)
+      { return FlatTable<T> (nrows, nullptr, nullptr); }
+    else if (firstis.Last() == firstis[0])
+      { return FlatTable<T> (nrows, &firstis[0], nullptr); }
+    else
+      { return FlatTable<T> (nrows, &firstis[0], &data[offset]); }
+  }
+
+
   BlockTM :: BlockTM (shared_ptr<EQCHierarchy> _eqc_h)
     : TopologicMesh(), eqc_h(_eqc_h), disp_eqc(4), disp_cross(4)
   {
@@ -100,14 +112,14 @@ namespace amg
       disp_eqc[l] = Array<size_t> (neqcs+1); disp_eqc[l] = 0;
       disp_cross[l] = Array<size_t> (neqcs+1); disp_cross[l] = 0;
     }
-    eqc_verts = FlatTable<AMG_Node<NT_VERTEX>> (neqcs, &(disp_eqc[NT_VERTEX][0]), &verts[0]);
-    eqc_edges = FlatTable<AMG_Node<NT_EDGE>> (neqcs, &(disp_eqc[NT_EDGE][0]), &edges[0]);
-    eqc_faces = FlatTable<AMG_Node<NT_FACE>> (neqcs, &(disp_eqc[NT_FACE][0]), &faces[0]);
+    eqc_verts = FlatTable<AMG_Node<NT_VERTEX>> (neqcs, &(disp_eqc[NT_VERTEX][0]), nullptr);
+    eqc_edges = FlatTable<AMG_Node<NT_EDGE>> (neqcs, &(disp_eqc[NT_EDGE][0]), nullptr);
+    eqc_faces = FlatTable<AMG_Node<NT_FACE>> (neqcs, &(disp_eqc[NT_FACE][0]), nullptr);
     // eqc_cells = FlatTable<AMG_Node<NT_CELL>> (neqcs, &(disp_eqc[NT_CELL][0]), &cells[0]);
     disp_cross[NT_EDGE] = Array<size_t> (neqcs+1); disp_cross[NT_EDGE] = 0;
-    cross_edges = FlatTable<AMG_Node<NT_EDGE>> (neqcs, &(disp_cross[NT_EDGE][0]), &edges[0]);
+    cross_edges = FlatTable<AMG_Node<NT_EDGE>> (neqcs, &(disp_cross[NT_EDGE][0]), nullptr);
     disp_cross[NT_FACE] = Array<size_t> (neqcs+1); disp_cross[NT_FACE] = 0;
-    cross_faces = FlatTable<AMG_Node<NT_FACE>> (neqcs, &(disp_cross[NT_FACE][0]), &faces[0]);
+    cross_faces = FlatTable<AMG_Node<NT_FACE>> (neqcs, &(disp_cross[NT_FACE][0]), nullptr);
   }
 
   BlockTM :: BlockTM ( BlockTM && other)
@@ -123,11 +135,11 @@ namespace amg
       disp_cross[l] = move(other.disp_cross[l]);
     }
     auto neqcs = eqc_h->GetNEQCS();
-    eqc_verts = FlatTable<AMG_Node<NT_VERTEX>> (neqcs, &disp_eqc[NT_VERTEX][0], &verts[0]);
-    eqc_edges = FlatTable<AMG_Node<NT_EDGE>> (neqcs, &disp_eqc[NT_EDGE][0], &edges[0]);
-    eqc_faces = FlatTable<AMG_Node<NT_FACE>> (neqcs, &disp_eqc[NT_FACE][0], &faces[0]);
-    cross_edges = FlatTable<AMG_Node<NT_EDGE>> (neqcs, &disp_cross[NT_EDGE][0], &edges[disp_eqc[NT_EDGE].Last()]);
-    cross_faces = FlatTable<AMG_Node<NT_FACE>> (neqcs, &disp_cross[NT_FACE][0], &faces[disp_eqc[NT_FACE].Last()]);
+    eqc_verts = MakeFT<AMG_Node<NT_VERTEX>> (neqcs, disp_eqc[NT_VERTEX], verts, 0);
+    eqc_edges = MakeFT<AMG_Node<NT_EDGE>> (neqcs, disp_eqc[NT_EDGE], edges, 0);
+    eqc_faces = MakeFT<AMG_Node<NT_FACE>> (neqcs, disp_eqc[NT_FACE], faces, 0);
+    cross_edges = MakeFT<AMG_Node<NT_EDGE>> (neqcs, disp_cross[NT_EDGE], edges, disp_eqc[NT_EDGE].Last());
+    cross_faces = MakeFT<AMG_Node<NT_FACE>> (neqcs, disp_cross[NT_FACE], faces, disp_eqc[NT_FACE].Last());
   } // BlockTM (..)
 
   BlockTM :: BlockTM ()
@@ -201,21 +213,26 @@ namespace amg
       Recv(mesh.disp_eqc[0], src, tag);
       mesh.disp_cross[0].SetSize(neqcs+1); mesh.disp_cross[0] = 0;
     }
-    mesh.eqc_verts = FlatTable<AMG_Node<NT_VERTEX>> (neqcs, &mesh.disp_eqc[NT_VERTEX][0], &mesh.verts[0]);
+    // mesh.eqc_verts = FlatTable<AMG_Node<NT_VERTEX>> (neqcs, &mesh.disp_eqc[NT_VERTEX][0], &mesh.verts[0]);
+    mesh.eqc_verts = MakeFT<AMG_Node<NT_VERTEX>> (neqcs, mesh.disp_eqc[NT_VERTEX], mesh.verts, 0);
     if (mesh.has_nodes[1]) {
       Recv(mesh.edges, src, tag);
       Recv(mesh.disp_eqc[1], src, tag);
       Recv(mesh.disp_cross[1], src, tag);
     }
-    mesh.eqc_edges = FlatTable<AMG_Node<NT_EDGE>> (neqcs, &mesh.disp_eqc[NT_EDGE][0], &mesh.edges[0]);
-    mesh.cross_edges = FlatTable<AMG_Node<NT_EDGE>> (neqcs, &mesh.disp_cross[NT_EDGE][0], &mesh.edges[mesh.disp_eqc[NT_EDGE].Last()]);
+    // mesh.eqc_edges = FlatTable<AMG_Node<NT_EDGE>> (neqcs, &mesh.disp_eqc[NT_EDGE][0], &mesh.edges[0]);
+    mesh.eqc_edges = MakeFT<AMG_Node<NT_EDGE>> (neqcs, mesh.disp_eqc[NT_EDGE], mesh.edges, 0);
+    // mesh.cross_edges = FlatTable<AMG_Node<NT_EDGE>> (neqcs, &mesh.disp_cross[NT_EDGE][0], &mesh.edges[mesh.disp_eqc[NT_EDGE].Last()]);
+    mesh.cross_edges = MakeFT<AMG_Node<NT_EDGE>> (neqcs, mesh.disp_cross[NT_EDGE], mesh.edges, mesh.disp_eqc[NT_EDGE].Last());
     if (mesh.has_nodes[2]) {
       Recv(mesh.faces, src, tag);
       Recv(mesh.disp_eqc[2], src, tag);
       Recv(mesh.disp_cross[2], src, tag);
     }
-    mesh.eqc_faces = FlatTable<AMG_Node<NT_FACE>> (neqcs, &mesh.disp_eqc[NT_FACE][0], &mesh.faces[0]);
-    mesh.cross_faces = FlatTable<AMG_Node<NT_FACE>> (neqcs, &mesh.disp_cross[NT_FACE][0], &mesh.faces[mesh.disp_eqc[NT_FACE].Last()]);
+    // mesh.eqc_faces = FlatTable<AMG_Node<NT_FACE>> (neqcs, &mesh.disp_eqc[NT_FACE][0], &mesh.faces[0]);
+    mesh.eqc_faces = MakeFT<AMG_Node<NT_FACE>> (neqcs, mesh.disp_eqc[NT_FACE], mesh.faces, 0);
+    // mesh.cross_faces = FlatTable<AMG_Node<NT_FACE>> (neqcs, &mesh.disp_cross[NT_FACE][0], &mesh.faces[mesh.disp_eqc[NT_FACE].Last()]);
+    mesh.cross_faces = MakeFT<AMG_Node<NT_FACE>> (neqcs, mesh.disp_cross[NT_FACE], mesh.faces, mesh.disp_eqc[NT_FACE].Last());
     if (mesh.has_nodes[3]) {
       Recv(mesh.cells, src, tag);
       Recv(mesh.disp_eqc[3], src, tag);
@@ -276,7 +293,8 @@ namespace amg
     t2.Stop();
     t3.Start();
     cmesh.nnodes_cross[NT_VERTEX].SetSize(0); cmesh.nnodes_cross[NT_VERTEX] = 0;
-    cmesh.eqc_verts = FlatTable<AMG_Node<NT_VERTEX>> (neqcs, &cmesh.disp_eqc[NT_VERTEX][0], &cmesh.verts[0]);
+    // cmesh.eqc_verts = FlatTable<AMG_Node<NT_VERTEX>> (neqcs, &cmesh.disp_eqc[NT_VERTEX][0], &cmesh.verts[0]);
+    cmesh.eqc_verts = MakeFT<AMG_Node<NT_VERTEX>> (neqcs, cmesh.disp_eqc[NT_VERTEX], cmesh.verts, 0);
     // edges
     cmesh.nnodes[NT_EDGE] = cmap.GetMappedNN<NT_EDGE>();
     auto & cedges = cmesh.edges;
@@ -298,7 +316,8 @@ namespace amg
       if (eqc_h.IsMasterOfEQC(eqc)) cmesh.nnodes_glob[NT_EDGE] += nn;
       cmesh.nnodes_eqc[NT_EDGE][eqc] = nn;
     }
-    cmesh.eqc_edges = FlatTable<AMG_Node<NT_EDGE>> (neqcs, &cmesh.disp_eqc[NT_EDGE][0], &cmesh.edges[0]);
+    // cmesh.eqc_edges = FlatTable<AMG_Node<NT_EDGE>> (neqcs, &cmesh.disp_eqc[NT_EDGE][0], &cmesh.edges[0]);
+    cmesh.eqc_edges = MakeFT<AMG_Node<NT_EDGE>> (neqcs, cmesh.disp_eqc[NT_EDGE], cmesh.edges, 0);
     // edge table - cross
     auto & disp_ceq = cmesh.disp_cross[NT_EDGE];
     disp_ceq.SetSize(neqcs+1); disp_ceq = cmap.GetMappedCrossFirsti<NT_EDGE>();
@@ -311,7 +330,8 @@ namespace amg
     t4.Stop();
     t5.Start();
     cmesh.nnodes_glob[NT_EDGE] = comm.AllReduce(cmesh.nnodes_glob[NT_EDGE], MPI_SUM);
-    cmesh.cross_edges = FlatTable<AMG_Node<NT_EDGE>> (neqcs, &cmesh.disp_cross[NT_EDGE][0], &cmesh.edges[cmesh.disp_eqc[NT_EDGE].Last()]);
+    // cmesh.cross_edges = FlatTable<AMG_Node<NT_EDGE>> (neqcs, &cmesh.disp_cross[NT_EDGE][0], &cmesh.edges[cmesh.disp_eqc[NT_EDGE].Last()]);
+    cmesh.cross_edges = MakeFT<AMG_Node<NT_EDGE>> (neqcs, cmesh.disp_cross[NT_EDGE], cmesh.edges, cmesh.disp_eqc[NT_EDGE].Last());
     // faces/cells (dummy)
     cmesh.nnodes[NT_FACE] = cmap.GetMappedNN<NT_FACE>();
     cmesh.nnodes[NT_CELL] = cmap.GetMappedNN<NT_CELL>();
@@ -362,7 +382,8 @@ namespace amg
       Array<int> dummy;
       mesh->SetVs (ma->GetNV(), [&](auto vnr)->FlatArray<int>{ return dummy; },
 		   [vert_sort](auto i, auto j){ vert_sort[i] = j; });
-      M.eqc_verts = FlatTable<AMG_Node<NT_VERTEX>>(1, &(M.disp_eqc[NT_VERTEX][0]), &(M.verts[0]));
+      // M.eqc_verts = FlatTable<AMG_Node<NT_VERTEX>>(1, &(M.disp_eqc[NT_VERTEX][0]), &(M.verts[0]));
+      M.eqc_verts = MakeFT<AMG_Node<NT_VERTEX>>(1, M.disp_eqc[NT_VERTEX], M.verts, 0);
       M.nnodes_eqc[NT_VERTEX].SetSize(1); M.nnodes_eqc[NT_VERTEX][0] = nv;
       M.nnodes_cross[NT_VERTEX].SetSize(1); M.nnodes_cross[NT_VERTEX][0] = 0;
       M.nnodes_glob[NT_VERTEX] = M.nnodes[NT_VERTEX];

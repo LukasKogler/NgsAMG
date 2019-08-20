@@ -551,20 +551,20 @@ namespace amg
 	}
       }; // traverse_graph
       auto bspm = dynamic_pointer_cast<BaseSparseMatrix>(finest_mat);
-	if (!bspm) { bspm = dynamic_pointer_cast<BaseSparseMatrix>( dynamic_pointer_cast<ParallelMatrix>(finest_mat)->GetMatrix()); }
-	if (!bspm) { throw Exception("could not get BaseSparseMatrix out of finest_mat!!"); }
-	n_edges = 0;
-	traverse_graph(*bspm, [&](auto vk, auto vj) LAMBDA_INLINE { n_edges++; });
-	Array<decltype(AMG_Node<NT_EDGE>::v)> epairs(n_edges);
-	n_edges = 0;
-	traverse_graph(*bspm, [&](auto vk, auto vj) LAMBDA_INLINE{
+      if (!bspm) { bspm = dynamic_pointer_cast<BaseSparseMatrix>( dynamic_pointer_cast<ParallelMatrix>(finest_mat)->GetMatrix()); }
+      if (!bspm) { throw Exception("could not get BaseSparseMatrix out of finest_mat!!"); }
+      n_edges = 0;
+      traverse_graph(*bspm, [&](auto vk, auto vj) LAMBDA_INLINE { n_edges++; });
+      Array<decltype(AMG_Node<NT_EDGE>::v)> epairs(n_edges);
+      n_edges = 0;
+      traverse_graph(*bspm, [&](auto vk, auto vj) LAMBDA_INLINE{
 	    if (vk < vj) { epairs[n_edges++] = {vk, vj}; }
 	    else { epairs[n_edges++] = {vj, vk}; }
-	  });
-	top_mesh->SetNodes<NT_EDGE> (n_edges, [&](auto num) LAMBDA_INLINE { return epairs[num]; }, // (already v-sorted)
-				     [](auto node_num, auto id) { /* dont care about edge-sort! */ });
+	});
+      top_mesh->SetNodes<NT_EDGE> (n_edges, [&](auto num) LAMBDA_INLINE { if (num == 1420) { cout << " get num " << num << endl; return epairs[0]; } return epairs[num]; }, // (already v-sorted)
+				   [](auto node_num, auto id) LAMBDA_INLINE { /* dont care about edge-sort! */ });
       // cout << "final n_edges: " << top_mesh->GetNN<NT_EDGE>() << endl;
-      }; // create_edges
+    }; // create_edges
 
     if (O.dof_ordering == BAO::REGULAR_ORDERING) {
       const auto fes_bs = fpd->GetEntrySize();
@@ -613,7 +613,7 @@ namespace amg
       create_edges ( v2d , d2v );
     }
 
-    cout << IM(3) << "AMG performed on " << top_mesh->GetNNGlobal<NT_VERTEX>() << " vertices, ndof local is: " << fpd->GetNDofGlobal() << endl;
+    cout << IM(3) << "AMG performed on " << top_mesh->GetNNGlobal<NT_VERTEX>() << " vertices, glob ndof is " << fpd->GetNDofGlobal() << endl;
     cout << IM(3) << "AMG performed on " << top_mesh->GetNNGlobal<NT_EDGE>() << " edges" << endl;
     if (top_mesh->GetEQCHierarchy()->GetCommunicator().Size() == 1) // this is only loc info
       { cout << IM(3) << "free dofs " << finest_freedofs->NumSet() << " ndof local is: " << fpd->GetNDofLocal() << endl; }
@@ -814,16 +814,18 @@ namespace amg
     	 - nodalp2 and fes is order 2
      **/
     shared_ptr<T_E_S> E_S = BuildES<N>();
+    // cout << "E_S: " << endl; if (E_S) cout << E_S->Height() << " x " << E_S->Width() << endl; cout << endl;
 
     size_t subset_count = (E_S == nullptr) ? fpds->GetNDofLocal() : E_S->Width();
 
     /**
-       E_D can be nullptr when N==M and:
+       E_D can be nullptr when N == M and:
           - fes has same multidim as AMG (N == M), which have the same "meaning"
     	    as the AMG ones and no sorting within multdim-DOFs is needed (or probably always when N == M == 1)
      **/
     shared_ptr<T_E_D> E_D = BuildED<N>(subset_count, mesh);
-
+    // cout << "E_D: " << endl; if (E_D) cout << *E_D << endl; cout << endl;
+      
 
     /**
        P is nullptr when either sequential or NP==2, in which case rank 1 has everything 
@@ -876,6 +878,8 @@ namespace amg
 
     shared_ptr<BaseDOFMapStep> emb_step = nullptr;
 
+    // cout << "E  " << E << endl; if (E) cout << E->Height() << " " << E->Width() << endl;
+
     if (E != nullptr)
       { emb_step = make_shared<ProlMap<T_E_D>>(E, fpds, nullptr); }
 
@@ -904,15 +908,16 @@ namespace amg
       int is_triv = ( (notin_ss[1] - notin_ss[0]) == 0 ) ? 1 : 0;
       fpds->GetCommunicator().AllReduce(is_triv, MPI_SUM);
       if (is_triv == 0) {
-	int cnt_rows = 0;
+	Array<int> perow(fpds->GetNDofLocal()); perow = 0;
+	int cnt_cols = 0;
 	for (auto pair : O.ss_ranges)
-	  { cnt_rows += pair[1] - pair[0]; }
-	Array<int> perow(cnt_rows); perow = 1;
-	E_S = make_shared<TS>(perow, fpds->GetNDofLocal()); cnt_rows = 0;
+	  if (pair[1] > pair[0])
+	    { perow.Range(pair[0], pair[1]) = 1; cnt_cols += pair[1] - pair[0]; }
+	E_S = make_shared<TS>(perow, cnt_cols); cnt_cols = 0;
 	for (auto pair : O.ss_ranges)
 	  for (auto c : Range(pair[0], pair[1])) {
-	    SetIdentity(E_S->GetRowValues(cnt_rows)[0]);
-	    E_S->GetRowIndices(cnt_rows++)[0] = c;
+	    SetIdentity(E_S->GetRowValues(c)[0]);
+	    E_S->GetRowIndices(c)[0] = cnt_cols++;
 	  }
       }
     }
@@ -923,13 +928,15 @@ namespace amg
       int is_triv = (SS.NumSet() == SS.Size()) ? 1 : 0;
       fpds->GetCommunicator().AllReduce(is_triv, MPI_SUM);
       if (is_triv == 0) {
-	int cnt_rows = SS.NumSet();
-	Array<int> perow(cnt_rows); perow = 1;
-	E_S = make_shared<TS>(perow, fpds->GetNDofLocal()); cnt_rows = 0;
+	int cnt_cols = SS.NumSet();
+	Array<int> perow(fpds->GetNDofLocal());
+	for (auto k : Range(perow))
+	  { perow[k] = SS.Test(k) ? 1 : 0; }
+	E_S = make_shared<TS>(perow, cnt_cols); cnt_cols = 0;
 	for (auto k : Range(fpds->GetNDofLocal())) {
 	  if (SS.Test(k)) {
-	    SetIdentity(E_S->GetRowValues(cnt_rows)[0]);
-	    E_S->GetRowIndices(cnt_rows++)[0] = k;
+	    SetIdentity(E_S->GetRowValues(k)[0]);
+	    E_S->GetRowIndices(k)[0] = cnt_cols++;
 	  }
 	}
       }

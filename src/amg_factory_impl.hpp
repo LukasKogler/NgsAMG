@@ -99,6 +99,8 @@ namespace amg
     set_num(opts.rbmaf_scale, "rbmaf_scale");
 
     set_enum_opt(opts.log_level, "log_level", {"none", "basic", "normal", "extra"});
+    opts.log_file = flags.GetStringFlag("log_file", "");
+    set_bool(opts.print_log, "print_log");
   }
 
 
@@ -401,8 +403,6 @@ namespace amg
     // auto coarse_mats = RSU2( { 0, finest_mesh, fpds, fmat }, dof_map);
     auto coarse_mats = RSU2( { 0, finest_mesh, fpds, fmat }, dof_map);
 
-    cout << "RSU done " << endl;
-    
     // coarse mats in reverse order
     mats.SetSize(coarse_mats.Size() + 1);
     for (auto k : Range(mats.Size() - 1))
@@ -446,10 +446,10 @@ namespace amg
 
     size_t goal_meas = max( size_t(min(af, 0.9) * curr_meas), max(options->max_meas, size_t(1)));
 
-    if (comm.Rank() == 0) {
-      cout << "using AF " << af << " from " << options->first_aaf << " " << options->aaf_scale << " " << options->aaf << endl;
-      cout << "goal is: " << goal_meas << endl;
-    }
+    // if (comm.Rank() == 0) {
+    //   cout << "using AF " << af << " from " << options->first_aaf << " " << options->aaf_scale << " " << options->aaf << endl;
+    //   cout << "goal is: " << goal_meas << endl;
+    // }
 
     INT<3> level = { cap.level, 0, 0 }; // coarse / sub-coarse / ctr 
 
@@ -696,10 +696,10 @@ namespace amg
 
     size_t goal_meas = max( size_t(min(af, 0.9) * curr_meas), max(options->max_meas, size_t(1)));
 
-    if (comm.Rank() == 0) {
-      cout << "using AF " << af << " from " << options->first_aaf << " " << options->aaf_scale << " " << options->aaf << endl;
-      cout << "goal is: " << goal_meas << endl;
-    }
+    // if (comm.Rank() == 0) {
+    //   cout << "using AF " << af << " from " << options->first_aaf << " " << options->aaf_scale << " " << options->aaf << endl;
+    //   cout << "goal is: " << goal_meas << endl;
+    // }
 
     INT<3> level = { cap.level, 0, 0 }; // coarse / sub-coarse / ctr 
 
@@ -871,9 +871,9 @@ namespace amg
 	  { break; }
     }
 
-    cout << " done, steps are " << endl; prow(sub_steps); cout << endl;
-    for (auto step : sub_steps)
-      cout << typeid(*step).name() << endl;
+    // cout << " done, steps are " << endl; prow(sub_steps); cout << endl;
+    // for (auto step : sub_steps)
+    //   cout << typeid(*step).name() << endl;
 
     /**
        If we were unable to do any maps, we should return here, or maybe do some fallback scheme,
@@ -918,25 +918,25 @@ namespace amg
 	// if [step_nr - 1, step_nr] are [prol, ctr], swap them
 	auto step_L = sub_steps[step_nr-1];
 	auto step_R = sub_steps[step_nr];
-	cout << " check steps " << step_nr - 1 << " " << step_nr << endl;
-	cout << typeid(*step_L).name() << " " << typeid(*step_R).name() << endl;
+	// cout << " check steps " << step_nr - 1 << " " << step_nr << endl;
+	// cout << typeid(*step_L).name() << " " << typeid(*step_R).name() << endl;
 	if ( auto ctr_L = dynamic_pointer_cast<TCTR>(step_L) ) {
 	  if ( auto crs_R = dynamic_pointer_cast<TCRS>(step_R) ) { // C -- P -> swap to P -- C
-	    cout << " case 1!" << endl;
+	    // cout << " case 1!" << endl;
 	    auto fpd = ctr_L->GetParDofs();
-	    cout << "doswap with true!" << endl;
-	    cout << " in that comm " << fpd->GetCommunicator().Rank() << " of " << fpd->GetCommunicator().Size() << endl;
+	    // cout << "doswap with true!" << endl;
+	    // cout << " in that comm " << fpd->GetCommunicator().Rank() << " of " << fpd->GetCommunicator().Size() << endl;
 	    ctr_L->DoSwap(true);
-	    cout << "am back!" << endl;
+	    // cout << "am back!" << endl;
 	    sub_steps[step_nr-1] = ctr_L->SwapWithProl(crs_R);
 	    sub_steps[step_nr]   = ctr_L;
 	  }
 	  else // TODO: C -- C -> concatenate to single C
-	    { cout << " case CC " << endl;; }
+	    { /* cout << " case CC " << endl; */ ; }
 	}
 	else if ( auto crs_L = dynamic_pointer_cast<TCRS>(step_L) ) {
 	  if ( auto crs_R = dynamic_pointer_cast<TCRS>(step_R) ) { // P -- P, concatenate to single P (actually: P -- nullptr)
-	    cout << " case 2" << endl;
+	    // cout << " case 2" << endl;
 	    auto conc_P = MatMultAB(*crs_L->GetProl(), *crs_R->GetProl());
 	    auto conc_map = make_shared<TCRS>(conc_P, crs_L->GetParDofs(), crs_R->GetMappedParDofs());
 	    
@@ -944,7 +944,7 @@ namespace amg
 	    sub_steps[step_nr] = nullptr;
 	  }
 	  else // P -- C, nothing to do, leave sub_step entries as-is
-	    { cout << " case PC " << endl;; }
+	    { /* cout << " case PC " << endl; */ ; }
 	}
 
       }

@@ -574,7 +574,7 @@ namespace amg
 
       assert( ( O.with_rots && (O.block_s.Size() == dofpv(C::DIM)) ) ||
 	      ( (!O.with_rots) && (O.block_s.Size() == disppv(C::DIM)) ) ); // "elasticity BuildED: disp/disp+rot mismatch");
-      assert(subset_count == block_s.Size() * M.template GetNN<NT_VERTEX>()); // "elasticity BuildED: subset_cnt and block_s mismatch");
+      assert(subset_count == O.block_s.Size() * M.template GetNN<NT_VERTEX>()); // "elasticity BuildED: subset_cnt and block_s mismatch");
 
       for (auto v : O.block_s)
 	{ if (v != 1) { throw Exception("this block_s is not supported"); } }

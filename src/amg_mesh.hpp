@@ -438,11 +438,17 @@ namespace amg
       for (auto k:Range(neqcs+1)) {
 	node_disp_cross[k] -= tot_nnodes_eqc;
       }
-      auto writeit = [neqcs, tot_nnodes_eqc](auto & _arr, auto & _disp_eqc, auto & _tab_eqc,
-					     auto & _disp_cross, auto & _tab_cross) LAMBDA_INLINE
+      auto writeit = [neqcs, tot_nnodes, tot_nnodes_eqc](auto & _arr, auto & _disp_eqc, auto & _tab_eqc,
+							 auto & _disp_cross, auto & _tab_cross) LAMBDA_INLINE
 	{
-	  _tab_eqc = FlatTable<AMG_Node<NT>>(neqcs, &(_disp_eqc[0]), &(_arr[0]));
-	  _tab_cross = FlatTable<AMG_Node<NT>>(neqcs, &(_disp_cross[0]), &(_arr[tot_nnodes_eqc]));
+	  if (_disp_eqc.Last() > _disp_eqc[0])
+	    { _tab_eqc = FlatTable<AMG_Node<NT>>(neqcs, &(_disp_eqc[0]), &(_arr[0])); }
+	  else
+	    { _tab_eqc = FlatTable<AMG_Node<NT>>(neqcs, &(_disp_eqc[0]), nullptr); }
+	  if (tot_nnodes > tot_nnodes_eqc)
+	    { _tab_cross = FlatTable<AMG_Node<NT>>(neqcs, &(_disp_cross[0]), &(_arr[tot_nnodes_eqc])); }
+	  else
+	    { _tab_cross = FlatTable<AMG_Node<NT>>(neqcs, &(_disp_cross[0]), nullptr); }
 	};
       if constexpr(NT==NT_EDGE) {
 	  writeit(edges, disp_eqc[NT], eqc_edges, disp_cross[NT], cross_edges);
