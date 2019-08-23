@@ -26,14 +26,13 @@ namespace amg
 
     virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const override
     {
+      cout << "CTRAM" << endl;
       // TODO: static cast this??
       shared_ptr<TSPM> spm = dynamic_pointer_cast<TSPM>(mat);
-      if (spm == nullptr) {
-	throw Exception("CtrMap cast did not work!!");
-      }
+      if (spm == nullptr)
+	{ throw Exception("CtrMap cast did not work!!"); }
       return DoAssembleMatrix(spm);
     }
-    
     
     virtual shared_ptr<BaseDOFMapStep> Concatenate (shared_ptr<BaseDOFMapStep> other) override
     { return nullptr; }
@@ -135,6 +134,7 @@ namespace amg
       // }
       // cout << endl;
 
+      cout << "MND" << endl;
       RegionTimer rt1(timer_hack_gccm1());
       RegionTimer rt2(timer_hack_gccm2<NT>());
       auto comm = eqc_h->GetCommunicator();
@@ -142,33 +142,45 @@ namespace amg
       if(!is_gm) {
 	// cout << "send " << data.Size() << " times " << typeid(T).name() << " to " << master << endl;
 	comm.Send(data, master, MPI_TAG_AMG);
+      cout << "MNDD" << endl;
 	return;
       }
 
+      cout << "MND2" << endl;
       // cout << "send " << data.Size() << " times " << typeid(T).name() << " to myself, LOL" << endl;
       Array<T> &out(*cdata);
-      MPI_Request req = MyMPI_ISend(data, master, MPI_TAG_AMG, comm); // todo: avoid local send please...
-      MPI_Request_free(&req);
+      cout << "MND2" << endl;
+      cout << "MND2" << endl;
       out.SetSize(mapped_NN[NT]);
+      cout << "MND2" << endl;
       // if (stat==DISTRIBUTED) out = T(0);
       out = T(0); // TODO: above is better...
       auto & maps = node_maps[NT];
       Array<T> buf;
-      for(auto pn:Range(my_group.Size())) {
-	auto p = my_group[pn];
-	auto map = maps[pn];
-	// cout << "get " << buf.Size() << " times " << typeid(T).name() << " from " << p << endl;
-	comm.Recv(buf, p, MPI_TAG_AMG);
-	// cout << "got " << buf.Size() << " times " << typeid(T).name() << " from " << p << endl;
-	// cout << "map size is: " << map.Size() << endl;
-	// cout << "map : "; prow2(map); cout << endl;
+      cout << "MND2" << endl;
+      auto it_vals = [&] (auto & map, auto & buf) LAMBDA_INLINE {
 	if(stat==CUMULATED)
 	  for(auto k:Range(map.Size()))
-	    out[map[k]] = buf[k];
+	    { out[map[k]] = buf[k]; }
 	else
 	  for(auto k:Range(map.Size()))
-	    out[map[k]] += buf[k];
+	    { out[map[k]] += buf[k]; }
+      };
+
+      if (my_group.Size() > 1) { // DIST DATA
+	for(auto pn : Range(size_t(1), my_group.Size())) {
+	  auto p = my_group[pn];
+	  auto map = maps[pn];
+	  // cout << "get " << buf.Size() << " times " << typeid(T).name() << " from " << p << endl;
+	  comm.Recv(buf, p, MPI_TAG_AMG);
+	  // cout << "got " << buf.Size() << " times " << typeid(T).name() << " from " << p << endl;
+	  // cout << "map size is: " << map.Size() << endl;
+	  // cout << "map : "; prow2(map); cout << endl;
+	  it_vals(map, buf);
+	}
       }
+      it_vals(maps[0], data); // LOC DATA
+      
       // annoy data is not scattered correctly now for edge-based data!!
       auto & anodes = annoy_nodes[NT];
 
@@ -177,6 +189,7 @@ namespace amg
       // 	cout << "1, contr data " << k << ": " << endl << out[k] << endl << "___" << endl;
       // }
       // cout << endl;
+      cout << "MND2" << endl;
 
       if(!anodes.Size()) { return; } // no annoying nodes for this type!!
       auto cneqcs = c_eqc_h->GetNEQCS();
@@ -188,6 +201,7 @@ namespace amg
 	for(auto j:Range(anodes[k].Size()))
 	  adata[k][j] = out[anodes[k][j]];
       }
+      cout << "MND2" << endl;
 
       // for (auto k : Range(adata.Size())) {
       // 	for (auto j : Range(adata[k].Size())) {
@@ -197,6 +211,7 @@ namespace amg
       // 	}
       // }
 
+      cout << "MNDRT" << endl;
       auto radata = ReduceTable<T,T>(adata, c_eqc_h, [&](auto & t) {
 	  // cout << "lambda for t: " << endl;
 	  // for(auto k:Range(t.Size())) { cout<<k<<"(" << t[k].Size() << "):  ";prow(t[k]);cout<<endl; }
@@ -221,10 +236,12 @@ namespace amg
 	  }
 	  return out;
 	});
+      cout << "MNDRTD" << endl;
       for(auto k:Range(cneqcs)) {
 	for(auto j:Range(anodes[k].Size()))
 	  out[anodes[k][j]] = radata[k][j];
       }
+      cout << "MNDAD" << endl;
 
       // cout << "2, contr data: " << endl << "___" << endl;
       // for (auto k : Range(out.Size())) {

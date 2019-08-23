@@ -86,9 +86,6 @@ namespace amg
 
     bool do_test = false;
     bool smooth_lo_only = false;
-
-    bool mpi_overlap = true;
-    bool mpi_thread = false;
   };
 
 
@@ -186,17 +183,29 @@ namespace amg
       cout << IM(3) << "subset for coarsening defined by bitarray" << endl;
       // NONE - set somewhere else. FREE - set in initlevel 
       if (O.spec_ss == BAO::SPECSS_NODALP2) {
-	cout << IM(3) << "taking nodalp2 subset for coarsening" << endl;
-	auto fes = bfa->GetFESpace();
-	O.ss_select = make_shared<BitArray>(fes->GetNDof());
-	O.ss_select->Clear();
-	for (auto k : Range(ma->GetNV()))
-	  { O.ss_select->Set(k); }
-	Array<DofId> dns;
-	for (auto k : Range(ma->GetNEdges())) {
-	  fes->GetDofNrs(NodeId(NT_EDGE, k), dns);
-	  if (dns.Size())
-	    { O.ss_select->Set(dns[0]); }
+	if (ma->GetDimension() == 2) {
+	  cout << IM(4) << "In 2D nodalp2 does nothing, using default lo base functions!" << endl;
+	  O.subset = BAO::RANGE_SUBSET;
+	  O.ss_ranges.SetSize(1);
+	  O.ss_ranges[0][0] = 0;
+	  if (auto lospace = bfa->GetFESpace()->LowOrderFESpacePtr()) // e.g compound has no LO space
+	    { O.ss_ranges[0][1] = lospace->GetNDof(); }
+	  else
+	    { O.ss_ranges[0][1] = bfa->GetFESpace()->GetNDof(); }
+	}
+	else {
+	  cout << IM(3) << "taking nodalp2 subset for coarsening" << endl;
+	  auto fes = bfa->GetFESpace();
+	  O.ss_select = make_shared<BitArray>(fes->GetNDof());
+	  O.ss_select->Clear();
+	  for (auto k : Range(ma->GetNV()))
+	    { O.ss_select->Set(k); }
+	  Array<DofId> dns;
+	  for (auto k : Range(ma->GetNEdges())) {
+	    fes->GetDofNrs(NodeId(NT_EDGE, k), dns);
+	    if (dns.Size())
+	      { O.ss_select->Set(dns[0]); }
+	  }
 	}
 	cout << IM(3) << "nodalp2 set: " << O.ss_select->NumSet() << " of " << O.ss_select->Size() << endl;
       }
@@ -310,12 +319,18 @@ namespace amg
       fine_spm->SetParallelDofs(make_shared<ParallelDofs> ( mecomm , move(dps), GetEntryDim(fine_spm.get()), false));
     }
 
+    cout << " MESH " << endl;
     auto mesh = BuildInitialMesh();
+    cout << " MESH " << endl;
 
+    cout << " FACT " << endl;
     factory = BuildFactory(mesh);
+    cout << " FACT " << endl;
 
     /** Set up Smoothers **/
+    cout << " AMA " << endl;
     BuildAMGMat();
+    cout << " AMA " << endl;
     
   } // EmbedVAMG::Finalize
 
@@ -356,7 +371,10 @@ namespace amg
     
     Array<shared_ptr<BaseSparseMatrix>> mats ({ fspm });
     auto dof_map = make_shared<DOFMap>();
+
+    cout << "SUL " << endl;
     factory->SetupLevels(mats, dof_map);
+    cout << "SUL " << endl;
 
     // Set up smoothers
 
@@ -368,6 +386,7 @@ namespace amg
 
     Array<shared_ptr<BaseSmoother>> smoothers(mats.Size()-1);
     for (auto k : Range(size_t(0), mats.Size()-1)) {
+      cout << " sm " << k << " " << mats.Size() << endl;
       smoothers[k] = BuildSmoother (mats[k], dof_map->GetParDofs(k), (k==0) ? finest_freedofs : nullptr);
       smoothers[k]->Finalize(); // do i even need this anymore ?
     }
@@ -380,6 +399,7 @@ namespace amg
 
 
     // Coarsest level setup
+    cout << " CLI " << endl;
 
     if (mats.Last() != nullptr) { // we might drop out because of redistribution at some point
     
@@ -428,6 +448,7 @@ namespace amg
 
     } // mats.Last() != nullptr
 
+    cout << " TEST " << endl;
 
     if (options->do_test)
       {
@@ -520,13 +541,15 @@ namespace amg
       vert_sort.SetSize(nv);
       top_mesh->SetVs (nv, [&](auto vnr) -> FlatArray<int> LAMBDA_INLINE { return fpd->GetDistantProcs(v2d(vnr)); },
 		       [&vert_sort](auto i, auto j){ vert_sort[i] = j; });
-      free_verts = make_shared<BitArray>(nv); free_verts->Clear();
-      for (auto k : Range(nv)) {
-	if (finest_freedofs->Test(v2d(k)))
-	  { free_verts->Set(vert_sort[k]); }
-	// else
-	//   { free_verts->Clear(vert_sort[k]); }
+      free_verts = make_shared<BitArray>(nv);
+      if (finest_freedofs != nullptr) {
+	free_verts->Clear();
+	for (auto k : Range(nv))
+	  if (finest_freedofs->Test(v2d(k)))
+	    { free_verts->Set(k); }
       }
+      else
+	{ free_verts->Set(); }
     };
 
     // edges 
@@ -561,7 +584,7 @@ namespace amg
 	    if (vk < vj) { epairs[n_edges++] = {vk, vj}; }
 	    else { epairs[n_edges++] = {vj, vk}; }
 	});
-      top_mesh->SetNodes<NT_EDGE> (n_edges, [&](auto num) LAMBDA_INLINE { if (num == 1420) { cout << " get num " << num << endl; return epairs[0]; } return epairs[num]; }, // (already v-sorted)
+      top_mesh->SetNodes<NT_EDGE> (n_edges, [&](auto num) LAMBDA_INLINE { return epairs[num]; }, // (already v-sorted)
 				   [](auto node_num, auto id) LAMBDA_INLINE { /* dont care about edge-sort! */ });
       // cout << "final n_edges: " << top_mesh->GetNN<NT_EDGE>() << endl;
     }; // create_edges
@@ -644,9 +667,17 @@ namespace amg
       break;
     } }
 
+    cout << fpd->GetCommunicator().Rank() << " EQ " << endl;
+    fpd->GetCommunicator().Barrier();
     eqc_h = make_shared<EQCHierarchy>(fpd, true, maxset);
+    cout << eqc_h->GetCommunicator().Rank() << " EQ " << endl;
+    eqc_h->GetCommunicator().Barrier();
 
+    cout << eqc_h->GetCommunicator().Rank() << " BTM " << endl;
+    eqc_h->GetCommunicator().Barrier();
     auto top_mesh = BuildTopMesh(eqc_h);
+    cout << eqc_h->GetCommunicator().Rank() << " BTM " << endl;
+    eqc_h->GetCommunicator().Barrier();
 
     /** vertex positions, if we need them **/
     if (O.keep_vp) {
@@ -878,7 +909,18 @@ namespace amg
 
     shared_ptr<BaseDOFMapStep> emb_step = nullptr;
 
-    // cout << "E  " << E << endl; if (E) cout << E->Height() << " " << E->Width() << endl;
+    auto prt = [](auto name, auto x) {
+      cout << name << " ";
+      if (x == nullptr)
+	{ cout << "nullptr!" << endl; }
+      else
+	{ cout << x->Height() << " x " << x->Width() << endl << "--" << endl << *x << endl << "---" << endl; }
+    };
+
+    prt("E_S", E_S);
+    prt("E_D", E_D);
+    prt("P", P);
+    prt("E", E);
 
     if (E != nullptr)
       { emb_step = make_shared<ProlMap<T_E_D>>(E, fpds, nullptr); }

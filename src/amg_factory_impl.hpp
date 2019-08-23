@@ -401,7 +401,9 @@ namespace amg
     shared_ptr<ParallelDofs> fpds = (embed_step == nullptr) ? fmat->GetParallelDofs() : BuildParallelDofs(finest_mesh);
 
     // auto coarse_mats = RSU2( { 0, finest_mesh, fpds, fmat }, dof_map);
+    cout << "calll RSU" << endl;
     auto coarse_mats = RSU2( { 0, finest_mesh, fpds, fmat }, dof_map);
+    cout << "RSU dne" << endl;
 
     // coarse mats in reverse order
     mats.SetSize(coarse_mats.Size() + 1);
@@ -421,7 +423,6 @@ namespace amg
   template<class TMESH, class TM>
   Array<shared_ptr<BaseSparseMatrix>> AMGFactory<TMESH, TM> :: RSU (Capsule cap, shared_ptr<DOFMap> dof_map)
   {
-    
     logger->LogLevel(cap);
 
     shared_ptr<BaseDOFMapStep> ds;
@@ -672,6 +673,8 @@ namespace amg
   template<class TMESH, class TM>
   Array<shared_ptr<BaseSparseMatrix>> AMGFactory<TMESH, TM> :: RSU2 (Capsule cap, shared_ptr<DOFMap> dof_map)
   {
+    cout << "RSU2 " << cap.level << endl;
+
     logger->LogLevel(cap);
 
     shared_ptr<BaseDOFMapStep> ds;
@@ -724,7 +727,9 @@ namespace amg
 	// if ( (level[1] != 0) && (crs_meas_fac > 0.6) )
 	//   { state->coll_cross = true; }
 
+	cout << "BCM" << endl;
 	auto grid_step = BuildCoarseMap (cmesh);
+	cout << "BCM" << endl;
 
 	state->coll_cross = false;
 
@@ -745,7 +750,9 @@ namespace amg
 
 	cmesh = _cmesh;
 
+	cout << "PWP" << endl;
 	auto pwp = BuildPWProl(grid_step, cpds); // fine pardofs are correct
+	cout << "PWP OK" << endl;
 
 	conc_pwp = (conc_pwp == nullptr) ? pwp : MatMultAB(*conc_pwp, *pwp);
 	cpds = BuildParallelDofs(cmesh);
@@ -763,6 +770,8 @@ namespace amg
       /** cannot redistribute if when is turned off or when we are already basically sequential **/
       if ( (!options->enable_ctr) || (cmesh->GetEQCHierarchy()->GetCommunicator().Size() <= 2) )
 	{ return false; }
+
+      cout << "do_contract_step" << endl;
       
       /** Find out how rapidly we should redistribute **/
       auto ccomm = cmesh->GetEQCHierarchy()->GetCommunicator();
@@ -819,7 +828,9 @@ namespace amg
 	  
       cout << IM(4) << "contract by factor " << ctr_factor << endl;
 
+      cout << "do_contract_step" << endl;
       auto ctr_map = BuildContractMap(ctr_factor, cmesh);
+      cout << "do_contract_step" << endl;
 
       fmesh = cmesh = static_pointer_cast<TMESH>(ctr_map->GetMappedMesh());
 
@@ -849,7 +860,9 @@ namespace amg
       /** inner loop - do coarsening until stuck **/
       bool stuck = false;
       while ( (curr_meas > goal_meas) && (!stuck) ) {
+	cout << "DCS " << endl;
 	stuck = do_coarsen_step();
+	cout << "DCS OK " << endl;
       }
 
       /** we PROBABLY have a coarse map **/
@@ -859,7 +872,9 @@ namespace amg
       }
 
       /** try contract **/
+      cout << "DCTRS" << endl;
       auto ctr_worked = do_contract_step();
+      cout << "DCTRS OK" << endl;
 
       /** contract is first map - need to smooth prol with first mapped mesh **/
       // if ( ctr_worked && (sub_steps.Size() == 1) )
@@ -889,9 +904,6 @@ namespace amg
 
 	If we are contracted out, our last map is a C-map. It might, however, still be
 	followed by a P-map, WHICH WE DON'T KNOW ABOUT!
-
-	
-
     **/
     using TCTR = CtrMap<typename strip_vec<Vec<mat_traits<TM>::HEIGHT, double>>::type>;
     using TCRS = ProlMap<TSPM_TM>;
@@ -948,6 +960,7 @@ namespace amg
 	}
 
       }
+      cout << " swapping done, remove nullptrs" << endl;
 
       /**
 	 remove nullptr-maps from sub_steps
@@ -967,11 +980,14 @@ namespace amg
 	{ throw Exception("Something must be broken!!"); }
       if ( (options->enable_rbm) && (level[0] != 0) )
 	{ sprol_mesh = options->rebuild_mesh(sprol_mesh, sprol_mat, pstep->GetParDofs()); }
+      cout << "SPROL" << endl;
       SmoothProlongation(pstep, sprol_mesh);
+      cout << "SPROL OK" << endl;
     } // sm-prol
 
     /** add embed_step in the beginning **/
     if (embed_step != nullptr) {
+      cout << "EMB" << endl;
       auto conc_step = embed_step->Concatenate(sub_steps[0]);
       if (conc_step != nullptr)
 	{ sub_steps[0] = conc_step; }
@@ -982,6 +998,7 @@ namespace amg
 	sub_steps[0] = embed_step;
       }
       embed_step = nullptr; 
+      cout << "EMB OK" << endl;
     }
 
     /** assemble coarse matrix and add DOFstep to map **/
@@ -989,13 +1006,17 @@ namespace amg
     // for (auto step : sub_steps)
     //   cout << typeid(*step).name() << endl;
     shared_ptr<BaseDOFMapStep> tot_step;
+    cout << "TS" << endl;
     if (sub_steps.Size() > 1)
       { tot_step = make_shared<ConcDMS>(sub_steps); }
     else
       { tot_step = sub_steps[0]; }
-
+    cout << "TSOK" << endl;
+    
     // cout << " ass mat " << endl;
+    cout << " ASS MAT " << endl;
     cmat = tot_step->AssembleMatrix(cmat);
+    cout << " ASS MAT ok" << endl;
     // cout << " have ass mat! " << endl;
 
     dof_map->AddStep(tot_step);
@@ -1037,7 +1058,9 @@ namespace amg
     static Timer t("BuildContractMap"); RegionTimer rt(t);
     // at least 2 groups - dont send everything from 1 to 0 for no reason
     int n_groups = (factor == -1) ? 2 : max2(int(2), int(1 + std::round( (mesh->GetEQCHierarchy()->GetCommunicator().Size()-1) * factor)));
+    cout << "pprocs" << endl;
     Table<int> groups = PartitionProcsMETIS (*mesh, n_groups);
+    cout << "pprocs" << endl;
     return make_shared<GridContractMap<TMESH>>(move(groups), mesh);
   }
 
@@ -1128,8 +1151,11 @@ namespace amg
     }
     else {
       auto coarsen_opts = make_shared<typename BlockVWC<TMESH>::Options>();
+      cout << "SCO " << endl;
       this->SetCoarseningOptions(*coarsen_opts, mesh);
+      cout << "SCO OK" << endl;
       calg = make_shared<BlockVWC<TMESH>> (coarsen_opts);
+      cout << "CALG OK" << endl;
     }
     return calg->Coarsen(mesh);
   }
@@ -1141,13 +1167,22 @@ namespace amg
   {
     const FACTORY_CLASS & self = static_cast<const FACTORY_CLASS&>(*this);
     const CoarseMap<TMESH> & rcmap(*cmap);
-    const TMESH & fmesh = static_cast<TMESH&>(*rcmap.GetMesh()); fmesh.CumulateData();
+    const TMESH & fmesh = static_cast<TMESH&>(*rcmap.GetMesh()); 
+    fmesh.GetEQCHierarchy()->GetCommunicator().Barrier();
+    cout << "BPWP" << endl;
+    fmesh.CumulateData();
+    fmesh.GetEQCHierarchy()->GetCommunicator().Barrier();
+    cout << "BPWP" << endl;
     const TMESH & cmesh = static_cast<TMESH&>(*rcmap.GetMappedMesh()); cmesh.CumulateData();
+    fmesh.GetEQCHierarchy()->GetCommunicator().Barrier();
+    cout << "BPWP" << endl;
 
     size_t NV = fmesh.template GetNN<NT_VERTEX>();
     size_t NCV = cmesh.template GetNN<NT_VERTEX>();
 
     // Alloc Matrix
+    fmesh.GetEQCHierarchy()->GetCommunicator().Barrier();
+    cout << "BPWP" << endl;
     auto vmap = rcmap.template GetMap<NT_VERTEX>();
     Array<int> perow (NV); perow = 0;
     // -1 .. cant happen, 0 .. locally single, 1+ ..locally merged
@@ -1158,10 +1193,16 @@ namespace amg
       if (cvnr != -1)
 	{ has_partner[cvnr]++; }
     }
+    fmesh.GetEQCHierarchy()->GetCommunicator().Barrier();
+    cout << "BPWP" << endl;
     cmesh.template AllreduceNodalData<NT_VERTEX, int>(has_partner, [](auto & tab){ return move(sum_table(tab)); });
+    fmesh.GetEQCHierarchy()->GetCommunicator().Barrier();
+    cout << "BPWP" << endl;
     for (auto vnr : Range(NV))
       { if (vmap[vnr] != -1) perow[vnr] = 1; }
     auto prol = make_shared<TSPM_TM>(perow, NCV);
+    fmesh.GetEQCHierarchy()->GetCommunicator().Barrier();
+    cout << "BPWP" << endl;
 
     // Fill Matrix
     for (auto vnr : Range(NV)) {
@@ -1178,9 +1219,11 @@ namespace amg
 	}
       }
     }
+    fmesh.GetEQCHierarchy()->GetCommunicator().Barrier();
+    cout << "BPWP" << endl;
 
-    // cout << "PWP MAT: " << endl;
-    // print_tm_spmat(cout, *prol); cout << endl<< endl;
+    cout << "PWP MAT: " << endl;
+    print_tm_spmat(cout, *prol); cout << endl<< endl;
 
     return prol;
   } // VertexBasedAMGFactory::BuildPWProl

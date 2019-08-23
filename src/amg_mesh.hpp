@@ -186,10 +186,19 @@ namespace amg
       if (neqcs == 0) return; // nothing to do!
       if (neqcs == 1 && !apply_loc) return; // nothing to do!
       Array<int> rowcnt(neqcs);
-      for (auto k : Range(neqcs)) rowcnt[k] = nnodes_eqc[NT][k] + nnodes_cross[NT][k];
+      cout << " ME " << this << endl;
+      cout << " eq " << eqc_h << " " << eqc_h->GetCommunicator().Size() << endl;
+      cout << "ARND " << NT << endl;
+      for (auto k : Range(neqcs)) {
+	cout << " set " << k << " " << neqcs << endl;
+	cout << nnodes_eqc[NT].Size() << " " << nnodes_cross[NT].Size() << endl;
+	rowcnt[k] = nnodes_eqc[NT][k] + nnodes_cross[NT][k];
+      }
+      cout << "ARND " << endl;
       if (!apply_loc) rowcnt[0] = 0;
       Table<T> data(rowcnt);
       int C = 0;
+      cout << "ARND " << endl;
       auto loop_eqcs = [&] (auto lam, auto & data) {
 	for (auto k : Range(apply_loc?0:1, neqcs)) {
 	  C = 0;
@@ -201,8 +210,11 @@ namespace amg
 		{ if constexpr(NT==NT_VERTEX) for (auto l:Range(nodes.Size())) row[C++] = avdata[nodes[l]];
 		  else for (auto l:Range(nodes.Size())) row[C++] = avdata[nodes[l].id]; },
 		data);
+      cout << "ARND " << endl;
       // cout << "ARND data: " << endl << data << endl;
+      cout << "RT" << endl;
       Table<T> reduced_data = ReduceTable<T,T,TRED>(data, eqc_h, red);
+      cout << "RT" << endl;
       // cout << "ARND reduced data: " << endl << reduced_data << endl;
       loop_eqcs([&](auto nodes, auto row)
 		{ if constexpr(NT==NT_VERTEX) for (auto l:Range(nodes.Size())) avdata[nodes[l]] = row[C++];
@@ -583,18 +595,26 @@ namespace amg
 
     shared_ptr<BlockAlgMesh<T...>> Map (CoarseMap<BlockAlgMesh<T...>> & map) {
       static Timer t("BlockAlgMesh::Map (coarse)"); RegionTimer rt(t);
-      auto crs_btm = BlockTM::MapBTM(map);
+      shared_ptr<BlockTM> crs_btm(BlockTM::MapBTM(map));
       static Timer ttup("tuple"); ttup.Start();
+      GetEQCHierarchy()->GetCommunicator().Barrier();
+      cout << "BAMM" << endl;
       auto cdata = std::apply([&](auto& ...x) {
 	  return make_tuple<T*...>(new T(Array<typename T::TDATA>(map.template GetMappedNN<T::TNODE>()), DISTRIBUTED)...);
 	}, node_data);
+      GetEQCHierarchy()->GetCommunicator().Barrier();
+      cout << "BAMM" << endl;
       ttup.Stop();
       static Timer tmesh("alg-mesh"); tmesh.Start();
       auto cmesh = make_shared<BlockAlgMesh<T...>> (move(*crs_btm), move(cdata));
+      GetEQCHierarchy()->GetCommunicator().Barrier();
+      cout << "BAMM" << endl;
       tmesh.Stop();
       auto & cm_data = cmesh->Data();
       static Timer tmd("map data"); tmd.Start();
       Iterate<count_ppack<T...>::value>([&](auto i){ get<i.value>(node_data)->map_data(map, *get<i.value>(cm_data)); });
+      GetEQCHierarchy()->GetCommunicator().Barrier();
+      cout << "BAMM" << endl;
       tmd.Stop();
       return cmesh;
     };

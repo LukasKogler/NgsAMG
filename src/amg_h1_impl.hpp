@@ -6,6 +6,7 @@ namespace amg
 
   INLINE void H1VData :: map_data (const BaseCoarseMap & cmap, H1VData & ch1v) const
   {
+    cout << "MAPVD" << endl;
     auto & cdata = ch1v.data;
     cdata.SetSize(cmap.GetMappedNN<NT_VERTEX>()); cdata = 0.0;
     auto map = cmap.GetMap<NT_VERTEX>();
@@ -14,11 +15,14 @@ namespace amg
     bool master_only = (GetParallelStatus()==CUMULATED);
     mesh->Apply<NT_VERTEX>(lam_v, master_only);
     ch1v.SetParallelStatus(DISTRIBUTED);
+    cout << "MAPVD OK" << endl;
+    cout << "coarse v-wts" << endl; prow2(cdata); cout << endl;
   }
 
 
   INLINE void H1EData :: map_data (const BaseCoarseMap & cmap, H1EData & ch1e) const
   {
+    cout << "MAPED" << endl;
     auto & cdata = ch1e.data;
     cdata.SetSize(cmap.GetMappedNN<NT_EDGE>()); cdata = 0.0;
     auto map = cmap.GetMap<NT_EDGE>();
@@ -27,6 +31,8 @@ namespace amg
     bool master_only = (GetParallelStatus()==CUMULATED);
     mesh->Apply<NT_EDGE>(lam_e, master_only);
     ch1e.SetParallelStatus(DISTRIBUTED);
+    cout << "MAPED OK" << endl;
+    cout << "coarse e-wts" << endl; prow2(cdata); cout << endl;
   }
 
 

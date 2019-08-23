@@ -106,6 +106,8 @@ namespace amg
   	  { dinv[i] = TM(0.0); }
       });
 
+    cout << "GSS3 invs: " << endl; prow2(dinv); cout << endl;
+			     
     auto numset = freedofs ? freedofs->NumSet() : A.Height();
     first_free = 0; next_free = A.Height();
     if (freedofs != nullptr) {
@@ -361,6 +363,7 @@ namespace amg
 	{ dinv[k] += add_diag[dof]; }
       CalcInverse(dinv[k]);
     }
+    cout << "GSS4 invs: " << endl; prow2(dinv); cout << endl;
   } // GSS4(..)
   
 
@@ -543,19 +546,22 @@ namespace amg
 
     // tauNTC("");
 #endif
+    cout << "start d2c" << endl;
 
-    BufferG(vec);
+			   cout << " in stat " << vec.GetParallelStatus() << endl;
+
+			   BufferG(vec);
 
     if (vec.GetParallelStatus() != DISTRIBUTED) // just nulling-out entries is enough
-      { return; }
+      { vec.SetParallelStatus(DISTRIBUTED); return; }
 
     auto ex_dofs = pardofs->GetDistantProcs();
     auto comm = pardofs->GetCommunicator();
 
     if (g_send.Size())
-      { MPI_Startall(g_send.Size(), &g_send[0]); }
+      { MPI_Startall(g_send.Size(), g_send.Data()); }
     if (m_recv.Size())
-      { MPI_Startall(m_recv.Size(), &m_recv[0]); }
+      { MPI_Startall(m_recv.Size(), m_recv.Data()); }
 
     // for (auto kp : Range(ex_dofs.Size())) {
     //   if (g_ex_dofs[kp].Size()) // send G vals
@@ -585,6 +591,7 @@ namespace amg
     MyMPI_WaitAll(m_recv);
 
     ApplyM(vec);
+
 
   } // DCCMap::ApplyDIS2CO
 
@@ -618,10 +625,13 @@ namespace amg
 
     BufferM(vec);
 
+    cout << "m_ex_dofs: " << endl << m_ex_dofs << endl;
+    cout << "m_buffer: " << endl << m_buffer << endl;
+
     if (m_send.Size())
-      { MPI_Startall(m_send.Size(), &m_send[0]); }
+      { MPI_Startall(m_send.Size(), m_send.Data()); }
     if (g_recv.Size())
-      { MPI_Startall(g_recv.Size(), &g_recv[0]); }
+      { MPI_Startall(g_recv.Size(), g_recv.Data()); }
 
     // auto ex_dofs = pardofs->GetDistantProcs();
     // auto comm = pardofs->GetCommunicator();
@@ -707,8 +717,10 @@ namespace amg
   template<class TSCAL>
   void DCCMap<TSCAL> :: WaitD2C ()
   {
+    cout << "wait d2c " << endl;
     MyMPI_WaitAll(g_send);
     MyMPI_WaitAll(m_recv);
+    cout << " m buf now " << endl << m_buffer << endl;
   }
 
   template<class TSCAL>
@@ -736,6 +748,9 @@ namespace amg
 	// cout << " buffer " << vec_etr << endl;
 	buf_etr = vec_etr; vec_etr = 0;
       });
+    cout << endl << "buffer G" << endl;
+    cout << "g_ex_dofs: " << endl << g_ex_dofs << endl;
+    cout << "g_buffer: " << endl << g_buffer << endl;
   } // DCCMap::BufferG
 
 
@@ -745,7 +760,12 @@ namespace amg
 #ifdef USE_TAU
     TAU_PROFILE("ApplyM", TAU_CT(*this), TAU_DEFAULT);
 #endif
-    // cout << endl << "apply M" << endl;
+
+    cout << endl << "apply M" << endl;
+    cout << "m_ex_dofs " << endl << m_ex_dofs << endl;
+    cout << "m_buffer" << endl << m_buffer << endl;
+    
+
     iterate_buf_vec<TSCAL>(block_size, m_ex_dofs, m_buffer, vec, [&](auto buf_etr, auto & vec_etr) LAMBDA_INLINE {
 	// cout << vec_etr << " += " << buf_etr << " = " << vec_etr + buf_etr << endl;
 	vec_etr += buf_etr;
@@ -759,11 +779,16 @@ namespace amg
 #ifdef USE_TAU
     TAU_PROFILE("BufferM", TAU_CT(*this), TAU_DEFAULT);
 #endif
+
     // cout << endl << "buffer M" << endl;
     iterate_buf_vec<TSCAL>(block_size, m_ex_dofs, m_buffer, vec, [&](auto & buf_etr, auto vec_etr) LAMBDA_INLINE {
 	// cout << " buffer " << vec_etr << endl;
 	buf_etr = vec_etr;
       });
+    cout << endl << "buffer M" << endl;
+    cout << "m_ex_dofs " << endl << m_ex_dofs << endl;
+    cout << "m_buffer" << endl << m_buffer << endl;
+
   } // DCCMap :: BufferM
 
 
@@ -773,9 +798,13 @@ namespace amg
 #ifdef USE_TAU
     TAU_PROFILE("ApplyG", TAU_CT(*this), TAU_DEFAULT);
 #endif
-    // cout << endl << "Apply G" << endl;
+
+    cout << endl << "Apply G" << endl;
+    cout << "g_ex_dofs: " << endl << g_ex_dofs << endl;
+    cout << "g_buffer: " << endl << g_buffer << endl;
+
     iterate_buf_vec<TSCAL>(block_size, g_ex_dofs, g_buffer, vec, [&](auto buf_etr, auto & vec_etr) LAMBDA_INLINE {
-	// cout << "set " << buf_etr << endl;
+	// cout << "set " << buf_etr << " to " << vec_etr << endl;
 	vec_etr = buf_etr;
       });
   } // DCCMap::ApplyG
@@ -1459,36 +1488,44 @@ namespace amg
     BaseVector * mpivec = use_b ? &ncb : &res;
     condition_variable* pcv = &cv;
     bool vals_buffered = false;
+    bool need_d2c = mpivec->GetParallelStatus() == DISTRIBUTED;
 
-    if (overlap && in_thread) {
-      std::lock_guard<std::mutex> lk(glob_mut);
-      thread_done = false; thread_ready = true;
-      thread_exec_fun = [&]() {
-	dcc_map->StartDIS2CO(*mpivec);
-	dcc_map->WaitD2C();
-      };
-      cv.notify_one();
-    }
-    else
-      { dcc_map->StartDIS2CO(*mpivec); }
-  
-    if (!overlap)
-      { dcc_map->WaitD2C(); }
-
-    smooth_stage(0);
-
-    if (overlap) {
-      if (in_thread) {
-	std::unique_lock<std::mutex> lk(glob_mut);
-	cv.wait(lk, [&]{ return thread_done; });
+    if (need_d2c) {
+      if (overlap && in_thread) {
+	std::lock_guard<std::mutex> lk(glob_mut);
+	thread_done = false; thread_ready = true;
+	thread_exec_fun = [&]() {
+	  dcc_map->StartDIS2CO(*mpivec);
+	  dcc_map->WaitD2C();
+	};
+	cv.notify_one();
       }
       else
+	{ dcc_map->StartDIS2CO(*mpivec); }
+  
+      if (!overlap)
 	{ dcc_map->WaitD2C(); }
     }
-    dcc_map->ApplyM(*mpivec);
 
+    smooth_stage(0);
+    cout << " x 0 " << endl << x << endl;
+
+    if (need_d2c) {
+      if (overlap) {
+	if (in_thread) {
+	  std::unique_lock<std::mutex> lk(glob_mut);
+	  cv.wait(lk, [&]{ return thread_done; });
+	}
+	else
+	  { dcc_map->WaitD2C(); }
+      }
+      dcc_map->ApplyM(*mpivec);
+    }
+
+    cout << " x 1 " << endl << x << endl;
     smooth_stage(1);
 
+    cout << " x 2 " << endl << x << endl;
     x.SetParallelStatus(DISTRIBUTED);
     mpivec = &x;
 
@@ -1504,6 +1541,7 @@ namespace amg
     }
     else
       { dcc_map->StartCO2CU(*mpivec); }
+    cout << " x 3 " << endl << x << endl;
 
     if (!overlap) {
       dcc_map->ApplyCO2CU(*mpivec);
@@ -1511,6 +1549,7 @@ namespace amg
     }
 
     smooth_stage(2);
+    cout << " x 4 " << endl << x << endl;
 
     if (overlap) {
       if (in_thread) {
@@ -1522,6 +1561,7 @@ namespace amg
 	dcc_map->FinishCO2CU(false); // probably dont take a shortcut ??
       }
     }
+    cout << " x 5 " << endl << x << endl;
 
     { // scatter updates and finish update residuum, res -= S * (x - x_old)
       RegionTimer rt(tpost);
@@ -1537,6 +1577,7 @@ namespace amg
     	}
       }
     }
+    cout << " x 6 " << endl << x << endl;
 
   } // HybridSmoother2<TM> :: SmoothInternal
 
@@ -1637,25 +1678,27 @@ namespace amg
       { return add_diag; }
 
     for (auto k : Range(G->Height())) {
-
+      // auto ris = G->GetRowIndices(k);
       auto rvs = G->GetRowValues(k);
       for (auto l : Range(rvs)) {
 	AddODToD(rvs[l], add_diag[k]);
-	  // AddODToD(rvs[l], add_diag[ris[l]]);
+	// AddODToD(rvs[l], add_diag[ris[l]]);
       }
     }
 
     AllReduceDofData (add_diag, MPI_SUM, A->GetParallelDofs());  
 
-    if constexpr( is_same<TM, double>::value )
-      {
-	for (auto k : Range(M.Height())) {
-	  if ( (add_diag[k] != 0) && (M(k,k) != 0) ) {
-	    if (M(k,k) > 3 * add_diag[k])
-	      { add_diag[k] = 0; }
-	  }
-	}
-      }
+    // if constexpr( is_same<TM, double>::value )
+    //   {
+    // 	for (auto k : Range(M.Height())) {
+    // 	  if ( (add_diag[k] != 0) && (M(k,k) != 0) ) {
+    // 	    if (M(k,k) > 3 * add_diag[k])
+    // 	      { add_diag[k] = 0; }
+    // 	  }
+    // 	}
+    //   }
+
+    cout << "add_diag" << endl; prow2(add_diag); cout << endl;
 
     return add_diag;
   }

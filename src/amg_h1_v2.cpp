@@ -201,13 +201,13 @@ namespace amg
       { throw Exception("Could not cast sparse matrix!"); }
 
     const auto& cspm = *dspm;
-    auto a = new H1VData(Array<double>(top_mesh->GetNN<NT_VERTEX>()), DISTRIBUTED); auto ad = a->Data();
-    auto b = new H1EData(Array<double>(top_mesh->GetNN<NT_EDGE>()), DISTRIBUTED); auto bd = b->Data();
+    auto a = new H1VData(Array<double>(top_mesh->GetNN<NT_VERTEX>()), DISTRIBUTED); auto ad = a->Data(); ad = 0;
+    auto b = new H1EData(Array<double>(top_mesh->GetNN<NT_EDGE>()), DISTRIBUTED); auto bd = b->Data(); bd = 0;
 
     for (auto k : Range(top_mesh->GetNN<NT_VERTEX>()))
       { auto d = V2D(k); ad[k] = cspm(d,d); }
 
-    // cout << endl << endl << "spmat: " << endl << *spmat << endl << endl;
+    cout << endl << endl << "spmat: " << endl << *spmat << endl << endl;
 
     // cout << endl << "diag VW: "; prow2(ad); cout << endl << endl;
 
@@ -215,17 +215,17 @@ namespace amg
     auto& fvs = *free_verts;
     for (auto & e : edges) {
       auto di = V2D(e.v[0]); auto dj = V2D(e.v[1]);
-      double v = ( fvs.Test(di) && fvs.Test(dj) ) ? cspm(di, dj) : 0;
+      double v = cspm(di, dj);
       // cout << "edge " << e << ", add " << v << " from " << di << " " << dj << endl;
       bd[e.id] = fabs(v); ad[e.v[0]] += v; ad[e.v[1]] += v;
-      // cout << ad[di] << " " << ad[dj] << endl;
+      // cout << "vws are now " << ad[e.v[0]] << " " << ad[e.v[1]] << endl;
     }
     
     for (auto k : Range(top_mesh->GetNN<NT_VERTEX>()))
       { ad[k] = fabs(ad[k]); }
 
-    // cout << endl << "inital VW: "; prow2(ad); cout << endl << endl;
-    // cout << endl << "inital EW: "; prow2(bd); cout << endl << endl;
+    cout << endl << "inital VW: "; prow2(ad); cout << endl << endl;
+    cout << endl << "inital EW: "; prow2(bd); cout << endl << endl;
 
 
     auto mesh = make_shared<H1Mesh>(move(*top_mesh), a, b);

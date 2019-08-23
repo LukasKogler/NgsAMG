@@ -77,12 +77,18 @@ namespace amg
       if (has_crs_inv) { /** exact solve on coarsest level **/
 	t4.Start();
 
+	cout << " coarse rhs: " << endl;
+	cout << *rhs_level[n_levels-1] << endl;
+
+	//{ x_level[n_levels-1]->FVDouble() = 0; }
 	if (crs_inv == nullptr)
 	  { x_level[n_levels-1]->FVDouble() = 0; }
 	else
 	  { crs_inv->Mult(*rhs_level[n_levels-1], *x_level[n_levels-1]); }
 
 	x_level[n_levels-1]->Cumulate();
+	cout << " coarse sol: " << endl;
+	cout << *x_level[n_levels-1] << endl;
 
 	t4.Stop();
       }

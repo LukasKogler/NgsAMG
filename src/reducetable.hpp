@@ -174,8 +174,8 @@ namespace amg
     for (auto p:Range(rank+1, np)) {
       if (slave_of_rows[p].Size()>0) {
 	// cout << "get 2 from " << p << endl;
-	gr1.Append( MyMPI_IRecv( gather_recv_total_msg_size[p], p, MPI_TAG_AMG, comm) );
-	gr1.Append( MyMPI_IRecv( gather_recv_nr_blocks[p], p, MPI_TAG_AMG, comm) );
+	gr1.Append( comm.IRecv( gather_recv_total_msg_size[p], p, MPI_TAG_AMG) );
+	gr1.Append( comm.IRecv( gather_recv_nr_blocks[p], p, MPI_TAG_AMG) );
       }
     }
     for (auto p:Range(rank)) {
@@ -230,7 +230,7 @@ namespace amg
     Array<MPI_Request> gr2;
     for (auto p:Range(rank+1, np)) {
       if (gather_recv_nr_blocks[p]>0)
-	gr2.Append( MyMPI_IRecv( gather_recv_block_sizes[p], p, MPI_TAG_AMG, comm) );
+	gr2.Append( comm.IRecv( gather_recv_block_sizes[p], p, MPI_TAG_AMG) );
     }
     for (auto p:Range(rank)) {
       if (gather_send_nr_blocks[p]>0)
@@ -266,11 +266,11 @@ namespace amg
     //send to master
     for (auto p:Range(rank)) {
       if (gather_send_total_msg_size[p]>0)
-	gather_reqs.Append( MyMPI_ISend( gather_send_data[p], p, MPI_TAG_AMG, comm) );
+	gather_reqs.Append( comm.ISend( gather_send_data[p], p, MPI_TAG_AMG) );
     }
     for (auto p:Range(rank+1, np)) {
       if (gather_recv_total_msg_size[p]>0)
-	gather_reqs.Append( MyMPI_IRecv( gather_recv_data[p], p, MPI_TAG_AMG, comm) );
+	gather_reqs.Append( comm.IRecv( gather_recv_data[p], p, MPI_TAG_AMG) );
     }
     //copy data I am master of
     for (auto k:Range(gather_recv_data[rank].Size()))
@@ -344,7 +344,10 @@ namespace amg
 	// dist data
 	for (auto p:dps) {
 	  auto bs = gather_recv_block_sizes[p][s[p]++];
-	  unreduced_data[k][all_procs.Pos(p)].Assign(FlatArray<T>(bs, &(gather_recv_data[p][displ[p]])));
+	  if (bs != 0)
+	    { unreduced_data[k][all_procs.Pos(p)].Assign(FlatArray<T>(bs, &(gather_recv_data[p][displ[p]]))); }
+	  else
+	    { unreduced_data[k][all_procs.Pos(p)].Assign(FlatArray<T>(0, nullptr)); }
 	  displ[p] += bs;
 	}
       }
@@ -409,7 +412,8 @@ namespace amg
       int displ = 0;
       for (auto k:Range(slave_of_rows[p].Size())) {
 	int block_size = reduced_data[slave_of_rows[p][k]].Size();
-	FlatArray<TR>(block_size, &(scatter_send_data[p][displ])) = reduced_data[slave_of_rows[p][k]];
+	if (block_size != 0)
+	  { FlatArray<TR>(block_size, &(scatter_send_data[p][displ])) = reduced_data[slave_of_rows[p][k]]; }
 	displ += block_size;
       }
     }
@@ -446,8 +450,8 @@ namespace amg
     for (int p=0;p<rank;p++) {
       // cout << "get 2x from " << p << endl; 
       if (master_of_rows[p].Size()>0) {
-	gr3.Append( MyMPI_IRecv( scatter_recv_total_msg_size[p], p, MPI_TAG_AMG, comm) );
-	gr3.Append( MyMPI_IRecv( scatter_recv_nr_blocks[p], p, MPI_TAG_AMG, comm) );
+	gr3.Append( comm.IRecv( scatter_recv_total_msg_size[p], p, MPI_TAG_AMG) );
+	gr3.Append( comm.IRecv( scatter_recv_nr_blocks[p], p, MPI_TAG_AMG) );
       }
     }
     for (auto p:Range(rank+1, np)) {
@@ -498,7 +502,7 @@ namespace amg
     for (auto p:Range(rank)) {
       if (scatter_recv_total_msg_size[p]) {
 	// cout << "get BS from " << p << endl;
-	gr4.Append( MyMPI_IRecv( scatter_recv_block_sizes[p], p, MPI_TAG_AMG, comm) );
+	gr4.Append( comm.IRecv( scatter_recv_block_sizes[p], p, MPI_TAG_AMG) );
       }
     }
     for (auto p:Range(rank+1, np)) {
@@ -533,14 +537,14 @@ namespace amg
     for (auto p:Range(rank+1, np)) {
       //cout << "send " << scatter_send_data[p].Size() << " to " << p << endl;
       if (scatter_send_total_msg_size[p]>0) {
-	req_scatter_data.Append( MyMPI_ISend(scatter_send_data[p], p, MPI_TAG_AMG, comm) );
+	req_scatter_data.Append( comm.ISend(scatter_send_data[p], p, MPI_TAG_AMG) );
       }
     }
     // for (auto p:Range(1, rank)) {
     for (auto p=0;p<rank;p++) {
       //cout << "recv " << scatter_recv_data[p].Size() << " from " << p << endl;
       if (scatter_recv_total_msg_size[p]>0) {
-	req_scatter_data.Append( MyMPI_IRecv(scatter_recv_data[p], p, MPI_TAG_AMG, comm) );
+	req_scatter_data.Append( comm.IRecv(scatter_recv_data[p], p, MPI_TAG_AMG) );
       }
     }
     //cout << "wait" << endl;
@@ -569,8 +573,10 @@ namespace amg
       size_t displ = 0;
       for (auto k:Range(master_of_rows[p].Size())) {
 	auto bs = scatter_recv_block_sizes[p][k];
-	reduced_table[master_of_rows[p][k]] = FlatArray<TR>(bs, &(scatter_recv_data[p][displ]));
-	displ += bs;
+	if (bs != 0) {
+	  reduced_table[master_of_rows[p][k]] = FlatArray<TR>(bs, &(scatter_recv_data[p][displ]));
+	  displ += bs;
+	}
       }
     }
     for (auto k:Range(master_of_rows[rank].Size())) { //copy local reduced data
@@ -654,7 +660,7 @@ namespace amg
     // TODO: this sends a couple of empty messages from ranks that are not master of anything
     Array<MPI_Request> reqs(ex_procs.Size()-n_smaller); reqs.SetSize(0);
     for (size_t kp = n_smaller; kp < ex_procs.Size(); kp++) {
-      auto req = MyMPI_ISend(send_buffers[kp], ex_procs[kp], MPI_TAG_AMG, comm);
+      auto req = comm.ISend(send_buffers[kp], ex_procs[kp], MPI_TAG_AMG);
       reqs.Append(req);
       // MPI_Request_free(&req);
     }

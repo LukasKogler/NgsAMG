@@ -163,8 +163,13 @@ namespace amg
   template<class TV>
   CtrMap<TV> :: ~CtrMap ()
   {
-    for (auto k:Range(mpi_types.Size()))
-      MPI_Type_free(&mpi_types[k]);
+    cout << "free ctr " << endl;
+    for (auto k:Range(mpi_types.Size())) {
+      cout << " free " << k << " of " << mpi_types.Size() << endl;
+      // MPI_Type_free(&mpi_types[k]);
+      cout << " was ok " << endl;
+    }
+    cout << "freed ctr " << endl;
   }
 
 
@@ -217,7 +222,7 @@ namespace amg
     auto loc_map = dof_maps[0];
     int nreq_tot = 0;
     for (size_t kp = 1; kp < group.Size(); kp++)
-      if (dof_maps[kp].Size()>0) { nreq_tot++; reqs[kp] = MyMPI_IRecv(buffers[kp], group[kp], MPI_TAG_AMG, comm); }
+      if (dof_maps[kp].Size()>0) { nreq_tot++; reqs[kp] = comm.IRecv(buffers[kp], group[kp], MPI_TAG_AMG); }
       else reqs[kp] = MPI_REQUEST_NULL;
     for (auto j : Range(loc_map.Size()))
       fvc(loc_map[j]) += fac * fvf(j);
@@ -520,13 +525,14 @@ namespace amg
   void CtrMap<TV> :: SetUpMPIStuff ()
   {
     if (is_gm) {
+      cout << "SU-MPI STUFF!" << endl;
       mpi_types.SetSize(group.Size());
       Array<int> ones; size_t max_s = 0;
       for (auto k : Range(group.Size())) max_s = max2(max_s, dof_maps[k].Size());
       ones.SetSize(max_s); ones = 1;
       for (auto k : Range(group.Size())) {
 	auto map = dof_maps[k]; auto ms = map.Size();
-	MPI_Type_indexed(ms, &ones[0], &map[0], MyGetMPIType<TV>(), &mpi_types[k]);
+	MPI_Type_indexed(ms, (ms == 0) ? NULL : &ones[0], (ms == 0) ? NULL : &map[0], MyGetMPIType<TV>(), &mpi_types[k]);
 	MPI_Type_commit(&mpi_types[k]);
       }
       reqs.SetSize(group.Size()); reqs = MPI_REQUEST_NULL;
@@ -561,7 +567,9 @@ namespace amg
     NgsAMG_Comm comm(pardofs->GetCommunicator());
 
     if (!is_gm) {
+      cout << " send mat to " << group[0] << endl;
       comm.Send(*mat, group[0], MPI_TAG_AMG);
+      cout << " sent mat to " << group[0] << endl;
       return nullptr;
     }
 
@@ -574,9 +582,9 @@ namespace amg
     Array<shared_ptr<TSPM_TM> > dist_mats(group.Size());
     dist_mats[0] = mat;
     for(auto k:Range((size_t)1, group.Size())) {
-      // cout << " get mat from " << k << " of " << group.Size() << endl;
+      cout << " get mat from " << k << " of " << group.Size() << endl;
       comm.Recv(dist_mats[k], group[k], MPI_TAG_AMG);
-      // cout << " got mat from " << k << " of " << group.Size() << ", rank " << group[k] << endl;
+      cout << " got mat from " << k << " of " << group.Size() << ", rank " << group[k] << endl;
       // cout << *dist_mats[k] << endl;
     }
     timer_hack_ctrmat(1).Stop();
@@ -598,7 +606,7 @@ namespace amg
     Array<int> perow(cndof);
     // we already buffer the col-nrs here, so we do not need to merge twice
     size_t max_nze = 0; for(auto k:Range(dof_maps.Size())) max_nze += dist_mats[k]->NZE();
-    Array<int> colnr_buffer(max_nze); max_nze = 0; int* col_ptr = &(colnr_buffer[0]);
+    Array<int> colnr_buffer(max_nze); int* col_ptr = (max_nze == 0) ? nullptr : &(colnr_buffer[0]); max_nze = 0;
     Array<int> mc_buffer; // use this for merging with rows of LOCAL mat (which I should not change!!)
     Array<int> inds;
     auto QS_COL_VAL = [&inds](auto & cols, auto & vals) {
@@ -722,8 +730,12 @@ namespace amg
     : GridMapStep<TMESH>(_mesh), eqc_h(_mesh->GetEQCHierarchy()), groups(_groups), node_maps(4), annoy_nodes(4)
   {
     RegionTimer rt(timer_hack_gcmc());
+    cout << " CEQCH "  << endl;
     BuildCEQCH();
+    cout << " CEQCH "  << endl;
+    cout << " NMAPS "  << endl;
     BuildNodeMaps();
+    cout << " NMAPS "  << endl;
   } // GridContractMap (..)
 
 
@@ -760,8 +772,11 @@ namespace amg
   {
     RegionTimer rt(timer_hack_nmap());
 
+    cout << "BuildNodeMaps" << endl;
     const auto & f_eqc_h(*this->eqc_h);
     auto comm = f_eqc_h.GetCommunicator();
+    comm.Barrier();
+    cout << "BuildNodeMaps" << endl;
 
     // cout << "local mesh: " << endl << *this->mesh << endl;
     
@@ -858,10 +873,12 @@ namespace amg
     c_mesh.nnodes[NT_VERTEX] = cnv;
     c_mesh.verts.SetSize(cnv);
     for (auto k : Range(cnv)) c_mesh.verts[k] = k;
-    c_mesh.eqc_verts = FlatTable<AMG_Node<NT_VERTEX>> (cneqcs, &(v_dsp[0]), &(c_mesh.verts[0]));
+    // c_mesh.eqc_verts = FlatTable<AMG_Node<NT_VERTEX>> (cneqcs, &(v_dsp[0]), &(c_mesh.verts[0]));
+    c_mesh.eqc_verts = MakeFT<AMG_Node<NT_VERTEX>> (cneqcs, v_dsp, c_mesh.verts, 0);
     // cout << "v_dsp: " << endl; prow2(v_dsp); cout << endl;
     // cout << "c_mesh.eqc_verts: " << endl << c_mesh.eqc_verts << endl;
     auto & ceqc_verts(c_mesh.eqc_verts);
+    cout << "BuildNodeMaps (aft)" << endl;
     
     Array<size_t> sz(cneqcs); sz = 0;
     for (auto meq : Range(mneqcs)) {
@@ -870,6 +887,7 @@ namespace amg
       firsti_v[meq] = ceqc_verts.IndexArray()[ceq] + sz[ceq];
       sz[ceq] += bs;
     }
+    cout << "BuildNodeMaps" << endl;
 
     sz.SetSize(my_group.Size());
     for (auto k : Range(my_group.Size())) {
@@ -886,6 +904,7 @@ namespace amg
 	}
       }
     }
+    cout << "BuildNodeMaps" << endl;
 
     // cout << "contr vmap: " << endl;
     // for (auto k : Range(my_group.Size())) {
@@ -953,6 +972,7 @@ namespace amg
       }
       tannoy_edges = ct.MoveTable();
     }
+    cout << "BuildNodeMaps" << endl;
 
     // cout << "tannoy_edges: " << endl << tannoy_edges << endl;
     auto annoy_edges = ReduceTable<ANNOYE, ANNOYE>
@@ -974,6 +994,7 @@ namespace amg
 	  });
 	return out;
       });
+    cout << "BuildNodeMaps" << endl;
     
     // cout << "reduced annoy_edges: " << endl << annoy_edges << endl;
 
@@ -997,6 +1018,7 @@ namespace amg
     node_maps[NT_EDGE] = Table<amg_nts::id_type>(s_emap);
     auto & emaps = node_maps[NT_EDGE];
     emaps.AsArray() = -1; // TODO: remove...
+    cout << "BuildNodeMaps" << endl;
       
     /** count edge types in CEQs **/
     Array<size_t> ii_pos(mneqcs);
@@ -1027,6 +1049,7 @@ namespace amg
       	ccounts[ceq][4] = annoy_count[ceq][1];
       }
     }
+    cout << "BuildNodeMaps" << endl;
 
     // cout << "ccounts: " << endl << ccounts << endl;
 
@@ -1049,6 +1072,7 @@ namespace amg
     size_t cnie = cniie + cncie + cnannoyi;
     size_t cnce = cncce + cnannoyc;
     size_t cne = cnie+cnce;
+    cout << "BuildNodeMaps" << endl;
 
     
     // cout << "CNE CNIE CNCE: " << cne << " " << cnie << " " << cnce << endl;
@@ -1063,6 +1087,7 @@ namespace amg
     c_mesh.edges.SetSize(cne);
     auto cedges = c_mesh.template GetNodes<NT_EDGE>();
     for (auto & e:cedges) e = {{{-1,-1}}, -1}; // TODO:remove
+    cout << "BuildNodeMaps" << endl;
 
     /** Literally no idea what I did here **/
     if (ccounts.Size()) {
@@ -1106,6 +1131,7 @@ namespace amg
       cc_pos[meq] = cnie + ccounts[ceq][3];
       ccounts[ceq][3] += ccc;
     }
+    cout << "BuildNodeMaps" << endl;
 
     /** prefix ci_pos **/
     for (auto meq : Range(mneqcs)) {
@@ -1199,6 +1225,7 @@ namespace amg
 	}
       }
     }
+    cout << "BuildNodeMaps xx" << endl;
 
     // okay, now finish writing annoy_edges and constrct annoy_nodes:
     sz.SetSize(cneqcs);
@@ -1227,6 +1254,7 @@ namespace amg
 	// cout << " -> " << cedges[id] << endl;
       }
     }
+    cout << "BuildNodeMaps" << endl;
 
     // cout << "contr emap: " << endl;
     // for (auto k : Range(my_group.Size())) {
@@ -1239,22 +1267,40 @@ namespace amg
       c_mesh.nnodes_eqc[NT_EDGE][k] = disp_ie[k+1] - disp_ie[k];
       c_mesh.nnodes_cross[NT_EDGE][k] = disp_ce[k+1] - disp_ce[k];
     }
-    c_mesh.eqc_edges = FlatTable<AMG_Node<NT_EDGE>> (cneqcs, &c_mesh.disp_eqc[NT_EDGE][0], &c_mesh.edges[0]);
-    c_mesh.cross_edges = FlatTable<AMG_Node<NT_EDGE>> (cneqcs, &c_mesh.disp_cross[NT_EDGE][0], &c_mesh.edges[c_mesh.disp_eqc[NT_EDGE].Last()]);
+    // c_mesh.eqc_edges = FlatTable<AMG_Node<NT_EDGE>> (cneqcs, &c_mesh.disp_eqc[NT_EDGE][0], &c_mesh.edges[0]);
+    // c_mesh.cross_edges = FlatTable<AMG_Node<NT_EDGE>> (cneqcs, &c_mesh.disp_cross[NT_EDGE][0], &c_mesh.edges[c_mesh.disp_eqc[NT_EDGE].Last()]);
+    c_mesh.eqc_edges = MakeFT<AMG_Node<NT_EDGE>> (cneqcs, c_mesh.disp_eqc[NT_EDGE], c_mesh.edges, 0);
+    c_mesh.cross_edges = MakeFT<AMG_Node<NT_EDGE>> (cneqcs, c_mesh.disp_cross[NT_EDGE], c_mesh.edges, c_mesh.disp_eqc[NT_EDGE].Last());
     // cout << "contr eqc_edges: " << endl << c_mesh.eqc_edges << endl;
     // cout << "contr cross_edges: " << endl << c_mesh.cross_edges << endl;
     mapped_NN[NT_FACE] = mapped_NN[NT_CELL] = 0;
+    cout << "BuildNodeMaps" << endl;
 
     if constexpr(std::is_same<TMESH, BlockTM>::value == 1) {
         mapped_mesh = move(p_c_mesh);
       }
     else {
       // cout << "MAKE MAPPED ALGMESH!!" << endl;
-      this->mapped_mesh = make_shared<TMESH> ( move(*p_c_mesh), mesh->MapData(*this) );
+      cout << "MMM " << endl;
+      c_eqc_h.GetCommunicator().Barrier();
+      cout << "MMM " << endl;
+
+      auto scd = mesh->MapData(*this);
+
+      cout << "MMM2 " << endl;
+      c_eqc_h.GetCommunicator().Barrier();
+      cout << "MMM2 " << endl;
+
+      this->mapped_mesh = make_shared<TMESH> ( move(*p_c_mesh), scd );
+      cout << "MMM OK" << endl;
+      c_eqc_h.GetCommunicator().Barrier();
+      cout << "MMM OK" << endl;
       // cout << "MAPPED ALGMESH: " << endl;
       // cout << *mapped_mesh << endl;
     }
-  }
+    cout << "BuildNodeMaps done" << endl;
+  } // GridContractMap::BuildNodeMaps
+
 
   INLINE Timer & timer_hack_beq () { static Timer t("GridContractMap :: BuildCEQCH"); return t; }
   template<class TMESH> void GridContractMap<TMESH> :: BuildCEQCH ()
@@ -1284,9 +1330,11 @@ namespace amg
     }
     
     /** New MPI-Comm **/
-    netgen::NgArray<int> cmembs(groups.Size()); // haha, this has to be a netgen-array
-    for (auto k : Range(groups.Size())) cmembs[k] = groups[k][0];
-    NgsAMG_Comm c_comm(netgen::MyMPI_SubCommunicator(comm, cmembs), true);
+    Array<int> cmembs(groups.Size()); // haha, this has to be a netgen-array
+    for (auto k : Range(groups.Size()))
+      { cmembs[k] = groups[k][0]; }
+    auto ngc = comm.SubCommunicator(cmembs);
+    NgsAMG_Comm c_comm(ngc);
 
     /** gather eqc-tables **/
     auto & reft = eqc_h.GetDPTable();

@@ -52,56 +52,53 @@ namespace amg
     return econ;
   }
 
-  FlatTM :: FlatTM(FlatArray<AMG_Node<NT_VERTEX>> av, FlatArray<AMG_Node<NT_EDGE>> ae,
-		   FlatArray<AMG_Node<NT_FACE>> af  , FlatArray<AMG_Node<NT_CELL>> ac,
-		   FlatArray<AMG_Node<NT_EDGE>> ace , FlatArray<AMG_Node<NT_FACE>> acf)
+  template<typename T> void AssignArray (Array<T> & a, FlatArray<T> & b)
+  {
+    if (b.Size())
+      { a = Array<T>(b.Size(), &b[0]); }
+    else
+      { a = Array<T>(b.Size(), nullptr); }
+  }
+
+  FlatTM :: FlatTM (FlatArray<AMG_Node<NT_VERTEX>> av, FlatArray<AMG_Node<NT_EDGE>> ae,
+		    FlatArray<AMG_Node<NT_FACE>> af  , FlatArray<AMG_Node<NT_CELL>> ac,
+		    FlatArray<AMG_Node<NT_EDGE>> ace , FlatArray<AMG_Node<NT_FACE>> acf)
     : TopologicMesh ()
   {
     for (auto i:Range(4)) nnodes_glob[i] = -1;
     nnodes[NT_VERTEX] = av.Size();
     if(nnodes[NT_VERTEX]) {
-      verts = Array<AMG_Node<NT_VERTEX>>(av.Size(), &(av[0]));
+      AssignArray(verts, av);
       verts.NothingToDelete();
     }
     nnodes[NT_EDGE] = ae.Size();
     if(nnodes[NT_EDGE]) {
-      edges = Array<AMG_Node<NT_EDGE>>(ae.Size(), &(ae[0]));
+      AssignArray(edges, ae);
       edges.NothingToDelete();
     }
     nnodes[NT_FACE] = af.Size();
     if(nnodes[NT_FACE]) {
-      faces = Array<AMG_Node<NT_FACE>>(af.Size(), &(af[0]));
+      AssignArray(faces, af);
       faces.NothingToDelete();
     }
     nnodes[NT_CELL] = ac.Size();
     if(nnodes[NT_CELL]) {
-      cells = Array<AMG_Node<NT_CELL>>(ac.Size(), &(ac[0]));
+      AssignArray(cells, ac);
       cells.NothingToDelete();
     }
     nnodes_cross[NT_EDGE] = ace.Size();
     if(nnodes_cross[NT_EDGE]) {
-      cross_edges = Array<AMG_Node<NT_EDGE>>(ace.Size(), &(ace[0]));
+      AssignArray(cross_edges, ace);
       cross_edges.NothingToDelete();
     }
     nnodes_cross[NT_FACE] = ace.Size();
     if(nnodes_cross[NT_FACE]) {
-      cross_faces = Array<AMG_Node<NT_FACE>>(acf.Size(), &(acf[0]));
+      AssignArray(cross_faces, acf);
       cross_faces.NothingToDelete();
     }
   }
 
   
-  template<typename T> FlatTable<T> MakeFT (size_t nrows, FlatArray<size_t> firstis, FlatArray<T> data, size_t offset)
-  {
-    if (nrows == 0)
-      { return FlatTable<T> (nrows, nullptr, nullptr); }
-    else if (firstis.Last() == firstis[0])
-      { return FlatTable<T> (nrows, &firstis[0], nullptr); }
-    else
-      { return FlatTable<T> (nrows, &firstis[0], &data[offset]); }
-  }
-
-
   BlockTM :: BlockTM (shared_ptr<EQCHierarchy> _eqc_h)
     : TopologicMesh(), eqc_h(_eqc_h), disp_eqc(4), disp_cross(4)
   {
@@ -125,6 +122,7 @@ namespace amg
   BlockTM :: BlockTM ( BlockTM && other)
     : TopologicMesh (move(other))
   {
+    cout << "BTM MV " << endl;
     eqc_h = other.eqc_h; other.eqc_h = nullptr;
     disp_eqc.SetSize(4);
     disp_cross.SetSize(4);
@@ -140,6 +138,7 @@ namespace amg
     eqc_faces = MakeFT<AMG_Node<NT_FACE>> (neqcs, disp_eqc[NT_FACE], faces, 0);
     cross_edges = MakeFT<AMG_Node<NT_EDGE>> (neqcs, disp_cross[NT_EDGE], edges, disp_eqc[NT_EDGE].Last());
     cross_faces = MakeFT<AMG_Node<NT_FACE>> (neqcs, disp_cross[NT_FACE], faces, disp_eqc[NT_FACE].Last());
+    cout << "BTM MV OK " << endl;
   } // BlockTM (..)
 
   BlockTM :: BlockTM ()
@@ -258,6 +257,7 @@ namespace amg
     static Timer t3("MapBTM-3");
     static Timer t4("MapBTM-4");
     static Timer t5("MapBTM-5");
+    cout << " MBTM" << endl;
 
     t1.Start();
 
@@ -292,7 +292,7 @@ namespace amg
     // cout << "cmesh glob NV: " << cmesh.nnodes_glob[NT_VERTEX] << endl;
     t2.Stop();
     t3.Start();
-    cmesh.nnodes_cross[NT_VERTEX].SetSize(0); cmesh.nnodes_cross[NT_VERTEX] = 0;
+    cmesh.nnodes_cross[NT_VERTEX].SetSize(neqcs); cmesh.nnodes_cross[NT_VERTEX] = 0;
     // cmesh.eqc_verts = FlatTable<AMG_Node<NT_VERTEX>> (neqcs, &cmesh.disp_eqc[NT_VERTEX][0], &cmesh.verts[0]);
     cmesh.eqc_verts = MakeFT<AMG_Node<NT_VERTEX>> (neqcs, cmesh.disp_eqc[NT_VERTEX], cmesh.verts, 0);
     // edges
@@ -336,6 +336,7 @@ namespace amg
     cmesh.nnodes[NT_FACE] = cmap.GetMappedNN<NT_FACE>();
     cmesh.nnodes[NT_CELL] = cmap.GetMappedNN<NT_CELL>();
     t5.Stop();
+    cout << " MBTM D" << endl;
     return coarse_mesh;
   }
 

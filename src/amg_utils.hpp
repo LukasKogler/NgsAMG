@@ -771,6 +771,17 @@ namespace amg
     return true;
   }
 
+  template<typename T> FlatTable<T> MakeFT (size_t nrows, FlatArray<size_t> firstis, FlatArray<T> data, size_t offset)
+  {
+    if (nrows == 0)
+      { return FlatTable<T> (nrows, nullptr, nullptr); }
+    else if (firstis.Last() == firstis[0])
+      { return FlatTable<T> (nrows, &firstis[0], nullptr); }
+    else
+      { return FlatTable<T> (nrows, &firstis[0], &data[offset]); }
+  }
+
+
 } // namespace amg
 
 #endif

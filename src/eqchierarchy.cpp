@@ -7,8 +7,9 @@ namespace amg {
     if (wcomm.Size() == 1)
       { return NgsAMG_Comm(wcomm); }
     else {
-      netgen::NgArray<int> me(1); me[0] = wcomm.Rank();
-      return NgsAMG_Comm(netgen::MyMPI_SubCommunicator(wcomm, me ), true);
+      Array<int> me = { wcomm.Rank() };
+      auto ngc = wcomm.SubCommunicator(me);
+      return NgsAMG_Comm(ngc);
     }
   }
 
@@ -74,6 +75,8 @@ namespace amg {
     this->rank = comm.Rank();
     this->np = comm.Size();
     
+    cout << GetCommunicator().Rank() << "EQH " << endl;
+
     Table<int> vanilla_dps;
     size_t max_nd = (_max_nd == -1) ? apd->GetNDofLocal() : _max_nd;
     // cout << " size_t max_nd = " << (_max_nd == -1) << " ? " << apd->GetNDofLocal() << " : " <<  _max_nd << endl;
@@ -94,7 +97,7 @@ namespace amg {
 	  for (size_t l = 1; l<index_of_block.Size() && (pos == -1); l++)
 	    if (apd->GetDistantProcs(index_of_block[l]) == dp)
 	      { pos = l; }
-	  if (pos>=0) continue;
+	  if (pos >= 0) continue;
 	  //new eqc found!
 	  index_of_block.Append(k);
 	  size_of_dps.Append(dp.Size());
@@ -111,11 +114,15 @@ namespace amg {
 	}
       }
 
+    cout << GetCommunicator().Rank() << "EQH " << endl;
+
     if (do_cutunion)
       this->SetupFromInitialDPs(std::move(vanilla_dps));
     else
       this->SetupFromDPs(std::move(vanilla_dps));
       
+    cout << GetCommunicator().Rank() << "EQH " << endl;
+
     return;
   } // end EQCHierarchy(pardofs,...)
   
@@ -249,13 +256,15 @@ namespace amg {
       Array<MPI_Request> reqs(n_v_exp);
       Array<Array<int>> rbuf(n_v_exp);
       for (auto k : Range(n_v_exp))
-	{ reqs[k] = MyMPI_ISend(buffer[k], v_exps[k], MPI_TAG_AMG, comm); }
+	{ reqs[k] = comm.ISend(buffer[k], v_exps[k], MPI_TAG_AMG); }
       for (auto k : Range(n_v_exp))
        	{ comm.Recv(rbuf[k], v_exps[k], MPI_TAG_AMG); }
       // cout << "rbuf: " << endl;
       // for (auto & row : rbuf)
       // 	{ prow(row); cout << endl; }
       MyMPI_WaitAll(reqs);
+      cout << GetCommunicator().Rank() << "SIDP " << endl;
+      GetCommunicator().Barrier();
 
 
       for (auto k : Range(n_v_exp)) {
@@ -319,6 +328,8 @@ namespace amg {
 	    }
 	}    
     }
+    cout << GetCommunicator().Rank() << "SIDP " << endl;
+    GetCommunicator().Barrier();
     
     TableCreator<int> ct1(new_dps.Size());
     for (; !ct1.Done(); ct1++) {
@@ -327,6 +338,9 @@ namespace amg {
     	  ct1.Add(k,new_dps[k][j]);
     }
     Table<int> t1 = ct1.MoveTable();
+
+    cout << GetCommunicator().Rank() << "SIDP " << endl;
+    GetCommunicator().Barrier();
 
     this->SetupFromDPs(std::move(t1));
   } // end SetupFromInitialDPs
@@ -397,7 +411,7 @@ namespace amg {
     Array<int> nblocks(np);
     nblocks = 0;
 
-    MPI_Allgather(&nblocks_loc, 1, MPI_INT, &nblocks[0], 1, MPI_INT, comm);
+    MPI_Allgather(&nblocks_loc, 1, MPI_INT, nblocks.Data(), 1, MPI_INT, comm);
 
     int tagbase_loc = AMG_TAG_BASE + np;
     for (auto k:Range(rank))
@@ -408,29 +422,26 @@ namespace amg {
     eqc_ids = -1;
     for (auto k:Range(dist_procs.Size()))
       if ( !dist_procs[k].Size() )
-  	eqc_ids[k] = AMG_TAG_BASE + rank;
-      else if ( rank<dist_procs[k][0] )
-  	{
+  	{ eqc_ids[k] = AMG_TAG_BASE + rank; }
+      else if ( rank<dist_procs[k][0] ) {
   	  eqc_ids[k] = tagbase_loc++;
-  	  for (auto p:dist_procs[k]) {
-  	    reqs.Append(MyMPI_ISend(FlatArray<size_t>(1, &eqc_ids[k]), p, MPI_TAG_SOLVE, comm));
-	  }
+  	  for (auto p:dist_procs[k])
+	    { reqs.Append(comm.ISend(FlatArray<size_t>(1, &eqc_ids[k]), p, MPI_TAG_SOLVE)); }
   	}
-      else {
-	reqs.Append(MyMPI_IRecv(FlatArray<size_t>(1, &eqc_ids[k]), dist_procs[k][0], MPI_TAG_SOLVE, comm));
-      }
+      else
+	{ reqs.Append(comm.IRecv(FlatArray<size_t>(1, &eqc_ids[k]), dist_procs[k][0], MPI_TAG_SOLVE)); }
     
     MyMPI_WaitAll(reqs);    
 
     neqcs_glob = tagbase_loc;
     for (auto k:Range(rank, np))
-      neqcs_glob += nblocks[k];
+      { neqcs_glob += nblocks[k]; }
 
     /** map: ID -> index **/
     idf_2_ind.SetSize(neqcs_glob);
     idf_2_ind = -1;
     for (auto k:Range(dist_procs.Size()))
-      idf_2_ind[eqc_ids[k]] = k;
+      { idf_2_ind[eqc_ids[k]] = k; }
 
     neqcs_glob -= AMG_TAG_BASE; // this is actually one too much usually (rank 0 has no loc eq-class)
     
@@ -474,6 +485,7 @@ namespace amg {
   	  c.Append(b[i2++]);
       };
 
+
     /** Generate possible merges (and set hierarchy) **/
     Array<int> arr(dist_procs.Size());
     merge.SetSize(neqcs*neqcs);
@@ -491,7 +503,7 @@ namespace amg {
   	    merge[eqc2+neqcs*eqc1] = pos;
   	  }
       }
-    mat_merge.AssignMemory(neqcs, neqcs, &merge[0]);
+    mat_merge.AssignMemory(neqcs, neqcs, merge.Data());
     hierarchic_order.SetSize(neqcs*neqcs);
     hierarchic_order.Clear();
     for (auto eqc1:Range(neqcs))
@@ -546,7 +558,7 @@ namespace amg {
   	    intersect[eqc2+neqcs*eqc1] = pos;
   	  }
       }
-    mat_intersect.AssignMemory(neqcs, neqcs, &intersect[0]);
+    mat_intersect.AssignMemory(neqcs, neqcs, intersect.Data());
 
     return;
   } // end SetupFromDPs(Table<int> && new_dps)

@@ -24,6 +24,8 @@ namespace amg
 
     using NgsMPI_Comm :: Send;
     using NgsMPI_Comm :: Recv;
+    using NgsMPI_Comm :: ISend;
+    using NgsMPI_Comm :: IRecv;
 
   private:
     INLINE Timer& thack_send_tab () const { static Timer t("Send Table"); return t; }
@@ -67,7 +69,7 @@ namespace amg
     void Bcast (FlatArray<T> ar, int root) const {
       RegionTimer(thack_bcast_fa());
       if (ar.Size() == 0) return;
-      MPI_Bcast (&ar[0], ar.Size(), GetMPIType<T>(), root, comm);
+      MPI_Bcast (ar.Data(), ar.Size(), GetMPIType<T>(), root, comm);
     }
     
   private:
@@ -92,32 +94,30 @@ namespace amg
     
   private:
     INLINE Timer& thack_isend_spm () const { static Timer t("ISend SPM"); return t; }
-    mutable Array<size_t*> hacky_w_buffer;
+    mutable Array<size_t> hacky_w_buffer;
   public:
-    void cleanup_hacky_w_buffer () { hacky_w_buffer = Array<size_t*>(0); }
+    void cleanup_hacky_w_buffer ()
+    { hacky_w_buffer = Array<size_t>(0); }
     template<typename T, typename T2 = decltype(GetMPIType<T>())>
     MPI_Request ISend (const ngla::SparseMatrixTM<T> & spm, int dest, int tag) const {
       RegionTimer rt(thack_isend_spm());
       size_t H = spm.Height(); // size_t W = spm.Width();
-
-      size_t * W = new size_t;
-      *W = spm.Width();
       // if (H != W) throw Exception("cant rly deal with H!=W ISend"); // need to send W, need temporary mem
-      hacky_w_buffer.Append(W);
-      MPI_Request req = MyMPI_ISend (*hacky_w_buffer.Last(), dest, tag, comm);
-
+      hacky_w_buffer.Append(spm.Width());
+      auto& W = hacky_w_buffer.Last();
+      MPI_Request req = ISend (W, dest, tag);
       MPI_Request_free(&req);
-      req = MyMPI_ISend (spm.GetFirstArray(), dest, tag, comm);
+      req = ISend (spm.GetFirstArray(), dest, tag);
       size_t nzes = spm.GetFirstArray().Last();
-      if ( (H > 0) && (*W > 0) ) {
+      if ( (H > 0) && (W > 0) ) {
 	MPI_Request_free(&req);
-	int* cp = &spm.GetRowIndices(0)[0];
+	int* cp = spm.GetRowIndices(0).Data();
 	FlatArray<int> cols(nzes, cp);
-	req = MyMPI_ISend (cols, dest, tag, comm);
+	req = ISend (cols, dest, tag);
 	MPI_Request_free(&req);
-	T* vp = &spm.GetRowValues(0)[0];
+	T* vp = spm.GetRowValues(0).Data();
 	FlatArray<T> vals(nzes, vp);
-	req = MyMPI_ISend (vals, dest, tag, comm);
+	req = ISend (vals, dest, tag);
       }
       return req;
     }
@@ -148,11 +148,11 @@ namespace amg
       spm = make_shared<ngla::SparseMatrixTM<T>>(nperow, W);
       if ( (H==0) || (W==0) )
 	{ return; }
-      int* cp = &spm->GetRowIndices(0)[0];
+      int* cp = spm->GetRowIndices(0).Data();
       size_t nzes = 0; for (auto k:Range(H)) { nzes += nperow[k]; }
       FlatArray<int> cols(nzes, cp);
       Recv (cols, src, tag);
-      T* vp = &spm->GetRowValues(0)[0];
+      T* vp = spm->GetRowValues(0).Data();
       FlatArray<T> vals(nzes, vp);
       Recv (vals, src, tag);
       // cout << "GOT SPM: " << endl << *spm << endl;
@@ -161,6 +161,20 @@ namespace amg
     void Send (shared_ptr<BlockTM> & mesh, int dest, int tag) const;
     void Recv (shared_ptr<BlockTM> & mesh, int src,  int tag) const;
     
+    template<typename T>
+    inline MPI_Request ISend (const FlatTable<T> tab, int dest, int tag)
+    {
+      MPI_Request req;
+      size_t size = tab.Size();
+      req = ISend(size, dest, tag);
+      if (!size) return req;
+      MPI_Request_free(&req);
+      req = ISend(tab.IndexArray(), dest, tag);
+      MPI_Request_free(&req);
+      req = ISend(tab.AsArray(), dest, tag);
+      return req;
+    }
+
   }; // class NgsAMG_Comm
   
   extern NgsAMG_Comm AMG_ME_COMM;
@@ -170,50 +184,37 @@ namespace amg
 namespace ngstd
 {
 
-  template<typename T>
-  inline MPI_Request MyMPI_ISend (const FlatTable<T> tab, int dest, int tag, NgsMPI_Comm comm)
-  {
-    MPI_Request req;
-    size_t size = tab.Size();
-    req = MyMPI_ISend(size, dest, tag, comm);
-    if (!size) return req;
-    MPI_Request_free(&req);
-    req = MyMPI_ISend(tab.IndexArray(), dest, tag, comm);
-    MPI_Request_free(&req);
-    req = MyMPI_ISend(tab.AsArray(), dest, tag, comm);
-    return req;
-  }
   
-  // this doesnt work!!
-  template<typename T>
-  inline MPI_Request MyMPI_ISend(const ngla::SparseMatrixTM<T> & spm, int dest, int tag, NgsMPI_Comm comm)
-  {
-    MPI_Request req;
-    /** send height, width & NZE **/
-    size_t h = spm.Height();
-    size_t w = spm.Width();
-    size_t nze = spm.NZE();
-    const auto sym_spm = dynamic_cast<const ngla::SparseMatrixSymmetric<T>*>(&spm);
-    size_t is_sym = (sym_spm!=NULL)?1:0;
-    INT<4, size_t> data({h, w, nze, is_sym});
-    req = MyMPI_ISend(data, dest, tag, comm);
-    MPI_Request_free(&req);
-    /** send row-indices **/
-    req = MyMPI_ISend(spm.firsti, dest, tag, comm);
-    MPI_Request_free(&req);
-    /** send col-nrs & vals **/
-    int* cptr = NULL;
-    T* vptr = NULL;
-    for(size_t k=0;k<h && cptr==NULL; k++)
-      if(spm.GetRowIndices(k).Size()) {
-	cptr = &spm.GetRowIndices(k)[0];
-	vptr = &spm.GetRowValues(k)[0];
-      }
-    req = MyMPI_ISend(FlatArray<int>(nze, cptr), dest, tag, comm);
-    MPI_Request_free(&req);
-    req = MyMPI_ISend(FlatArray<T>(nze, vptr), dest, tag, comm);
-    return req;
-  }
+  // // this doesnt work!!
+  // template<typename T>
+  // inline MPI_Request MyMPI_ISend(const ngla::SparseMatrixTM<T> & spm, int dest, int tag, NgsMPI_Comm comm)
+  // {
+  //   MPI_Request req;
+  //   /** send height, width & NZE **/
+  //   size_t h = spm.Height();
+  //   size_t w = spm.Width();
+  //   size_t nze = spm.NZE();
+  //   const auto sym_spm = dynamic_cast<const ngla::SparseMatrixSymmetric<T>*>(&spm);
+  //   size_t is_sym = (sym_spm!=NULL)?1:0;
+  //   INT<4, size_t> data({h, w, nze, is_sym});
+  //   req = MyMPI_ISend(data, dest, tag, comm);
+  //   MPI_Request_free(&req);
+  //   /** send row-indices **/
+  //   req = MyMPI_ISend(spm.firsti, dest, tag, comm);
+  //   MPI_Request_free(&req);
+  //   /** send col-nrs & vals **/
+  //   int* cptr = NULL;
+  //   T* vptr = NULL;
+  //   for(size_t k=0;k<h && cptr==NULL; k++)
+  //     if(spm.GetRowIndices(k).Size()) {
+  // 	cptr = &spm.GetRowIndices(k).Data();
+  // 	vptr = &spm.GetRowValues(k).Data();
+  //     }
+  //   req = MyMPI_ISend(FlatArray<int>(nze, cptr), dest, tag, comm);
+  //   MPI_Request_free(&req);
+  //   req = MyMPI_ISend(FlatArray<T>(nze, vptr), dest, tag, comm);
+  //   return req;
+  // }
   
 } // namespace ngstd
 

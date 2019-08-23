@@ -496,7 +496,7 @@ namespace amg {
 	}
       }
       // cout << "gather, send buf to " << p << ", kp " << kp << " " << p_buffer.Size() << ": "; prow(p_buffer); cout << endl;
-      rsds.Append(MyMPI_ISend(p_buffer, p, MPI_TAG_AMG, comm));
+      rsds.Append(comm.ISend(p_buffer, p, MPI_TAG_AMG));
       // MPI_Request_free(&req);
     }
     if (nexp_larger==0) { MyMPI_WaitAll(rsds); return; }
@@ -506,10 +506,10 @@ namespace amg {
       int sz = buf_os[kp+1] - buf_os[kp];
       // cout << "gather, recv " << sz << " from " << p << ", kp " << kp << endl;
       FlatArray<TV> p_buffer (sz, &(buffer[buf_os[kp]]));
-      rr_gather[kkp] = MyMPI_IRecv(p_buffer, p, MPI_TAG_AMG, comm);
+      rr_gather[kkp] = comm.IRecv(p_buffer, p, MPI_TAG_AMG);
     }
     int nrr = nexp_larger;
-    MPI_Request* rrptr = &rr_gather[0];
+    MPI_Request* rrptr = rr_gather.Data();
     int ind;
     for (int nreq = 0; nreq<nexp_larger; nreq++) {
       // cout << "wait for message " << nreq << " of " << nexp_larger << endl;
@@ -550,7 +550,7 @@ namespace amg {
       int sz = buf_os[kp+1] - buf_os[kp];
       FlatArray<TV> p_buffer (sz, &(buffer[buf_os[kp]]));
       // cout << "scatter, send update to " << p << ", kp " << kp << " " << p_buffer.Size() << ": "; prow(p_buffer); cout << endl;
-      rsds.Append(MyMPI_ISend(p_buffer, p, MPI_TAG_AMG, comm));
+      rsds.Append(comm.ISend(p_buffer, p, MPI_TAG_AMG));
       // MPI_Request_free(&reqs); // TODO: am i SURE that this is OK??
     }
     if (nexp_smaller==0) { MyMPI_WaitAll(rsds); return; }
@@ -558,10 +558,10 @@ namespace amg {
       int sz = buf_os[kp+1] - buf_os[kp];
       // cout << "scatter, recv " << sz << " from " << p << ", kp " << kp << endl;
       FlatArray<TV> p_buffer (sz, &(buffer[buf_os[kp]]));
-      rr_scatter[kp] = MyMPI_IRecv(p_buffer, ex_procs[kp], MPI_TAG_AMG, comm);
+      rr_scatter[kp] = comm.IRecv(p_buffer, ex_procs[kp], MPI_TAG_AMG);
     }
     int nrr = nexp_smaller;
-    MPI_Request * rrptr = &rr_scatter[0];
+    MPI_Request * rrptr = rr_scatter.Data();
     int ind;
     for (int nreq = 0; nreq<nexp_smaller; nreq++) {
       MPI_Waitany(nrr, rrptr, &ind, MPI_STATUS_IGNORE);
@@ -939,7 +939,7 @@ namespace amg {
 	  }
 	}
 	auto sz = buf_os[nexp_smaller];
-	VFlatVector<TV> tvw (sz, &buffer[0]);
+	VFlatVector<TV> tvw (sz, buffer.Data());
 	// cout << "CLD update, buffer to " << sz << ": "; prow(buffer); cout << endl;
 	// print_vec(tvr);
 	CLD->MultAdd(-1.0, tvw, res);
@@ -1398,7 +1398,7 @@ namespace amg {
 
     if ( update_res && (nexp_smaller>0) ) {
       auto sz = buf_os[nexp_smaller];
-      VFlatVector<TV> tvw (sz, &buffer[0]);
+      VFlatVector<TV> tvw (sz, buffer.Data());
       // cout << "res before CLD update" << endl;
       // cout << res.GetParallelStatus() << endl;
       // print_vec(tvr);
