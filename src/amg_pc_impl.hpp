@@ -546,7 +546,7 @@ namespace amg
 	free_verts->Clear();
 	for (auto k : Range(nv))
 	  if (finest_freedofs->Test(v2d(k)))
-	    { free_verts->Set(k); }
+	    { free_verts->Set(vert_sort[k]); }
       }
       else
 	{ free_verts->Set(); }

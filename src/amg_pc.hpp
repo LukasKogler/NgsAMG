@@ -60,6 +60,8 @@ namespace amg
     virtual void MultTransAdd (double s, const BaseVector & b, BaseVector & x) const override
     { if (amg_mat == nullptr) { throw Exception("NGsAMG Preconditioner not ready!"); } amg_mat->MultTransAdd(s, b, x); }
 
+    shared_ptr<AMGMatrix> GetAMGMat () const { return amg_mat; }
+
   protected:
     shared_ptr<Options> options;
 
