@@ -11,14 +11,15 @@ from amg_utils import *
 
 comm = mpi_world
 
-geo, mesh = gen_cube(maxh=0.1, nref=0, comm=comm)
-V, a, f = setup_poisson(mesh, order=3, fes_opts = {"nodalp2" : True}, diri = "bot|right")
+geo, mesh = gen_cube(maxh=0.2, nref=0, comm=comm)
+V, a, f = setup_poisson(mesh, order=5, fes_opts = {"nodalp2" : True}, diri = "left|top")
 gfu = GridFunction(V)
 
 ngsglobals.msg_level = 3
 
 # Now AMG has to do the coarsening on P1 and P2 DOFs, but not on
 # the other higher order DOFs, where we only do Gauss-Seidel on the finest level.
+# (also not a bery good idea, see 3d_bddc_nodalp2 for a better solution)
 #  "on_dofs" : "select"   -- tells AMG that we will provide wich DOFs the coarsening is performed on
 #                  [ another option is "range", combined with "lower" and "upper", which will use all DOFs in [lower, upper)
 #                    but that does not help us here because of the DOF sorting]
@@ -33,6 +34,6 @@ with TaskManager():
     a.Assemble()
     f.Assemble()
     cb = None if comm.rank != 0 else lambda k, x: print("it =", k , ", err =", x)
-    cg = CGSolver(mat=a.mat, pre=c, callback = cb, maxsteps=50, tol=1e-6)
+    cg = CGSolver(mat=a.mat, pre=c, callback = cb, maxsteps=500, tol=1e-12)
     cg.Solve(sol=gfu.vec, rhs=f.vec)
     print("nits", cg.iterations)

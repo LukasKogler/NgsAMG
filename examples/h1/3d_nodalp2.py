@@ -32,6 +32,7 @@ ngsglobals.msg_level = 3
 # This tells the AMG to use all DOFs for coarsening
 pc_opts = { "ngs_amg_lo" : False, "ngs_amg_max_coarse_size" : 5 }
 c = Preconditioner(a, "ngs_amg.h1_scal", **pc_opts)
+# c = ngs_amg.h1_scal(a, **pc_opts)
 
 with TaskManager():
     a.Assemble()

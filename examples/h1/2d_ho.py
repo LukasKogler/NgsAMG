@@ -30,4 +30,6 @@ with TaskManager():
     cg.Solve(sol=gfu.vec, rhs=f.vec)
     print("nits", cg.iterations)
 
+ngsglobals.msg_level = 1
+c.Test()
 
