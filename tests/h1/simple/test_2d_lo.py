@@ -8,4 +8,7 @@ def test_2d_lo():
                 "ngs_amg_log_level" : "none",
                 "ngs_amg_print_log" : True }
     c = ngsolve.Preconditioner(a, "ngs_amg.h1_scal", **pc_opts)
-    Solve(a, f, c)
+    Solve(a, f, c, ms=25)
+
+if __name__ == "__main__":
+    test_2d_lo()

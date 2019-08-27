@@ -45,7 +45,9 @@ def Solve(a, f, c, ms = 100):
     with ngs.TaskManager():
         a.Assemble()
         f.Assemble()
-        cb = None # if a.space.mesh.comm.rank != 0 else lambda k, x: print("it =", k , ", err =", x)
+        ngs.ngsglobals.msg_level = 1
+        c.Test()
+        cb = None if a.space.mesh.comm.rank != 0 else lambda k, x: print("it =", k , ", err =", x)
         cg = ngs.krylovspace.CGSolver(mat=a.mat, pre=c, callback = cb, maxsteps=ms, tol=1e-12)
         cg.Solve(sol=gfu.vec, rhs=f.vec)
         print("used nits = ", cg.iterations)

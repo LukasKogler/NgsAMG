@@ -45,5 +45,8 @@ if (USE_TAU)
   set(CMAKE_SHARED_LINKER_FLAGS "${TAU_LINK_FLAGS} ${CMAKE_SHARED_LINKER_FLAGS}")
 endif (USE_TAU)
 
+include(CTest)
 
 add_subdirectory(src)
+add_subdirectory(tests)
+
