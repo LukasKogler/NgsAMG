@@ -8,11 +8,11 @@ using namespace ngsolve;
 
 namespace amg {
 
-  void ExportH1Scal (py::module & m)
+  template<class PCC>
+  void ExportAMGClass (py::module & m, string stra, string strb)
   {
-    typedef EmbedWithElmats<H1AMGFactory, double, double> PCC;
-    auto h1s_class = py::class_<PCC, shared_ptr<PCC>, Preconditioner>(m, "h1_scal", "scalar h1 amg PC");
-    h1s_class.def(py::init([&](shared_ptr<BilinearForm> bfa, py::kwargs kwargs) {
+    auto amg_class = py::class_<PCC, shared_ptr<PCC>, Preconditioner>(m, stra.c_str() , strb.c_str());
+    amg_class.def(py::init([&](shared_ptr<BilinearForm> bfa, py::kwargs kwargs) {
 	  // auto flags = CreateFlagsFromKwArgs(kwargs, h1s_class);
 	  auto flags = CreateFlagsFromKwArgs(kwargs, py::none());
 	  return make_shared<PCC>(bfa, flags, "noname-pre");
@@ -40,5 +40,7 @@ namespace amg {
 
 PYBIND11_MODULE (ngs_amg, m) {
   m.attr("__name__") = "ngs_amg";
-  amg::ExportH1Scal(m);
+  amg::ExportAMGClass<amg::EmbedWithElmats<amg::H1AMGFactory, double, double>>(m, "h1_scal", "scalar h1 amg PC");
+  amg::ExportAMGClass<amg::EmbedWithElmats<amg::ElasticityAMGFactory<2>, double, double>>(m, "elast_2d", "2d elasticity amg");
+  amg::ExportAMGClass<amg::EmbedWithElmats<amg::ElasticityAMGFactory<3>, double, double>>(m, "elast_3d", "3d elasticity amg");
 }
