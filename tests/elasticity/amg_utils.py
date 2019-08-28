@@ -338,24 +338,23 @@ def setup_norot_elast(mesh, mu = 1, lam = 0, f_vol = None, multidim = True,
 def setup_rot_elast(mesh, mu = 1, lam = 0, f_vol = None, multidim = True,
                     diri=".*", order=1, fes_opts=dict(), blf_opts=dict(), lf_opts=dict()):
     dim = mesh.dim
-    mysum = lambda x : sum(x[1:], start=x[0])
+    mysum = lambda x : sum(x[1:], x[0])
     if dim == 2:
-        to_skew = lambda x : ngs.CoefficientFunction( [0, -x, \
-                                                       x, 0], dims = [2,2] )
+        to_skew = lambda x : ngs.CoefficientFunction( (0, -x[0], x[0], 0), dims = (2,2) )
     else:
         to_skew = lambda x : ngs.CoefficientFunction( [  0  ,  x[2], -x[1], \
                                                          -x[2],    0 ,  x[0], \
-                                                         x[1], -x[0],    0], dims = [3,3] )
+                                                         x[1], -x[0],    0], dims = (3,3) )
     if multidim:
-        mdim = dim + (dim * (dim+1)) // 2
-        V = H1(mesh, order=order, dirichlet=diri, **fes_opts, dim=mdim)
+        mdim = dim + ( (dim-1) * dim) // 2
+        V = ngs.H1(mesh, order=order, dirichlet=diri, **fes_opts, dim=mdim)
         trial, test = V.TnT()
-        u = CoefficientFunction( (*[trial[x] for x in range(dim)]) )
-        gradu = CoefficientFunction( (*[ngs.grad(trial)[i,j] for i in range(dim) for j in range(dim)]), dims = [dim, dim])
+        u = ngs.CoefficientFunction( tuple(trial[x] for x in range(dim)) )
+        gradu = ngs.CoefficientFunction( tuple(ngs.grad(trial)[i,j] for i in range(dim) for j in range(dim)), dims = (dim, dim))
         divu = mysum( [ngs.grad(trial)[i,i] for i in range(dim)] )
         w = to_skew([trial[x] for x in range(dim, mdim)])
-        ut = CoefficientFunction( (*[test[x] for x in range(dim)]) )
-        gradut = CoefficientFunction( (*[ngs.grad(test)[i,j] for i in range(dim) for j in range(dim)]), dims = [dim, dim])
+        ut = ngs.CoefficientFunction( tuple(test[x] for x in range(dim)) )
+        gradut = ngs.CoefficientFunction( tuple(ngs.grad(test)[i,j] for i in range(dim) for j in range(dim)), dims = (dim, dim))
         divut = mysum( [ngs.grad(test)[i,i] for i in range(dim)] )
         wt = to_skew([test[x] for x in range(dim, mdim)])
     else:
@@ -366,18 +365,18 @@ def setup_rot_elast(mesh, mu = 1, lam = 0, f_vol = None, multidim = True,
             Vw = H1(mesh, order=order, dirichlet=diri, **fes_opts)
         V = FESpace([Vu, Vw])
         (u,w), (ut, wt) = V.TnT()
-        gradu = CoefficientFunction( (*[grad(trial)[i,j] for i in range(dim) for j in range(dim)]), dims = [dim, dim])
+        gradu = ngs.CoefficientFunction( (*[grad(trial)[i,j] for i in range(dim) for j in range(dim)]), dims = (dim, dim))
         divu = mysum( [grad(trial)[i,i] for i in range(dim)] )
         w = to_skew(w)
-        gradut = CoefficientFunction( (*[grad(test)[i,j] for i in range(dim) for j in range(dim)]), dims = [dim, dim])
+        gradut = ngs.CoefficientFunction( (*[grad(test)[i,j] for i in range(dim) for j in range(dim)]), dims = (dim, dim))
         divut = mysum( [grad(test)[i,i] for i in range(dim)] )
         wt = to_skew(wt)
 
-    a = BilinearForm(V, **blf_opts)
-    a += ( mu * (gradu - w) * (gradut - wt) + lam * divu * divut ) * dx
+    a = ngs.BilinearForm(V, **blf_opts)
+    a += ( mu * ngs.InnerProduct((gradu - w), (gradut - wt)) + lam * divu * divut ) * ngs.dx
     
-    lf = LinearForm(V)
-    lf += f * ut * dx
+    lf = ngs.LinearForm(V)
+    lf += f_vol * ut * ngs.dx
 
     return V, a, lf
 
