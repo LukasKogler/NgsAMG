@@ -168,6 +168,7 @@ namespace amg
     const auto& O = static_cast<const Options&>(*this->options);
     mesh->CumulateData();
     auto NV = mesh->template GetNN<NT_VERTEX>();
+    opts.free_verts = this->free_verts;
     opts.min_vcw = O.min_vcw;
     opts.vcw = Array<double>(NV); opts.vcw = 0;
     opts.min_ecw = O.min_ecw;
