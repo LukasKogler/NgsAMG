@@ -186,19 +186,11 @@ namespace amg
       if (neqcs == 0) return; // nothing to do!
       if (neqcs == 1 && !apply_loc) return; // nothing to do!
       Array<int> rowcnt(neqcs);
-      cout << " ME " << this << endl;
-      cout << " eq " << eqc_h << " " << eqc_h->GetCommunicator().Size() << endl;
-      cout << "ARND " << NT << endl;
-      for (auto k : Range(neqcs)) {
-	cout << " set " << k << " " << neqcs << endl;
-	cout << nnodes_eqc[NT].Size() << " " << nnodes_cross[NT].Size() << endl;
-	rowcnt[k] = nnodes_eqc[NT][k] + nnodes_cross[NT][k];
-      }
-      cout << "ARND " << endl;
+      for (auto k : Range(neqcs))
+	{ rowcnt[k] = nnodes_eqc[NT][k] + nnodes_cross[NT][k]; }
       if (!apply_loc) rowcnt[0] = 0;
       Table<T> data(rowcnt);
       int C = 0;
-      cout << "ARND " << endl;
       auto loop_eqcs = [&] (auto lam, auto & data) {
 	for (auto k : Range(apply_loc?0:1, neqcs)) {
 	  C = 0;
@@ -210,11 +202,8 @@ namespace amg
 		{ if constexpr(NT==NT_VERTEX) for (auto l:Range(nodes.Size())) row[C++] = avdata[nodes[l]];
 		  else for (auto l:Range(nodes.Size())) row[C++] = avdata[nodes[l].id]; },
 		data);
-      cout << "ARND " << endl;
       // cout << "ARND data: " << endl << data << endl;
-      cout << "RT" << endl;
       Table<T> reduced_data = ReduceTable<T,T,TRED>(data, eqc_h, red);
-      cout << "RT" << endl;
       // cout << "ARND reduced data: " << endl << reduced_data << endl;
       loop_eqcs([&](auto nodes, auto row)
 		{ if constexpr(NT==NT_VERTEX) for (auto l:Range(nodes.Size())) avdata[nodes[l]] = row[C++];

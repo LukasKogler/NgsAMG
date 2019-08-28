@@ -91,24 +91,37 @@ namespace amg
   /** Local Gauss-Seidel **/
 
   template<class TM>
-  GSS3<TM> :: GSS3 (shared_ptr<SparseMatrix<TM>> mat, shared_ptr<BitArray> subset, FlatArray<TM> add_diag)
-    : spmat(mat), freedofs(subset)
+  GSS3<TM> :: GSS3 (shared_ptr<SparseMatrix<TM>> mat, shared_ptr<BitArray> subset)
   {
-    H = spmat->Height();
-    dinv.SetSize (H); 
-    const auto& A(*spmat);
+    SetUp(mat, subset);
+    CalcDiags();
+  }
+
+
+  template<class TM>
+  GSS3<TM> :: GSS3 (shared_ptr<SparseMatrix<TM>> mat, FlatArray<TM> repl_diag, shared_ptr<BitArray> subset)
+  {
+    SetUp(mat, subset);
+    dinv.SetSize(repl_diag.Size());
     ParallelFor (H, [&](size_t i) {
-  	if (!freedofs || freedofs->Test(i)) {
-  	  dinv[i] = A(i,i);
-  	  CalcInverse (dinv[i]);
-  	}
+  	if (!freedofs || freedofs->Test(i))
+	  {
+	    dinv[i] = repl_diag[i];
+	    CalcInverse (dinv[i]);
+	  }
   	else
   	  { dinv[i] = TM(0.0); }
       });
-
-    cout << "GSS3 invs: " << endl; prow2(dinv); cout << endl;
-			     
-    auto numset = freedofs ? freedofs->NumSet() : A.Height();
+  }
+  
+  template<class TM>
+  void GSS3<TM> :: SetUp (shared_ptr<SparseMatrix<TM>> mat, shared_ptr<BitArray> subset)
+  {
+    spmat = mat;
+    freedofs = subset;
+    H = spmat->Height();
+    const auto & A(*spmat);
+    auto numset = freedofs ? freedofs->NumSet() : H;
     first_free = 0; next_free = A.Height();
     if (freedofs != nullptr) {
       if (freedofs->NumSet() == 0)
@@ -130,20 +143,25 @@ namespace amg
 	}
       }
     }
+  } // GSS3::SetUp
 
 
-    if ( numset < 0.2 * A.Height()) {
-      row_nrs.SetSize(numset); numset = 0;
-      for (auto k : Range(A.Height()))
-	if (freedofs->Test(k))
-	  { row_nrs[numset++] = k; }
-    }
-    // cout << " set " << ( (freedofs != nullptr) ? to_string(freedofs->NumSet()) : string("ALL!")) << endl;
-    // cout << " first next " << first_free << " " << next_free << " height " << A.Height() << endl;
+  template<class TM>
+  void GSS3<TM> :: CalcDiags ()
+  {
+    dinv.SetSize (H); 
+    const auto& A(*spmat);
+    ParallelFor (H, [&](size_t i) {
+  	if (!freedofs || freedofs->Test(i)) {
+  	  dinv[i] = A(i,i);
+  	  CalcInverse (dinv[i]);
+  	}
+  	else
+  	  { dinv[i] = TM(0.0); }
+      });
+  }
 
-  } // GSS3 (..)
-
-
+  
   template<class TM>
   void GSS3<TM> :: SmoothRHSInternal (size_t first, size_t next, BaseVector &x, const BaseVector &b, bool backwards) const
   {
@@ -233,57 +251,33 @@ namespace amg
 
     double nrows = 0;
 
-    if (row_nrs.Size()) {
+    if (!backwards) {
+      const size_t use_first = max2(first, first_free);
+      const size_t use_next = min2(next, next_free);
+      nrows = use_next - use_first;
+      // const size_t use_first = 0;
+      // const size_t use_next = A.Height();
       tl = MPI_Wtime();
-      if (!backwards) {
-	if (row_nrs.Size() > 1) {
-	  for (auto k : Range(row_nrs.Size()-1)) {
-	    A.PrefetchRow(row_nrs[k+1]);
-	    up_row(row_nrs[k]);
-	  }
+      for (size_t rownr = use_first; rownr < use_next; rownr++)
+	if (!fds || fds->Test(rownr)) {
+	  A.PrefetchRow(rownr);
+	  up_row(rownr);
 	}
-	if (row_nrs.Size())
-	  { up_row(row_nrs.Last()); }
-      }
-      else {
-	for (int k = row_nrs.Size() - 1; k > 0; k--) {
-	  A.PrefetchRow(row_nrs[k-1]);
-	  up_row(row_nrs[k]);
-	}
-	if (row_nrs.Size())
-	  { up_row(row_nrs[0]); }
-      }
-      tl = MPI_Wtime()-tl;
+      tl = MPI_Wtime() - tl;
     }
     else {
-      if (!backwards) {
-	const size_t use_first = max2(first, first_free);
-	const size_t use_next = min2(next, next_free);
-	nrows = use_next - use_first;
-	// const size_t use_first = 0;
-	// const size_t use_next = A.Height();
-	tl = MPI_Wtime();
-	for (size_t rownr = use_first; rownr < use_next; rownr++)
-	  if (!fds || fds->Test(rownr)) {
-	    A.PrefetchRow(rownr);
-	    up_row(rownr);
-	  }
-	tl = MPI_Wtime() - tl;
-      }
-      else {
-	const int use_first = max2(first, first_free);
-	const int use_next = min2(next, next_free);
-	nrows = use_next - use_first;
-	// const int use_first = 0;
-	// const int use_next = A.Height();
-	tl = MPI_Wtime();
-	for (int rownr = use_next - 1; rownr >= use_first; rownr--)
-	  if (!fds || fds->Test(rownr)) {
-	    A.PrefetchRow(rownr);
-	    up_row(rownr);
-	  }
-	tl = MPI_Wtime() - tl;
-      }
+      const int use_first = max2(first, first_free);
+      const int use_next = min2(next, next_free);
+      nrows = use_next - use_first;
+      // const int use_first = 0;
+      // const int use_next = A.Height();
+      tl = MPI_Wtime();
+      for (int rownr = use_next - 1; rownr >= use_first; rownr--)
+	if (!fds || fds->Test(rownr)) {
+	  A.PrefetchRow(rownr);
+	  up_row(rownr);
+	}
+      tl = MPI_Wtime() - tl;
     }
 
     // double nrows = fds ? fds->NumSet() : A.Height();
@@ -302,8 +296,29 @@ namespace amg
 
 
   /** GSS4 **/
+
   template<class TM>
-  GSS4<TM> :: GSS4 (shared_ptr<SparseMatrix<TM>> A, shared_ptr<BitArray> subset, FlatArray<TM> add_diag)
+  GSS4<TM> :: GSS4 (shared_ptr<SparseMatrix<TM>> A, shared_ptr<BitArray> subset)
+  {
+    SetUp(A, subset);
+    CalcDiags();
+  } // GSS4(..)
+
+
+  template<class TM>
+  GSS4<TM> :: GSS4 (shared_ptr<SparseMatrix<TM>> A, FlatArray<TM> repl_diag, shared_ptr<BitArray> subset)
+  {
+    SetUp(A, subset);
+    dinv.SetSize(xdofs.Size());
+    for (auto k : Range(xdofs)) {
+      dinv[k] = repl_diag[xdofs[k]];
+      CalcInverse(dinv[k]);
+    }
+  } // GSS4(..)
+
+
+  template<class TM>
+  void GSS4<TM> :: SetUp (shared_ptr<SparseMatrix<TM>> A, shared_ptr<BitArray> subset)
   {
     if (subset && (subset->NumSet() != A->Height()) ) {
       /** xdofs / resdofs **/
@@ -352,20 +367,22 @@ namespace amg
 	{ xdofs[k] = /*resdofs[k] = */ k; }
       cA = A;
     }
+  } // GSS4::SetUp
+
+
+  template<class TM>
+  void GSS4<TM> :: CalcDiags ()
+  {
     /** invert diag **/
-    const auto& ncA(*A);
+    const auto& ncA(*cA);
     dinv.SetSize(xdofs.Size());
-    const bool add = add_diag.Size() > 0;
     for (auto k : Range(xdofs)) {
-      auto dof = xdofs[k];
-      dinv[k] = ncA(dof, dof);
-      if (add)
-	{ dinv[k] += add_diag[dof]; }
+      dinv[k] = ncA(xdofs[k], xdofs[k]);
       CalcInverse(dinv[k]);
     }
-    cout << "GSS4 invs: " << endl; prow2(dinv); cout << endl;
-  } // GSS4(..)
-  
+    // cout << "GSS4 invs: " << endl; prow2(dinv); cout << endl;
+  } // GSS4::CalcDiags
+
 
   template<class TM>
   void GSS4<TM> :: SmoothRESInternal (BaseVector &x, BaseVector &res, bool backwards) const
@@ -476,8 +493,7 @@ namespace amg
 
   template<class TSCAL>
   DCCMap<TSCAL> :: DCCMap (shared_ptr<EQCHierarchy> eqc_h, shared_ptr<ParallelDofs> _pardofs)
-    : pardofs(_pardofs), block_size(_pardofs->GetEntrySize()),
-      thread_done(false), thread_ready(false), end_thread(false), mpi_thread(nullptr)
+    : pardofs(_pardofs), block_size(_pardofs->GetEntrySize())
   {
     ;
   } // DCCMap (..)
@@ -546,11 +562,8 @@ namespace amg
 
     // tauNTC("");
 #endif
-    cout << "start d2c" << endl;
 
-			   cout << " in stat " << vec.GetParallelStatus() << endl;
-
-			   BufferG(vec);
+    BufferG(vec);
 
     if (vec.GetParallelStatus() != DISTRIBUTED) // just nulling-out entries is enough
       { vec.SetParallelStatus(DISTRIBUTED); return; }
@@ -625,8 +638,8 @@ namespace amg
 
     BufferM(vec);
 
-    cout << "m_ex_dofs: " << endl << m_ex_dofs << endl;
-    cout << "m_buffer: " << endl << m_buffer << endl;
+    // cout << "m_ex_dofs: " << endl << m_ex_dofs << endl;
+    // cout << "m_buffer: " << endl << m_buffer << endl;
 
     if (m_send.Size())
       { MPI_Startall(m_send.Size(), m_send.Data()); }
@@ -717,10 +730,10 @@ namespace amg
   template<class TSCAL>
   void DCCMap<TSCAL> :: WaitD2C ()
   {
-    cout << "wait d2c " << endl;
+    // cout << "wait d2c " << endl;
     MyMPI_WaitAll(g_send);
     MyMPI_WaitAll(m_recv);
-    cout << " m buf now " << endl << m_buffer << endl;
+    // cout << " m buf now " << endl << m_buffer << endl;
   }
 
   template<class TSCAL>
@@ -748,9 +761,9 @@ namespace amg
 	// cout << " buffer " << vec_etr << endl;
 	buf_etr = vec_etr; vec_etr = 0;
       });
-    cout << endl << "buffer G" << endl;
-    cout << "g_ex_dofs: " << endl << g_ex_dofs << endl;
-    cout << "g_buffer: " << endl << g_buffer << endl;
+    // cout << endl << "buffer G" << endl;
+    // cout << "g_ex_dofs: " << endl << g_ex_dofs << endl;
+    // cout << "g_buffer: " << endl << g_buffer << endl;
   } // DCCMap::BufferG
 
 
@@ -761,9 +774,9 @@ namespace amg
     TAU_PROFILE("ApplyM", TAU_CT(*this), TAU_DEFAULT);
 #endif
 
-    cout << endl << "apply M" << endl;
-    cout << "m_ex_dofs " << endl << m_ex_dofs << endl;
-    cout << "m_buffer" << endl << m_buffer << endl;
+    // cout << endl << "apply M" << endl;
+    // cout << "m_ex_dofs " << endl << m_ex_dofs << endl;
+    // cout << "m_buffer" << endl << m_buffer << endl;
     
 
     iterate_buf_vec<TSCAL>(block_size, m_ex_dofs, m_buffer, vec, [&](auto buf_etr, auto & vec_etr) LAMBDA_INLINE {
@@ -785,9 +798,9 @@ namespace amg
 	// cout << " buffer " << vec_etr << endl;
 	buf_etr = vec_etr;
       });
-    cout << endl << "buffer M" << endl;
-    cout << "m_ex_dofs " << endl << m_ex_dofs << endl;
-    cout << "m_buffer" << endl << m_buffer << endl;
+    // cout << endl << "buffer M" << endl;
+    // cout << "m_ex_dofs " << endl << m_ex_dofs << endl;
+    // cout << "m_buffer" << endl << m_buffer << endl;
 
   } // DCCMap :: BufferM
 
@@ -799,9 +812,9 @@ namespace amg
     TAU_PROFILE("ApplyG", TAU_CT(*this), TAU_DEFAULT);
 #endif
 
-    cout << endl << "Apply G" << endl;
-    cout << "g_ex_dofs: " << endl << g_ex_dofs << endl;
-    cout << "g_buffer: " << endl << g_buffer << endl;
+    // cout << endl << "Apply G" << endl;
+    // cout << "g_ex_dofs: " << endl << g_ex_dofs << endl;
+    // cout << "g_buffer: " << endl << g_buffer << endl;
 
     iterate_buf_vec<TSCAL>(block_size, g_ex_dofs, g_buffer, vec, [&](auto buf_etr, auto & vec_etr) LAMBDA_INLINE {
 	// cout << "set " << buf_etr << " to " << vec_etr << endl;
@@ -1471,13 +1484,13 @@ namespace amg
     // cout << "4 SMINTERNAL" << type << " " << x.GetParallelStatus() << " " << b.GetParallelStatus() << " " << res.GetParallelStatus() << " / " << res_updated << " " << update_res << " " << x_zero << endl;
 
     auto Apardofs = A->GetParallelDofs();
-    auto prv = [Apardofs](auto& x) {
-      cout << endl << "type: " << typeid(x).name() << endl;
-      cout << endl << "stat: " << x.GetParallelStatus() << endl;
-      for (auto k : Range(x.FVDouble().Size()))
-	{ cout << k << ": " << x.FVDouble()[k] << "  ||  "; prow(Apardofs->GetDistantProcs(k)); cout << endl; }
-      cout << endl;
-    };
+    // auto prv = [Apardofs](auto& x) {
+    //   cout << endl << "type: " << typeid(x).name() << endl;
+    //   cout << endl << "stat: " << x.GetParallelStatus() << endl;
+    //   for (auto k : Range(x.FVDouble().Size()))
+    // 	{ cout << k << ": " << x.FVDouble()[k] << "  ||  "; prow(Apardofs->GetDistantProcs(k)); cout << endl; }
+    //   cout << endl;
+    // };
 
     // cout << " smooth, up res " << update_res << endl;
     // cout << " x in " << endl; prv(x);
@@ -1508,7 +1521,6 @@ namespace amg
     }
 
     smooth_stage(0);
-    cout << " x 0 " << endl << x << endl;
 
     if (need_d2c) {
       if (overlap) {
@@ -1522,10 +1534,8 @@ namespace amg
       dcc_map->ApplyM(*mpivec);
     }
 
-    cout << " x 1 " << endl << x << endl;
     smooth_stage(1);
 
-    cout << " x 2 " << endl << x << endl;
     x.SetParallelStatus(DISTRIBUTED);
     mpivec = &x;
 
@@ -1541,7 +1551,6 @@ namespace amg
     }
     else
       { dcc_map->StartCO2CU(*mpivec); }
-    cout << " x 3 " << endl << x << endl;
 
     if (!overlap) {
       dcc_map->ApplyCO2CU(*mpivec);
@@ -1549,7 +1558,6 @@ namespace amg
     }
 
     smooth_stage(2);
-    cout << " x 4 " << endl << x << endl;
 
     if (overlap) {
       if (in_thread) {
@@ -1561,7 +1569,6 @@ namespace amg
 	dcc_map->FinishCO2CU(false); // probably dont take a shortcut ??
       }
     }
-    cout << " x 5 " << endl << x << endl;
 
     { // scatter updates and finish update residuum, res -= S * (x - x_old)
       RegionTimer rt(tpost);
@@ -1577,75 +1584,8 @@ namespace amg
     	}
       }
     }
-    cout << " x 6 " << endl << x << endl;
 
   } // HybridSmoother2<TM> :: SmoothInternal
-
-
-  /** HybridGSS3 **/
-
-  template<class TM>
-  HybridGSS3<TM> :: HybridGSS3 (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h, shared_ptr<BitArray> _subset,
-				bool _overlap, bool _in_thread)
-    : HybridSmoother2<TM>(_A, eqc_h, _overlap, _in_thread)
-  {
-    auto& M = *A->GetM();
-
-    Array<TM> add_diag = this->CalcAdditionalDiag();
-
-    auto pardofs = A->GetParallelDofs();
-
-    auto m_dofs = A->GetMap()->GetMasterDOFs();
-
-    if (pardofs != nullptr)
-      for (auto k : Range(add_diag.Size()))
-	if ( ((!_subset) || (_subset->Test(k))) && ((!m_dofs) || (m_dofs->Test(k))) )
-	  { M(k,k) += add_diag[k]; }
-
-    shared_ptr<BitArray> loc = _subset, ex = nullptr;
-    if (pardofs != nullptr) {
-      loc = make_shared<BitArray>(M.Height()); loc->Clear();
-      ex = make_shared<BitArray>(M.Height()); ex->Clear();
-      for (auto k : Range(M.Height())) {
-	if (m_dofs->Test(k)) {
-	  auto dps = pardofs->GetDistantProcs(k);
-	  if (dps.Size()) { ex->Set(k); }
-	  else { loc->Set(k); }
-	}
-      }
-      if (_subset != nullptr) {
-	loc->And(*_subset);
-	ex->And(*_subset);
-	// loc->Or(*ex);
-      }
-    }
-
-    // if (_subset)
-    //   { cout << "subset: " << endl << *_subset << endl; }
-    // else
-    //   { cout << " NO SUBSET!" << endl; }
-
-    // cout << "m_dofs: " << endl << *m_dofs << endl;
-    if (_subset) {
-      cout << "rank " << A->GetParallelDofs()->GetCommunicator().Rank() << " numsets " << loc->NumSet() << " " << ex->NumSet() << " " << loc->Size() << " "
-	   << double(loc->NumSet()) / loc->Size() << " " << double(ex->NumSet()) / ex->Size() << endl;
-    }
-    
-    jac_loc = make_shared<GSS3<TM>>(A->GetM(), loc);
-    if ( (pardofs != nullptr) && (ex->NumSet() != 0) ) {
-      jac_exo  = make_shared<GSS3<TM>>(A->GetM(), ex);
-    }
-
-    if (pardofs != nullptr)
-      for (auto k : Range(add_diag.Size()))
-	if ( ((!_subset) || (_subset->Test(k))) && ((!m_dofs) || (m_dofs->Test(k))) )
-	  { M(k,k) -= add_diag[k]; }
-
-    if ( (pardofs != nullptr) && (ex->NumSet() != 0) ) {
-      jac_ex  = make_shared<GSS4<TM>>(A->GetM(), ex, add_diag);
-    }
-
-  } // HybridGSS3 (..)
 
 
   template<class TM> INLINE void AddODToD (const TM & v, TM & w) {
@@ -1658,50 +1598,113 @@ namespace amg
   template<> INLINE void AddODToD<double> (const double & v, double & w)
   { w += 0.5 * fabs(v); }
   template<class TM>
-  Array<TM> HybridSmoother2<TM> :: CalcAdditionalDiag ()
+  Array<TM> HybridSmoother2<TM> :: CalcModDiag ()
   {
     static Timer t(string("HybridGSS<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::CalcAdditionalDiag");
     RegionTimer rt(t);
 
-    Array<TM> add_diag;
+    Array<TM> mod_diag;
 
     auto pardofs = A->GetParallelDofs();
     if ( (pardofs == nullptr) || (pardofs->GetDistantProcs().Size() == 0) )
-      { return add_diag; }
+      { return mod_diag; }
 
-    add_diag.SetSize(A->Height()); add_diag = 0;
- 
     auto G = A->GetG();
+    if (G == nullptr)
+      { return mod_diag; }
+
+    mod_diag.SetSize(A->Height()); mod_diag = 0;
+ 
     const auto & M = *A->GetM();
    
-    if (G == nullptr)
-      { return add_diag; }
+    for (auto k : Range(M.Height()))
+      { mod_diag[k] = M(k,k); }
 
     for (auto k : Range(G->Height())) {
       // auto ris = G->GetRowIndices(k);
       auto rvs = G->GetRowValues(k);
       for (auto l : Range(rvs)) {
-	AddODToD(rvs[l], add_diag[k]);
-	// AddODToD(rvs[l], add_diag[ris[l]]);
+	AddODToD(rvs[l], mod_diag[k]);
+	// AddODToD(rvs[l], mod_diag[ris[l]]);
       }
     }
 
-    AllReduceDofData (add_diag, MPI_SUM, A->GetParallelDofs());  
+    AllReduceDofData (mod_diag, MPI_SUM, A->GetParallelDofs());  
 
     // if constexpr( is_same<TM, double>::value )
     //   {
     // 	for (auto k : Range(M.Height())) {
-    // 	  if ( (add_diag[k] != 0) && (M(k,k) != 0) ) {
-    // 	    if (M(k,k) > 3 * add_diag[k])
-    // 	      { add_diag[k] = 0; }
+    // 	  if ( (mod_diag[k] != 0) && (M(k,k) != 0) ) {
+    // 	    if (M(k,k) > 3 * mod_diag[k])
+    // 	      { mod_diag[k] = 0; }
     // 	  }
     // 	}
     //   }
 
-    cout << "add_diag" << endl; prow2(add_diag); cout << endl;
+    return mod_diag;
+  } // HybridSmoother2::CalcModDiag
 
-    return add_diag;
-  }
+
+  /** HybridGSS3 **/
+
+  template<class TM>
+  HybridGSS3<TM> :: HybridGSS3 (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h, shared_ptr<BitArray> _subset,
+				bool _overlap, bool _in_thread)
+    : HybridSmoother2<TM>(_A, eqc_h, _overlap, _in_thread), subset(_subset)
+  { ; }
+
+
+  template<class TM>
+  void HybridGSS3<TM> :: Finalize ()
+  {
+     
+    auto& M = *A->GetM();
+
+    auto pardofs = A->GetParallelDofs();
+
+    auto m_dofs = A->GetMap()->GetMasterDOFs();
+
+    // if (pardofs != nullptr)
+    //   for (auto k : Range(add_diag.Size()))
+    // 	if ( ((!subset) || (subset->Test(k))) && ((!m_dofs) || (m_dofs->Test(k))) )
+    // 	  { M(k,k) += add_diag[k]; }
+
+    shared_ptr<BitArray> loc = subset, ex = nullptr;
+    if (pardofs != nullptr) {
+      loc = make_shared<BitArray>(M.Height()); loc->Clear();
+      ex = make_shared<BitArray>(M.Height()); ex->Clear();
+      for (auto k : Range(M.Height())) {
+	if (m_dofs->Test(k)) {
+	  auto dps = pardofs->GetDistantProcs(k);
+	  if (dps.Size()) { ex->Set(k); }
+	  else { loc->Set(k); }
+	}
+      }
+      if (subset != nullptr) {
+	loc->And(*subset);
+	ex->And(*subset);
+	// loc->Or(*ex);
+      }
+    }
+
+    if (subset) {
+      cout << "rank " << A->GetParallelDofs()->GetCommunicator().Rank() << " numsets " << loc->NumSet() << " " << ex->NumSet() << " " << loc->Size() << " "
+	   << double(loc->NumSet()) / loc->Size() << " " << double(ex->NumSet()) / ex->Size() << endl;
+    }
+    
+    auto mod_diag = this->CalcModDiag();
+
+    if (mod_diag.Size()) {
+      jac_loc = make_shared<GSS3<TM>>(A->GetM(), mod_diag, loc);
+      if ( (pardofs != nullptr) && (ex->NumSet() != 0) )
+	{ jac_ex = make_shared<GSS4<TM>>(A->GetM(), mod_diag, ex); }
+    }
+    else {
+      jac_loc = make_shared<GSS3<TM>>(A->GetM(), loc);
+      if ( (pardofs != nullptr) && (ex->NumSet() != 0) )
+	{ jac_ex = make_shared<GSS4<TM>>(A->GetM(), ex); }
+    }
+  } // HybridGSS3::Finalize
 
 
   template<class TM>
@@ -1758,6 +1761,43 @@ namespace amg
     else if (stage == 2)
       { jac_loc->SmoothBackRES(0, A->Height()/2, x, res); }
   }
+
+
+  /** RegHybridGSS3 **/
+
+  template<class TM, int RMIN, int RMAX>
+  RegHybridGSS3<TM, RMIN, RMAX> :: RegHybridGSS3 (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h, shared_ptr<BitArray> _subset,
+						  bool _overlap, bool _in_thread)
+    : HybridGSS3<TM> (_A, eqc_h, _subset, _overlap, _in_thread)
+  { ; }
+
+
+  template<class TM, int RMIN, int RMAX>
+  Array<TM> RegHybridGSS3<TM, RMIN, RMAX> :: CalcModDiag () 
+  {
+    Array<TM> mod_diag = HybridSmoother2<TM>::CalcModDiag();
+
+    if (!mod_diag.Size()) {
+      mod_diag.SetSize(A->Height()); mod_diag = 0;
+      const auto & M = *A->GetM();
+      for (auto k : Range(M.Height()))
+	{ mod_diag[k] = M(k,k); }
+    }
+
+    constexpr int RMMRM = RMAX - RMIN;
+    for (auto k : Range(mod_diag)) {
+      // cout << " regularize " << k << endl;
+      // cout << " init mat: " << endl;
+      // print_tm(cout, mod_diag[k]);
+      RegTM<RMIN, RMMRM, RMAX>(mod_diag[k]);
+      // cout << " reg mat: " << endl;
+      // print_tm(cout, mod_diag[k]);
+      // cout << " ----- " << endl;
+    }
+
+    return mod_diag;
+  } // RegHybridGSS3 :: CalcModDiag
+
 
 } // namespace amg
 

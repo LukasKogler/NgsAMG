@@ -534,7 +534,8 @@ namespace amg
 
     auto fpd = finest_mat->GetParallelDofs();
 
-    // this only works for the simplest case anyways...
+
+    // cout << " make mesh from mat: " << endl << *finest_mat << endl;
 
     // vertices
     auto set_vs = [&](auto nv, auto v2d) {
@@ -550,8 +551,12 @@ namespace amg
       }
       else
 	{ free_verts->Set(); }
+      cout << " nr free verts: " << free_verts->NumSet() << " of " << free_verts->Size() << endl;
+      for (auto k : Range(nv))
+	cout << " (" << k << "::" << free_verts->Test(k) << ")";
+      cout << endl;
     };
-
+    
     // edges 
     auto create_edges = [&](auto v2d, auto d2v) LAMBDA_INLINE {
       auto traverse_graph = [&](const auto& g, auto fun) LAMBDA_INLINE { // vertex->dof,  // dof-> vertex
@@ -567,7 +572,7 @@ namespace amg
 		fun(vert_sort[k],vert_sort[j]);
 	      }
 	      // else {
-	      // 	cout << "dont use " << row << " " << j << " with dof " << col << endl;
+	      //  	cout << "dont use " << row << " " << j << " with dof " << col << endl;
 	      // }
 	    }
 	  }
@@ -595,7 +600,7 @@ namespace amg
       const auto bs0 = O.block_s[0]; // is this not kind of redundant ?
       if (O.subset == BAO::RANGE_SUBSET) {
 	auto r0 = O.ss_ranges[0]; const auto maxd = r0[1];
-	const int stride = bs0/fes_bs; // probably 1
+	const int stride = bs0; // probably 1
 	int dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
 	n_verts = (r0[1] - r0[0]) / stride;
 	auto d2v = [&](auto d) -> int LAMBDA_INLINE { return ( (d % stride == 0) && (d < r0[1]) && (r0[0] <= d) ) ? d/stride : -1; };
@@ -909,18 +914,17 @@ namespace amg
 
     shared_ptr<BaseDOFMapStep> emb_step = nullptr;
 
-    auto prt = [](auto name, auto x) {
-      cout << name << " ";
-      if (x == nullptr)
-	{ cout << "nullptr!" << endl; }
-      else
-	{ cout << x->Height() << " x " << x->Width() << endl << "--" << endl << *x << endl << "---" << endl; }
-    };
-
-    prt("E_S", E_S);
-    prt("E_D", E_D);
-    prt("P", P);
-    prt("E", E);
+    // auto prt = [](auto name, auto x) {
+    //   cout << name << " ";
+    //   if (x == nullptr)
+    // 	{ cout << "nullptr!" << endl; }
+    //   else
+    // 	{ cout << x->Height() << " x " << x->Width() << endl << "--" << endl << *x << endl << "---" << endl; }
+    // };
+    // prt("E_S", E_S);
+    // prt("E_D", E_D);
+    // prt("P", P);
+    // prt("E", E);
 
     if (E != nullptr)
       { emb_step = make_shared<ProlMap<T_E_D>>(E, fpds, nullptr); }

@@ -558,7 +558,7 @@ namespace amg
       for (auto k : Range(perow)) {
 	E_D->GetRowIndices(k)[0] = k;
 	auto & v = E_D->GetRowValues(k)[0];
-	Iterate<3>([&](auto i) { v(i.value, i.value) = 1; });
+	v = 0; Iterate<disppv(C::DIM)>([&](auto i) { v(i.value, i.value) = 1; });
       }
     }
 
@@ -588,8 +588,9 @@ namespace amg
 	  E_D->GetRowValues(row)[0](j) = 1;
 	}
       }
-
     }
+
+    cout << "E_D: " << endl << *E_D << endl;
 
     return E_D;
   }
@@ -640,22 +641,29 @@ namespace amg
       auto parmat = make_shared<ParallelMatrix>(mat, pds, pds, C2D);
       auto eqc_h = make_shared<EQCHierarchy>(pds, false); // TODO: get rid of these!
       if (auto spmat = dynamic_pointer_cast<SparseMatrix<typename C::TM>>(mat)) {
-      	if (O.reg_mats)
-	  { throw Exception("V3 regularized diag not implemented"); }
+      	if (O.reg_mats) {
+	  auto v3sm = make_shared<RegHybridGSS3<typename C::TM, disppv(C::DIM), dofpv(C::DIM)>> (parmat, eqc_h, freedofs, O.mpi_overlap, O.mpi_thread);
+	  v3sm->SetSymmetric(options->smooth_symmetric);
+	  v3sm->Finalize();
+	  sm = v3sm;
+	}
 	else {
 	  auto v3sm = make_shared<HybridGSS3<Mat<dofpv(C::DIM), dofpv(C::DIM), double>>>(parmat, eqc_h, freedofs, O.mpi_overlap, O.mpi_thread);
 	  v3sm->SetSymmetric(options->smooth_symmetric);
+	  v3sm->Finalize();
 	  sm = v3sm;
 	}
       }
       else if (auto spmat = dynamic_pointer_cast<SparseMatrix<Mat<disppv(C::DIM),disppv(C::DIM), double>>>(mat)) {
 	auto v3sm = make_shared<HybridGSS3<Mat<disppv(C::DIM), disppv(C::DIM), double>>>(parmat, eqc_h, freedofs, O.mpi_overlap, O.mpi_thread);
 	v3sm->SetSymmetric(options->smooth_symmetric);
+	v3sm->Finalize();
 	sm = v3sm;
       }
       else if (auto spmat = dynamic_pointer_cast<SparseMatrix<double>>(mat)) {
 	auto v3sm = make_shared<HybridGSS3<double>>(parmat, eqc_h, freedofs, O.mpi_overlap, O.mpi_thread);
 	v3sm->SetSymmetric(options->smooth_symmetric);
+	v3sm->Finalize();
 	sm = v3sm;
       }
     }

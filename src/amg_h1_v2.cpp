@@ -28,25 +28,34 @@ namespace amg
     const H1Mesh & rmesh(*mesh);
     const H1AMGFactory & self(*this);
     const auto & options = static_cast<const Options&>(*this->options);
-    opts.free_verts = free_verts; const_cast<H1AMGFactory&>(*this).free_verts = nullptr; //TODO: hacky!
+    opts.free_verts = free_verts;
     auto NV = rmesh.template GetNN<NT_VERTEX>();
     auto NE = rmesh.template GetNN<NT_EDGE>();
     rmesh.CumulateData();
+    auto vws = get<0>(rmesh.Data())->Data();
+    auto ews = get<1>(rmesh.Data())->Data();
     Array<double> vcw(NV); vcw = 0;
+    // cout << " SCO for mesh " << *mesh << endl;
     rmesh.template Apply<NT_EDGE>([&](const auto & edge) LAMBDA_INLINE {
-	auto ew = self.template GetWeight<NT_EDGE>(rmesh, edge);
+	auto ew = ews[edge.id];
 	vcw[edge.v[0]] += ew;
 	vcw[edge.v[1]] += ew;
       }, true);
     rmesh.template AllreduceNodalData<NT_VERTEX>(vcw, [](auto & in) LAMBDA_INLINE { return sum_table(in); }, false);
-    rmesh.template Apply<NT_VERTEX>([&](auto v) LAMBDA_INLINE { vcw[v] += self.template GetWeight<NT_VERTEX>(rmesh, v); });
+    // cout << " ass vwts: " << endl;
+    // prow2(vcw); cout << endl;
+    for (auto k : Range(vcw))
+      { vcw[k] += vws[k]; }
     Array<double> ecw(NE);
     rmesh.template Apply<NT_EDGE>([&](const auto & edge) LAMBDA_INLINE {
 	double vw = min(vcw[edge.v[0]], vcw[edge.v[1]]);
-	ecw[edge.id] = self.template GetWeight<NT_EDGE>(rmesh, edge) / vw;
+	ecw[edge.id] = ews[edge.id] / vw;
       }, false);
+    // note: when using AMG as coarsetype of BDDC, dirichlet-dofs have no entries, so ecv/vcw[dir_dof] is 0 !
     for (auto v : Range(NV))
-      { vcw[v] = self.template GetWeight<NT_VERTEX>(rmesh, v)/vcw[v]; }
+      { vcw[v] = (vcw[v] == 0) ? 0 : vws[v]/vcw[v]; }
+    // cout << " vcws: " << endl;
+    prow2(vcw); cout << endl;
     opts.vcw = move(vcw);
     opts.min_vcw = options.min_vcw;
     opts.ecw = move(ecw);
@@ -207,7 +216,7 @@ namespace amg
     for (auto k : Range(top_mesh->GetNN<NT_VERTEX>()))
       { auto d = V2D(k); ad[k] = cspm(d,d); }
 
-    cout << endl << endl << "spmat: " << endl << *spmat << endl << endl;
+    // cout << endl << endl << "spmat: " << endl << *spmat << endl << endl;
 
     // cout << endl << "diag VW: "; prow2(ad); cout << endl << endl;
 
@@ -312,6 +321,7 @@ namespace amg
       auto eqc_h = make_shared<EQCHierarchy>(pds, false); // todo: get rid of these!
       auto sm = make_shared<HybridGSS3<double>> (parmat, eqc_h, freedofs, options->mpi_overlap, options->mpi_thread);
       sm->SetSymmetric(options->smooth_symmetric);
+      sm->Finalize();
 
       return sm;
     }

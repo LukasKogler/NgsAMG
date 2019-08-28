@@ -149,12 +149,15 @@ namespace amg
   template<class TMESH>
   void BlockVWC<TMESH> :: Collapse (const TMESH & mesh, BlockVWC::CollapseTracker & coll)
   {
-    cout << "BVWC COLL" << endl;
     RegionTimer rt(BlockVWCTimerHack());
     const auto & eqc_h = *mesh.GetEQCHierarchy();
     auto free = options->free_verts;
     if (free!=nullptr) for (auto k:Range(mesh.template GetNN<NT_VERTEX>())) if (!free->Test(k)) { coll.GroundVertex(k); coll.FixVertex(k); }
-    cout << "BVWC COLL2" << endl;
+
+    // cout << " block-wise coll, VW: " << endl;
+    // prow2(options->vcw);
+    // cout << " block-wise coll, EW: " << endl;
+    // prow2(options->ecw);
 
     auto block_opts = make_shared<typename SeqVWC<FlatTM>::Options>();
     block_opts->min_vcw = options->min_vcw;
@@ -163,18 +166,14 @@ namespace amg
     block_opts->ecw = Array<double>(options->ecw.Size(), (options->ecw.Size() == 0) ? (double*)nullptr : &(options->ecw[0])); block_opts->ecw.NothingToDelete();
     block_opts->free_verts = nullptr;
     SeqVWC<FlatTM> block_crs (block_opts);
-    cout << "BVWC COLL2" << endl;
 
     // entry>0: collapse edge (entry-1) // entry<=0: ground vertex (-entry)
     auto neqcs = eqc_h.GetNEQCS();
     Array<int> perow(neqcs); perow = 0;
     for (size_t eqc_num = 0; eqc_num < neqcs; eqc_num++) {
       if (eqc_h.IsMasterOfEQC(eqc_num)) {
-	cout << " eq " << eqc_num << " " << neqcs << endl;
 	FlatTM mesh_block = mesh.GetBlock(eqc_num);
-	cout << " eq " << eqc_num << " " << neqcs << " coll " << endl;
 	block_crs.Collapse(mesh_block, coll);
-	cout << " eq " << eqc_num << " " << neqcs << " block ok " << endl;
 	if (eqc_num!=0) {
 	  for (const auto & e : mesh_block.GetNodes<NT_EDGE>())
 	    if (coll.IsEdgeCollapsed(e)) perow[eqc_num]++;
@@ -183,7 +182,6 @@ namespace amg
 	}
       }
     }
-    cout << "BVWC COLL2" << endl;
     Table<int> sync(perow); perow = 0;
     for (size_t eqc_num = 1; eqc_num < neqcs; eqc_num++) {
       if (eqc_h.IsMasterOfEQC(eqc_num)) {
@@ -201,9 +199,7 @@ namespace amg
       }
     }
     // cout << "sync: " << endl << sync << endl;
-    cout << "SEQD" << endl;
     Table<int> syncsync = ScatterEqcData(move(sync), eqc_h);
-    cout << "SEQD OK" << endl;
     // cout << "syncsync: " << endl << syncsync << endl;
     for (size_t eqc_num = 1; eqc_num < neqcs; eqc_num++) {
       if (!eqc_h.IsMasterOfEQC(eqc_num)) {
@@ -225,9 +221,6 @@ namespace amg
 	}
       }
     }
-    
-    cout << "BVWC COLL DONE" << endl;
-    
   }
 
 
@@ -482,15 +475,11 @@ namespace amg
     : BaseCoarseMap(), GridMapStep<TMESH>(_mesh)
   {
     static Timer t("CoarseMap"); RegionTimer rt(t);
-    cout << "VMAP " << endl;
     BuildVertexMap(coll);
-    cout << "EMAP " << endl;
     if (_mesh->template HasNodes<NT_EDGE>()) BuildEdgeMap(coll);
-    cout << "MMESH" << endl;
     // if (_mesh->template HasNodes<NT_FACE>()) BuildMap<NT_FACE>(coll);
     // if (_mesh->template HasNodes<NT_CELL>()) BuildMap<NT_CELL>(coll);
     mapped_mesh = _mesh->Map(*this);
-    cout << "MMESH OK" << endl;
   }
 
   template<class TMESH>
@@ -512,9 +501,6 @@ namespace amg
     Array<size_t> eqcs(neqcs);
     for (auto k:Range(neqcs)) eqcs[k] = k;
 
-    cout << "fmesh: " << endl << bmesh << endl;
-
-    cout << "BVM " << endl;
     // {
     //   cout << endl;
     //   cout << " check coll status: " << endl;
@@ -575,14 +561,11 @@ namespace amg
       }
       cce = ccce.MoveTable();
     }
-    cout << "BVM " << endl;
     for (auto k:Range(cce.Size()))
       QuickSort(cce[k], less_cce);
     // cout << endl << "cce: " << endl << cce << endl;
-    cout << "RT " << endl;
     auto rcce = ReduceTable<tcce,tcce> (cce, eqcs, sp_eqc_h,
 					[&](const auto & tab) { return merge_arrays(tab, less_cce); });
-    cout << "RT " << endl;
     // cout << endl << "rcce: " << endl << rcce << endl;
     vmap.SetSize(NV);
     if (NV) vmap = -1;
@@ -608,7 +591,6 @@ namespace amg
 	}
       }
     }
-    cout << "BVM " << endl;
 
     /** 
 	per eqc: [singles, in-e, cross-e] 
@@ -659,7 +641,7 @@ namespace amg
       v_cnt[eqc] = displ - last_displ;
       last_displ = displ;
     }
-    cout << "have vert map: " << endl; prow2(vmap); cout << endl;
+    // cout << "have vert map: " << endl; prow2(vmap); cout << endl;
     /** TODO: weave this in earlier, but for now do not touch **/
     mapped_eqc_firsti[NT_VERTEX].SetSize(eqcs.Size()+1);
     mapped_eqc_firsti[NT_VERTEX][0] = 0;
@@ -669,12 +651,12 @@ namespace amg
     mapped_cross_firsti[NT_VERTEX].SetSize(eqcs.Size()+1);
     // no cross-vertices per definition
     mapped_cross_firsti[NT_VERTEX] = mapped_eqc_firsti[NT_VERTEX].Last();
-    cout << "BVM " << endl;
 
-    cout << "mapped eqc_v_firsti : " << endl << mapped_eqc_firsti[NT_VERTEX] << endl;
+    // cout << "mapped eqc_v_firsti : " << endl << mapped_eqc_firsti[NT_VERTEX] << endl;
 
     // cout << endl << "have vertex map: " << endl; prow2(vmap); cout << endl;
 
+    // TODO: take this out when everything runs again!
     Array<int> ones(eqcs.Size()); ones = 1;
     Table<int> cnt(ones);
     for (auto k : Range(eqcs.Size()))

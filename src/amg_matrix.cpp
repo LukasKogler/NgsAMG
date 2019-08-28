@@ -65,6 +65,8 @@ namespace amg
 
 	smoothers[level]->Smooth(xl, bl, rl, true, true, true);
 
+	cout << " x 1  level " << level << ": " << endl << xl << endl;
+
 	rl.Distribute();
 
 	map->TransferF2C(level, res_level[level].get(), rhs_level[level+1].get());
@@ -87,6 +89,7 @@ namespace amg
 	  { crs_inv->Mult(*rhs_level[n_levels-1], *x_level[n_levels-1]); }
 
 	x_level[n_levels-1]->Cumulate();
+
 	cout << " coarse sol: " << endl;
 	cout << *x_level[n_levels-1] << endl;
 
@@ -114,11 +117,14 @@ namespace amg
 
 	map->AddC2F(level, 1.0, &xl, x_level[level+1].get());
 
+	cout << " x 2  level " << level << ": " << endl << xl << endl;
+
 	if (x_level[level+1] == nullptr)
 	  { t5.Stop(); }
 
 	smoothers[level]->SmoothBack(xl, bl, rl, false, false, false);
 
+	cout << " x 3  level " << level << ": " << endl << xl << endl;
       }
 
   } // AMGMatrix::SmoothV

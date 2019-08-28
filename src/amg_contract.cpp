@@ -160,18 +160,14 @@ namespace amg
     is_gm = comm.Rank() == master;
   }
 
+
   template<class TV>
   CtrMap<TV> :: ~CtrMap ()
   {
-    cout << "free ctr " << endl;
-    for (auto k:Range(mpi_types.Size())) {
-      cout << " free " << k << " of " << mpi_types.Size() << endl;
-      // MPI_Type_free(&mpi_types[k]);
-      cout << " was ok " << endl;
-    }
-    cout << "freed ctr " << endl;
+    for (auto k : Range(mpi_types))
+      { MPI_Type_free(&mpi_types[k]); }
   }
-
+  
 
   INLINE Timer & timer_hack_ctr_f2c () { static Timer t("CtrMap::F2C"); return t; }
   INLINE Timer & timer_hack_ctr_c2f () { static Timer t("CtrMap::C2F"); return t; }
@@ -581,7 +577,7 @@ namespace amg
     timer_hack_ctrmat(1).Start();
     Array<shared_ptr<TSPM_TM> > dist_mats(group.Size());
     dist_mats[0] = mat;
-    for(auto k:Range((size_t)1, group.Size())) {
+    for(auto k : Range((size_t)1, group.Size())) {
       cout << " get mat from " << k << " of " << group.Size() << endl;
       comm.Recv(dist_mats[k], group[k], MPI_TAG_AMG);
       cout << " got mat from " << k << " of " << group.Size() << ", rank " << group[k] << endl;
@@ -594,9 +590,9 @@ namespace amg
     // reverse map: maps coarse dof to (k,j) such that disp_mats[k].Row(j) maps to this row!
     TableCreator<INT<2, size_t>> crm(cndof);
     for (; !crm.Done(); crm++)
-      for(auto k:Range(dof_maps.Size())) {
+      for(auto k : Range(dof_maps.Size())) {
 	auto map = dof_maps[k];
-	for(auto j:Range(map.Size()))
+	for(auto j : Range(map.Size()))
 	  crm.Add(map[j],INT<2, size_t>({k,j}));
       }
     auto reverse_map = crm.MoveTable();
@@ -605,14 +601,14 @@ namespace amg
     Array<int*> merge_ptrs(group.Size()); Array<int> merge_sizes(group.Size());
     Array<int> perow(cndof);
     // we already buffer the col-nrs here, so we do not need to merge twice
-    size_t max_nze = 0; for(auto k:Range(dof_maps.Size())) max_nze += dist_mats[k]->NZE();
+    size_t max_nze = 0; for(auto k : Range(dof_maps.Size())) max_nze += dist_mats[k]->NZE();
     Array<int> colnr_buffer(max_nze); int* col_ptr = (max_nze == 0) ? nullptr : &(colnr_buffer[0]); max_nze = 0;
     Array<int> mc_buffer; // use this for merging with rows of LOCAL mat (which I should not change!!)
     Array<int> inds;
     auto QS_COL_VAL = [&inds](auto & cols, auto & vals) {
-      auto S = cols.Size(); inds.SetSize(S); for (auto i:Range(S)) inds[i] = i;
+      auto S = cols.Size(); inds.SetSize(S); for (auto i : Range(S)) inds[i] = i;
       QuickSortI(cols, inds);
-      for (int i:Range(S)) { // in-place permute
+      for (int i : Range(S)) { // in-place permute
 	// swap through one circle; use target as buffer as buffer
 	if (inds[i] == -1) continue;
 	int check = i; int from_here;

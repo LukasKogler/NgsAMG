@@ -138,8 +138,8 @@ namespace amg
     prol_trans->Mult(*x_fine, *x_coarse);
     x_coarse->SetParallelStatus(DISTRIBUTED);
 
-    cout << "fine: " << endl << *x_fine << endl;
-    cout << "coarse: " << endl << *x_coarse << endl;
+    // cout << "fine: " << endl << *x_fine << endl;
+    // cout << "coarse: " << endl << *x_coarse << endl;
   }
 
 
@@ -223,7 +223,12 @@ namespace amg
     cout << "prol dims " << prol->Height() << " x " << prol->Width() << endl;
     cout << "fmat dims " << tfmat->Height() << " x " << tfmat->Width() << endl;
     
+    cout << " fmat: " << endl; print_tm_spmat(cout, *tfmat); cout << endl<< endl;
+    cout << " prol: " << endl; print_tm_spmat(cout, *prol); cout << endl<< endl;
+
     auto spm_tm = RestrictMatrixTM<SPM_TM_F, TMAT> (*prol_trans, *tfmat, *prol);
+
+    cout << " cmat: " << endl; print_tm_spmat(cout, *spm_tm); cout << endl<< endl;
 
     cout << "prolmap assmat ISOK" << endl;
     return make_shared<SPM_C>(move(*spm_tm));

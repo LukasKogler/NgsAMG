@@ -6,10 +6,7 @@
 namespace amg
 {
 
-  /** 
-      Sequential Gauss-Seidel. Can update residual during computation.
-      If add_diag is given, adds uses (D + add_D)^-1 instead if D^-1
-  **/
+  /** Sequential Gauss-Seidel. Can update residual during computation. **/
   template<class TM>
   class GSS3
   {
@@ -19,7 +16,6 @@ namespace amg
     shared_ptr<BitArray> freedofs;
     Array<TM> dinv;
     size_t first_free, next_free;
-    Array<int> row_nrs;
 
   public:
     using TSCAL = typename mat_traits<TM>::TSCAL;
@@ -27,10 +23,14 @@ namespace amg
     static constexpr int BS () { return mat_traits<TM>::HEIGHT; }
     using TV = typename strip_vec<Vec<BS(),TSCAL>> :: type;
 
-    GSS3 (shared_ptr<SparseMatrix<TM>> mat, shared_ptr<BitArray> subset = nullptr,
-	   FlatArray<TM> add_diag = FlatArray<TM>(0, nullptr));
+    GSS3 (shared_ptr<SparseMatrix<TM>> mat, shared_ptr<BitArray> subset = nullptr);
+
+    /** take elements form repl_dinv as diagonal inverses instead of computing them from mat  **/
+    GSS3 (shared_ptr<SparseMatrix<TM>> mat, FlatArray<TM> repl_diag, shared_ptr<BitArray> subset = nullptr);
 
   protected:
+    void SetUp (shared_ptr<SparseMatrix<TM>> mat, shared_ptr<BitArray> subset);
+
     virtual void SmoothRESInternal (size_t first, size_t next, BaseVector &x, BaseVector &res, bool backwards) const;
     virtual void SmoothRHSInternal (size_t first, size_t next, BaseVector &x, const BaseVector &b, bool backwards) const;
 
@@ -48,6 +48,8 @@ namespace amg
     { SmoothRESInternal(first, next, x, res, true); }
 
     shared_ptr<BitArray> GetFreeDofs () const { return freedofs; }
+
+    virtual void CalcDiags ();
 
   protected:
     void SmoothInternal (int type, BaseVector  &x, const BaseVector &b, BaseVector &res,
@@ -75,10 +77,15 @@ namespace amg
     static constexpr int BS () { return mat_traits<TM>::HEIGHT; }
     using TV = typename strip_vec<Vec<BS(),TSCAL>> :: type;
 
-    GSS4 (shared_ptr<SparseMatrix<TM>> A, shared_ptr<BitArray> subset = nullptr,
-	   FlatArray<TM> add_diag = FlatArray<TM>(0, nullptr));
+    GSS4 (shared_ptr<SparseMatrix<TM>> A, shared_ptr<BitArray> subset = nullptr);
+
+    GSS4 (shared_ptr<SparseMatrix<TM>> A, FlatArray<TM> repl_diag, shared_ptr<BitArray> subset = nullptr);
 
   protected:
+
+    void SetUp (shared_ptr<SparseMatrix<TM>> A, shared_ptr<BitArray> subset);
+
+    void CalcDiags ();
 
     template<class TLAM> INLINE void iterate_rows (TLAM lam, bool bw) const;
       
@@ -164,16 +171,9 @@ namespace amg
     /** Overload and Call in constructor, decide who is master of which DOFs (constructs m_dofs, m_ex_dofs, g_ex_dofs) **/
     virtual void CalcDOFMasters (shared_ptr<EQCHierarchy> eqc_h) = 0;
 
-
-
     shared_ptr<ParallelDofs> pardofs;
 
     int block_size;
-
-    bool thread_ready, thread_done, end_thread;
-    std::condition_variable cv;
-    std::mutex m;
-    std::thread* mpi_thread;
 
     shared_ptr<BitArray> m_dofs;
 
@@ -338,7 +338,7 @@ namespace amg
     shared_ptr<HybridMatrix2<TM>> A;
     shared_ptr<BaseMatrix> origA;
 
-    Array<TM> CalcAdditionalDiag ();
+    virtual Array<TM> CalcModDiag ();
   };
 
 
@@ -351,9 +351,13 @@ namespace amg
     HybridGSS3 (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h, shared_ptr<BitArray> _subset,
 		bool _overlap, bool _in_thread);
 
+    void Finalize ();
+
   protected:
 
     using HybridSmoother2<TM>::A;
+
+    shared_ptr<BitArray> subset;
 
     shared_ptr<GSS3<TM>> jac_loc, jac_exo;
     shared_ptr<GSS4<TM>> jac_ex;
@@ -363,6 +367,18 @@ namespace amg
     virtual void SmoothRESLocal (int stage, BaseVector &x, BaseVector &res) const override;
     virtual void SmoothBackRESLocal (int stage, BaseVector &x, BaseVector &res) const override;
   }; // HybridGSS3
+
+
+  template<class TM, int RMIN, int RMAX>
+  class RegHybridGSS3 : public HybridGSS3<TM>
+  {
+    using HybridGSS3<TM>::A;
+  public:
+    RegHybridGSS3 (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h, shared_ptr<BitArray> _subset,
+		   bool _overlap, bool _in_thread);
+  protected:
+    virtual Array<TM> CalcModDiag () override;
+  };
 
 } // namespace amg
 

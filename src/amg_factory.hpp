@@ -26,6 +26,8 @@ namespace amg
 
     struct State;      // some internal book-keeping
 
+    shared_ptr<BitArray> free_verts; // TODO: hacky!
+
   protected:
     shared_ptr<Options> options;
     shared_ptr<Logger> logger;
@@ -57,10 +59,7 @@ namespace amg
       shared_ptr<BaseSparseMatrix> mat;
     };
 
-    // recursive setup method - sets up one more level and calls itself
     Array<shared_ptr<BaseSparseMatrix>> RSU (Capsule cap, shared_ptr<DOFMap> dof_map);
-
-    Array<shared_ptr<BaseSparseMatrix>> RSU2 (Capsule cap, shared_ptr<DOFMap> dof_map);
     
     virtual shared_ptr<ParallelDofs> BuildParallelDofs (shared_ptr<TMESH> amesh) const = 0;
 
@@ -118,7 +117,7 @@ namespace amg
 
     virtual size_t ComputeMeshMeasure (const TMESH & m) const override;
 
-    shared_ptr<BitArray> free_verts; // TODO: hacky!
+    using BASE::free_verts;
 
   protected:
     using BASE::options;
