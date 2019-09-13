@@ -1,1 +1,5 @@
-If you run into any issues, contact lukas.kogler@asc.tuwien.ac.at
+
+If the library fails to compile because it cannot find "methis.h", use
+cmake -DCMAKE_CXX_FLAGS="-I/path_to_your_metis_include_dir"
+
+If you run into any other issues, contact lukas.kogler@asc.tuwien.ac.at
