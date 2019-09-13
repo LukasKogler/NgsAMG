@@ -36,9 +36,9 @@ namespace amg
       INLINE int GetNVertsCollapsed () { return vertex_collapse.NumSet(); }
       INLINE int GetNVertsGrounded () { return vertex_ground.NumSet(); }
       INLINE int GetNEdgesCollapsed () { return edge_collapse.NumSet(); }
-      INLINE void FixEdge (const AMG_Node<NT_EDGE> & e) { edge_fixed.Set(e.id); }
+      INLINE void FixEdge (const AMG_Node<NT_EDGE> & e) { edge_fixed.SetBit(e.id); }
       INLINE bool IsEdgeFixed (const AMG_Node<NT_EDGE> & e) { return edge_fixed.Test(e.id); }
-      INLINE void FixVertex (const AMG_Node<NT_VERTEX> v) { vertex_fixed.Set(v); }
+      INLINE void FixVertex (const AMG_Node<NT_VERTEX> v) { vertex_fixed.SetBit(v); }
       INLINE bool IsVertexFixed (const AMG_Node<NT_VERTEX> v) { return vertex_fixed.Test(v); }
       template<NODE_TYPE NT> INLINE void ClearNode (const AMG_Node<NT> & node) {
 	if constexpr(NT==NT_VERTEX) {
@@ -67,7 +67,7 @@ namespace amg
 	//cout << edge_collapse << endl << endl;
       }
       INLINE void GroundVertex (AMG_Node<NT_VERTEX> v)
-      { vertex_ground.Set(v); }
+      { vertex_ground.SetBit(v); }
       INLINE void UngroundVertex (AMG_Node<NT_VERTEX> v)
       { vertex_ground.Clear(v); }
       INLINE void CollapseEdge (const AMG_Node<NT_EDGE> & e)
@@ -85,9 +85,9 @@ namespace amg
 	    else
 	      cout << "edge if " << k << " does not exist " << " " << endl;	  
 #endif
-	edge_collapse.Set(e.id);
-	vertex_collapse.Set(e.v[0]);
-	vertex_collapse.Set(e.v[1]);
+	edge_collapse.SetBit(e.id);
+	vertex_collapse.SetBit(e.v[0]);
+	vertex_collapse.SetBit(e.v[1]);
 	v2e[e.v[0]] = &e;
 	v2e[e.v[1]] = &e;
       }

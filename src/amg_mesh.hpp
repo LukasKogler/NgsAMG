@@ -585,26 +585,12 @@ namespace amg
     shared_ptr<BlockAlgMesh<T...>> Map (CoarseMap<BlockAlgMesh<T...>> & map) {
       static Timer t("BlockAlgMesh::Map (coarse)"); RegionTimer rt(t);
       shared_ptr<BlockTM> crs_btm(BlockTM::MapBTM(map));
-      static Timer ttup("tuple"); ttup.Start();
-      GetEQCHierarchy()->GetCommunicator().Barrier();
-      cout << "BAMM" << endl;
       auto cdata = std::apply([&](auto& ...x) {
 	  return make_tuple<T*...>(new T(Array<typename T::TDATA>(map.template GetMappedNN<T::TNODE>()), DISTRIBUTED)...);
 	}, node_data);
-      GetEQCHierarchy()->GetCommunicator().Barrier();
-      cout << "BAMM" << endl;
-      ttup.Stop();
-      static Timer tmesh("alg-mesh"); tmesh.Start();
       auto cmesh = make_shared<BlockAlgMesh<T...>> (move(*crs_btm), move(cdata));
-      GetEQCHierarchy()->GetCommunicator().Barrier();
-      cout << "BAMM" << endl;
-      tmesh.Stop();
       auto & cm_data = cmesh->Data();
-      static Timer tmd("map data"); tmd.Start();
       Iterate<count_ppack<T...>::value>([&](auto i){ get<i.value>(node_data)->map_data(map, *get<i.value>(cm_data)); });
-      GetEQCHierarchy()->GetCommunicator().Barrier();
-      cout << "BAMM" << endl;
-      tmd.Stop();
       return cmesh;
     };
     

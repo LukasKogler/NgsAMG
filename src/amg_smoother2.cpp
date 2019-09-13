@@ -23,12 +23,12 @@ namespace amg
     dinv.SetSize (H); 
     const auto& A(*spmat);
     ParallelFor (H, [&](size_t i) {
-  	if (!freedofs || freedofs->Test(i)) {
-  	  dinv[i] = A(i,i);
-  	  CalcInverse (dinv[i]);
-  	}
-  	else
-  	  { dinv[i] = TM(0.0); }
+    	if (!freedofs || freedofs->Test(i)) {
+    	  dinv[i] = A(i,i);
+    	  CalcInverse (dinv[i]);
+    	}
+    	else
+    	  { dinv[i] = TM(0.0); }
       });
   }
 
@@ -51,7 +51,8 @@ namespace amg
     auto fvb = b.FV<TV>();
 
     auto up_row = [&](auto rownr) LAMBDA_INLINE {
-      auto r = fvb(rownr) - A.RowTimesVector(rownr, fvx);
+      // auto r = fvb(rownr) - A.RowTimesVector(rownr, fvx);
+      const TV r = fvb(rownr) - A.RowTimesVector(rownr, fvx);
       fvx(rownr) += dinv[rownr] * r;
     };
 
@@ -76,7 +77,7 @@ namespace amg
     }
     tl = MPI_Wtime() - tl;
 
-    cout << " rows, K rows / sec : " << H << ", " << double(H) / 1000 / tl << endl;
+    // cout << " rows, K rows / sec : " << H << ", " << double(H) / 1000 / tl << endl;
     
   } // SmoothRHSInternal
 
@@ -234,9 +235,9 @@ namespace amg
     BitArray mf_exd(H); mf_exd.Clear();
     for (auto k:Range(H)) {
       if (pds.IsMasterDof(k)) {
-	mf_dofs.Set(k);
+	mf_dofs.SetBit(k);
 	if (pds.GetDistantProcs(k).Size())
-	  { mf_exd.Set(k); }
+	  { mf_exd.SetBit(k); }
       }
     }
 
@@ -744,7 +745,7 @@ namespace amg
     if (_subset && pardofs) {
       mss = make_shared<BitArray>(_subset->Size());
       for (auto k : Range(M.Height())) {
-	if (_subset->Test(k) && pardofs->IsMasterDof(k)) { mss->Set(k); }
+	if (_subset->Test(k) && pardofs->IsMasterDof(k)) { mss->SetBit(k); }
 	else { mss->Clear(k); }
       }
     }
@@ -797,7 +798,9 @@ namespace amg
       }
     }
 
-    AllReduceDofData (add_diag, MPI_SUM, A->GetParallelDofs());  
+    // AllReduceDofData (add_diag, MPI_SUM, A->GetParallelDofs());  
+    MyAllReduceDofData (*A->GetParallelDofs(), add_diag,
+			[](auto & a, const auto & b) LAMBDA_INLINE { a += b; });  
 
     if constexpr( is_same<TM, double>::value )
       {

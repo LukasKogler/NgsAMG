@@ -153,27 +153,64 @@ namespace amg
 
     set_enum_opt(O.subset, "on_dofs", {"range", "select"}, BAO::RANGE_SUBSET);
 
+    auto fes = bfa->GetFESpace();
+
     switch (O.subset) {
     case (BAO::RANGE_SUBSET) : {
       auto &low = flags.GetNumListFlag(pfit("lower"));
-      if (low.Size()) { // defined on multiple ranges
+      if (low.Size()) { // multiple ranges given by user
 	auto &up = flags.GetNumListFlag(pfit("upper"));
 	O.ss_ranges.SetSize(low.Size());
 	for (auto k : Range(low.Size()))
 	  { O.ss_ranges[k] = { size_t(low[k]), size_t(up[k]) }; }
-	cout << IM(3) << "subset for coarsening defined by ranges, first range is [" << low[0] << ", " << up[0] << ")" << endl;
+	cout << IM(3) << "subset for coarsening defined by user range(s)" << endl;
+	cout << IM(5) << O.ss_ranges << endl;
+	break;
       }
-      else { // a single range
-	size_t lowi = flags.GetNumFlag(pfit("lower"), 0);
-	size_t upi = flags.GetNumFlag(pfit("upper"), bfa->GetFESpace()->GetNDof());
-	// coarsen low order part, except if we are explicitely told not to
-	if ( (lowi == 0) && (upi == bfa->GetFESpace()->GetNDof()) &&
-	     (!flags.GetDefineFlagX(pfit("lo")).IsFalse()) )
-	  if (auto lospace = bfa->GetFESpace()->LowOrderFESpacePtr()) // e.g compound has no LO space
-	    { lowi = 0; upi = lospace->GetNDof(); }
+      size_t lowi = flags.GetNumFlag(pfit("lower"), -1);
+      size_t upi = flags.GetNumFlag(pfit("upper"), -1);
+      if ( (lowi != size_t(-1)) && (upi != size_t(-1)) ) { // single range given by user
 	O.ss_ranges.SetSize(1);
 	O.ss_ranges[0] = { lowi, upi };
-	cout << IM(3) << "subset for coarsening defined by range [" << lowi << ", " << upi << ")" << endl;
+	cout << IM(3) << "subset for coarsening defined by (single) user range" << endl;
+	cout << IM(5) << O.ss_ranges << endl;
+	break;
+      }
+      auto comp_fes = dynamic_pointer_cast<CompoundFESpace>(fes);
+      if (flags.GetDefineFlagX(pfit("lo")).IsFalse()) { // e.g nodalp2 (!)
+	if (fes->GetMeshAccess()->GetDimension() == 2)
+	  if (!flags.GetDefineFlagX(pfit("force_nolo")).IsTrue())
+	    { throw Exception("lo = False probably does not make sense in 2D! (set force_nolo to True to override this!)"); }
+	O.ss_ranges.SetSize(1);
+	O.ss_ranges[0][0] = 0;
+	O.ss_ranges[0][1] = fes->GetNDof();
+	cout << IM(3) << "subset for coarsening is ALL DOFs!" << endl;
+      }
+      else { // per default, use only low-order DOFs for coarsening
+	auto get_lo_nd = [](auto & fes) LAMBDA_INLINE {
+	  if (auto lofes = fes->LowOrderFESpacePtr()) // some spaces do not have a lo-space!
+	    { return lofes->GetNDof(); }
+	  else
+	    { return fes->GetNDof(); }
+	};
+	if (comp_fes != nullptr) {
+	  size_t n_spaces = comp_fes->GetNSpaces();
+	  O.ss_ranges.SetSize(n_spaces);
+	  size_t offset = 0;
+	  for (auto space_nr : Range(n_spaces)) {
+	    auto space = (*comp_fes)[space_nr];
+	    O.ss_ranges[space_nr][0] = offset;
+	    O.ss_ranges[space_nr][1] = offset + get_lo_nd(space);
+	    offset += space->GetNDof();
+	  }
+	}
+	else { // per default, take lo-part
+	  O.ss_ranges.SetSize(1);
+	  O.ss_ranges[0][0] = 0;
+	  O.ss_ranges[0][1] = get_lo_nd(fes);
+	}
+	cout << IM(3) << "subset for coarsening defined by low-order range(s)" << endl;
+	cout << IM(5) << O.ss_ranges << endl;
       }
       break;
     }
@@ -188,23 +225,22 @@ namespace amg
 	  O.subset = BAO::RANGE_SUBSET;
 	  O.ss_ranges.SetSize(1);
 	  O.ss_ranges[0][0] = 0;
-	  if (auto lospace = bfa->GetFESpace()->LowOrderFESpacePtr()) // e.g compound has no LO space
+	  if (auto lospace = fes->LowOrderFESpacePtr()) // e.g compound has no LO space
 	    { O.ss_ranges[0][1] = lospace->GetNDof(); }
 	  else
-	    { O.ss_ranges[0][1] = bfa->GetFESpace()->GetNDof(); }
+	    { O.ss_ranges[0][1] = fes->GetNDof(); }
 	}
 	else {
 	  cout << IM(3) << "taking nodalp2 subset for coarsening" << endl;
-	  auto fes = bfa->GetFESpace();
 	  O.ss_select = make_shared<BitArray>(fes->GetNDof());
 	  O.ss_select->Clear();
 	  for (auto k : Range(ma->GetNV()))
-	    { O.ss_select->Set(k); }
+	    { O.ss_select->SetBit(k); }
 	  Array<DofId> dns;
 	  for (auto k : Range(ma->GetNEdges())) {
 	    fes->GetDofNrs(NodeId(NT_EDGE, k), dns);
 	    if (dns.Size())
-	      { O.ss_select->Set(dns[0]); }
+	      { O.ss_select->SetBit(dns[0]); }
 	  }
 	}
 	cout << IM(3) << "nodalp2 set: " << O.ss_select->NumSet() << " of " << O.ss_select->Size() << endl;
@@ -223,6 +259,28 @@ namespace amg
     set_enum_opt(O.energy, "energy", {"triv", "alg", "elmat"}, BAO::ALG_ENERGY);
 
     set_enum_opt(O.clev, "clev", {"inv", "sm", "none"}, BAO::INV_CLEV);
+
+    auto set_opt_kv = [&](auto & opt, string name, Array<string> keys, auto vals) {
+      string flag_opt = flags.GetStringFlag(pfit(name), "");
+      for (auto k : Range(keys))
+	if (flag_opt == keys[k]) {
+	  opt = vals[k];
+	  return;
+	}
+    };
+
+    set_opt_kv(O.cinv_type, "cinv_type", { "masterinverse", "mumps" }, Array<INVERSETYPE>({ MASTERINVERSE, MUMPS }));
+
+    set_opt_kv(O.cinv_type_loc, "cinv_type_loc", { "pardiso", "pardisospd", "sparsecholesky", "superlu", "superlu_dist", "mumps", "umfpack" },
+	       Array<INVERSETYPE>({ PARDISO, PARDISOSPD, SPARSECHOLESKY, SUPERLU, SUPERLU_DIST, MUMPS, UMFPACK }));
+
+    auto num_sm_ver = flags.GetNumFlag(pfit("sm_ver"), 3);
+    if (num_sm_ver == 1)
+      { O.sm_ver = BAO::VER1; }
+    else if (num_sm_ver == 2)
+      { O.sm_ver = BAO::VER2; }
+    else
+      { O.sm_ver = BAO::VER3; }
 
     ModifyOptions(O, flags, prefix);
 
@@ -319,18 +377,12 @@ namespace amg
       fine_spm->SetParallelDofs(make_shared<ParallelDofs> ( mecomm , move(dps), GetEntryDim(fine_spm.get()), false));
     }
 
-    cout << " MESH " << endl;
     auto mesh = BuildInitialMesh();
-    cout << " MESH " << endl;
 
-    cout << " FACT " << endl;
     factory = BuildFactory(mesh);
-    cout << " FACT " << endl;
 
     /** Set up Smoothers **/
-    cout << " AMA " << endl;
     BuildAMGMat();
-    cout << " AMA " << endl;
     
   } // EmbedVAMG::Finalize
 
@@ -372,9 +424,7 @@ namespace amg
     Array<shared_ptr<BaseSparseMatrix>> mats ({ fspm });
     auto dof_map = make_shared<DOFMap>();
 
-    cout << "SUL " << endl;
     factory->SetupLevels(mats, dof_map);
-    cout << "SUL " << endl;
 
     // Set up smoothers
 
@@ -386,7 +436,7 @@ namespace amg
 
     Array<shared_ptr<BaseSmoother>> smoothers(mats.Size()-1);
     for (auto k : Range(size_t(0), mats.Size()-1)) {
-      cout << " sm " << k << " " << mats.Size() << endl;
+      // cout << " sm " << k << " " << mats.Size() << endl;
       smoothers[k] = BuildSmoother (mats[k], dof_map->GetParDofs(k), (k==0) ? finest_freedofs : nullptr);
       smoothers[k]->Finalize(); // do i even need this anymore ?
     }
@@ -399,7 +449,6 @@ namespace amg
 
 
     // Coarsest level setup
-    cout << " CLI " << endl;
 
     if (mats.Last() != nullptr) { // we might drop out because of redistribution at some point
     
@@ -447,8 +496,6 @@ namespace amg
       }
 
     } // mats.Last() != nullptr
-
-    cout << " TEST " << endl;
 
     if (options->do_test)
       {
@@ -509,7 +556,7 @@ namespace amg
     auto & vsort = node_sort[NT_VERTEX];
     for (auto k : Range(top_mesh->template GetNN<NT_VERTEX>()))
       if (finest_freedofs->Test(k))
-	{ fvs->Set(vsort[k]); }
+	{ fvs->SetBit(vsort[k]); }
     free_verts = fvs;
 
     return top_mesh;
@@ -535,26 +582,38 @@ namespace amg
     auto fpd = finest_mat->GetParallelDofs();
 
 
-    // cout << " make mesh from mat: " << endl << *finest_mat << endl;
+    // cout << " btm alg, fds " << endl << *finest_freedofs << endl;
 
+    // cout << " make mesh from mat: " << endl;
+    // shared_ptr<BaseMatrix> fspm;
+    // if (auto pm = dynamic_cast<ParallelMatrix*>(finest_mat.get()))
+    //   fspm = pm->GetMatrix();
+    // else
+    //   fspm = finest_mat;
+    // auto msm = dynamic_pointer_cast<SparseMatrix<Mat<3,3,double>, Vec<3,double>, Vec<3,double>>>(fspm);
+    // cout << " msm " << msm << endl;
+    // // auto msm = dynamic_pointer_cast<SparseMatrix<Mat<6,6,double>, Vec<6,double>, Vec<6,double>>>(finest_mat);
+    // print_tm_spmat(cout, *msm); cout << endl;
+    
     // vertices
     auto set_vs = [&](auto nv, auto v2d) {
       vert_sort.SetSize(nv);
-      top_mesh->SetVs (nv, [&](auto vnr) -> FlatArray<int> LAMBDA_INLINE { return fpd->GetDistantProcs(v2d(vnr)); },
+      top_mesh->SetVs (nv, [&](auto vnr) LAMBDA_INLINE { return fpd->GetDistantProcs(v2d(vnr)); },
 		       [&vert_sort](auto i, auto j){ vert_sort[i] = j; });
       free_verts = make_shared<BitArray>(nv);
       if (finest_freedofs != nullptr) {
 	free_verts->Clear();
-	for (auto k : Range(nv))
+	for (auto k : Range(nv)) {
 	  if (finest_freedofs->Test(v2d(k)))
-	    { free_verts->Set(vert_sort[k]); }
+	    { free_verts->SetBit(vert_sort[k]); }
+	}
       }
       else
 	{ free_verts->Set(); }
-      cout << " nr free verts: " << free_verts->NumSet() << " of " << free_verts->Size() << endl;
-      for (auto k : Range(nv))
-	cout << " (" << k << "::" << free_verts->Test(k) << ")";
-      cout << endl;
+      // cout << " nr free verts: " << free_verts->NumSet() << " of " << free_verts->Size() << endl;
+      // for (auto k : Range(nv))
+      // 	cout << " (" << k << "::" << free_verts->Test(k) << ")";
+      // cout << endl;
     };
     
     // edges 
@@ -568,11 +627,11 @@ namespace amg
 	    for (auto col : ri.Part(pos+1)) {
 	      auto j = d2v(col);
 	      if (j != -1) {
-		// cout << "dofs " << row << " " << col << " are vertices " << k << " " << j << endl;
+		// cout << "dofs " << row << " " << col << " are (orig) vertices " << k << " " << j << ", sorted " << vert_sort[k] << " " << vert_sort[j] << endl;
 		fun(vert_sort[k],vert_sort[j]);
 	      }
 	      // else {
-	      //  	cout << "dont use " << row << " " << j << " with dof " << col << endl;
+		// cout << "dont use " << row << " " << j << " with dof " << col << endl;
 	      // }
 	    }
 	  }
@@ -589,13 +648,17 @@ namespace amg
 	    if (vk < vj) { epairs[n_edges++] = {vk, vj}; }
 	    else { epairs[n_edges++] = {vj, vk}; }
 	});
+      // cout << " edge pair list: " << endl;
+      // prow2(epairs); cout << endl;
       top_mesh->SetNodes<NT_EDGE> (n_edges, [&](auto num) LAMBDA_INLINE { return epairs[num]; }, // (already v-sorted)
 				   [](auto node_num, auto id) LAMBDA_INLINE { /* dont care about edge-sort! */ });
+      auto tme = top_mesh->GetNodes<NT_EDGE>();
+      // cout << " tmesh edges: " << endl << tme << endl;
       // cout << "final n_edges: " << top_mesh->GetNN<NT_EDGE>() << endl;
     }; // create_edges
 
     if (O.dof_ordering == BAO::REGULAR_ORDERING) {
-      const auto fes_bs = fpd->GetEntrySize();
+      // const auto fes_bs = fpd->GetEntrySize();
       int dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
       const auto bs0 = O.block_s[0]; // is this not kind of redundant ?
       if (O.subset == BAO::RANGE_SUBSET) {
@@ -603,7 +666,7 @@ namespace amg
 	const int stride = bs0; // probably 1
 	int dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
 	n_verts = (r0[1] - r0[0]) / stride;
-	auto d2v = [&](auto d) -> int LAMBDA_INLINE { return ( (d % stride == 0) && (d < r0[1]) && (r0[0] <= d) ) ? d/stride : -1; };
+	auto d2v = [&](auto d) LAMBDA_INLINE { return ( (d % stride == 0) && (d < r0[1]) && (r0[0] <= d) ) ? d/stride : -1; };
 	auto v2d = [&](auto v) LAMBDA_INLINE { return r0[0] + v * stride; };
 	set_vs (n_verts, v2d);
 	create_edges ( v2d , d2v );
@@ -615,16 +678,17 @@ namespace amg
 	  if (O.ss_select->Test(--sz))
 	    { maxset = sz+1; break; }
 	// cout << "maxset " << maxset << endl;
-	n_verts = O.ss_select->NumSet() * fes_bs / dpv;
+	n_verts = O.ss_select->NumSet() * dpv;
+	// cout << " dpv numset " << dpv << " " << O.ss_select->NumSet() << " " << O.ss_select->Size() << endl;
 	// cout << "n_verts " << n_verts << endl;
 	Array<int> first_dof(n_verts);
 	Array<int> compress(maxset); compress = -1;
-	for (size_t k = 0, j = 0; k < n_verts; j += bs0 / fes_bs)
+	for (size_t k = 0, j = 0; k < n_verts; j += bs0)
 	  if (O.ss_select->Test(j))
 	    { first_dof[k] = j; compress[j] = k++; }
 	// cout << "first_dof  "; prow(first_dof); cout << endl << endl;
 	// cout << "compress  "; prow(compress); cout << endl << endl;
-	auto d2v = [&](auto d) -> int LAMBDA_INLINE { return (d+1 > maxset) ? -1 : compress[d]; };
+	auto d2v = [&](auto d) LAMBDA_INLINE { return (d+1 > maxset) ? -1 : compress[d]; };
 	auto v2d = [&](auto v) LAMBDA_INLINE { return first_dof[v]; };
 	set_vs (n_verts, v2d);
 	create_edges ( v2d , d2v );
@@ -645,6 +709,9 @@ namespace amg
     cout << IM(3) << "AMG performed on " << top_mesh->GetNNGlobal<NT_EDGE>() << " edges" << endl;
     if (top_mesh->GetEQCHierarchy()->GetCommunicator().Size() == 1) // this is only loc info
       { cout << IM(3) << "free dofs " << finest_freedofs->NumSet() << " ndof local is: " << fpd->GetNDofLocal() << endl; }
+
+    // cout << "AMG performed on " << top_mesh->GetNN<NT_VERTEX>() << " local vertices, loc ndof is " << fpd->GetNDofLocal() << endl;
+    // cout << "AMG performed on " << top_mesh->GetNN<NT_EDGE>() << " edges" << endl;
 
     return top_mesh;
   } // EmbedVAMG :: BTM_Alg
@@ -672,26 +739,27 @@ namespace amg
       break;
     } }
 
-    cout << fpd->GetCommunicator().Rank() << " EQ " << endl;
-    fpd->GetCommunicator().Barrier();
     eqc_h = make_shared<EQCHierarchy>(fpd, true, maxset);
-    cout << eqc_h->GetCommunicator().Rank() << " EQ " << endl;
-    eqc_h->GetCommunicator().Barrier();
 
-    cout << eqc_h->GetCommunicator().Rank() << " BTM " << endl;
-    eqc_h->GetCommunicator().Barrier();
     auto top_mesh = BuildTopMesh(eqc_h);
-    cout << eqc_h->GetCommunicator().Rank() << " BTM " << endl;
-    eqc_h->GetCommunicator().Barrier();
 
     /** vertex positions, if we need them **/
-    if (O.keep_vp) {
-      node_pos.SetSize(1);
-      auto & vsort = node_sort[0]; // also kinda hard coded for vertex-vertex pos, and no additional permutation
-      auto & vpos(node_pos[NT_VERTEX]); vpos.SetSize(top_mesh->template GetNN<NT_VERTEX>());
-      for (auto k : Range(vpos.Size()))
-	ma->GetPoint(k,vpos[vsort[k]]);
-    }
+    // if (O.keep_vp) {
+    //   node_pos.SetSize(1);
+    //   auto & vsort = node_sort[0]; // also kinda hard coded for vertex-vertex pos, and no additional permutation
+    //   auto & vpos(node_pos[NT_VERTEX]); vpos.SetSize(top_mesh->template GetNN<NT_VERTEX>());
+    //   // cout << "init vpos: " << endl;
+    //   // Vec<3> kp;
+    //   // for (auto k : Range(vpos.Size())) {
+    //   // 	ma->GetPoint(k,kp);
+    //   // 	cout << k << ": " << kp << endl;
+    //   // }
+    //   // cout << endl;
+    //   for (auto k : Range(ma->GetNV()))
+    // 	ma->GetPoint(k,vpos[vsort[k]]);
+    //   // cout << "sorted vpos: " << endl;
+    //   // cout << vpos << endl;
+    // }
     
     /** Convert FreeDofs to FreeVerts (should probably do this above where I have v2d mapping1)**/
 
@@ -762,6 +830,7 @@ namespace amg
 	else { // BAO::SELECTED_SUBSET
 	  auto& subset = *O.ss_select;
 	  for (int j = 0, k = 0; k < n_verts; j++) {
+	    // cout << j << " " << k << " " << n_verts << " ss " << subset.Test(j) << endl;
 	    if (subset.Test(j)) {
 	      auto d = j; auto svnr = vsort[k++];
 	      d2v_array[d] = svnr;
@@ -770,8 +839,12 @@ namespace amg
 	  }
 	}
 
-	auto d2v = [&](auto d) -> int LAMBDA_INLINE { return d2v_array[d]; };
-	auto v2d = [&](auto v) -> int LAMBDA_INLINE { return v2d_array[v]; };
+	// cout << "vsort: " << endl; prow2(vsort); cout << endl;
+	// cout << "d2v_array: " << endl; prow2(d2v_array); cout << endl;
+	// cout << "v2d_array: " << endl; prow2(v2d_array); cout << endl;
+
+	auto d2v = [&](auto d) LAMBDA_INLINE { return d2v_array[d]; };
+	auto v2d = [&](auto v) LAMBDA_INLINE { return v2d_array[v]; };
 	alg_mesh = BuildAlgMesh_ALG_scal(top_mesh, spmat, d2v, v2d);
 	break;
       }
@@ -850,7 +923,9 @@ namespace amg
     	 - nodalp2 and fes is order 2
      **/
     shared_ptr<T_E_S> E_S = BuildES<N>();
-    // cout << "E_S: " << endl; if (E_S) cout << E_S->Height() << " x " << E_S->Width() << endl; cout << endl;
+    // cout << "E_S: " << endl;
+    // if (E_S) cout << E_S->Height() << " x " << E_S->Width() << endl;
+    // else cout << " NO E_S!!" << endl;
 
     size_t subset_count = (E_S == nullptr) ? fpds->GetNDofLocal() : E_S->Width();
 

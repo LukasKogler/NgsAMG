@@ -46,7 +46,9 @@ namespace amg
 
     auto ltimer = [](int level) -> Timer& { return *lev_timers[min2(level,4)]; };
 
-  /** pre-smooth **/
+    auto comm = map->GetParDofs(0)->GetCommunicator();
+
+    /** pre-smooth **/
     for (auto level : Range(n_levels-1))
       {
 	RegionTimer rtl(ltimer(level));
@@ -65,7 +67,7 @@ namespace amg
 
 	smoothers[level]->Smooth(xl, bl, rl, true, true, true);
 
-	cout << " x 1  level " << level << ": " << endl << xl << endl;
+	// cout << " x 1  level " << level << ": " << endl << xl << endl;
 
 	rl.Distribute();
 
@@ -79,9 +81,11 @@ namespace amg
       if (has_crs_inv) { /** exact solve on coarsest level **/
 	t4.Start();
 
-	cout << " coarse rhs: " << endl;
-	cout << *rhs_level[n_levels-1] << endl;
-
+	// if (comm.Rank() == 1) {
+	//   cout << " coarse rhs: " << endl;
+	//   cout << *rhs_level[n_levels-1] << endl;
+	// }
+	
 	//{ x_level[n_levels-1]->FVDouble() = 0; }
 	if (crs_inv == nullptr)
 	  { x_level[n_levels-1]->FVDouble() = 0; }
@@ -90,8 +94,10 @@ namespace amg
 
 	x_level[n_levels-1]->Cumulate();
 
-	cout << " coarse sol: " << endl;
-	cout << *x_level[n_levels-1] << endl;
+	// if (comm.Rank() == 1) {
+	//   cout << " coarse sol: " << endl;
+	//   cout << *x_level[n_levels-1] << endl;
+	// }
 
 	t4.Stop();
       }
@@ -117,14 +123,14 @@ namespace amg
 
 	map->AddC2F(level, 1.0, &xl, x_level[level+1].get());
 
-	cout << " x 2  level " << level << ": " << endl << xl << endl;
+	// cout << " x 2  level " << level << ": " << endl << xl << endl;
 
 	if (x_level[level+1] == nullptr)
 	  { t5.Stop(); }
 
 	smoothers[level]->SmoothBack(xl, bl, rl, false, false, false);
-
-	cout << " x 3  level " << level << ": " << endl << xl << endl;
+	
+	// cout << " x 3  level " << level << ": " << endl << xl << endl;
       }
 
   } // AMGMatrix::SmoothV

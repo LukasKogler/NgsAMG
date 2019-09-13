@@ -191,15 +191,22 @@ namespace amg
     Array<double> vcw(NV); vcw = 0;
     M.template Apply<NT_EDGE>([&](const auto & edge) {
 	auto tr = calc_trace(edata[edge.id]);
+	// cout << " edge " << edge << ", trace = " << tr << endl; // print_tm(cout, edata[edge.id]); cout << endl;
 	vcw[edge.v[0]] += tr;
 	vcw[edge.v[1]] += tr;
+	// cout << " vcws now " << vcw[edge.v[0]] << " " << vcw[edge.v[1]] << endl;
       }, true);
+    // cout << " v-acc wts " << endl; prow2(vcw); cout << endl;
     M.template AllreduceNodalData<NT_VERTEX>(vcw, [](auto & in) { return sum_table(in); }, false);
     M.template Apply<NT_EDGE>([&](const auto & edge) {
 	auto tr = calc_trace(edata[edge.id]);
+	// cout << " edge " << edge << ", trace = " << tr << endl; // print_tm(cout, edata[edge.id]); cout << endl;
 	double vw = min(vcw[edge.v[0]], vcw[edge.v[1]]);
+	// cout << " vcws " << vcw[edge.v[0]] << " " << vcw[edge.v[1]] << endl;
 	ecw[edge.id] = tr / vw;
+	// cout << " ecw " << ecw[edge.id] << endl;
       }, false);
+    // cout << " edge-wts for crsening: " << endl; prow2(ecw); cout << endl;
     return move(ecw);
   } // ElasticityAMGFactory::CalcECWSimple
 
@@ -418,34 +425,58 @@ namespace amg
 
     auto a = new AttachedEVD(Array<ElasticityVertexData>(top_mesh->GetNN<NT_VERTEX>()), CUMULATED); // !! otherwise pos is garbage
     auto vdata = a->Data(); // TODO: get penalty dirichlet from row-sums (only taking x/y/z displacement entries)
-    auto & vp = node_pos[NT_VERTEX];
-    for (auto k : Range(vdata)) {
-      auto& x = vdata[k];
-      x.wt = 0.0;
-      x.pos = vp[k];
+    const auto & vsort = node_sort[NT_VERTEX];
+
+    // vertex-points
+    for (auto k : Range(ma->GetNV())) {
+      auto vnum = vsort[k];
+      vdata[vnum].wt = 0;
+      ma->GetPoint(k, vdata[vnum].pos);
     }
 
-    auto b = new AttachedEED<C::DIM>(Array<ElasticityEdgeData<C::DIM>>(top_mesh->GetNN<NT_EDGE>()), CUMULATED);
+    // edge-mid points, kind of hacky!
+    if (top_mesh->GetNN<NT_VERTEX>() > ma->GetNV()) {
+      Vec<3> a, b;
+      auto ma_nv = ma->GetNV();
+      for (auto edge_num : Range(ma->GetNEdges())) {
+	auto pnums = ma->GetEdgePNums(edge_num);
+	ma->GetPoint(pnums[0], a);
+	ma->GetPoint(pnums[1], b);
+	auto vnum = vsort[ma_nv + edge_num];
+	vdata[vnum].wt = 0;
+	vdata[vnum].pos = 0.5 * ( a + b );
+      }
+    }
+
+    auto b = new AttachedEED<C::DIM>(Array<ElasticityEdgeData<C::DIM>>(top_mesh->GetNN<NT_EDGE>()), DISTRIBUTED); // !! has to be distr
     auto edata = b->Data();
 
     const auto& dof_blocks(options->block_s);
-    auto& fvs = *free_verts;
+    // auto& fvs = *free_verts;
+    const auto& ffds = *finest_freedofs;
     if ( (dof_blocks.Size() == 1) && (dof_blocks[0] == 1) ) { // multidim
       auto edges = top_mesh->GetNodes<NT_EDGE>();
       if (auto spm_tm = dynamic_pointer_cast<SparseMatrixTM<Mat<disppv(C::DIM),disppv(C::DIM),double>>>(spmat)) { // disp only
 	const auto& A(*spm_tm);
 	for (auto & e : edges) {
 	  auto di = V2D(e.v[0]); auto dj = V2D(e.v[1]);
-	  double fc = (fvs.Test(di) && fvs.Test(dj)) ? fabsum(A(di, dj)) / disppv(C::DIM) : 1e-4; // after BBDC, diri entries are compressed and mat has no entry 
+	  // cout << "edge " << e << endl << " dofs " << di << " " << dj << endl;
+	  // cout << " mat etr " << endl; print_tm(cout, A(di, dj)); cout << endl;
+	  // double fc = (ffds.Test(di) && ffds.Test(dj)) ? fabsum(A(di, dj)) / disppv(C::DIM) : 1e-4; // after BBDC, diri entries are compressed and mat has no entry 
+	  // after BBDC, diri entries are compressed and mat has no entry (mult multidim BDDC doesnt work anyways)
+	  double fc = (ffds.Test(di) && ffds.Test(dj)) ? fabsum(A(di, dj)) / sqrt(fabsum(A(di,di)) * fabsum(A(dj,dj))) / disppv(C::DIM) : 1e-4;
 	  auto & emat = edata[e.id]; emat = 0;
 	  Iterate<disppv(C::DIM)>([&](auto i) LAMBDA_INLINE { emat(i.value, i.value) = fc; });
+	  // cout << " emat: " << endl; print_tm(cout, emat); cout << endl;
 	}
       }
       else if (auto spm_tm = dynamic_pointer_cast<SparseMatrixTM<Mat<dofpv(C::DIM),dofpv(C::DIM),double>>>(spmat)) { // disp+rot
 	const auto& A(*spm_tm);
 	for (auto & e : edges) {
 	  auto di = V2D(e.v[0]); auto dj = V2D(e.v[1]);
-	  double fc = (fvs.Test(di) && fvs.Test(dj)) ? fabsum(A(di, dj)) / dofpv(C::DIM) : 1e-4; // after BBDC, diri entries are compressed and mat has no entry 
+	  // double fc = (ffds.Test(di) && ffds.Test(dj)) ? fabsum(A(di, dj)) / dofpv(C::DIM) : 1e-4; // after BBDC, diri entries are compressed and mat has no entry 
+	  // after BBDC, diri entries are compressed and mat has no entry (mult multidim BDDC doesnt work anyways)
+	  double fc = (ffds.Test(di) && ffds.Test(dj)) ? fabsum(A(di, dj)) / sqrt(fabsum(A(di,di)) * fabsum(A(dj,dj))) / dofpv(C::DIM) : 1e-4;
 	  auto & emat = edata[e.id]; emat = 0;
 	  Iterate<dofpv(C::DIM)>([&](auto i) LAMBDA_INLINE { emat(i.value, i.value) = fc; });
 	}
@@ -455,6 +486,7 @@ namespace amg
     }
     else
       { throw Exception("block_s for compound, but called algmesh_alg_scal!"); }
+
 
     auto mesh = make_shared<typename C::TMESH>(move(*top_mesh), a, b);
 
@@ -471,7 +503,7 @@ namespace amg
       Array<int> is_zero(A.Height());
       for(auto k : Range(A.Height()))
 	{ is_zero[k] = (A(k,k)(2,2) == 0) ?  1 : 0; }
-      pardofs->ReduceDofData(is_zero, MPI_SUM);
+      AllReduceDofData(is_zero, MPI_SUM, pardofs);
       for(auto k : Range(A.Height()))
 	if ( (pardofs->IsMasterDof(k)) && (is_zero[k] != 0) )
 	  { A(k,k)(2,2) = 1; }
@@ -498,7 +530,7 @@ namespace amg
       Array<TM> diags(A.Height());
       for(auto k : Range(A.Height()))
 	{ diags[k] = A(k,k); }
-      pardofs->ReduceDofData(diags, MPI_SUM);
+      MyAllReduceDofData(*pardofs, diags, [](auto & a, const auto & b) LAMBDA_INLINE { a+= b; });
       for(auto k : Range(A.Height())) {
 	if (pardofs->IsMasterDof(k)) {
 	  auto & dg_etr = A(k,k);
@@ -591,7 +623,11 @@ namespace amg
       }
     }
 
-    cout << "E_D: " << endl << *E_D << endl;
+    // cout << "E_D: " << endl;
+    // if (E_D)
+    //   print_tm_mat(cout, *E_D);
+    // else
+    //   cout << " NO E_D!!" << endl;
 
     return E_D;
   }
@@ -645,26 +681,26 @@ namespace amg
       	if (O.reg_mats) {
 	  auto v3sm = make_shared<RegHybridGSS3<typename C::TM, disppv(C::DIM), dofpv(C::DIM)>> (parmat, eqc_h, freedofs, O.mpi_overlap, O.mpi_thread);
 	  v3sm->SetSymmetric(options->smooth_symmetric);
-	  v3sm->Finalize();
+	  // v3sm->Finalize();
 	  sm = v3sm;
 	}
 	else {
 	  auto v3sm = make_shared<HybridGSS3<Mat<dofpv(C::DIM), dofpv(C::DIM), double>>>(parmat, eqc_h, freedofs, O.mpi_overlap, O.mpi_thread);
 	  v3sm->SetSymmetric(options->smooth_symmetric);
-	  v3sm->Finalize();
+	  // v3sm->Finalize();
 	  sm = v3sm;
 	}
       }
       else if (auto spmat = dynamic_pointer_cast<SparseMatrix<Mat<disppv(C::DIM),disppv(C::DIM), double>>>(mat)) {
 	auto v3sm = make_shared<HybridGSS3<Mat<disppv(C::DIM), disppv(C::DIM), double>>>(parmat, eqc_h, freedofs, O.mpi_overlap, O.mpi_thread);
 	v3sm->SetSymmetric(options->smooth_symmetric);
-	v3sm->Finalize();
+	// v3sm->Finalize();
 	sm = v3sm;
       }
       else if (auto spmat = dynamic_pointer_cast<SparseMatrix<double>>(mat)) {
 	auto v3sm = make_shared<HybridGSS3<double>>(parmat, eqc_h, freedofs, O.mpi_overlap, O.mpi_thread);
 	v3sm->SetSymmetric(options->smooth_symmetric);
-	v3sm->Finalize();
+	// v3sm->Finalize();
 	sm = v3sm;
       }
     }

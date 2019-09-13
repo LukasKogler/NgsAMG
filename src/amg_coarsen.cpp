@@ -328,7 +328,7 @@ namespace amg
 	    vmark_2_e[edge.v[l]] = edge.id;
 	    mark_v[edge.v[l]] = ew;
 	  }
-	  want_edge.Set(edge.id);
+	  want_edge.SetBit(edge.id);
 	}
       }
     }

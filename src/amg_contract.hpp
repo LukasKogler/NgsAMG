@@ -26,7 +26,6 @@ namespace amg
 
     virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const override
     {
-      cout << "CTRAM" << endl;
       // TODO: static cast this??
       shared_ptr<TSPM> spm = dynamic_pointer_cast<TSPM>(mat);
       if (spm == nullptr)

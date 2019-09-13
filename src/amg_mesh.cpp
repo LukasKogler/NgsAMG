@@ -122,7 +122,6 @@ namespace amg
   BlockTM :: BlockTM ( BlockTM && other)
     : TopologicMesh (move(other))
   {
-    cout << "BTM MV " << endl;
     eqc_h = other.eqc_h; other.eqc_h = nullptr;
     disp_eqc.SetSize(4);
     disp_cross.SetSize(4);
@@ -138,7 +137,6 @@ namespace amg
     eqc_faces = MakeFT<AMG_Node<NT_FACE>> (neqcs, disp_eqc[NT_FACE], faces, 0);
     cross_edges = MakeFT<AMG_Node<NT_EDGE>> (neqcs, disp_cross[NT_EDGE], edges, disp_eqc[NT_EDGE].Last());
     cross_faces = MakeFT<AMG_Node<NT_FACE>> (neqcs, disp_cross[NT_FACE], faces, disp_eqc[NT_FACE].Last());
-    cout << "BTM MV OK " << endl;
   } // BlockTM (..)
 
   BlockTM :: BlockTM ()
@@ -252,14 +250,6 @@ namespace amg
   BlockTM* BlockTM :: MapBTM (const BaseCoarseMap & cmap) const
   {
     static Timer t("MapBTM"); RegionTimer rt(t);
-    static Timer t1("MapBTM-1");
-    static Timer t2("MapBTM-2");
-    static Timer t3("MapBTM-3");
-    static Timer t4("MapBTM-4");
-    static Timer t5("MapBTM-5");
-    cout << " MBTM" << endl;
-
-    t1.Start();
 
     // cout << "map mesh " << *this << endl;
     auto coarse_mesh = new BlockTM(this->eqc_h);
@@ -286,12 +276,8 @@ namespace amg
       if (eqc_h.IsMasterOfEQC(eqc)) cmesh.nnodes_glob[NT_VERTEX] += nn;
       cmesh.nnodes_eqc[NT_VERTEX][eqc] = nn;
     }
-    t1.Stop();
-    t2.Start();
     cmesh.nnodes_glob[NT_VERTEX] = comm.AllReduce(cmesh.nnodes_glob[NT_VERTEX], MPI_SUM);
     // cout << "cmesh glob NV: " << cmesh.nnodes_glob[NT_VERTEX] << endl;
-    t2.Stop();
-    t3.Start();
     cmesh.nnodes_cross[NT_VERTEX].SetSize(neqcs); cmesh.nnodes_cross[NT_VERTEX] = 0;
     // cmesh.eqc_verts = FlatTable<AMG_Node<NT_VERTEX>> (neqcs, &cmesh.disp_eqc[NT_VERTEX][0], &cmesh.verts[0]);
     cmesh.eqc_verts = MakeFT<AMG_Node<NT_VERTEX>> (neqcs, cmesh.disp_eqc[NT_VERTEX], cmesh.verts, 0);
@@ -309,8 +295,6 @@ namespace amg
     disp_eeq.SetSize(neqcs+1); disp_eeq = cmap.GetMappedEqcFirsti<NT_EDGE>();
     cmesh.nnodes_glob[NT_EDGE] = 0;
     cmesh.nnodes_eqc[NT_EDGE].SetSize(neqcs);
-    t3.Stop();
-    t4.Start();
     for (auto eqc : Range(neqcs)) {
       auto nn = disp_eeq[eqc+1] - disp_eeq[eqc];
       if (eqc_h.IsMasterOfEQC(eqc)) cmesh.nnodes_glob[NT_EDGE] += nn;
@@ -327,16 +311,12 @@ namespace amg
       if (eqc_h.IsMasterOfEQC(eqc)) cmesh.nnodes_glob[NT_EDGE] += nn;
       cmesh.nnodes_cross[NT_EDGE][eqc] = nn;
     }
-    t4.Stop();
-    t5.Start();
     cmesh.nnodes_glob[NT_EDGE] = comm.AllReduce(cmesh.nnodes_glob[NT_EDGE], MPI_SUM);
     // cmesh.cross_edges = FlatTable<AMG_Node<NT_EDGE>> (neqcs, &cmesh.disp_cross[NT_EDGE][0], &cmesh.edges[cmesh.disp_eqc[NT_EDGE].Last()]);
     cmesh.cross_edges = MakeFT<AMG_Node<NT_EDGE>> (neqcs, cmesh.disp_cross[NT_EDGE], cmesh.edges, cmesh.disp_eqc[NT_EDGE].Last());
     // faces/cells (dummy)
     cmesh.nnodes[NT_FACE] = cmap.GetMappedNN<NT_FACE>();
     cmesh.nnodes[NT_CELL] = cmap.GetMappedNN<NT_CELL>();
-    t5.Stop();
-    cout << " MBTM D" << endl;
     return coarse_mesh;
   }
 
@@ -397,7 +377,7 @@ namespace amg
       for (auto i : Range(ne)) {
 	ElementId ei(VOL, i);
 	auto eledges = ma->GetElEdges (ei);		
-	for(size_t j=0;j<eledges.Size();j++) fine_edge.Set(eledges[j]);
+	for(size_t j=0;j<eledges.Size();j++) fine_edge.SetBit(eledges[j]);
       }
       // do I need sth. like that??
       // ma->AllReduceNodalData (NT_EDGE, fine_edge, MPI_LOR);

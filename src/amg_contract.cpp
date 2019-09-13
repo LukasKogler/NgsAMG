@@ -330,34 +330,32 @@ namespace amg
 
     NgsAMG_Comm comm = pardofs->GetCommunicator();
 
-    cout << "SWAP WITH PROL, AM RANK " << comm.Rank() << " of " << comm.Size() << endl;
-    cout << "loc glob nd " << pardofs->GetNDofLocal() << " " << pardofs->GetNDofGlobal() << endl;
+    // cout << "SWAP WITH PROL, AM RANK " << comm.Rank() << " of " << comm.Size() << endl;
+    // cout << "loc glob nd " << pardofs->GetNDofLocal() << " " << pardofs->GetNDofGlobal() << endl;
     
-    // TODO: new (mid) paralleldofs !?
+    // // TODO: new (mid) paralleldofs !?
 
     shared_ptr<SparseMatrixTM<TM>> split_A;
     // shared_ptr<ParallelDofs> mid_pardofs;
 
 
     if (!is_gm) {
-      cout << " get split A from " << master << endl;
+      // cout << " get split A from " << master << endl;
 
       comm.Recv(split_A, master, MPI_TAG_AMG);
 
-      cout << " got split A: " << endl << *split_A << endl;
+      // cout << " got split A: " << endl << *split_A << endl;
 
       // do sth like that if whe actually need non-dummy ones
       // Table<int> pd_tab; comm.Recv(pd_tab, master, MPI_TAG_AMG);
       // mid_pardofs = make_shared<ParallelDofs> (move(pd_tab), comm, pardofs->GetEntrySize(), false);
     }
     else { // is_gm
-      cout << "swap 2 " << endl;
 
       auto P = pm_in->GetProl();
 
-      cout << "prol dims " << P->Height() << " x " << P->Width() << endl;
-      cout << " mapped loc glob nd " << mapped_pardofs->GetNDofLocal() << " " << mapped_pardofs->GetNDofGlobal() << endl;
-    
+      // cout << "prol dims " << P->Height() << " x " << P->Width() << endl;
+      // cout << " mapped loc glob nd " << mapped_pardofs->GetNDofLocal() << " " << mapped_pardofs->GetNDofGlobal() << endl;
     
       /**
 	 For each member:
@@ -381,7 +379,6 @@ namespace amg
 	 Also make dp-table for new ParallelDofs.
       **/
       auto get_rows = [&](FlatArray<int> dmap, Array<int> & new_dmap, int for_rank) LAMBDA_INLINE {
-	cout << " gr 1 " << endl;
 	colspace.Clear();
 	int cnt_cols = 0;
 	Array<int> perow(dmap.Size());
@@ -391,17 +388,15 @@ namespace amg
 	  perow[k] = ri.Size();
 	  for (auto col : ri) {
 	    if (!colspace.Test(col))
-	      { colspace.Set(col); cnt_cols++; }
+	      { colspace.SetBit(col); cnt_cols++; }
 	  }
 	}
-	cout << " gr 2 " << endl;
 	rmap = -1;
 	new_dmap.SetSize(cnt_cols); cnt_cols = 0;
 	for (auto k : Range(P->Width())) {
 	  if (colspace.Test(k))
 	    { rmap[k] = cnt_cols; new_dmap[cnt_cols++] = k; }
 	}
-	cout << " gr 3 " << endl;
 	auto Pchunk = make_shared<SparseMatrixTM<TM>>(perow, cnt_cols);
 	const auto &rPchunk (*Pchunk);
 	for (auto k : Range(dmap)) {
@@ -419,11 +414,8 @@ namespace amg
 	    }
 	  }
 	}
-
-	cout << " gr ret " << endl;
 	return Pchunk;
       }; // get_rows
-      cout << "swap 3 " << endl;
 
 
       /**
@@ -474,21 +466,20 @@ namespace amg
 	// MyMPI_WaitAll(sreq);
       }
 
-      cout << " group "; prow(group); cout << endl;
+      // cout << " group "; prow(group); cout << endl;
 
       for (auto kp : Range(group)) {
-	cout << " mem " << kp << " rk " << group[kp] << endl;
+	// cout << " mem " << kp << " rk " << group[kp] << endl;
 	auto Apart = get_rows(dof_maps[kp], pdm[kp], group[kp]);
-	cout << "Apart for mem " << kp << " rk " << group[kp] << ": " << endl;
-	cout << "pchunk dims for mem   " << kp << " rk " << group[kp] << ": " << Apart->Height() << " x " << Apart->Width() << endl;
+	// cout << "Apart for mem " << kp << " rk " << group[kp] << ": " << endl;
+	// cout << "pchunk dims for mem   " << kp << " rk " << group[kp] << ": " << Apart->Height() << " x " << Apart->Width() << endl;
 	// cout << *Apart << endl;
 	if (group[kp] == comm.Rank())
 	  { split_A = Apart; }
 	else
 	  { comm.Send(*Apart, group[kp], MPI_TAG_AMG); }
-	cout << "DONE sending Apart for mem " << kp << " rk " << group[kp] << ": " << endl;
+	// cout << "DONE sending Apart for mem " << kp << " rk " << group[kp] << ": " << endl;
       }
-      cout << "swap 4 " << endl;
 
       Array<int> perow(group.Size());
       for (auto k : Range(perow))
@@ -496,7 +487,6 @@ namespace amg
       dof_maps = Table<int>(perow);
       for (auto k : Range(perow))
 	{ dof_maps[k] = pdm[k]; }
-      cout << "swap 5 " << endl;
 
     } // is_gm
 
@@ -510,9 +500,6 @@ namespace amg
     pardofs = mid_pardofs;
     mapped_pardofs = (pm_in == nullptr) ? nullptr : pm_in->GetMappedParDofs();
 
-    cout << "SWP done " << endl;
-
-    cout << "SPLIT PROL DIMS  " << split_A->Height() << " x " << split_A->Width() << endl;
     return prol_map;
   } // CtrMap::SplitProl
 
@@ -521,7 +508,6 @@ namespace amg
   void CtrMap<TV> :: SetUpMPIStuff ()
   {
     if (is_gm) {
-      cout << "SU-MPI STUFF!" << endl;
       mpi_types.SetSize(group.Size());
       Array<int> ones; size_t max_s = 0;
       for (auto k : Range(group.Size())) max_s = max2(max_s, dof_maps[k].Size());
@@ -563,9 +549,9 @@ namespace amg
     NgsAMG_Comm comm(pardofs->GetCommunicator());
 
     if (!is_gm) {
-      cout << " send mat to " << group[0] << endl;
+      // cout << " send mat to " << group[0] << endl;
       comm.Send(*mat, group[0], MPI_TAG_AMG);
-      cout << " sent mat to " << group[0] << endl;
+      // cout << " sent mat to " << group[0] << endl;
       return nullptr;
     }
 
@@ -578,9 +564,9 @@ namespace amg
     Array<shared_ptr<TSPM_TM> > dist_mats(group.Size());
     dist_mats[0] = mat;
     for(auto k : Range((size_t)1, group.Size())) {
-      cout << " get mat from " << k << " of " << group.Size() << endl;
+      // cout << " get mat from " << k << " of " << group.Size() << endl;
       comm.Recv(dist_mats[k], group[k], MPI_TAG_AMG);
-      cout << " got mat from " << k << " of " << group.Size() << ", rank " << group[k] << endl;
+      // cout << " got mat from " << k << " of " << group.Size() << ", rank " << group[k] << endl;
       // cout << *dist_mats[k] << endl;
     }
     timer_hack_ctrmat(1).Stop();
@@ -726,12 +712,8 @@ namespace amg
     : GridMapStep<TMESH>(_mesh), eqc_h(_mesh->GetEQCHierarchy()), groups(_groups), node_maps(4), annoy_nodes(4)
   {
     RegionTimer rt(timer_hack_gcmc());
-    cout << " CEQCH "  << endl;
     BuildCEQCH();
-    cout << " CEQCH "  << endl;
-    cout << " NMAPS "  << endl;
     BuildNodeMaps();
-    cout << " NMAPS "  << endl;
   } // GridContractMap (..)
 
 
@@ -768,11 +750,8 @@ namespace amg
   {
     RegionTimer rt(timer_hack_nmap());
 
-    cout << "BuildNodeMaps" << endl;
     const auto & f_eqc_h(*this->eqc_h);
     auto comm = f_eqc_h.GetCommunicator();
-    comm.Barrier();
-    cout << "BuildNodeMaps" << endl;
 
     // cout << "local mesh: " << endl << *this->mesh << endl;
     
@@ -874,7 +853,6 @@ namespace amg
     // cout << "v_dsp: " << endl; prow2(v_dsp); cout << endl;
     // cout << "c_mesh.eqc_verts: " << endl << c_mesh.eqc_verts << endl;
     auto & ceqc_verts(c_mesh.eqc_verts);
-    cout << "BuildNodeMaps (aft)" << endl;
     
     Array<size_t> sz(cneqcs); sz = 0;
     for (auto meq : Range(mneqcs)) {
@@ -883,7 +861,6 @@ namespace amg
       firsti_v[meq] = ceqc_verts.IndexArray()[ceq] + sz[ceq];
       sz[ceq] += bs;
     }
-    cout << "BuildNodeMaps" << endl;
 
     sz.SetSize(my_group.Size());
     for (auto k : Range(my_group.Size())) {
@@ -900,7 +877,6 @@ namespace amg
 	}
       }
     }
-    cout << "BuildNodeMaps" << endl;
 
     // cout << "contr vmap: " << endl;
     // for (auto k : Range(my_group.Size())) {
@@ -968,7 +944,6 @@ namespace amg
       }
       tannoy_edges = ct.MoveTable();
     }
-    cout << "BuildNodeMaps" << endl;
 
     // cout << "tannoy_edges: " << endl << tannoy_edges << endl;
     auto annoy_edges = ReduceTable<ANNOYE, ANNOYE>
@@ -990,7 +965,6 @@ namespace amg
 	  });
 	return out;
       });
-    cout << "BuildNodeMaps" << endl;
     
     // cout << "reduced annoy_edges: " << endl << annoy_edges << endl;
 
@@ -1014,7 +988,6 @@ namespace amg
     node_maps[NT_EDGE] = Table<amg_nts::id_type>(s_emap);
     auto & emaps = node_maps[NT_EDGE];
     emaps.AsArray() = -1; // TODO: remove...
-    cout << "BuildNodeMaps" << endl;
       
     /** count edge types in CEQs **/
     Array<size_t> ii_pos(mneqcs);
@@ -1030,7 +1003,7 @@ namespace amg
 	auto ceq = map_mc[meq];
 	bool is_sender = (my_group[k]==eqc_sender[meq]);
 	if (!is_sender) continue;
-	has_set.Set(meq);
+	has_set.SetBit(meq);
 	// auto ces = recv_cetab[k][eq];
 	auto eqes = mg_btms[k]->template GetENodes<NT_EDGE>(eq);
 	auto ces = mg_btms[k]->template GetCNodes<NT_EDGE>(eq);
@@ -1045,7 +1018,6 @@ namespace amg
       	ccounts[ceq][4] = annoy_count[ceq][1];
       }
     }
-    cout << "BuildNodeMaps" << endl;
 
     // cout << "ccounts: " << endl << ccounts << endl;
 
@@ -1068,8 +1040,6 @@ namespace amg
     size_t cnie = cniie + cncie + cnannoyi;
     size_t cnce = cncce + cnannoyc;
     size_t cne = cnie+cnce;
-    cout << "BuildNodeMaps" << endl;
-
     
     // cout << "CNE CNIE CNCE: " << cne << " " << cnie << " " << cnce << endl;
     // cout << "II CI ANNOYI CC ANNOYC: " << cniie << " " << cncie << " "
@@ -1083,7 +1053,6 @@ namespace amg
     c_mesh.edges.SetSize(cne);
     auto cedges = c_mesh.template GetNodes<NT_EDGE>();
     for (auto & e:cedges) e = {{{-1,-1}}, -1}; // TODO:remove
-    cout << "BuildNodeMaps" << endl;
 
     /** Literally no idea what I did here **/
     if (ccounts.Size()) {
@@ -1127,7 +1096,6 @@ namespace amg
       cc_pos[meq] = cnie + ccounts[ceq][3];
       ccounts[ceq][3] += ccc;
     }
-    cout << "BuildNodeMaps" << endl;
 
     /** prefix ci_pos **/
     for (auto meq : Range(mneqcs)) {
@@ -1221,7 +1189,6 @@ namespace amg
 	}
       }
     }
-    cout << "BuildNodeMaps xx" << endl;
 
     // okay, now finish writing annoy_edges and constrct annoy_nodes:
     sz.SetSize(cneqcs);
@@ -1250,7 +1217,6 @@ namespace amg
 	// cout << " -> " << cedges[id] << endl;
       }
     }
-    cout << "BuildNodeMaps" << endl;
 
     // cout << "contr emap: " << endl;
     // for (auto k : Range(my_group.Size())) {
@@ -1270,31 +1236,17 @@ namespace amg
     // cout << "contr eqc_edges: " << endl << c_mesh.eqc_edges << endl;
     // cout << "contr cross_edges: " << endl << c_mesh.cross_edges << endl;
     mapped_NN[NT_FACE] = mapped_NN[NT_CELL] = 0;
-    cout << "BuildNodeMaps" << endl;
 
     if constexpr(std::is_same<TMESH, BlockTM>::value == 1) {
         mapped_mesh = move(p_c_mesh);
       }
     else {
       // cout << "MAKE MAPPED ALGMESH!!" << endl;
-      cout << "MMM " << endl;
-      c_eqc_h.GetCommunicator().Barrier();
-      cout << "MMM " << endl;
-
       auto scd = mesh->MapData(*this);
-
-      cout << "MMM2 " << endl;
-      c_eqc_h.GetCommunicator().Barrier();
-      cout << "MMM2 " << endl;
-
       this->mapped_mesh = make_shared<TMESH> ( move(*p_c_mesh), scd );
-      cout << "MMM OK" << endl;
-      c_eqc_h.GetCommunicator().Barrier();
-      cout << "MMM OK" << endl;
       // cout << "MAPPED ALGMESH: " << endl;
       // cout << *mapped_mesh << endl;
     }
-    cout << "BuildNodeMaps done" << endl;
   } // GridContractMap::BuildNodeMaps
 
 

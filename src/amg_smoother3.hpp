@@ -186,7 +186,8 @@ namespace amg
     Array<MPI_Request> g_send, g_recv;
     Table<int> g_ex_dofs;      // ghost ex-DOFs  for each dist-proc (they are master of these)
     Table<TSCAL> g_buffer;    // buffer for ghost-DOF vals  for each dist-proc
-  };
+
+  }; // class DCCMap
 
 
 
@@ -338,7 +339,7 @@ namespace amg
     shared_ptr<HybridMatrix2<TM>> A;
     shared_ptr<BaseMatrix> origA;
 
-    virtual Array<TM> CalcModDiag ();
+    virtual Array<TM> CalcModDiag (shared_ptr<BitArray> free);
   };
 
 
@@ -351,13 +352,15 @@ namespace amg
     HybridGSS3 (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h, shared_ptr<BitArray> _subset,
 		bool _overlap, bool _in_thread);
 
-    void Finalize ();
+    virtual void Finalize () override;
 
   protected:
 
     using HybridSmoother2<TM>::A;
 
     shared_ptr<BitArray> subset;
+
+    size_t split_ind;
 
     shared_ptr<GSS3<TM>> jac_loc, jac_exo;
     shared_ptr<GSS4<TM>> jac_ex;
@@ -377,7 +380,7 @@ namespace amg
     RegHybridGSS3 (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h, shared_ptr<BitArray> _subset,
 		   bool _overlap, bool _in_thread);
   protected:
-    virtual Array<TM> CalcModDiag () override;
+    virtual Array<TM> CalcModDiag (shared_ptr<BitArray> free) override;
   };
 
 } // namespace amg

@@ -179,6 +179,60 @@ namespace amg
   
   extern NgsAMG_Comm AMG_ME_COMM;
   
+  template<class T, class TLAM>
+  void MyAllReduceDofData (const ParallelDofs & pardofs, FlatArray<T> data, TLAM lam)
+  {
+    auto comm = pardofs.GetCommunicator();
+    auto ex_procs = pardofs.GetDistantProcs();
+    if (!ex_procs.Size())
+      { return; }
+    Array<int> perow(ex_procs.Size());
+    for (auto k : Range(perow))
+      { perow[k] = pardofs.GetExchangeDofs(ex_procs[k]).Size(); }
+    Table<T> send(perow), recv(perow);
+    for (auto k : Range(perow)) {
+      auto buf = send[k];
+      auto ex_dofs = pardofs.GetExchangeDofs(ex_procs[k]);
+      for (auto j : Range(buf))
+	{ buf[j] = data[ex_dofs[j]]; }
+    }
+    Array<MPI_Request> reqs(2 * ex_procs.Size());
+    for (auto k : Range(perow)) {
+      reqs[2*k]     = comm.ISend(send[k], ex_procs[k], MPI_TAG_AMG);
+      reqs[2*k+1]   = comm.IRecv(recv[k], ex_procs[k], MPI_TAG_AMG);
+    }
+    MyMPI_WaitAll(reqs);
+
+    /** Note: we iterate by rank in comm, such that we have guaranteed same results everywhere **/
+    Array<int> tra (ex_procs.Last() + 1 - ex_procs[0]); tra = -1;
+    const auto ep0 = ex_procs[0];
+    for (auto k : Range(ex_procs))
+      { tra[ex_procs[k] - ep0] = k; }
+    auto to_row = [&tra, ep0] (auto p) LAMBDA_INLINE { return tra[p - ep0]; };
+    perow = 0;
+    for (auto dof_num : Range(pardofs.GetNDofLocal())) {
+      auto dps = pardofs.GetDistantProcs(dof_num);
+      if (dps.Size()) {
+	T dof_val(0);
+	bool loc_done = false;
+	for (auto j : Range(dps)) {
+	  if (comm.Rank() < dps[j]) {
+	    loc_done = true;
+	    lam(dof_val, data[dof_num]);
+	  }
+	  auto kp = to_row(dps[j]);
+	  lam(dof_val, recv[kp][perow[kp]++]);
+	}
+	if (!loc_done) {
+	  lam(dof_val, data[dof_num]);
+	}
+	data[dof_num] = dof_val;
+      }
+    }
+
+  } // MyAllReduceDofData
+
+
 } // namespace amg
 
 namespace ngstd

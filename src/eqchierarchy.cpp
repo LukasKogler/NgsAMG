@@ -75,8 +75,6 @@ namespace amg {
     this->rank = comm.Rank();
     this->np = comm.Size();
     
-    cout << GetCommunicator().Rank() << "EQH " << endl;
-
     Table<int> vanilla_dps;
     size_t max_nd = (_max_nd == -1) ? apd->GetNDofLocal() : _max_nd;
     // cout << " size_t max_nd = " << (_max_nd == -1) << " ? " << apd->GetNDofLocal() << " : " <<  _max_nd << endl;
@@ -114,15 +112,11 @@ namespace amg {
 	}
       }
 
-    cout << GetCommunicator().Rank() << "EQH " << endl;
-
     if (do_cutunion)
       this->SetupFromInitialDPs(std::move(vanilla_dps));
     else
       this->SetupFromDPs(std::move(vanilla_dps));
       
-    cout << GetCommunicator().Rank() << "EQH " << endl;
-
     return;
   } // end EQCHierarchy(pardofs,...)
   
@@ -263,8 +257,6 @@ namespace amg {
       // for (auto & row : rbuf)
       // 	{ prow(row); cout << endl; }
       MyMPI_WaitAll(reqs);
-      cout << GetCommunicator().Rank() << "SIDP " << endl;
-      GetCommunicator().Barrier();
 
 
       for (auto k : Range(n_v_exp)) {
@@ -328,9 +320,7 @@ namespace amg {
 	    }
 	}    
     }
-    cout << GetCommunicator().Rank() << "SIDP " << endl;
-    GetCommunicator().Barrier();
-    
+
     TableCreator<int> ct1(new_dps.Size());
     for (; !ct1.Done(); ct1++) {
       for (auto k:Range(new_dps.Size()))
@@ -338,9 +328,6 @@ namespace amg {
     	  ct1.Add(k,new_dps[k][j]);
     }
     Table<int> t1 = ct1.MoveTable();
-
-    cout << GetCommunicator().Rank() << "SIDP " << endl;
-    GetCommunicator().Barrier();
 
     this->SetupFromDPs(std::move(t1));
   } // end SetupFromInitialDPs
@@ -518,8 +505,8 @@ namespace amg {
 		subset = false;
 	  if (!subset)
 	    continue;
-	  hierarchic_order.Set(eqc1*neqcs+eqc2);
-	  //hierarchic_order.Set(eqc2*neqcs+eqc1); //haha, I'm a moron...
+	  hierarchic_order.SetBit(eqc1*neqcs+eqc2);
+	  //hierarchic_order.SetBit(eqc2*neqcs+eqc1); //haha, I'm a moron...
 	}
 
     auto intersect_arrays = [] (auto & a, auto & b, auto & c)

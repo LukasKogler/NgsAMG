@@ -21,8 +21,8 @@ namespace amg {
     this->mf_exd  = BitArray(H); mf_exd.Clear();
     for (auto k:Range(H)) {
       if (pds.IsMasterDof(k) && ( (!free_dofs) || free_dofs->Test(k) )) {
-	mf_dofs.Set(k);
-	if (pds.GetDistantProcs(k).Size()) mf_exd.Set(k);
+	mf_dofs.SetBit(k);
+	if (pds.GetDistantProcs(k).Size()) mf_exd.SetBit(k);
       }
     }
     SetUpMat();

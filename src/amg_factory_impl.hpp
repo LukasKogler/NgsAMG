@@ -235,6 +235,10 @@ namespace amg
     auto lev_comm = cap.mesh->GetEQCHierarchy()->GetCommunicator();
 
     vcc.Append(cap.mesh->template GetNNGlobal<NT_VERTEX>());
+    // cout << " occ-comp would be " << cap.mat->NZE() << " * " << GetEntrySize(cap.mat.get())
+    // 	 << " = " << cap.mat->NZE() * GetEntrySize(cap.mat.get()) << endl;
+    // cout << " mat " << cap.mat << " " << typeid(*cap.mat).name() << endl;
+    
     if (lev_comm.Rank() == 0)
       { occ.Append(lev_comm.Reduce(cap.mat->NZE() * GetEntrySize(cap.mat.get()), MPI_SUM, 0)); }
     else
@@ -282,13 +286,17 @@ namespace amg
       { return; }
 
     auto alam = [&](auto & rk, auto & val, auto & array) {
-      auto maxval = comm.AllReduce(val, MPI_MAX);
-      rk = comm.AllReduce( (val == maxval) ? (int)comm.Rank() : (int)comm.Size(), MPI_MIN);
-      if ( (comm.Rank() == 0) && (rk != 0) )
-	{ comm.Recv(array, rk, MPI_TAG_AMG); }
-      else if ( (comm.Rank() == rk) && (rk != 0) )
-	{ comm.Send(array, 0, MPI_TAG_AMG); }
-      val = maxval;
+      if (comm.Size() > 1) {
+	auto maxval = comm.AllReduce(val, MPI_MAX);
+	rk = comm.AllReduce( (val == maxval) ? (int)comm.Rank() : (int)comm.Size(), MPI_MIN);
+	if ( (comm.Rank() == 0) && (rk != 0) )
+	  { comm.Recv(array, rk, MPI_TAG_AMG); }
+	else if ( (comm.Rank() == rk) && (rk != 0) )
+	  { comm.Send(array, 0, MPI_TAG_AMG); }
+	val = maxval;
+      }
+      else
+	{ rk = 0; }
     };
     
     v_comp_l = 0;
@@ -303,7 +311,7 @@ namespace amg
       { v /= occl0; op_comp_l += v; }
 
     cout << "loc OCC: " << op_comp_l << endl;
-				       prow(occl); cout << endl;
+    prow(occl); cout << endl;
 
     alam(occl_rank, op_comp_l, occl);
 
@@ -395,24 +403,15 @@ namespace amg
     if(mats.Size() != 1)
       { throw Exception("SetupLevels needs a finest level mat!"); }
     
-    cout << "logger" << endl;
     logger = make_shared<Logger>(options->log_level);
-    cout << "logger ok" << endl;
 
-    cout << "embed_step: " << embed_step << endl;
-    
     auto fmat = mats[0];
-    cout << "pardofs" << endl;
-
     /** rank 0 (and maybe sometimes others??) can also not have an embed_step, while others DO.
 	ParallelDofs - constructor has to be called by every member of the communicator! **/
     int have_embed = fmat->GetParallelDofs()->GetCommunicator().AllReduce((embed_step == nullptr) ? 0 : 1, MPI_SUM);
     shared_ptr<ParallelDofs> fpds = (have_embed == 0) ? fmat->GetParallelDofs() : BuildParallelDofs(finest_mesh);
-    cout << "pardofs ok" << endl;
 
-    cout << "calll RSU" << endl;
     auto coarse_mats = RSU({ 0, finest_mesh, fpds, fmat }, dof_map);
-    cout << "RSU dne" << endl;
 
     // coarse mats in reverse order
     mats.SetSize(coarse_mats.Size() + 1);
@@ -432,8 +431,6 @@ namespace amg
   template<class TMESH, class TM>
   Array<shared_ptr<BaseSparseMatrix>> AMGFactory<TMESH, TM> :: RSU (Capsule cap, shared_ptr<DOFMap> dof_map)
   {
-    cout << "RSU2 " << cap.level << endl;
-
     logger->LogLevel(cap);
 
     shared_ptr<BaseDOFMapStep> ds;
@@ -457,6 +454,40 @@ namespace amg
       options->first_aaf : ( pow(options->aaf_scale, cap.level - ( (options->first_aaf == -1) ? 0 : 1) ) * options->aaf );
 
     size_t goal_meas = max( size_t(min(af, 0.9) * curr_meas), max(options->max_meas, size_t(1)));
+
+    size_t curr_ne = cmesh->template GetNNGlobal<NT_EDGE>();
+    size_t curr_nv = cmesh->template GetNNGlobal<NT_VERTEX>();
+    double edge_per_v = 2 * curr_ne / curr_nv;
+
+    /**
+       We want to find the right agglomerate size:
+         - in a "1d"-situation, we should aim for coarsening factor 0.25 to 0.5 [heuristic: avg. #neibs<=3]
+         - in a "2d"-situation, we should aim for coarsening factor 0.1 to 0.25 (ideally 3x3 or 2x2 agglomerates) [heuristic: 3<#neibs<=12]
+         - in a "3d"-situation, 0.04 to 0.12 (ideally 3x3x3 or 2x2x2 agglomerates)
+       TODO: Actually, I guess we should only consider sufficiently strong connections here! [heuristic: 12<#neibs]
+     **/
+    // dynamic_goal_fac = -1;
+    // if (edge_per_v <= 3)
+    //   { dynamic_goal_fac = (edge_per_v <= 2.5) ? 0.55 : 0.25; }
+    // else if (edge_per_v <= 12)
+    //   { dynamic_goal_fac = 0.25 - 0.1 * (edge_per_v - 3) / 9; } // 0.25 for 3, 0.1 for 9
+    // else
+    //   { dynamic_goal_fac = ; }
+
+    // dynamic_goal_fac = 1.0 / pow(3, log(edge_per_v, 2));
+
+    // dynamic_goal_fac = 1.0 / pow(2.5, log(edge_per_v, 2));
+
+    /**
+       We want to find the right agglomerate size, as a heutristic take 1/(1+avg number of neighbours)
+       TODO: Actually, I guess we should only consider sufficiently strong connections here! [heuristic: 12<#neibs]
+    **/
+    if (cap.level != 0) {
+      double dynamic_goal_fac = 1.0 / ( 1 + edge_per_v );
+      goal_meas = max( size_t(min2(0.5, dynamic_goal_fac) * curr_meas), max(options->max_meas, size_t(1)));
+    }
+
+    cout << IM(4) << "next goal for coarsening is " << curr_meas << " -> " << goal_meas << ", factor " << double(goal_meas)/curr_meas << endl;
 
     // if (comm.Rank() == 0) {
     //   cout << "using AF " << af << " from " << options->first_aaf << " " << options->aaf_scale << " " << options->aaf << endl;
@@ -482,13 +513,11 @@ namespace amg
     double crs_meas_fac = 0;
     auto old_meas = curr_meas;
 
-    auto do_coarsen_step = [&] () -> bool LAMBDA_INLINE {
+    auto do_coarsen_step = [&] () LAMBDA_INLINE {
 	// if ( (level[1] != 0) && (crs_meas_fac > 0.6) )
 	//   { state->coll_cross = true; }
 
-	cout << "BCM" << endl;
 	auto grid_step = BuildCoarseMap (cmesh);
-	cout << "BCM" << endl;
 
 	state->coll_cross = false;
 
@@ -500,11 +529,10 @@ namespace amg
 	crs_meas_fac = ComputeMeshMeasure(*_cmesh) / (1.0 * curr_meas);
 
 	frac_loc = _cmesh->GetEQCHierarchy()->GetCommunicator().AllReduce(double(_cmesh->template GetNN<NT_VERTEX>() > 0 ? _cmesh->template GetENN<NT_VERTEX>(0) : 0), MPI_SUM) / _cmesh->template GetNNGlobal<NT_VERTEX>();
+
 	cout << IM(4) << "coarsen fac " << crs_meas_fac << ", went from " << curr_meas << " to " << ComputeMeshMeasure(*_cmesh) << ", frac loc " << frac_loc << endl;
 
-
-	cout << " stuck1 " << (crs_meas_fac > options->ctr_crs_thresh) << endl;
-	cout << " sutck2 " << (frac_loc < options->ctr_loc_thresh) << endl;
+	cout << IM(5) << " stuck " << (crs_meas_fac > options->ctr_crs_thresh) << " " << (frac_loc < options->ctr_loc_thresh) << endl;
 
 	if ( (options->enable_ctr) && // break out of inner coarsening loop due to slow-down
 	     ( (crs_meas_fac > options->ctr_crs_thresh) ||
@@ -515,11 +543,10 @@ namespace amg
 
 	free_verts = nullptr; // relevant on finest level
 
-	cout << "PWP" << endl;
 	auto pwp = BuildPWProl(grid_step, cpds); // fine pardofs are correct
-	cout << "PWP OK" << endl;
 
 	conc_pwp = (conc_pwp == nullptr) ? pwp : MatMultAB(*conc_pwp, *pwp);
+
 	cpds = BuildParallelDofs(cmesh);
 
 	curr_meas = ComputeMeshMeasure(*cmesh);
@@ -530,14 +557,12 @@ namespace amg
     };
 
 
-    auto do_contract_step = [&] () -> bool LAMBDA_INLINE {
+    auto do_contract_step = [&] () LAMBDA_INLINE {
 
       /** cannot redistribute if when is turned off or when we are already basically sequential **/
       if ( (!options->enable_ctr) || (cmesh->GetEQCHierarchy()->GetCommunicator().Size() <= 2) )
 	{ return false; }
 
-      cout << "do_contract_step" << endl;
-      
       /** Find out how rapidly we should redistribute **/
       auto ccomm = cmesh->GetEQCHierarchy()->GetCommunicator();
 
@@ -593,9 +618,7 @@ namespace amg
 	  
       cout << IM(4) << "contract by factor " << ctr_factor << endl;
 
-      cout << "do_contract_step" << endl;
       auto ctr_map = BuildContractMap(ctr_factor, cmesh);
-      cout << "do_contract_step" << endl;
 
       if (free_verts != nullptr) { // TODO: hacky
 	/** should only happen very rarely! **/
@@ -615,7 +638,7 @@ namespace amg
 	    if (cf[k] == 0)
 	      { free_verts->Clear(k); }
 	    else
-	      { free_verts->Set(k); }
+	      { free_verts->SetBit(k); }
 	}
       }
 
@@ -648,11 +671,7 @@ namespace amg
       /** inner loop - do coarsening until stuck **/
       bool stuck = false;
       while ( (curr_meas > goal_meas) && (!stuck) ) {
-	cout << "DCS " << endl;
-	cout << "DCS cmesh " << cmesh << " " << cmesh->template GetNNGlobal<NT_VERTEX>() << endl;
 	stuck = do_coarsen_step();
-	cout << "DCS OK " << endl;
-	cout << "DCS OK cmesh " << cmesh << " " << cmesh->template GetNNGlobal<NT_VERTEX>() << endl;
       }
 
       /** we PROBABLY have a coarse map **/
@@ -662,9 +681,7 @@ namespace amg
       }
 
       /** try contract **/
-      cout << "DCTRS" << endl;
       auto ctr_worked = do_contract_step();
-      cout << "DCTRS OK" << endl;
 
       /** contract is first map - need to smooth prol with first mapped mesh **/
       // if ( ctr_worked && (sub_steps.Size() == 1) )
@@ -674,6 +691,11 @@ namespace amg
       /** if contract did not work, or if we are contracted out, break out of loop **/
       if ( (!ctr_worked) || (cmesh == nullptr))
 	  { break; }
+    }
+
+    if ( sub_steps.Size() == 0 ) {
+      throw Exception("I seem to be completely stuck ... what should I do in this case??");
+      return Array<shared_ptr<BaseSparseMatrix>> (0);
     }
 
     // cout << " done, steps are " << endl; prow(sub_steps); cout << endl;
@@ -697,23 +719,20 @@ namespace amg
     **/
     using TCTR = CtrMap<typename strip_vec<Vec<mat_traits<TM>::HEIGHT, double>>::type>;
     using TCRS = ProlMap<TSPM_TM>;
+    if (sub_steps.Size() > 1)
     { // swap C/P
       if ( auto ctr_last = dynamic_pointer_cast<TCTR>(sub_steps.Last()) ) {
-
-	cout << "last step is ctr!" << endl;
 	auto fpd = ctr_last->GetParDofs();
-	cout << " in that comm " << fpd->GetCommunicator().Rank() << " of " << fpd->GetCommunicator().Size() << endl;
-
 	// if there is no prol after it, all members of group enter with false
 	if (ctr_last->DoSwap(false)) { // master must have entered with true - do swap!
-	  cout << "do swap!" << endl;
+	  // cout << "do swap!" << endl;
 	  // auto fpd = ctr_last->GetParDofs();
 	  sub_steps.Append(nullptr);
 	  sub_steps.Last() = sub_steps[sub_steps.Size()-2];
 	  sub_steps[sub_steps.Size()-2] = ctr_last->SwapWithProl(nullptr);
 	}
-	else
-	  { cout << " no swap " << endl; }
+	// else
+	  // { cout << " no swap " << endl; }
       }
 
       for (int step_nr = sub_steps.Size() - 1; step_nr > 0; step_nr--) {
@@ -739,9 +758,11 @@ namespace amg
 	else if ( auto crs_L = dynamic_pointer_cast<TCRS>(step_L) ) {
 	  if ( auto crs_R = dynamic_pointer_cast<TCRS>(step_R) ) { // P -- P, concatenate to single P (actually: P -- nullptr)
 	    // cout << " case 2" << endl;
-	    auto conc_P = MatMultAB(*crs_L->GetProl(), *crs_R->GetProl());
-	    auto conc_map = make_shared<TCRS>(conc_P, crs_L->GetParDofs(), crs_R->GetMappedParDofs());
+	    // auto conc_P = MatMultAB(*crs_L->GetProl(), *crs_R->GetProl());
+	    // auto conc_map = make_shared<TCRS>(conc_P, crs_L->GetParDofs(), crs_R->GetMappedParDofs());
 	    
+	    auto conc_map = crs_L->Concatenate(crs_R);
+
 	    sub_steps[step_nr-1] = conc_map;
 	    sub_steps[step_nr] = nullptr;
 	  }
@@ -750,19 +771,11 @@ namespace amg
 	}
 
       }
-      cout << " swapping done, remove nullptrs" << endl;
 
       /**
 	 remove nullptr-maps from sub_steps
 	 now we have P -- C -- C -- C ... (until i can concatenate C -- C to C, then it should really just be just P - C)
       **/
-      cout << "in steps " << endl;
-      for (auto k : Range(sub_steps)) {
-	auto & step = sub_steps[k];
-	cout << step;
-	if (step != nullptr) cout << " " << typeid(*step).name();
-	cout << endl;
-      }
       int c = 0;
       for (int j = 0; j < sub_steps.Size(); j++)
 	if (sub_steps[j] != nullptr)
@@ -773,20 +786,15 @@ namespace amg
     /** smooth prolongation **/
     if (options->enable_sm) {
       auto pstep = dynamic_pointer_cast<TCRS>(sub_steps[0]);
-      cout << " first step " << pstep << endl;
-      cout << " first step type " << typeid(*pstep).name() << endl;
       if (pstep == nullptr)
 	{ throw Exception("Something must be broken!!"); }
       if ( (options->enable_rbm) && (level[0] != 0) )
 	{ sprol_mesh = options->rebuild_mesh(sprol_mesh, sprol_mat, pstep->GetParDofs()); }
-      cout << "SPROL" << endl;
       SmoothProlongation(pstep, sprol_mesh);
-      cout << "SPROL OK" << endl;
     } // sm-prol
 
     /** add embed_step in the beginning **/
     if (embed_step != nullptr) {
-      cout << "EMB" << endl;
       auto conc_step = embed_step->Concatenate(sub_steps[0]);
       if (conc_step != nullptr)
 	{ sub_steps[0] = conc_step; }
@@ -797,7 +805,6 @@ namespace amg
 	sub_steps[0] = embed_step;
       }
       embed_step = nullptr; 
-      cout << "EMB OK" << endl;
     }
 
     /** assemble coarse matrix and add DOFstep to map **/
@@ -805,17 +812,13 @@ namespace amg
     // for (auto step : sub_steps)
     //   cout << typeid(*step).name() << endl;
     shared_ptr<BaseDOFMapStep> tot_step;
-    cout << "TS" << endl;
     if (sub_steps.Size() > 1)
       { tot_step = make_shared<ConcDMS>(sub_steps); }
     else
       { tot_step = sub_steps[0]; }
-    cout << "TSOK" << endl;
     
     // cout << " ass mat " << endl;
-    cout << " ASS MAT " << endl;
     cmat = tot_step->AssembleMatrix(cmat);
-    cout << " ASS MAT ok" << endl;
     // cout << " have ass mat! " << endl;
 
     dof_map->AddStep(tot_step);
@@ -857,9 +860,7 @@ namespace amg
     static Timer t("BuildContractMap"); RegionTimer rt(t);
     // at least 2 groups - dont send everything from 1 to 0 for no reason
     int n_groups = (factor == -1) ? 2 : max2(int(2), int(1 + std::round( (mesh->GetEQCHierarchy()->GetCommunicator().Size()-1) * factor)));
-    cout << "pprocs" << endl;
     Table<int> groups = PartitionProcsMETIS (*mesh, n_groups);
-    cout << "pprocs" << endl;
     return make_shared<GridContractMap<TMESH>>(move(groups), mesh);
   }
 
@@ -944,19 +945,16 @@ namespace amg
     static Timer t("BuildCoarseMap"); RegionTimer rt(t);
     shared_ptr<VWiseCoarsening<TMESH>> calg;
     if (this->state->coll_cross) {
-      if (mesh->GetEQCHierarchy()->GetCommunicator().Rank() == 0)
-	{ cout << "collapse cross!" << endl; }
+      // if (mesh->GetEQCHierarchy()->GetCommunicator().Rank() == 0)
+	// { cout << "collapse cross!" << endl; }
       auto coarsen_opts = make_shared<typename HierarchicVWC<TMESH>::Options>();
       this->SetCoarseningOptions(*coarsen_opts, mesh);
       calg = make_shared<HierarchicVWC<TMESH>> (coarsen_opts);
     }
     else {
       auto coarsen_opts = make_shared<typename BlockVWC<TMESH>::Options>();
-      cout << "SCO " << endl;
       this->SetCoarseningOptions(*coarsen_opts, mesh);
-      cout << "SCO OK" << endl;
       calg = make_shared<BlockVWC<TMESH>> (coarsen_opts);
-      cout << "CALG OK" << endl;
     }
     return calg->Coarsen(mesh);
   }
@@ -968,22 +966,13 @@ namespace amg
   {
     const FACTORY_CLASS & self = static_cast<const FACTORY_CLASS&>(*this);
     const CoarseMap<TMESH> & rcmap(*cmap);
-    const TMESH & fmesh = static_cast<TMESH&>(*rcmap.GetMesh()); 
-    fmesh.GetEQCHierarchy()->GetCommunicator().Barrier();
-    cout << "BPWP" << endl;
-    fmesh.CumulateData();
-    fmesh.GetEQCHierarchy()->GetCommunicator().Barrier();
-    cout << "BPWP" << endl;
+    const TMESH & fmesh = static_cast<TMESH&>(*rcmap.GetMesh()); fmesh.CumulateData();
     const TMESH & cmesh = static_cast<TMESH&>(*rcmap.GetMappedMesh()); cmesh.CumulateData();
-    fmesh.GetEQCHierarchy()->GetCommunicator().Barrier();
-    cout << "BPWP" << endl;
 
     size_t NV = fmesh.template GetNN<NT_VERTEX>();
     size_t NCV = cmesh.template GetNN<NT_VERTEX>();
 
     // Alloc Matrix
-    fmesh.GetEQCHierarchy()->GetCommunicator().Barrier();
-    cout << "BPWP" << endl;
     auto vmap = rcmap.template GetMap<NT_VERTEX>();
     Array<int> perow (NV); perow = 0;
     // -1 .. cant happen, 0 .. locally single, 1+ ..locally merged
@@ -994,16 +983,13 @@ namespace amg
       if (cvnr != -1)
 	{ has_partner[cvnr]++; }
     }
-    fmesh.GetEQCHierarchy()->GetCommunicator().Barrier();
-    cout << "BPWP" << endl;
+
     cmesh.template AllreduceNodalData<NT_VERTEX, int>(has_partner, [](auto & tab){ return move(sum_table(tab)); });
-    fmesh.GetEQCHierarchy()->GetCommunicator().Barrier();
-    cout << "BPWP" << endl;
+
     for (auto vnr : Range(NV))
       { if (vmap[vnr] != -1) perow[vnr] = 1; }
+
     auto prol = make_shared<TSPM_TM>(perow, NCV);
-    fmesh.GetEQCHierarchy()->GetCommunicator().Barrier();
-    cout << "BPWP" << endl;
 
     // Fill Matrix
     for (auto vnr : Range(NV)) {
@@ -1020,9 +1006,7 @@ namespace amg
 	}
       }
     }
-    fmesh.GetEQCHierarchy()->GetCommunicator().Barrier();
-    cout << "BPWP" << endl;
-
+    
     // cout << "PWP MAT: " << endl;
     // print_tm_spmat(cout, *prol); cout << endl<< endl;
 
@@ -1194,7 +1178,9 @@ namespace amg
 	FlatMatrix<TM> block (2,2,lh);
 	for (auto l:Range(unv)) {
 	  if (l==posV) continue;
+	  // cout << "RM block for edge nr " << all_fedges[used_edges[l]] << endl;
 	  self.CalcRMBlock (fmesh, all_fedges[used_edges[l]], block);
+	  // cout << " block:" << endl; print_tm(cout, block); cout << endl;
 	  int brow = (V < used_verts[l]) ? 0 : 1;
 	  mat(0,l) = block(brow,1-brow); // off-diag entry
 	  mat(0,posV) += block(brow,brow); // diag-entry
@@ -1214,6 +1200,8 @@ namespace amg
 	  //   self.RegDiag(diag);
 	  // }
 	}
+	// cout << " INVERT: " << endl;
+	// print_tm(cout, diag);
 	CalcInverse(diag);
 	
 	auto sp_ri = sprol->GetRowIndices(V); sp_ri = graph_row;

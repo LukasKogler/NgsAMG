@@ -142,10 +142,10 @@ namespace amg
       for (size_t k = 0; k < nrows; k++ ) {
 	if (count[k]<tab_in[k].Size()) {
 	  if (tab_in[k][count[k]]==min_datum)
-	    { hasmin.Set(k); }
+	    { hasmin.SetBit(k); }
 	  else if (lam_comp(tab_in[k][count[k]],min_datum)) {
 	    hasmin.Clear();
-	    hasmin.Set(k);
+	    hasmin.SetBit(k);
 	    min_datum = tab_in[k][count[k]];
 	    rofmin = k;
 	  }

@@ -133,7 +133,7 @@ namespace amg
 	  { cdata[CV] = data[v]; }
       }, true);
     // cout << "(distr) c-pos: " << endl;
-    // for (auto CV : Range(cmap.GetMappedNN<NT_VERTEX>())) cout << CV << ": " << cdata[CV].pos << endl;
+    // for (auto CV : Range(cmap.template GetMappedNN<NT_VERTEX>())) cout << CV << ": " << cdata[CV].pos << endl;
     // cout << endl;
     cevd.SetParallelStatus(DISTRIBUTED);
   } // AttachedEVD::map_data

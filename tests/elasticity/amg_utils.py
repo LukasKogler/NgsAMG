@@ -270,12 +270,12 @@ def gen_ref_mesh (geo, maxh, nref, comm, mesh_file = '', save = False):
             if len(mesh_file) and save:
                 ngm.Save(mesh_file)
         else:
-            ngm = netgen.meshing.Mesh(dim=3)
+            ngm = ng.meshing.Mesh(dim=3)
             ngm.Load(mesh_file)
         if comm.size > 0:
             ngm.Distribute(comm)
     else:
-        ngm = netgen.meshing.Mesh.Receive(comm)
+        ngm = ng.meshing.Mesh.Receive(comm)
         ngm.SetGeometry(geo)
     for l in range(nref):
         ngm.Refine()
@@ -288,10 +288,10 @@ def gen_2dbeam(maxh, nref, comm, lens = [10,1]):
     return gen_ref_mesh(geo, maxh, nref, comm)
 
 def gen_3dbeam(maxh, nref, comm, lens = [10,1,1]):
-    b = csg.OrthoBrick(csg.Pnt(-1,0,0), csg.Pnt(lens[0], lens[1], lens[2]))
+    b = csg.OrthoBrick(csg.Pnt(-1,0,0), csg.Pnt(lens[0], lens[1], lens[2])).bc("other")
     p = csg.Plane(csg.Pnt(0,0,0), csg.Vec(-1,0,0)).bc("left")
     geo = csg.CSGeometry()
-    g.Add(b*p)
+    geo.Add(b*p)
     return gen_ref_mesh(geo, maxh, nref, comm)
 
 
@@ -340,11 +340,11 @@ def setup_rot_elast(mesh, mu = 1, lam = 0, f_vol = None, multidim = True,
     dim = mesh.dim
     mysum = lambda x : sum(x[1:], x[0])
     if dim == 2:
-        to_skew = lambda x : ngs.CoefficientFunction( (0, -x[0], x[0], 0), dims = (2,2) )
+        to_skew = lambda x : ngs.CoefficientFunction( (0, x[0], -x[0], 0), dims = (2,2) )
     else:
-        to_skew = lambda x : ngs.CoefficientFunction( [  0  ,  x[2], -x[1], \
+        to_skew = lambda x : ngs.CoefficientFunction( (  0  ,  x[2], -x[1], \
                                                          -x[2],    0 ,  x[0], \
-                                                         x[1], -x[0],    0], dims = (3,3) )
+                                                         x[1], -x[0],    0), dims = (3,3) )
     if multidim:
         mdim = dim + ( (dim-1) * dim) // 2
         V = ngs.H1(mesh, order=order, dirichlet=diri, **fes_opts, dim=mdim)
@@ -373,8 +373,15 @@ def setup_rot_elast(mesh, mu = 1, lam = 0, f_vol = None, multidim = True,
         wt = to_skew(wt)
 
     a = ngs.BilinearForm(V, **blf_opts)
-    a += ( mu * ngs.InnerProduct((gradu - w), (gradut - wt)) + lam * divu * divut ) * ngs.dx
+    a += ( mu * ngs.InnerProduct(gradu - w, gradut - wt) ) * ngs.dx
+    #a += ngs.InnerProduct(w,wt) * ngs.dx
+
+    #trial, test = V.TnT()
+    #a += 0.1 * ngs.InnerProduct(trial,test) * ngs.dx
     
+    if lam != 0:
+        a += lam * divu * divut * ngs.dx
+
     lf = ngs.LinearForm(V)
     lf += f_vol * ut * ngs.dx
 
@@ -391,16 +398,31 @@ def setup_elast(mesh, mu = 1, lam = 0, f_vol = None, multidim = True, rotations 
 
 
 def Solve(a, f, c, ms = 100):
-    ngs.ngsglobals.msg_level = 0
     gfu = ngs.GridFunction(a.space)
+    tol = 1e-6
     with ngs.TaskManager():
+        ngs.ngsglobals.msg_level = 3
         a.Assemble()
-        f.Assemble()
         ngs.ngsglobals.msg_level = 1
+        f.Assemble()
         c.Test()
         cb = None if a.space.mesh.comm.rank != 0 else lambda k, x: print("it =", k , ", err =", x)
-        cg = ngs.krylovspace.CGSolver(mat=a.mat, pre=c, callback = cb, maxsteps=ms, tol=1e-12)
+        cg = ngs.krylovspace.CGSolver(mat=a.mat, pre=c, callback = cb, maxsteps=ms, tol=tol)
+        ngs.mpi_world.Barrier()
+        ts = ngs.mpi_world.WTime()
         cg.Solve(sol=gfu.vec, rhs=f.vec)
-        print("used nits = ", cg.iterations)
-    assert cg.errors[-1] < 1e-12 * cg.errors[0]
+        ngs.mpi_world.Barrier()
+        ts = ngs.mpi_world.WTime() - ts
+        if ngs.mpi_world.rank == 0:
+            print("---")
+            print("multi-dim ", a.space.dim)
+            print("(vectorial) ndof ", a.space.ndofglobal)
+            print("(scalar) ndof ", a.space.dim * a.space.ndofglobal)
+            print("used nits = ", cg.iterations)
+            print("(vec) dofs / (sec * np) = ", a.space.ndofglobal / (ts * max(ngs.mpi_world.size-1,1)))
+            print("(scal) dofs / (sec * np) = ", (a.space.ndofglobal * a.space.dim) / (ts * max(ngs.mpi_world.size-1,1)))
+            print("---")
+        
+    assert cg.errors[-1] < tol * cg.errors[0]
     assert cg.iterations < ms
+    return gfu

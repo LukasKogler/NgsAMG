@@ -1,3 +1,4 @@
+
 #define FILE_AMGSM3_CPP
 
 #ifdef USE_TAU
@@ -112,6 +113,13 @@ namespace amg
   	else
   	  { dinv[i] = TM(0.0); }
       });
+
+    // cout << " MY INVS(w. repl): " << endl;
+    // 			    for (auto k : Range(H)) {
+    // 			      if (!freedofs || freedofs->Test(k)) {
+    // 			      cout << k << ": " << endl;
+    // 						   print_tm(cout, dinv[k]); cout << endl;
+    // 			      } }
   }
   
   template<class TM>
@@ -159,6 +167,12 @@ namespace amg
   	else
   	  { dinv[i] = TM(0.0); }
       });
+    // cout << " MY (noadd) INVS(w. repl): " << endl;
+    // 			    for (auto k : Range(H)) {
+    // 			      if (!freedofs || freedofs->Test(k)) {
+    // 			      cout << k << ": " << endl;
+    // 						   print_tm(cout, dinv[k]); cout << endl;
+    // 			      } }
   }
 
   
@@ -168,6 +182,8 @@ namespace amg
 #ifdef USE_TAU
     TAU_PROFILE("SmoothRHSInternal", TAU_CT(*this), TAU_DEFAULT);
 #endif
+
+    // cout << " smooth size " << x.Size() << ", subset " << first << " " << next << endl;
 
     static Timer t(string("GSS2<bs=")+to_string(BS())+">::SmoothRHS");
     RegionTimer rt(t);
@@ -180,7 +196,8 @@ namespace amg
     auto fvb = b.FV<TV>();
     bool out = false;
     auto up_row = [&](auto rownr) LAMBDA_INLINE {
-      auto r = fvb(rownr) - A.RowTimesVector(rownr, fvx);
+      // auto r = fvb(rownr) - A.RowTimesVector(rownr, fvx);
+      const TV r = fvb(rownr) - A.RowTimesVector(rownr, fvx);
       // if (out)
       // 	{ cout << "gss3 up row " << rownr << " dof " << rownr << " res " << fvb(rownr) << " " << A.RowTimesVector(rownr, fvx) << " " << r << " update " << dinv[rownr] * r << endl; }
       // 	if (rownr == 20295) {
@@ -192,7 +209,16 @@ namespace amg
       // 	  }
       // 	      cout << endl;
       // 	}
+      // if (rownr == 25) {
+      // 	cout << "up row rhs " << endl;
+      // 	cout << " r: " << r << endl;
+      // 	cout << " x: " << fvx(rownr) << endl;
+      // 	cout << " dinv: " << endl; print_tm(cout, dinv[rownr]); cout << endl;
+      // }
       fvx(rownr) += dinv[rownr] * r;
+      // if (rownr == 25) {
+      // 	cout << " xnew: " << fvx(rownr) << endl;
+      // }
     };
 
 
@@ -242,8 +268,20 @@ namespace amg
 
     auto up_row = [&](auto rownr) LAMBDA_INLINE {
       auto w = -dinv[rownr] * fvr(rownr);
+      // if (rownr == 25) {
+      // 	cout << " up row res " << endl;
+      // 				  cout << "xold: " << fvx(rownr) << endl;
+      // 	cout << " r: " << fvr(rownr) << endl;
+      // 	cout << " dinv: " << endl;
+      // 	print_tm(cout, dinv[rownr]); cout << endl;
+      // 	cout << " update:  " << w << endl;
+      // }
       A.AddRowTransToVector(rownr, w, fvr);
       fvx(rownr) -= w;
+      // if (rownr == 25) {
+      // 				  cout << "xnew: " << fvx(rownr) << endl;
+      // }
+
     };
     
     double ti = MPI_Wtime();
@@ -300,6 +338,7 @@ namespace amg
   template<class TM>
   GSS4<TM> :: GSS4 (shared_ptr<SparseMatrix<TM>> A, shared_ptr<BitArray> subset)
   {
+    // cout << " GSS4, self diag " << endl;
     SetUp(A, subset);
     CalcDiags();
   } // GSS4(..)
@@ -308,12 +347,18 @@ namespace amg
   template<class TM>
   GSS4<TM> :: GSS4 (shared_ptr<SparseMatrix<TM>> A, FlatArray<TM> repl_diag, shared_ptr<BitArray> subset)
   {
+    // cout << " GSS4, repl diag " << endl;
     SetUp(A, subset);
     dinv.SetSize(xdofs.Size());
     for (auto k : Range(xdofs)) {
       dinv[k] = repl_diag[xdofs[k]];
       CalcInverse(dinv[k]);
     }
+    // cout << " MY (gss4) INVS(w. repl): " << endl;
+    // for (auto k : Range(xdofs)) {
+    //   cout << xdofs[k] << ": " << endl;
+    //   print_tm(cout, dinv[k]); cout << endl;
+    // }
   } // GSS4(..)
 
 
@@ -327,9 +372,9 @@ namespace amg
       BitArray res_subset(subset->Size()); res_subset.Clear();
       for (auto k : Range(A->Height())) {
 	if (subset->Test(k)) {
-	  cntx++; res_subset.Set(k);
+	  cntx++; res_subset.SetBit(k);
 	  for (auto j : A->GetRowIndices(k))
-	    { res_subset.Set(j); }
+	    { res_subset.SetBit(j); }
 	}
       }
       xdofs.SetSize(cntx); cntx = 0;
@@ -427,20 +472,9 @@ namespace amg
     auto fvx = x.FV<TV>();
     auto fvb = b.FV<TV>();
     iterate_rows([&](auto rownr) LAMBDA_INLINE {
-	auto r = fvb(xdofs[rownr]) - A.RowTimesVector(rownr, fvx);
-	// cout << "gss4 up row " << rownr << " dof " << xdofs[rownr] << " res " << fvb(xdofs[rownr]) << " " << A.RowTimesVector(rownr, fvx) << " " << r << " update " << dinv[rownr] * r << endl;
-
-	// if (rownr == 1246) {
-	//   auto ri = A.GetRowIndices(rownr);
-	//   auto rv = A.GetRowValues(rownr);
-	//   cout << "row: " << endl;
-	//   for (auto j : Range(ri)) {
-	//     cout << "[" << j << " " << ri[j] << " " << rv[j] << " " << fvx(ri[j]) <<  "] ";
-	//   }
-	//       cout << endl;
-	// }
-	
+	const TV r = fvb(xdofs[rownr]) - A.RowTimesVector(rownr, fvx);
 	fvx(xdofs[rownr]) += dinv[rownr] * r;
+	const TV w = dinv[rownr] * r;
       }, backwards);
 
   } // GSS4::SmoothRHSInternal
@@ -452,7 +486,7 @@ namespace amg
     TAU_PROFILE_SET_NODE(NgMPI_Comm(MPI_COMM_WORLD).Rank());
     int node = TAU_PROFILE_GET_NODE();
     int thread = TAU_PROFILE_GET_THREAD();
-    cout << x << " TAU node / thread id " << node << " " << thread << endl; 
+    // cout << x << " TAU node / thread id " << node << " " << thread << endl; 
   }
 #endif
 
@@ -904,11 +938,13 @@ namespace amg
 	    int rest = exds % chunk_size;
 	    // start handing out chunks with an arbitrary member (but no RNG, so it is reproducible)
 	    int start = (1029 * eqc_h->GetEQCID(k) / 7) % nmems;
-	    for (auto j : Range(n_chunks))
-	      { chunk_so[k][(start + j) % nmems] = chunk_size + ( (j < rest) ? 1 : 0 ); }
+	    // for (auto j : Range(n_chunks))
+	    //   { chunk_so[k][(start + j) % nmems] = chunk_size + ( (j < rest) ? 1 : 0 ); }
 
-	    // if (chunk_so[k].Size())
-	    //   { chunk_so[k][0] = exds; }
+	    if (chunk_so[k].Size()) {
+	      chunk_so[k].Last() = exds;
+	      // chunk_so[k][0] = exds;
+	    }
 	    
 	  }
 	}
@@ -946,7 +982,7 @@ namespace amg
 		    for (auto l : Range(csk[j])) {
 		      c_m_exd.Add(kp, dofsk[offset + l]);
 		      // cout << " my dof, set " << dofsk[offset + l] << endl;
-		      m_dofs->Set(dofsk[offset + l]);
+		      m_dofs->SetBit(dofsk[offset + l]);
 		    }
 		  }
 		}
@@ -1316,10 +1352,30 @@ namespace amg
     if (auto pds = _A->GetParallelDofs())
       { dcc_map = make_shared<ChunkedDCCMap<typename mat_traits<TM>::TSCAL>>(eqc_h, pds, 10); }
 
+    
+    // sqr.SetSize(mat_traits<TM>::HEIGHT * _A->Height());
+    // sqrinv.SetSize(mat_traits<TM>::HEIGHT * _A->Height());
+
+    // for (auto k : Range(_A->Height())) {
+    //   auto & dg = (*_A)(k,k);
+    //   Iterate<3>([&](auto j) { dg[k * mat_traits<TM>::HEIGHT + j.value] = dg(j.value, j.value); });
+    // }
+
     A = make_shared<HybridMatrix2<TM>> (_A, dcc_map);
     origA = _A;
 
     auto pardofs = A->GetParallelDofs();
+
+    // if (pardofs) {
+    //   MyAllReduceDofData (*pardofs, sqr,
+    // 			  [](auto & a, const auto & b) LAMBDA_INLINE { a += b; });  
+    // }
+
+    // for (auto k : Range(mat_traits<TM>::HEIGHT * _A->Height())) {
+    //   sqr[k] = sqrt(sqr[k]);
+    //   sqrinv[k] = 1 / sqrt(sqr[k]);
+    // }
+
 
     SetParallelDofs(pardofs);
 
@@ -1519,9 +1575,15 @@ namespace amg
       if (!overlap)
 	{ dcc_map->WaitD2C(); }
     }
+    else { // null out non-master entries (potentially different from .Distribute()!)
+      dcc_map->BufferG(*mpivec);
+      mpivec->SetParallelStatus(DISTRIBUTED);
+    }
 
     smooth_stage(0);
 
+    // DAWARI: wenn nicht need_d2c, also res CUMU, und update_res,
+    // mach ich unten res.distribute, was die falschen werte loescht!
     if (need_d2c) {
       if (overlap) {
 	if (in_thread) {
@@ -1588,59 +1650,128 @@ namespace amg
   } // HybridSmoother2<TM> :: SmoothInternal
 
 
-  template<class TM> INLINE void AddODToD (const TM & v, TM & w) {
+  // template<class TM> INLINE void AddODToD (const TM & v, TM & w) {
+  //   Iterate<mat_traits<TM>::HEIGHT>([&](auto i) LAMBDA_INLINE {
+  // 	Iterate<mat_traits<TM>::HEIGHT>([&](auto j) LAMBDA_INLINE {
+  // 	    w(i.value, i.value) += 0.5 * fabs(v(i.value, j.value));
+  // 	  });
+  //     });
+  // }
+  // template<> INLINE void AddODToD<double> (const double & v, double & w)
+  // { w += 0.5 * fabs(v); }
+
+
+  template<class TM> INLINE void add_od_to_v (const TM & mat, typename mat_traits<TM>::TV_COL & vec)
+  {
     Iterate<mat_traits<TM>::HEIGHT>([&](auto i) LAMBDA_INLINE {
 	Iterate<mat_traits<TM>::HEIGHT>([&](auto j) LAMBDA_INLINE {
-    w(i.value, i.value) += 0.5 * fabs(v(i.value, j.value));
+	    vec(i.value) += fabs(mat(i.value, j.value));
 	  });
       });
   }
-  template<> INLINE void AddODToD<double> (const double & v, double & w)
-  { w += 0.5 * fabs(v); }
+  template<> INLINE void add_od_to_v<double> (const double & v, double & w)
+  { w += fabs(v); }
   template<class TM>
-  Array<TM> HybridSmoother2<TM> :: CalcModDiag ()
+  Array<TM> HybridSmoother2<TM> :: CalcModDiag (shared_ptr<BitArray> free)
   {
-    static Timer t(string("HybridGSS<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::CalcAdditionalDiag");
+    static Timer t(string("HybridGSS<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::CalcModDiag");
     RegionTimer rt(t);
 
     Array<TM> mod_diag;
-
-    auto pardofs = A->GetParallelDofs();
-    if ( (pardofs == nullptr) || (pardofs->GetDistantProcs().Size() == 0) )
-      { return mod_diag; }
 
     auto G = A->GetG();
     if (G == nullptr)
       { return mod_diag; }
 
-    mod_diag.SetSize(A->Height()); mod_diag = 0;
- 
+    auto pardofs = A->GetParallelDofs();
+    if ( (pardofs == nullptr) || (pardofs->GetDistantProcs().Size() == 0) )
+      { return mod_diag; }
+
     const auto & M = *A->GetM();
-   
+
+    typedef typename mat_traits<TM>::TV_COL TV;
+
+    constexpr auto TMH = mat_traits<TM>::HEIGHT;
+
+    Array<TM> diag(A->Height());
     for (auto k : Range(M.Height()))
-      { mod_diag[k] = M(k,k); }
+      { diag[k] = M(k,k); }
+
+    MyAllReduceDofData (*pardofs, diag,
+			[](auto & a, const auto & b) LAMBDA_INLINE { a += b; });  
+
+    Array<TV> add_diag(A->Height()); add_diag = 0;
 
     for (auto k : Range(G->Height())) {
-      // auto ris = G->GetRowIndices(k);
+      if (free && !free->Test(k))
+	{ continue; }
+      auto ris = G->GetRowIndices(k);
       auto rvs = G->GetRowValues(k);
-      for (auto l : Range(rvs)) {
-	AddODToD(rvs[l], mod_diag[k]);
-	// AddODToD(rvs[l], mod_diag[ris[l]]);
+      // cout << " diag " << k << endl;
+      // print_tm(cout, diag[k]); cout << endl;
+      double sqrti[TMH];
+      if constexpr(is_same<TM,double>::value) { sqrti[0] = sqrt(diag[k]); }
+      else { Iterate<TMH>([&](auto l) { sqrti[l] = sqrt(diag[k](l,l)); }); }
+      for (auto j : Range(rvs))	{
+	if constexpr(is_same<TM,double>::value) {
+	    auto sqrti = sqrt(diag[k]);
+	    if (!free || free->Test(ris[j]))
+	      add_diag[k] += fabs(rvs[j]) / ( sqrti * sqrt(diag[ris[j]]));
+	  }
+	else {
+	  Iterate<TMH>([&](auto l) {
+	      Iterate<TMH>([&](auto m) {
+		  add_diag[k](l.value) += fabs(rvs[j](l.value,m.value)) / (sqrti[l.value] * sqrt(diag[ris[j]](m.value,m.value)));
+		});
+	    });
+	}
       }
     }
 
-    AllReduceDofData (mod_diag, MPI_SUM, A->GetParallelDofs());  
+    MyAllReduceDofData (*pardofs, add_diag,
+			[](auto & a, const auto & b) LAMBDA_INLINE { a += b; });  
 
-    // if constexpr( is_same<TM, double>::value )
-    //   {
-    // 	for (auto k : Range(M.Height())) {
-    // 	  if ( (mod_diag[k] != 0) && (M(k,k) != 0) ) {
-    // 	    if (M(k,k) > 3 * mod_diag[k])
-    // 	      { mod_diag[k] = 0; }
-    // 	  }
-    // 	}
-    //   }
+    mod_diag.SetSize(A->Height());
 
+    auto ismaster = *A->GetMap()->GetMasterDOFs();
+
+    const double eta = 1.5;
+    const double eta_inv = 1.0/eta;
+
+    for (auto k : Range(G->Height())) {
+      if ( !ismaster.Test(k) || (free && !free->Test(k)) )
+	{ continue; }
+      auto ad = add_diag[k];
+      auto d = diag[k];
+      auto & md = mod_diag[k];
+      if constexpr(is_same<TM, double>::value) {
+	  const double fac = (ad > eta_inv) ? (1 + 0.5 * ad) : 1.0;
+	  md = fac * d;
+	}
+      else {
+	md = d;
+	// Iterate<TMH>([&](auto i) {
+	//     const double fac = ( ad(i.value) > eta_inv) ? (1 + 0.5 * ad(i.value)) : 1.0;
+	//     if (ad(i.value) > eta_inv)
+	//       { cout << " up " << k << " " << i << endl; }
+	//     else
+	//       { cout << " skip " << k << " " << i << endl; }
+	//     md(i.value, i.value) *= fac;
+	//   });
+	bool do_up = false;
+	for (auto l : Range(3))
+	  do_up |= ad(l) > eta_inv;
+	if (do_up) {
+	  // cout << " mult " << k << endl;
+	  Iterate<TMH>([&](auto i) {
+	      // cout << ad(i.value) << "  ";
+	      const double fac = ( ad(i.value) > eta_inv) ? (1 + 0.5 * ad(i.value)) : 1.0;
+	      md(i.value, i.value) *= fac;
+	    });
+	  // cout << endl;
+	}
+      }
+    }
     return mod_diag;
   } // HybridSmoother2::CalcModDiag
 
@@ -1676,8 +1807,8 @@ namespace amg
       for (auto k : Range(M.Height())) {
 	if (m_dofs->Test(k)) {
 	  auto dps = pardofs->GetDistantProcs(k);
-	  if (dps.Size()) { ex->Set(k); }
-	  else { loc->Set(k); }
+	  if (dps.Size()) { ex->SetBit(k); }
+	  else { loc->SetBit(k); }
 	}
       }
       if (subset != nullptr) {
@@ -1687,12 +1818,33 @@ namespace amg
       }
     }
 
-    if (subset) {
-      cout << "rank " << A->GetParallelDofs()->GetCommunicator().Rank() << " numsets " << loc->NumSet() << " " << ex->NumSet() << " " << loc->Size() << " "
-	   << double(loc->NumSet()) / loc->Size() << " " << double(ex->NumSet()) / ex->Size() << endl;
+    if (ex == nullptr) // only local DOFs - just smoothing in one go
+      { split_ind = A->Height(); }
+    else {
+      if (subset == nullptr) // all DOFs are free - probably good enough
+	{ split_ind = A->Height() / 2; }
+      else { // probably not hugely important, but split loc dofs in actual halfs
+	size_t cnt = 0, numset_half = loc->NumSet() / 2;
+	split_ind = 0; // better not leave it at -1 for size 0 matrices
+	for (auto k : Range(loc->Size()))
+	  if (loc->Test(k))
+	    if (cnt++ == numset_half)
+	      { split_ind = k; break; }
+      }
     }
+
+    // split_ind = 0; // A->Height();
+
+    // if (subset) {
+      // cout << "rank " << A->GetParallelDofs()->GetCommunicator().Rank() << " numsets " << loc->NumSet() << " " << ex->NumSet() << " " << loc->Size() << " "
+      // 	   << double(loc->NumSet()) / loc->Size() << " " << double(ex->NumSet()) / ex->Size() << endl;
+      // cout << "split and index " << split_ind << endl;
+      // cout << "subset: " << endl << *subset << endl;
+      // cout << "loc: " << endl << *loc << endl;
+      // cout << "ex: " << endl << *ex << endl;
+    // }
     
-    auto mod_diag = this->CalcModDiag();
+    auto mod_diag = this->CalcModDiag(subset);
 
     if (mod_diag.Size()) {
       jac_loc = make_shared<GSS3<TM>>(A->GetM(), mod_diag, loc);
@@ -1711,13 +1863,13 @@ namespace amg
   void HybridGSS3<TM> :: SmoothLocal (int stage, BaseVector &x, const BaseVector &b) const
   {
     if (stage == 0)
-      { jac_loc->Smooth(0, A->Height()/2, x, b); }
+      { jac_loc->Smooth(0, split_ind, x, b); }
     else if ( (stage == 1) && (jac_ex != nullptr) ) {
       jac_ex->Smooth(x, b);
       // jac_exo->Smooth(0, A->Height(), x, b);
     }
   else if (stage == 2)
-      { jac_loc->Smooth(A->Height()/2, A->Height(), x, b); }
+      { jac_loc->Smooth(split_ind, A->Height(), x, b); }
   }
 
 
@@ -1725,13 +1877,13 @@ namespace amg
   void HybridGSS3<TM> :: SmoothBackLocal (int stage, BaseVector &x, const BaseVector &b) const
   {
     if (stage == 0)
-      { jac_loc->SmoothBack(A->Height()/2, A->Height(), x, b); }
+      { jac_loc->SmoothBack(split_ind, A->Height(), x, b); }
     else if ( (stage == 1) && (jac_ex != nullptr) ) {
       jac_ex->SmoothBack(x, b);
       // jac_exo->SmoothBack(0, A->Height(), x, b);
     }
     else if (stage == 2)
-      { jac_loc->SmoothBack(0, A->Height()/2, x, b); }
+      { jac_loc->SmoothBack(0, split_ind, x, b); }
   }
 
 
@@ -1739,13 +1891,13 @@ namespace amg
   void HybridGSS3<TM> :: SmoothRESLocal (int stage, BaseVector &x, BaseVector &res) const
   {
     if (stage == 0)
-      { jac_loc->SmoothRES(0, A->Height()/2, x, res); }
+      { jac_loc->SmoothRES(0, split_ind, x, res); }
     else if ( (stage == 1) && (jac_ex != nullptr) ) {
       jac_ex->SmoothRES(x, res);
       // jac_exo->SmoothRES(0, A->Height(), x, res);
     }
     else if (stage == 2)
-      { jac_loc->SmoothRES(A->Height()/2, A->Height(), x, res); }
+      { jac_loc->SmoothRES(split_ind, A->Height(), x, res); }
   }
 
 
@@ -1753,13 +1905,13 @@ namespace amg
   void HybridGSS3<TM> :: SmoothBackRESLocal (int stage, BaseVector &x, BaseVector &res) const
   {
     if (stage == 0)
-      { jac_loc->SmoothBackRES(A->Height()/2, A->Height(), x, res); }
+      { jac_loc->SmoothBackRES(split_ind, A->Height(), x, res); }
     else if ( (stage == 1) && (jac_ex != nullptr) )  {
       jac_ex->SmoothBackRES(x, res);
       // jac_exo->SmoothBackRES(0, A->Height(), x, res);
     }
     else if (stage == 2)
-      { jac_loc->SmoothBackRES(0, A->Height()/2, x, res); }
+      { jac_loc->SmoothBackRES(0, split_ind, x, res); }
   }
 
 
@@ -1773,9 +1925,9 @@ namespace amg
 
 
   template<class TM, int RMIN, int RMAX>
-  Array<TM> RegHybridGSS3<TM, RMIN, RMAX> :: CalcModDiag () 
+  Array<TM> RegHybridGSS3<TM, RMIN, RMAX> :: CalcModDiag (shared_ptr<BitArray> free) 
   {
-    Array<TM> mod_diag = HybridSmoother2<TM>::CalcModDiag();
+    Array<TM> mod_diag = HybridSmoother2<TM>::CalcModDiag(free);
 
     if (!mod_diag.Size()) {
       mod_diag.SetSize(A->Height()); mod_diag = 0;

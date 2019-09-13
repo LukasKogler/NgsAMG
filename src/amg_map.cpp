@@ -195,6 +195,7 @@ namespace amg
       auto comp_prol = MatMultAB<TMAT, SPM_TM_C> (*prol, *opmap->GetProl());
 
       // cout << " comp: "  << comp_prol->Height() << " x " << comp_prol->Width() << endl;
+      // print_tm_spmat(cout, *comp_prol); cout << endl<< endl;
 
       auto comp_map = make_shared<ProlMap<mult_spm_tm<TMAT, SPM_TM_C>>> (comp_prol, GetParDofs(), opmap->GetMappedParDofs());
       return comp_map;
@@ -219,18 +220,17 @@ namespace amg
     self.prol = make_shared<SPM_P>(move(*prol));
     self.prol_trans = make_shared<trans_spm<SPM_P>>(move(*prol_trans));
 
-    cout << "prolmap assmat, type " << typeid(*this).name() << endl;
-    cout << "prol dims " << prol->Height() << " x " << prol->Width() << endl;
-    cout << "fmat dims " << tfmat->Height() << " x " << tfmat->Width() << endl;
+    // cout << "prolmap assmat, type " << typeid(*this).name() << endl;
+    // cout << "prol dims " << prol->Height() << " x " << prol->Width() << endl;
+    // cout << "fmat dims " << tfmat->Height() << " x " << tfmat->Width() << endl;
     
-    cout << " fmat: " << endl; print_tm_spmat(cout, *tfmat); cout << endl<< endl;
-    cout << " prol: " << endl; print_tm_spmat(cout, *prol); cout << endl<< endl;
+    // cout << " fmat: " << endl; print_tm_spmat(cout, *tfmat); cout << endl<< endl;
+    // cout << " prol: " << endl; print_tm_spmat(cout, *prol); cout << endl<< endl;
 
     auto spm_tm = RestrictMatrixTM<SPM_TM_F, TMAT> (*prol_trans, *tfmat, *prol);
 
-    cout << " cmat: " << endl; print_tm_spmat(cout, *spm_tm); cout << endl<< endl;
+    // cout << " cmat: " << endl; print_tm_spmat(cout, *spm_tm); cout << endl<< endl;
 
-    cout << "prolmap assmat ISOK" << endl;
     return make_shared<SPM_C>(move(*spm_tm));
   }
 
