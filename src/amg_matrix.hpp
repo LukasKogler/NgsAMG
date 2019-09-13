@@ -33,6 +33,8 @@ namespace amg
     virtual int VHeight () const override { return smoothers[0]->Height(); }
     virtual int VWidth () const override { return smoothers[0]->Width(); }
     virtual AutoVector CreateVector () const override { return map->CreateVector(0); };
+    virtual AutoVector CreateColVector () const override { return map->CreateVector(0); };
+    virtual AutoVector CreateRowVector () const override { return map->CreateVector(0); };
 
     virtual bool IsComplex () const override { return false; }
 

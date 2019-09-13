@@ -266,6 +266,10 @@ namespace amg
     virtual void MultTransAdd (Complex s, const BaseVector & x, BaseVector & y) const override;
     virtual void MultTrans (const BaseVector & x, BaseVector & y) const override;
 
+    virtual AutoVector CreateVector () const override;
+    virtual AutoVector CreateRowVector () const override;
+    virtual AutoVector CreateColVector () const override;
+
   protected:
     bool dummy;
 
@@ -308,6 +312,10 @@ namespace amg
 
     virtual int VHeight () const override { return A->Height(); }
     virtual int VWidth () const override { return A->Width(); }
+
+    virtual AutoVector CreateVector () const override { return A->CreateVector(); };
+    virtual AutoVector CreateRowVector () const override { return A->CreateRowVector(); };
+    virtual AutoVector CreateColVector () const override { return A->CreateColVector(); };
 
     // virtual shared_ptr<BaseMatrix> GetMatrix () const override { return A; }
 

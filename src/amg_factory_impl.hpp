@@ -534,9 +534,8 @@ namespace amg
 
 	cout << IM(5) << " stuck " << (crs_meas_fac > options->ctr_crs_thresh) << " " << (frac_loc < options->ctr_loc_thresh) << endl;
 
-	if ( (options->enable_ctr) && // break out of inner coarsening loop due to slow-down
-	     ( (crs_meas_fac > options->ctr_crs_thresh) ||
-	       (frac_loc < options->ctr_loc_thresh) ) )
+	if ( options->enable_ctr && // break out of inner coarsening loop due to slow-down
+	     (crs_meas_fac > options->ctr_crs_thresh) )
 	  { return true; }
 
 	cmesh = _cmesh;
@@ -552,6 +551,10 @@ namespace amg
 	curr_meas = ComputeMeshMeasure(*cmesh);
 
 	level[1]++;
+
+	if ( options->enable_ctr && // when everything gets too connected, we shoudl re-distribute
+	     (frac_loc < options->ctr_loc_thresh) )
+	  { return true; }
 
 	return false; // not stuck
     };
@@ -785,6 +788,8 @@ namespace amg
 
     /** smooth prolongation **/
     if (options->enable_sm) {
+      cout << " step " << sub_steps[0] << endl;
+      cout << typeid(*sub_steps[0]).name() << endl;
       auto pstep = dynamic_pointer_cast<TCRS>(sub_steps[0]);
       if (pstep == nullptr)
 	{ throw Exception("Something must be broken!!"); }

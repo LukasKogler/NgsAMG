@@ -40,7 +40,7 @@ def setup_poisson(mesh, alpha=1 , beta=0, f=1, diri=".*", order=1, fes_opts=dict
     return V, a, lf
 
 def Solve(a, f, c, ms = 100):
-    ngs.ngsglobals.msg_level = 0
+    ngs.ngsglobals.msg_level = 5
     gfu = ngs.GridFunction(a.space)
     with ngs.TaskManager():
         a.Assemble()

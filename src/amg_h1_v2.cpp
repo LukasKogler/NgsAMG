@@ -55,7 +55,7 @@ namespace amg
     for (auto v : Range(NV))
       { vcw[v] = (vcw[v] == 0) ? 0 : vws[v]/vcw[v]; }
     // cout << " vcws: " << endl;
-    prow2(vcw); cout << endl;
+    // prow2(vcw); cout << endl;
     opts.vcw = move(vcw);
     opts.min_vcw = options.min_vcw;
     opts.ecw = move(ecw);
@@ -233,8 +233,8 @@ namespace amg
     for (auto k : Range(top_mesh->GetNN<NT_VERTEX>()))
       { ad[k] = fabs(ad[k]); }
 
-    cout << endl << "inital VW: "; prow2(ad); cout << endl << endl;
-    cout << endl << "inital EW: "; prow2(bd); cout << endl << endl;
+    // cout << endl << "inital VW: "; prow2(ad); cout << endl << endl;
+    // cout << endl << "inital EW: "; prow2(bd); cout << endl << endl;
 
 
     auto mesh = make_shared<H1Mesh>(move(*top_mesh), a, b);

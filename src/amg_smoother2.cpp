@@ -537,8 +537,14 @@ namespace amg
 
     parvec->SetParallelStatus(CUMULATED); parvec->Distribute();
 
+#ifdef PARVEC_BUFFERED_SENDS
+    // not sure if this is even needed here ...
     for (auto kkp : Range(nexp_larger))
       { parvec->ISend(ex_procs[nexp_smaller + kkp], rr_gather[kkp], true); }
+#else
+    for (auto kkp : Range(nexp_larger))
+      { parvec->ISend(ex_procs[nexp_smaller + kkp], rr_gather[kkp]); }
+#endif
 
     for (auto kp : Range(nexp_smaller))
       { parvec->IRecvVec(ex_procs[kp], rr_scatter[kp]); }
@@ -561,7 +567,28 @@ namespace amg
     scatter_done = true;
   } // finish_scatter
 
+  
+  template<class TM> AutoVector HybridMatrix<TM> :: CreateVector () const
+  {
+    if (pardofs == nullptr)
+      { return make_shared<VVector<TV>>(M->Height()); }
+    else
+      { return make_shared<ParallelVVector<TV>>(M->Height(), pardofs, DISTRIBUTED); }
+  } // HybridMatrix::CreateVector
+
+
+  template<class TM> AutoVector HybridMatrix<TM> :: CreateRowVector () const
+  {
+    return CreateVector();
+  } // HybridMatrix::CreateRowVector
+
+
+  template<class TM> AutoVector HybridMatrix<TM> :: CreateColVector () const
+  {
+    return CreateVector();
+  } // HybridMatrix::CreateColVector
     
+
   /** HybridSmoother **/
 
   template<class TM>

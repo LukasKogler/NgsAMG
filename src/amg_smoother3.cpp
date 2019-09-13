@@ -1339,6 +1339,25 @@ namespace amg
       { G->MultTransAdd(1.0, get_loc_ref(x), get_loc_ref(y)); }
   }
 
+  template<class TM> AutoVector HybridMatrix2<TM> :: CreateVector () const
+  {
+    if (pardofs == nullptr)
+      { return make_shared<VVector<TV>>(M->Height()); }
+    else
+      { return make_shared<ParallelVVector<TV>>(M->Height(), pardofs, DISTRIBUTED); }
+  } // HybridMatrix2::CreateVector
+
+
+  template<class TM> AutoVector HybridMatrix2<TM> :: CreateRowVector () const
+  {
+    return CreateVector();
+  } // HybridMatrix2::CreateRowVector
+
+
+  template<class TM> AutoVector HybridMatrix2<TM> :: CreateColVector () const
+  {
+    return CreateVector();
+  } // HybridMatrix2::CreateColVector
 
   /** HybridSmoother2 **/
 

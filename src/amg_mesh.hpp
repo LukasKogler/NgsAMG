@@ -126,15 +126,15 @@ namespace amg
     // Array<shared_ptr<FlatTM>> mesh_blocks;
     /** eqc-wise data **/
     Array<size_t> nnodes_eqc[4];
-    FlatTable<AMG_Node<NT_VERTEX>> eqc_verts;
-    FlatTable<AMG_Node<NT_EDGE>> eqc_edges;
-    FlatTable<AMG_Node<NT_FACE>> eqc_faces;
+    FlatTable<AMG_Node<NT_VERTEX>> eqc_verts = FlatTable<AMG_Node<NT_VERTEX>>(0, nullptr, nullptr);
+    FlatTable<AMG_Node<NT_EDGE>> eqc_edges = FlatTable<AMG_Node<NT_EDGE>>(0, nullptr, nullptr);
+    FlatTable<AMG_Node<NT_FACE>> eqc_faces = FlatTable<AMG_Node<NT_FACE>>(0, nullptr, nullptr);
     Array<Array<size_t>> disp_eqc; // displacement in node array
     /** padding data **/
     Array<size_t> nnodes_cross[4];
     /** cross data **/
-    FlatTable<AMG_Node<NT_EDGE>> cross_edges;
-    FlatTable<AMG_Node<NT_FACE>> cross_faces;
+    FlatTable<AMG_Node<NT_EDGE>> cross_edges = FlatTable<AMG_Node<NT_EDGE>>(0, nullptr, nullptr);
+    FlatTable<AMG_Node<NT_FACE>> cross_faces = FlatTable<AMG_Node<NT_FACE>>(0, nullptr, nullptr);
     Array<Array<size_t>> disp_cross; // displacement in node array
     friend std::ostream & operator<<(std::ostream &os, const BlockTM& p);
     template<ngfem::NODE_TYPE NT> friend
