@@ -24,8 +24,9 @@ namespace amg
     double ctraf = 0.05;                        // contract after reducing measure by this factor
     double first_ctraf = 0.025;                 // see first_aaf
     double ctraf_scale = 1;                     // see aaf_scale
-    double ctr_crs_thresh = 0.7;                // if coarsening slows down more than this, redistribute
+    double ctr_crs_thresh = 0.9;                // if coarsening slows down more than this, redistribute
     double ctr_loc_thresh = 0.5;                // if less than this fraction of vertices are purely local, redistribute
+    bool enable_dyn_aaf = true;
     /** HOW AGGRESSIVELY to contract **/
     double ctr_pfac = 0.25;                     // per default, reduce active NP by this factor (ctr_pfac / ctraf should be << 1 !)
     /** additional constraints for contract **/
@@ -80,6 +81,7 @@ namespace amg
     set_num(opts.aaf, "aaf");
     set_num(opts.first_aaf, "first_aaf");
     set_num(opts.aaf_scale, "aaf_scale");
+    set_bool(opts.enable_dyn_aaf, "enable_dyn_aaf");
 
     set_bool(opts.enable_ctr, "enable_redist");
     set_num(opts.ctraf, "rdaf");
@@ -457,7 +459,7 @@ namespace amg
 
     size_t curr_ne = cmesh->template GetNNGlobal<NT_EDGE>();
     size_t curr_nv = cmesh->template GetNNGlobal<NT_VERTEX>();
-    double edge_per_v = 2 * curr_ne / curr_nv;
+    double edge_per_v = 2 * double(curr_ne) / double(curr_nv);
 
     /**
        We want to find the right agglomerate size:
@@ -482,8 +484,25 @@ namespace amg
        We want to find the right agglomerate size, as a heutristic take 1/(1+avg number of neighbours)
        TODO: Actually, I guess we should only consider sufficiently strong connections here! [heuristic: 12<#neibs]
     **/
-    if (cap.level != 0) {
-      double dynamic_goal_fac = 1.0 / ( 1 + edge_per_v );
+    if ( (options->enable_dyn_aaf) && (cap.level != 0) ) {
+
+      auto coarsen_opts = make_shared<typename BlockVWC<TMESH>::Options>();
+      this->SetCoarseningOptions(*coarsen_opts, cmesh);
+      const double MIN_ECW = coarsen_opts->min_ecw;
+      const auto& ecw = coarsen_opts->ecw;
+      size_t n_s_e = 0;
+      cmesh->template Apply<NT_EDGE>([&](const auto & e) { if (ecw[e.id] > MIN_ECW) { n_s_e++; } }, true);
+      n_s_e = cmesh->GetEQCHierarchy()->GetCommunicator().AllReduce(n_s_e, MPI_MAX);
+
+      double s_e_per_v = 2 * double(n_s_e) / double(cmesh->template GetNNGlobal<NT_VERTEX>());
+
+      double dynamic_goal_fac = 1.0 / ( 1 + s_e_per_v );
+
+      // double dynamic_goal_fac = 1.0 / ( 1 + edge_per_v );
+
+      cout << " epv : " << edge_per_v << endl;
+      cout << "sepv : " << s_e_per_v << endl;
+
       goal_meas = max( size_t(min2(0.5, dynamic_goal_fac) * curr_meas), max(options->max_meas, size_t(1)));
     }
 
