@@ -397,16 +397,15 @@ def setup_elast(mesh, mu = 1, lam = 0, f_vol = None, multidim = True, rotations 
 
 
 
-def Solve(a, f, c, ms = 100):
+def Solve(a, f, c, ms = 100, tol=1e-6, nocb=True):
     gfu = ngs.GridFunction(a.space)
-    tol = 1e-6
     with ngs.TaskManager():
         ngs.ngsglobals.msg_level = 3
         a.Assemble()
         ngs.ngsglobals.msg_level = 1
         f.Assemble()
         c.Test()
-        cb = None if a.space.mesh.comm.rank != 0 else lambda k, x: print("it =", k , ", err =", x)
+        cb = None if a.space.mesh.comm.rank != 0 or nocb else lambda k, x: print("it =", k , ", err =", x)
         cg = ngs.krylovspace.CGSolver(mat=a.mat, pre=c, callback = cb, maxsteps=ms, tol=tol)
         ngs.mpi_world.Barrier()
         ts = ngs.mpi_world.WTime()
