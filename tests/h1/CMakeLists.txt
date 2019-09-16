@@ -2,6 +2,7 @@
 message(STATUS "Copy H1 test-files from ${CMAKE_CURRENT_SOURCE_DIR} to ${CMAKE_CURRENT_BINARY_DIR}")
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/amg_utils.py DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/simple DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/jump DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
 # add tests
 message(STATUS "Adding H1 tests")
@@ -19,10 +20,14 @@ function(myadd_test NAME NP EXEC ARGS)
   endif (NP EQUAL 1)
 endfunction(myadd_test)
 
-# simple H1 tests - no parameter jumps, NP = 1,2,5
+# simple H1 tests - no parameter jumps
 set (SIMPLEPYT "-m pytest -k simple")
 myadd_test("h1_seq" 1 ngspy ${SIMPLEPYT})
 myadd_test("h1_p2"  2 ngspy ${SIMPLEPYT})
 myadd_test("h1_p5"  5 ngspy ${SIMPLEPYT})
 
-# TODO: H1 with jumps
+# H1 tests with coefficient jumps
+set (JUMPPYT "-m pytest -k jump")
+myadd_test("h1_jump_seq" 1 ngspy ${JUMPPYT})
+myadd_test("h1_jump_p2"  2 ngspy ${JUMPPYT})
+myadd_test("h1_jump_p5"  5 ngspy ${JUMPPYT})
