@@ -48,8 +48,9 @@ namespace amg
       { vcw[k] += vws[k]; }
     Array<double> ecw(NE);
     rmesh.template Apply<NT_EDGE>([&](const auto & edge) LAMBDA_INLINE {
-	double vw = min(vcw[edge.v[0]], vcw[edge.v[1]]);
-	ecw[edge.id] = ews[edge.id] / vw;
+	// double vw = min(vcw[edge.v[0]], vcw[edge.v[1]]);
+	// ecw[edge.id] = ews[edge.id] / vw;
+	ecw[edge.id] = ews[edge.id] / sqrt(vcw[edge.v[0]] * vcw[edge.v[1]]);
       }, false);
     // note: when using AMG as coarsetype of BDDC, dirichlet-dofs have no entries, so ecv/vcw[dir_dof] is 0 !
     for (auto v : Range(NV))
@@ -93,7 +94,7 @@ namespace amg
     O.ctraf = 0.05;
     O.first_ctraf = O.aaf * O.first_aaf;
     O.ctraf_scale = 1;
-    O.ctr_crs_thresh = 0.7;
+    O.ctr_crs_thresh = 0.9;
     O.ctr_min_nv_gl = 5000;
     O.ctr_seq_nv = 5000;
     
@@ -226,7 +227,8 @@ namespace amg
       auto di = V2D(e.v[0]); auto dj = V2D(e.v[1]);
       double v = cspm(di, dj);
       // cout << "edge " << e << ", add " << v << " from " << di << " " << dj << endl;
-      bd[e.id] = fabs(v); ad[e.v[0]] += v; ad[e.v[1]] += v;
+      bd[e.id] = fabs(v) / sqrt(cspm(di,di) * cspm(dj,dj)); ad[e.v[0]] += v; ad[e.v[1]] += v;
+      // bd[e.id] = fabs(v); ad[e.v[0]] += v; ad[e.v[1]] += v;
       // cout << "vws are now " << ad[e.v[0]] << " " << ad[e.v[1]] << endl;
     }
     
