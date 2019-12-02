@@ -395,10 +395,10 @@ def setup_rot_elast(mesh, mu = 1, lam = 0, f_vol = None, multidim = True, reorde
             if reorder == "sep":
                 Vw = ngs.comp.Reorder(Vw)
         V = ngs.FESpace([Vu, Vw])
-        print("free pre RO: ", V.FreeDofs())
+        # print("free pre RO: ", V.FreeDofs())
         if reorder is True:
             V = ngs.comp.Reorder(V)
-        print("free post RO: ", V.FreeDofs())
+        # print("free post RO: ", V.FreeDofs())
         (u,w), (ut, wt) = V.TnT()
         gradu = ngs.Grad(u)
         divu = mysum( [ngs.Grad(u)[i,i] for i in range(dim)] )

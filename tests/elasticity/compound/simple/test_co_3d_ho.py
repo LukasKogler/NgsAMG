@@ -25,7 +25,10 @@ def do_test (rots=False, nodalp2 = False, ms=100, order=3, reo = False, use_bddc
     V, a, f = setup_elast(mesh, order=order, fes_opts = fes_opts, rotations = rots, f_vol = ngsolve.CoefficientFunction( (0, -0.005, 0) ), diri="left", multidim = False, reorder = reo)
     ngsolve.ngsglobals.msg_level = 5
     pc_opts = { "ngs_amg_max_coarse_size" : 15,
-                "ngs_amg_crs_thresh" : 0.9 }
+                "ngs_amg_do_test" : True,
+                "ngs_amg_agg_wt_geom" : False }
+    if nodalp2:
+        pc_opts["ngs_amg_crs_alg"] = "ecol"
     # rotations or no rotataions?
     if rots:
         pc_opts["ngs_amg_rots"] = True
@@ -93,13 +96,13 @@ def test_3d_bddc_np2():
 # BDDc reduces to p1 DOFs + edge bubbles, coarsening only on P1 dofs [no reorder!]
 def test_3d_bddc_howb():
     for R in [True, False]:
-        do_test(rots=R, order=3, nodalp2=False, use_bddc=True, reo=reo, ho_wb=True)
+        do_test(rots=R, order=3, nodalp2=False, use_bddc=True, reo=False, ho_wb=True)
 
 
 if __name__ == "__main__":
-    #test_3d_ho()
-    #test_3d_np2()
-    #test_3d_np2_ho()
-    #test_3d_bddc()
+    test_3d_ho()
+    test_3d_np2()
+    test_3d_np2_ho()
+    test_3d_bddc()
     test_3d_bddc_np2()
-    #test_3d_bddc_howb()
+    test_3d_bddc_howb()

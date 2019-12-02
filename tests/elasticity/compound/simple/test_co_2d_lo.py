@@ -12,6 +12,9 @@ def do_test (rots, reo, ms=50):
     pc_opts = { "ngs_amg_max_coarse_size" : 10 }
     if reo == "sep":
         pc_opts["ngs_amg_dof_blocks"] = [2,1] if rots else [2]
+        if rots:
+            pc_opts["ngs_amg_lower"] = [0, 2*mesh.nv]
+            pc_opts["ngs_amg_upper"] = [2*mesh.nv, V.ndof]
     elif reo is not False:
         pc_opts["ngs_amg_dof_blocks"] = [3] if rots else [2]
     if rots:
