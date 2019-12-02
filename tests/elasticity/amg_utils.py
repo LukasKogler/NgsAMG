@@ -308,13 +308,38 @@ def gen_beam(dim, maxh, nref, comm, lens = None):
             return gen_3dbeam(maxh, nref, comm, lens)
         
 
-def setup_norot_elast(mesh, mu = 1, lam = 0, f_vol = None, multidim = True,
+def gen_sq_with_sqs(maxh, nref, comm):
+    geo = ng.geom2d.SplineGeometry()
+
+    geo.AddRectangle( (-1,-1), (1,1), bcs=["outer_bot", "outer_right", "outer_top", "outer_left"], leftdomain=1, rightdomain=0)
+
+
+    geo.AddRectangle( (-0.6,0.4), (-0.4,0.6), bc="inner", leftdomain=2, rightdomain=1)
+    geo.AddRectangle( (0.4,0.4), (0.6,0.6), bc="inner", leftdomain=2, rightdomain=1)
+
+    geo.AddRectangle( (-0.15,-0.15), (0.15,0.15), bc="inner", leftdomain=2, rightdomain=1)
+
+    geo.AddRectangle( (-0.8,-0.6), (0.8,-0.4), bc="inner", leftdomain=2, rightdomain=1)
+
+    # really close to the central square
+    geo.AddRectangle( (0.2,-0.1), (0.4,0.1), bc="inner", leftdomain=2, rightdomain=1)
+
+    geo.SetMaterial(1, "mat_a")
+    geo.SetMaterial(2, "mat_b")
+
+    return gen_ref_mesh(geo, maxh, nref, comm)
+
+
+def setup_norot_elast(mesh, mu = 1, lam = 0, f_vol = None, multidim = True, reorder = False,
                       diri=".*", order=1, fes_opts=dict(), blf_opts=dict(), lf_opts=dict()):
     dim = mesh.dim
     if multidim:
         V = ngs.H1(mesh, order=order, dirichlet=diri, **fes_opts, dim=mesh.dim)
     else:
         V = ngs.VectorH1(mesh, order=order, dirichlet=diri, **fes_opts)
+
+    if reorder:
+        V = ngs.comp.Reorder(V)
         
     u,v = V.TnT()
 
@@ -335,41 +360,51 @@ def setup_norot_elast(mesh, mu = 1, lam = 0, f_vol = None, multidim = True,
     return V, a, lf
 
 
-def setup_rot_elast(mesh, mu = 1, lam = 0, f_vol = None, multidim = True,
+def setup_rot_elast(mesh, mu = 1, lam = 0, f_vol = None, multidim = True, reorder = False,
                     diri=".*", order=1, fes_opts=dict(), blf_opts=dict(), lf_opts=dict()):
     dim = mesh.dim
     mysum = lambda x : sum(x[1:], x[0])
     if dim == 2:
-        to_skew = lambda x : ngs.CoefficientFunction( (0, x[0], -x[0], 0), dims = (2,2) )
+        to_skew = lambda x : ngs.CoefficientFunction( (0, -x[0], x[0], 0), dims = (2,2) )
     else:
-        to_skew = lambda x : ngs.CoefficientFunction( (  0  ,  x[2], -x[1], \
-                                                         -x[2],    0 ,  x[0], \
-                                                         x[1], -x[0],    0), dims = (3,3) )
+        to_skew = lambda x : ngs.CoefficientFunction( (  0   , -x[2],  x[1], \
+                                                         x[2],    0 , -x[0], \
+                                                         -x[1], x[0],   0), dims = (3,3) )
     if multidim:
         mdim = dim + ( (dim-1) * dim) // 2
         V = ngs.H1(mesh, order=order, dirichlet=diri, **fes_opts, dim=mdim)
+        if reorder:
+            V = ngs.comp.Reorder(V)
         trial, test = V.TnT()
         u = ngs.CoefficientFunction( tuple(trial[x] for x in range(dim)) )
-        gradu = ngs.CoefficientFunction( tuple(ngs.grad(trial)[i,j] for i in range(dim) for j in range(dim)), dims = (dim, dim))
-        divu = mysum( [ngs.grad(trial)[i,i] for i in range(dim)] )
+        gradu = ngs.CoefficientFunction( tuple(ngs.Grad(trial)[i,j] for i in range(dim) for j in range(dim)), dims = (dim, dim))
+        divu = mysum( [ngs.Grad(trial)[i,i] for i in range(dim)] )
         w = to_skew([trial[x] for x in range(dim, mdim)])
         ut = ngs.CoefficientFunction( tuple(test[x] for x in range(dim)) )
-        gradut = ngs.CoefficientFunction( tuple(ngs.grad(test)[i,j] for i in range(dim) for j in range(dim)), dims = (dim, dim))
-        divut = mysum( [ngs.grad(test)[i,i] for i in range(dim)] )
+        gradut = ngs.CoefficientFunction( tuple(ngs.Grad(test)[i,j] for i in range(dim) for j in range(dim)), dims = (dim, dim))
+        divut = mysum( [ngs.Grad(test)[i,i] for i in range(dim)] )
         wt = to_skew([test[x] for x in range(dim, mdim)])
     else:
-        Vu = VectorH1(mesh, order=order, dirichlet=diri, **fes_opts)
+        Vu = ngs.VectorH1(mesh, order=order, dirichlet=diri, **fes_opts)
+        if reorder == "sep":
+            Vu = ngs.comp.Reorder(Vu)
         if dim == 3:
             Vw = Vu
         else:
-            Vw = H1(mesh, order=order, dirichlet=diri, **fes_opts)
-        V = FESpace([Vu, Vw])
+            Vw = ngs.H1(mesh, order=order, dirichlet=diri, **fes_opts)
+            if reorder == "sep":
+                Vw = ngs.comp.Reorder(Vw)
+        V = ngs.FESpace([Vu, Vw])
+        print("free pre RO: ", V.FreeDofs())
+        if reorder is True:
+            V = ngs.comp.Reorder(V)
+        print("free post RO: ", V.FreeDofs())
         (u,w), (ut, wt) = V.TnT()
-        gradu = ngs.CoefficientFunction( (*[grad(trial)[i,j] for i in range(dim) for j in range(dim)]), dims = (dim, dim))
-        divu = mysum( [grad(trial)[i,i] for i in range(dim)] )
+        gradu = ngs.Grad(u)
+        divu = mysum( [ngs.Grad(u)[i,i] for i in range(dim)] )
         w = to_skew(w)
-        gradut = ngs.CoefficientFunction( (*[grad(test)[i,j] for i in range(dim) for j in range(dim)]), dims = (dim, dim))
-        divut = mysum( [grad(test)[i,i] for i in range(dim)] )
+        gradut = ngs.Grad(ut)
+        divut = mysum( [ngs.Grad(ut)[i,i] for i in range(dim)] )
         wt = to_skew(wt)
 
     a = ngs.BilinearForm(V, **blf_opts)
@@ -388,19 +423,19 @@ def setup_rot_elast(mesh, mu = 1, lam = 0, f_vol = None, multidim = True,
     return V, a, lf
 
 
-def setup_elast(mesh, mu = 1, lam = 0, f_vol = None, multidim = True, rotations = False,
+def setup_elast(mesh, mu = 1, lam = 0, f_vol = None, multidim = True, rotations = False, reorder=False,
                 diri=".*", order=1, fes_opts=dict(), blf_opts=dict(), lf_opts=dict()):
     if rotations:
-        return setup_rot_elast(mesh, mu, lam, f_vol, multidim, diri, order, fes_opts, blf_opts, lf_opts)
+        return setup_rot_elast(mesh, mu, lam, f_vol, multidim, reorder, diri, order, fes_opts, blf_opts, lf_opts)
     else:
-        return setup_norot_elast(mesh, mu, lam, f_vol, multidim, diri, order, fes_opts, blf_opts, lf_opts)
+        return setup_norot_elast(mesh, mu, lam, f_vol, multidim, reorder, diri, order, fes_opts, blf_opts, lf_opts)
 
 
 
 def Solve(a, f, c, ms = 100, tol=1e-6, nocb=True):
     gfu = ngs.GridFunction(a.space)
     with ngs.TaskManager():
-        ngs.ngsglobals.msg_level = 3
+        ngs.ngsglobals.msg_level = 5
         a.Assemble()
         ngs.ngsglobals.msg_level = 1
         f.Assemble()

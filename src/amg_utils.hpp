@@ -3,10 +3,17 @@
 
 namespace amg
 {
+
+  INLINE void TimedLapackEigenValuesSymmetric (ngbla::FlatMatrix<double> a, ngbla::FlatVector<double> lami,
+					       ngbla::FlatMatrix<double> evecs)
+  {
+    static Timer t("LapackEigenValuesSymmetric"); RegionTimer rt(t);
+    LapackEigenValuesSymmetric (a, lami, evecs);
+  }
   
-  auto prow = [](const auto & ar, std::ostream &os = cout){ for(auto v:ar) os << v << " "; };
+  auto prow = [](const auto & ar, std::ostream &os = cout){ for (auto v:ar) os << v << " "; };
   auto prow2 = [](const auto & ar, std::ostream &os = cout) {
-    for(auto k : Range(ar.Size())) os << "(" << k << "::" << ar[k] << ") ";
+    for (auto k : Range(ar.Size())) os << "(" << k << "::" << ar[k] << ") ";
   };
 
   // like GetPositionTest of ngsovle-SparseMatrix
@@ -24,6 +31,23 @@ namespace amg
     // return numeric_limits<typename remove_reference<decltype(a[0])>::type>::max();
     return (typename remove_reference<decltype(a[0])>::type)(-1);
   };
+
+  // like GetPositionTest of ngsovle-SparseMatrix
+  template<typename T, class TS>
+  INLINE size_t find_in_sorted_array (const T & elem, FlatArray<T> a, TS smaller)
+  {
+    size_t first(0), last(a.Size());
+    while (smaller(first+5, last)) {
+      size_t mid = (last+first)/2;
+      if (smaller(elem, a[mid])) last = mid;
+      else { if (a[mid] == elem) { return mid; } first = mid+1; }
+    }
+    for (size_t i = first; i < last; i++)
+      if (a[i] == elem) { return i; }
+    // return numeric_limits<typename remove_reference<decltype(a[0])>::type>::max();
+    return (typename remove_reference<decltype(a[0])>::type)(-1);
+  };
+
 
   // find position such thata a[0..pos) <= elem < a[pos,a.Size())
   template<typename T>
@@ -44,13 +68,26 @@ namespace amg
     return (typename remove_reference<decltype(a[0])>::type)(-1);
   };
 
+  template<typename T>
+  INLINE void insert_into_sorted_array (T elem, Array<T> & a)
+  { a.Insert(merge_pos_in_sorted_array(elem, a), elem); }
+
+  template<typename T> INLINE int ind_of_max (FlatArray<T> a) {
+    if (!a.Size())
+      { return -1; }
+    int ind = 0; T max = a[ind]; auto as = a.Size();
+    for (int k = 1; k < as; k++)
+      if (a[k] > max) { max = a[k]; ind = k; }
+    return ind;
+  }
+
   template<class T>
   INLINE void print_ft(std::ostream &os, const T& t) {
-    if(!t.Size()) {
+    if (!t.Size()) {
       ( os << "empty flattable!!" << endl );
     }
     cout << "t.s: " << t.Size() << endl;
-    for(auto k:Range(t.Size())) {
+    for (auto k:Range(t.Size())) {
       os << "t[ " << k << "].s: " << t[k].Size();
       os << " || "; prow(t[k], os); os << endl;
     }
@@ -98,7 +135,7 @@ namespace amg
     typedef typename std::remove_reference<typename std::result_of<decltype(hack_eval_tab)(T)>::type>::type type;
   };
   template<class T1, class T2>
-  INLINE Array<typename tab_scal_trait<T1>::type> merge_arrays (T1& tab_in, T2 lam_comp)
+  INLINE void merge_arrays (T1& tab_in, Array<typename tab_scal_trait<T1>::type> & out, T2 lam_comp)
   {
     const size_t nrows = tab_in.Size();
     size_t max_size = 0;
@@ -112,8 +149,8 @@ namespace amg
     // }
     // cerr << endl;
     max_size += (105*max_size)/100; 
-    Array<typename tab_scal_trait<T1>::type> out(max_size);
-    out.SetSize(0);
+    // Array<typename tab_scal_trait<T1>::type> out(max_size);
+    out.SetSize(max_size); out.SetSize0();
     Array<size_t> count(nrows);
     count = 0;
     size_t ndone = 0;
@@ -122,20 +159,20 @@ namespace amg
     int rofmin = -1;
     for (size_t k = 0;((k<nrows)&&(rofmin==-1));k++)
       { if (tab_in[k].Size()>0) rofmin = k; }
-    if (rofmin==-1) { return out; }
+    if (rofmin==-1) { return; }
     // cerr << "rofmin so far: " << rofmin << endl;
     for (size_t k = 0; k < nrows; k++ ) {
-	// cerr << "check " << k << endl; cerr << "ndone " << ndone <<endl;
-	// cerr << "row: "; prow(tab_in[k],cerr); cerr << endl; cerr << "len " << tab_in[k].Size() << endl;
-	// ndone++;
-	// cout << "still here ";
-	// cout << ndone << endl;
-	// ndone--;
-	// cout << "still here ";
-	// cout << ndone << endl;
-	if (tab_in[k].Size()==0) ndone++;
-	// cerr << "check ok " << endl;
-      }
+      // cerr << "check " << k << endl; cerr << "ndone " << ndone <<endl;
+      // cerr << "row: "; prow(tab_in[k],cerr); cerr << endl; cerr << "len " << tab_in[k].Size() << endl;
+      // ndone++;
+      // cout << "still here ";
+      // cout << ndone << endl;
+      // ndone--;
+      // cout << "still here ";
+      // cout << ndone << endl;
+      if (tab_in[k].Size()==0) ndone++;
+      // cerr << "check ok " << endl;
+    }
     // cerr << "suspicious loop done " << endl;
     auto min_datum = tab_in[rofmin][0];
     while (ndone<nrows) {
@@ -168,8 +205,22 @@ namespace amg
       }
       hasmin.Clear();
     }
-    return out;
+    return;
   };
+  template<class T1, class T2>
+  INLINE Array<typename tab_scal_trait<T1>::type> merge_arrays (T1& tab_in, T2 lam_comp)
+  {
+    Array<typename tab_scal_trait<T1>::type> out;
+    merge_arrays(tab_in, out, lam_comp);
+    return out;
+  }
+  template<class T1>
+  INLINE Array<typename tab_scal_trait<T1>::type> merge_arrays (T1& tab_in)
+  {
+    Array<typename tab_scal_trait<T1>::type> out;
+    merge_arrays(tab_in, out, [&](const auto & i, const auto & j) LAMBDA_INLINE { return i<j; });
+    return out;
+  }
 
   // TODO: coutl this be binary_op_table?
   template<class T> INLINE Array<typename tab_scal_trait<T>::type> sum_table (T & tab)
@@ -188,10 +239,26 @@ namespace amg
     return out;
   }
 
+  template<class T> INLINE Array<typename tab_scal_trait<T>::type> min_table (T & tab)
+  {
+    Array<typename tab_scal_trait<T>::type> out;
+    auto nrows = tab.Size();
+    if (nrows == 0) return out;
+    auto row_s = tab[0].Size();
+    if (row_s == 0) return out;
+    out.SetSize(row_s); out = tab[0];
+    if (nrows == 1) { return out; }
+    for (size_t k = 1; k < tab.Size(); k++) {
+      auto row = tab[k];
+      for (auto l : Range(row_s)) out[l] = min(out[l], row[l]);
+    }
+    return out;
+  }
+
   template<typename T> ostream & operator << (ostream &os, const FlatTable<T>& t) {
-    if(!t.Size()) return ( os << "empty flattable!!" << endl );
+    if (!t.Size()) return ( os << "empty flattable!!" << endl );
     os << "t.s: " << t.Size() << endl;
-    for(auto k:Range(t.Size())) {
+    for (auto k:Range(t.Size())) {
       os << "t[ " << k << "].s: " << t[k].Size();
       os << " || "; prow(t[k], os); os << endl;
     }
@@ -243,7 +310,7 @@ namespace amg
     // cerr << "cnt_dep: " << endl << cnt_dep << endl;
     size_t num_ready(0), num_final(0);
     // cerr << "count " << cnt_dep.Size() << endl;
-    for(auto k:Range(cnt_dep.Size())) {
+    for (auto k:Range(cnt_dep.Size())) {
       // cerr << " now row " << k << endl;
       // cerr << "if (cnt_dep[" << k << "] == 0) " << num_ready << "++;" << endl;
       // if (cnt_dep[k] == 0) cerr << "(is true)" << endl;
@@ -497,19 +564,64 @@ namespace amg
     return sum;
   }
 
-  template<class A, class B, class C>
-  void intersect_sorted_arrays (A & a, B & b, C & c)
+  template<class A, class B, class TLAM>
+  INLINE void iterate_intersection (const A & a, const B & b, TLAM lam)
   {
-    int sa = a.Size(), sb = b.Size();
-    int i1 = 0, i2 = 0; c.SetSize(0);
-    while( (i1<sa) && (i2<sb) ) {
-      if(a[i1]==b[i2]) {
+    const int sa = a.Size(), sb = b.Size();
+    int i1 = 0, i2 = 0;
+    while ( (i1<sa) && (i2<sb) ) {
+      if (a[i1]==b[i2]) {
+	lam(i1, i2);
+	i1++; i2++;
+      }
+      else if (a[i1]<b[i2]) { i1++; }
+      else { i2++; }
+    }
+  };
+
+  template<class A, class B>
+  INLINE bool is_intersect_empty (const A & a, const B & b)
+  {
+    const int sa = a.Size(), sb = b.Size();
+    int i1 = 0, i2 = 0;
+    while ( (i1<sa) && (i2<sb) ) {
+      if (a[i1]==b[i2]) { return false; }
+      else if (a[i1]<b[i2]) { i1++; }
+      else { i2++; }
+    }
+    return true;
+  }
+
+  template<class A, class B, class C>
+  INLINE void intersect_sorted_arrays (const A & a, const B & b, C & c)
+  {
+    const int sa = a.Size(), sb = b.Size();
+    // iterate_intersect([&](auto ia, auto ib) LAMBDA_INLINE { c.Append(a[ia]); });
+    int i1 = 0, i2 = 0; c.SetSize0();
+    while ( (i1<sa) && (i2<sb) ) {
+      if (a[i1]==b[i2]) {
 	c.Append(a[i1]);
 	i1++; i2++;
       }
-      else if(a[i1]<b[i2]) { i1++; }
+      else if (a[i1]<b[i2]) { i1++; }
       else { i2++; }
     }
+  };
+
+  template<class A, class B, class TLAM>
+  INLINE void iterate_anotb (const A & a, const B & b, TLAM lam)
+  {
+    const int sa = a.Size(), sb = b.Size();
+    int i1 = 0, i2 = 0;
+    while ( (i1<sa) && (i2<sb) ) {
+      if (a[i1] < b[i2])
+	{ lam(i1); i1++; }
+      else if (a[i1]==b[i2])
+	{ i1++; i2++; }
+      else { i2++; }
+    }
+    while (i1<sa)
+      { lam(i1); i1++; }
   };
 
   auto is_invalid = [](auto val) -> bool
@@ -537,20 +649,152 @@ namespace amg
       });
   }
 
+  template<int N, class T> INLINE void CalcPseudoInverse2 (T & mat, LocalHeap & lh) // needs evals >= -eps
+  {
+    if constexpr(N==1) { mat = (fabs(mat) > 1e-12) ? 1.0/mat : 0; return; }
+    else {
+      HeapReset hr(lh);
+      double tr = calc_trace(mat) / N;
+      double eps = max2(1e-8 * tr, 1e-15);
+      int M = 0;
+      for (auto k : Range(N))
+	if (mat(k,k) > eps)
+	  { M++; }
+      FlatArray<int> nzeros(M, lh);
+      M = 0;
+      for (auto k : Range(N))
+	if (mat(k,k) > eps)
+	  { nzeros[M] = k; M++; }
+      if (M == 0)
+	{ mat = 0; return; }
+      cout << " mat " << endl << mat << endl;
+      FlatMatrix<double> smallD(M,M,lh);
+      double rcs = 0;
+      for (auto i : Range(M))
+	for (auto j : Range(M)) {
+	  smallD(i,j) = mat(nzeros[i], nzeros[j]);
+	  rcs += fabs(mat(nzeros[i], nzeros[j]));
+	}
+      rcs = M*M / rcs; cout << " rcs " << rcs << endl; rcs = 1; smallD *= rcs;
+      cout << "smallD: " << endl << smallD << endl;
+      FlatMatrix<double> evecs(M, M, lh);
+      FlatVector<double> evals(M, lh);
+      TimedLapackEigenValuesSymmetric(smallD, evals, evecs);
+      cout << " small D evals (of " << M << "): "; prow(evals); cout << endl;
+      int nnz = 0; double max_ev = evals(M-1);
+      for (auto k : Range(M)) {
+	bool is_nz = (evals(k) > 1e-6 * max_ev);
+	double f = is_nz ? 1/sqrt(evals(k)) : 0;
+	if (is_nz) { nnz++; }
+	for (auto j : Range(M))
+	  { evecs(k,j) *= f; }
+      }
+      mat = 0;
+      if (nnz > 0) {
+	cout << " scaled evecs " << endl << evecs << endl;
+	auto nzrows = evecs.Rows(M-nnz, M);
+	cout << " scaled nzrows " << endl << nzrows << endl;
+	smallD = Trans(nzrows) * nzrows;
+	cout << " psinv smallD " << endl << smallD << endl;
+	for (auto i : Range(M))
+	  for (auto j : Range(M))
+	    { mat(nzeros[i],nzeros[j]) = rcs * smallD(i,j); }
+	cout << " mat: " << endl << mat << endl;
+      }
+    }
+  }
+
+
+  template<int N, class T> INLINE void CalcSqrtInv (T & m)
+  {
+    static Timer t("CalcPseudoInverse_neg"); RegionTimer rt(t);
+    static Matrix<double> M(N,N), evecs(N,N);
+    static Vector<double> evals(N);
+    M = m;
+    TimedLapackEigenValuesSymmetric(M, evals, evecs);
+    double tol = 0;
+    for (auto v : evals)
+      { tol += fabs(v); }
+    tol = 1e-12 * tol; tol = max2(tol, 1e-15);
+    int nneg = 0, npos = 0;
+    for (auto & v : evals) {
+      if (fabs(v) > tol) {
+	if (v < 0) { nneg++; }
+	else { npos++; }
+	v = 1/sqrt(sqrt(fabs(v)));
+      }
+      else
+	{ v = 0; }
+    }
+    Iterate<N>([&](auto i) {
+	Iterate<N>([&](auto j) {
+	    evecs(i.value,j.value) *= evals(i.value);
+	  });
+      });
+    if (npos > 0) {
+      m = Trans(evecs.Rows(N-npos, N)) * evecs.Rows(N-npos, N);
+      if (nneg > 0)
+	{ m -= Trans(evecs.Rows(0, nneg)) * evecs.Rows(0, nneg); }
+    }
+    else if (nneg > 0)
+      { m = -Trans(evecs.Rows(0, nneg)) * evecs.Rows(0, nneg); }
+    else
+      { m = 0; }
+  }
+
+  template<int N, class T> INLINE void CalcPseudoInverse_neg (T & m)
+  {
+    static Timer t("CalcPseudoInverse_neg"); RegionTimer rt(t);
+    static Matrix<double> M(N,N), evecs(N,N);
+    static Vector<double> evals(N);
+    M = m;
+    TimedLapackEigenValuesSymmetric(M, evals, evecs);
+    double tol = 0;
+    for (auto v : evals)
+      { tol += fabs(v); }
+    tol = 1e-12 * tol; tol = max2(tol, 1e-15);
+    int nneg = 0, npos = 0;
+    for (auto & v : evals) {
+      if (fabs(v) > tol) {
+	if (v < 0) { nneg++; }
+	else { npos++; }
+	v = 1/sqrt(fabs(v));
+      }
+      else
+	{ v = 0; }
+    }
+    Iterate<N>([&](auto i) {
+	Iterate<N>([&](auto j) {
+	    evecs(i.value,j.value) *= evals(i.value);
+	  });
+      });
+    if (npos > 0) {
+      m = Trans(evecs.Rows(N-npos, N)) * evecs.Rows(N-npos, N);
+      if (nneg > 0)
+	{ m -= Trans(evecs.Rows(0, nneg)) * evecs.Rows(0, nneg); }
+    }
+    else if (nneg > 0)
+      { m = -Trans(evecs.Rows(0, nneg)) * evecs.Rows(0, nneg); }
+    else
+      { m = 0; }
+  }
+
   template<int N, class T> INLINE void CalcPseudoInverse (T & m)
   {
     static Timer t("CalcPseudoInverse"); RegionTimer rt(t);
-    static Timer tl("CalcPseudoInverse - Lapck");
+    // static Timer tl("CalcPseudoInverse - Lapck");
 
     static Matrix<double> M(N,N), evecs(N,N);
     static Vector<double> evals(N);
     M = m;
-    tl.Start();
-    LapackEigenValuesSymmetric(M, evals, evecs);
-    tl.Stop();
+    // cout << "pseudo inv M: " << endl << M << endl;
+    // tl.Start();
+    TimedLapackEigenValuesSymmetric(M, evals, evecs);
+    // tl.Stop();
     // cout << "pseudo inv evals: "; prow(evals); cout << endl;
-    double tol = 0; for(auto v : evals) tol += v;
-    tol = max(1e-8 * tol / N, 1e-12);
+    double tol = 0; for (auto v : evals) tol += v;
+    tol = 1e-12 * tol; tol = max2(tol, 1e-15);
+    // cout << "tol: " << tol << endl;
     for (auto & v : evals)
       v = (v > tol) ? 1/sqrt(v) : 0;
     // cout << "rescaled evals: "; prow(evals); cout << endl;
@@ -563,7 +807,7 @@ namespace amg
     m = Trans(evecs) * evecs;
   }
 
-  template<int IMIN, int N, int NN> INLINE void RegTM (Mat<NN,NN,double> & m)
+  template<int IMIN, int N, int NN> INLINE void RegTM (Mat<NN,NN,double> & m, double maxadd = -1)
   {
     // static Timer t(string("RegTM<") + to_string(IMIN) + string(",") + to_string(3) + string(",") + to_string(6) + string(">")); RegionTimer rt(t);
     static_assert( (IMIN + N <= NN) , "ILLEGAL RegTM!!");
@@ -574,29 +818,39 @@ namespace amg
 	    M(i.value, j.value) = m(IMIN+i.value, IMIN+j.value);
 	  });
       });
-    LapackEigenValuesSymmetric(M, evals, evecs);
-    double trace = 0; for (auto k : Range(NN)) trace += m(k,k);
-    trace /= N; trace = (trace == 0) ? 1.0 : max(trace, 1e-10);
-    double evmax = max(evals(N-1), 1e-2 * trace);
-    // cerr << "M: " << endl << M << endl;
-    // cerr << "trace evm " << trace << " " << evmax << endl;
-    Iterate<N>([&](auto l) {
-	if (fabs(evals(l)/evmax) < 1e-12) {
-	  // cerr << "reg evec " << l << endl;
-	  Iterate<N>([&](auto i) {
-	      Iterate<N>([&](auto j) {
-		  m(IMIN+i.value, IMIN+j.value) += trace * evecs(l.value, i.value) * evecs(l.value, j.value);
-		});
-	    });
-	}
-      });
+    TimedLapackEigenValuesSymmetric(M, evals, evecs);
+    const double eps = max2(1e-15, 1e-12 * evals(N-1));
+    double min_nzev = 0; int nzero = 0;
+    for (auto k : Range(N))
+      if (evals(k) > eps)
+	{ min_nzev = evals(k); break; }
+      else
+	{ nzero++; }
+    if (maxadd >= 0)
+      { min_nzev = min(maxadd, min_nzev); }
+    if (nzero < N) {
+      for (auto l : Range(nzero)) {
+	Iterate<N>([&](auto i) {
+	    Iterate<N>([&](auto j) {
+		m(IMIN+i.value, IMIN+j.value) += min_nzev * evecs(l, i.value) * evecs(l, j.value);
+	      });
+	  });
+      }
+    }
+    else {
+      SetIdentity(m);
+      if (maxadd >= 0)
+	{ m *= maxadd; }
+    }
   }
 
-  template<> INLINE void RegTM<2,2,3> (Mat<3,3,double> & m)
+  template<> INLINE void RegTM<2,1,3> (Mat<3,3,double> & m, double maxadd)
   {
     double tr = 0.5 * (m(0,0) + m(1,1));
+    if (maxadd >= 0)
+      { tr = min2(maxadd, tr); }
     if ( m(2,2) / tr < 1e-8 )
-      m(2,2) = tr;
+      { m(2,2) = tr; }
   }
 
   /**
@@ -622,7 +876,7 @@ namespace amg
           kernel-candidate = z
        then check if candidate is really kernel
      **/
-  template<> INLINE void RegTM<3,3,6> (Mat<6,6,double> & m)
+  template<> INLINE void RegTM<3,3,6> (Mat<6,6,double> & m, double maxadd)
   {
     Vec<3, double> mkv, kv, vi, vj;
 
@@ -688,8 +942,16 @@ namespace amg
     //   cout << "ncross: " << ncross << endl;
     // }
 
-    if (ncross > 0.05 * atr)
+    if (ncross > 1e-12 * atr)
       { return; }
+
+    // cout << " update: " << endl;
+    // Iterate<3>([&](auto i) {
+    // 	Iterate<3>([&](auto j) {
+    // 	    cout << kv(i.value) * kv(j.value) << " ";
+    // 	  });
+    // 	cout << endl;
+    //   });
 
     Iterate<3>([&](auto i) {
   	Iterate<3>([&](auto j) {
@@ -697,6 +959,8 @@ namespace amg
   	    m(3+i.value, 3+j.value) += kv(i.value) * kv(j.value);
   	  });
       });
+
+    // cout << "m now: " << endl << m.Rows(3,6).Cols(3,6) << endl;
   }
   
   template<int N> INLINE double CalcDet (Mat<N,N,double> & m)
@@ -776,11 +1040,25 @@ namespace amg
     if (nrows == 0)
       { return FlatTable<T> (nrows, nullptr, nullptr); }
     else if (firstis.Last() == firstis[0])
-      { return FlatTable<T> (nrows, &firstis[0], nullptr); }
+      { return FlatTable<T> (nrows, firstis.Data(), nullptr); }
     else
-      { return FlatTable<T> (nrows, &firstis[0], &data[offset]); }
+      { return FlatTable<T> (nrows, firstis.Data(), &data[offset]); }
   }
 
+
+  template<int N, class T> INLINE void prt_evv (T& M, string name, bool vecs = true) {
+    static Matrix<double> prm(N,N), preve(N,N);
+    static Vector<double> preva(N);
+    prm = M;
+    TimedLapackEigenValuesSymmetric(prm, preva, preve);
+    cout << name << " evals: "; prow(preva); cout << endl;
+    if (vecs)
+      { cout << name << " evecs: " << endl << preve << endl; }
+  };
+
+  template<> INLINE void prt_evv<1,double> (double& M, string name, bool vecs) {
+    cout << name << " evals: " << M << endl;
+  }
 
 } // namespace amg
 

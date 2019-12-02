@@ -35,6 +35,11 @@ namespace amg
     auto vws = get<0>(rmesh.Data())->Data();
     auto ews = get<1>(rmesh.Data())->Data();
     Array<double> vcw(NV); vcw = 0;
+    const auto & econ = *rmesh.GetEdgeCM();
+    // cout << " vwts: " << endl;
+    // prow2(vws); cout << endl << endl;
+    // cout << " ewts: " << endl;
+    // prow2(ews); cout << endl << endl;
     // cout << " SCO for mesh " << *mesh << endl;
     rmesh.template Apply<NT_EDGE>([&](const auto & edge) LAMBDA_INLINE {
 	auto ew = ews[edge.id];
@@ -43,20 +48,37 @@ namespace amg
       }, true);
     rmesh.template AllreduceNodalData<NT_VERTEX>(vcw, [](auto & in) LAMBDA_INLINE { return sum_table(in); }, false);
     // cout << " ass vwts: " << endl;
-    // prow2(vcw); cout << endl;
+    // prow2(vcw); cout << endl << endl;
     for (auto k : Range(vcw))
       { vcw[k] += vws[k]; }
     Array<double> ecw(NE);
     rmesh.template Apply<NT_EDGE>([&](const auto & edge) LAMBDA_INLINE {
 	// double vw = min(vcw[edge.v[0]], vcw[edge.v[1]]);
 	// ecw[edge.id] = ews[edge.id] / vw;
-	ecw[edge.id] = ews[edge.id] / sqrt(vcw[edge.v[0]] * vcw[edge.v[1]]);
+
+	// ecw[edge.id] = ews[edge.id] / sqrt(vcw[edge.v[0]] * vcw[edge.v[1]]);
+
+	// auto alpha = ews[edge.id];
+	// auto aii = vcw[edge.v[0]] - alpha;
+	// auto ajj = vcw[edge.v[0]] - alpha;
+	// double rho = alpha * ( aii + ajj) / (aii * ajj);
+	// ecw[edge.id] = rho / (1 + rho);
+
+	// auto ecnt0 = econ.GetRowIndices(edge.v[0]).Size();
+	// double x0 = 0.5 / ecnt0;
+	// auto ecnt1 = econ.GetRowIndices(edge.v[1]).Size();
+	// double x1 = 0.5 / ecnt0; 
+	// if (ecw[edge.id] < min2(x0, x1))
+	//   { ecw[edge.id] = 0; }
+
+	ecw[edge.id] = ews[edge.id] * ( vcw[edge.v[0]] + vcw[edge.v[1]] ) / (vcw[edge.v[0]] * vcw[edge.v[1]]);
+	
       }, false);
     // note: when using AMG as coarsetype of BDDC, dirichlet-dofs have no entries, so ecv/vcw[dir_dof] is 0 !
     for (auto v : Range(NV))
       { vcw[v] = (vcw[v] == 0) ? 0 : vws[v]/vcw[v]; }
-    // cout << " vcws: " << endl;
-    // prow2(vcw); cout << endl;
+    // cout << " vcws: " << endl; prow2(vcw); cout << endl << endl;
+    // cout << " ecws: " << endl; prow2(ecw); cout << endl << endl;
     opts.vcw = move(vcw);
     opts.min_vcw = options.min_vcw;
     opts.ecw = move(ecw);
@@ -84,6 +106,12 @@ namespace amg
   template<>
   void EmbedVAMG<H1AMGFactory> :: SetDefaultOptions (Options& O)
   {
+    /** Coarsening Algorithm **/
+    O.crs_alg = Options::CRS_ALG::AGG;
+    O.agg_wt_geom = true;
+    O.n_levels_d2_agg = 1;
+    O.disc_max_bs = 5;
+
     /** Level-control **/
     // O.first_aaf = 1/pow(3, ma->GetDimension());
     O.first_aaf = (ma->GetDimension() == 3) ? 0.05 : 0.1;
@@ -198,17 +226,14 @@ namespace amg
   {
     static Timer t("BuildAlgMesh_ALG_scal"); RegionTimer rt(t);
 
-    /**
-       vertex-weights are absolute values of row-sums (only entries for nodal base functions). without l2-term they should be 0 (because grad(constant) = 0)
-       edge-weihts are absolute values of off-diagonal entries
-     **/
-
     static_assert(is_same<int, decltype(D2V(0))>::value, "D2V mismatch");
     static_assert(is_same<int, decltype(V2D(0))>::value, "V2D mismatch");
 
     auto dspm = dynamic_pointer_cast<SparseMatrix<double>>(spmat);
     if (dspm == nullptr)
       { throw Exception("Could not cast sparse matrix!"); }
+
+    // cout << "finest level mat: " << endl << *dspm << endl;
 
     const auto& cspm = *dspm;
     auto a = new H1VData(Array<double>(top_mesh->GetNN<NT_VERTEX>()), DISTRIBUTED); auto ad = a->Data(); ad = 0;
@@ -217,30 +242,26 @@ namespace amg
     for (auto k : Range(top_mesh->GetNN<NT_VERTEX>()))
       { auto d = V2D(k); ad[k] = cspm(d,d); }
 
-    // cout << endl << endl << "spmat: " << endl << *spmat << endl << endl;
-
-    // cout << endl << "diag VW: "; prow2(ad); cout << endl << endl;
-
     auto edges = top_mesh->GetNodes<NT_EDGE>();
     auto& fvs = *free_verts;
     for (auto & e : edges) {
       auto di = V2D(e.v[0]); auto dj = V2D(e.v[1]);
       double v = cspm(di, dj);
-      // cout << "edge " << e << ", add " << v << " from " << di << " " << dj << endl;
-      bd[e.id] = fabs(v) / sqrt(cspm(di,di) * cspm(dj,dj)); ad[e.v[0]] += v; ad[e.v[1]] += v;
-      // bd[e.id] = fabs(v); ad[e.v[0]] += v; ad[e.v[1]] += v;
-      // cout << "vws are now " << ad[e.v[0]] << " " << ad[e.v[1]] << endl;
+      // bd[e.id] = fabs(v) / sqrt(cspm(di,di) * cspm(dj,dj)); ad[e.v[0]] += v; ad[e.v[1]] += v;
+      bd[e.id] = fabs(v); ad[e.v[0]] += v; ad[e.v[1]] += v;
     }
     
-    for (auto k : Range(top_mesh->GetNN<NT_VERTEX>()))
+    for (auto k : Range(top_mesh->GetNN<NT_VERTEX>())) // -1e-16 can happen, is problematic
       { ad[k] = fabs(ad[k]); }
-
-    // cout << endl << "inital VW: "; prow2(ad); cout << endl << endl;
-    // cout << endl << "inital EW: "; prow2(bd); cout << endl << endl;
-
-
     auto mesh = make_shared<H1Mesh>(move(*top_mesh), a, b);
     return mesh;
+  }
+
+  template<> template<class TD2V, class TV2D> shared_ptr<H1Mesh>
+  EmbedVAMG<H1AMGFactory> :: BuildAlgMesh_ALG_blk (shared_ptr<BlockTM> top_mesh, shared_ptr<BaseSparseMatrix> spmat, TD2V D2V, TV2D V2D) const
+  {
+    throw Exception("not necessary, just implemented so it compiles!");
+    return nullptr;
   }
 
 

@@ -11,6 +11,51 @@ namespace amg
   constexpr int dofpv (int dim)
   { return disppv(dim) + rotpv(dim); }
 
+  
+  /** Elasticity Vertex Data **/
+  template<class TMESH> INLINE void AttachedEVD :: map_data (const AgglomerateCoarseMap<TMESH> & agg_map, AttachedEVD & cevd) const
+  {
+    static Timer t("AttachedEVD::map_data"); RegionTimer rt(t);
+    const auto & M = *mesh;
+    auto & cdata = cevd.data;
+    const auto & CM = static_cast<BlockTM&>(*agg_map.GetMappedMesh());
+    Cumulate();
+    cdata.SetSize(agg_map.template GetMappedNN<NT_VERTEX>()); cdata = 0.0;
+    auto vmap = agg_map.template GetMap<NT_VERTEX>();
+    /** Set coarse vertex pos to the pos of agg centers. **/
+    const auto & ctrs = *agg_map.GetAggCenter();
+    M.template ApplyEQ<NT_VERTEX> ([&](auto eqc, auto v) LAMBDA_INLINE {
+	auto cv = vmap[v];
+	if (cv != -1) {
+	  if (ctrs.Test(v))
+	    { cdata[vmap[v]].pos = data[v].pos; }
+	  cdata[vmap[v]].wt += data[v].wt;
+	}
+      }, true);
+
+    // Array<double> ccnt(agg_map.template GetMappedNN<NT_VERTEX>()); ccnt = 0;
+    // M.template Apply<NT_VERTEX> ([&](auto v) LAMBDA_INLINE {
+    // 	auto cv = vmap[v];
+    // 	if (cv != -1)
+    // 	  { ccnt[cv]++; }
+    //   }, true);
+    // CM.template AllreduceNodalData<NT_VERTEX> (ccnt, [&](auto tab) LAMBDA_INLINE { return sum_table(tab); });
+    // for (auto & val : ccnt)
+    //   { val = 1.0 / val; }
+    // M.template Apply<NT_VERTEX>([&](auto v) LAMBDA_INLINE {
+    // 	auto cv = vmap[v];
+    // 	if (cv != -1) {
+    // 	  cdata[cv].pos += ccnt[cv] * data[v].pos;
+    // 	  cdata[cv].wt += data[v].wt;
+    // 	}
+    //   }, true);
+
+    cevd.SetParallelStatus(DISTRIBUTED);
+  } // AttachedEVD::map_data
+
+
+  /** Elasticity Edge Data **/
+
 
   /** ElasticityAMGFactory **/
 
@@ -40,73 +85,124 @@ namespace amg
 
 
   template<int D>
-  INLINE void ElasticityAMGFactory<D> :: CalcPWPBlock (const ElasticityMesh<D> & fmesh, const ElasticityMesh<D> & cmesh,
-						       const CoarseMap<ElasticityMesh<D>> & map, AMG_Node<NT_VERTEX> v,
-						       AMG_Node<NT_VERTEX> cv, ElasticityAMGFactory<D>::TM & mat) const
+  INLINE void ElasticityAMGFactory<D> :: ModQ  (const Vec<3> & t, TM & Q)
   {
-    Vec<3,double> tang = get<0>(cmesh.Data())->Data()[cv].pos;
-    tang -= get<0>(fmesh.Data())->Data()[v].pos;
-    mat = 0;
-    for (auto k : Range(dofpv(D)))
-      { mat(k,k) = 1.0; }
-    if constexpr(D==2) {
-	mat(1,2) = -tang(0);
-	mat(0,2) =  tang(1);
+    if constexpr(D == 2) {
+	Q(0,2) = -t(1);
+	Q(1,2) =  t(0);
       }
     else {
-      mat(1,5) = - (mat(2,4) = tang(0));
-      mat(2,3) = - (mat(0,5) = tang(1));
-      mat(0,4) = - (mat(1,3) = tang(2));
+      // Q(1,5) = - (Q(2,4) = t(0));
+      // Q(2,3) = - (Q(0,5) = t(1));
+      // Q(0,4) = - (Q(1,3) = t(2));
+      Q(1,5) = - (Q(2,4) = -t(0));
+      Q(2,3) = - (Q(0,5) = -t(1));
+      Q(0,4) = - (Q(1,3) = -t(2));
     }
-  } // ElasticityAMGFactory::CalcPWPBlock
+  }
+
+  template<int D>
+  INLINE void ElasticityAMGFactory<D> :: CalcQ  (const Vec<3> & t, TM & Q)
+  {
+    Q = 0;
+    Iterate<dofpv(D)>([&] (auto i) LAMBDA_INLINE { Q(i.value, i.value) = 1.0; } );
+    if constexpr(D == 2) {
+	Q(0,2) = -t(1);
+	Q(1,2) =  t(0);
+      }
+    else {
+      Q(1,5) = - (Q(2,4) = t(0));
+      Q(2,3) = - (Q(0,5) = t(1));
+      Q(0,4) = - (Q(1,3) = t(2));
+    }
+  }
+
+
+  template<int D>
+  INLINE void ElasticityAMGFactory<D> :: CalcQij (const T_V_DATA & di, const T_V_DATA & dj, TM & Qij)
+  {
+    Vec<3> t = 0.5 * (dj.pos - di.pos); // i -> j
+    CalcQ(t, Qij);
+  }
+
+  template<int D>
+  INLINE void ElasticityAMGFactory<D> :: ModQij (const T_V_DATA & di, const T_V_DATA & dj, TM & Qij)
+  {
+    Vec<3> t = 0.5 * (dj.pos - di.pos); // i -> j
+    ModQ(t, Qij);
+  }
+
+
+  template<int D>
+  INLINE void ElasticityAMGFactory<D> :: CalcQHh (const T_V_DATA & dH, const T_V_DATA & dh, TM & QHh)
+  {
+    Vec<3> t = dh.pos - dH.pos; // H -> h
+    CalcQ(t, QHh);
+  }
+
+
+  template<int D>
+  INLINE void ElasticityAMGFactory<D> :: ModQHh (const T_V_DATA & dH, const T_V_DATA & dh, TM & QHh)
+  {
+    Vec<3> t = dh.pos - dH.pos; // H -> h
+    ModQ(t, QHh);
+  }
+
+  template<int D>
+  INLINE void ElasticityAMGFactory<D> :: CalcQs  (const T_V_DATA & di, const T_V_DATA & dj, TM & Qij, TM & Qji)
+  {
+    Vec<3> t = 0.5 * (dj.pos - di.pos); // i -> j
+    CalcQ(t, Qij);
+    t *= -1;
+    CalcQ(t, Qji);
+  }
+
+
+  template<int D>
+  INLINE void ElasticityAMGFactory<D> :: ModQs  (const T_V_DATA & di, const T_V_DATA & dj, TM & Qij, TM & Qji)
+  {
+    Vec<3> t = 0.5 * (dj.pos - di.pos); // i -> j
+    ModQ(t, Qij);
+    t *= -1;
+    ModQ(t, Qji);
+  }
+
+  template<int D>
+  INLINE typename ElasticityAMGFactory<D>::T_V_DATA ElasticityAMGFactory<D> :: CalcMPData (const ElasticityAMGFactory<D>::T_V_DATA & da, const ElasticityAMGFactory<D>::T_V_DATA & db) {
+    T_V_DATA o; o.pos = 0.5 * (da.pos + db.pos); o.wt = da.wt + db.wt;
+    return move(o);
+  }
+
+
+  template<int D>
+  INLINE void ElasticityAMGFactory<D> :: CalcPWPBlock (const ElasticityMesh<D> & fmesh, const ElasticityMesh<D> & cmesh,
+  						       AMG_Node<NT_VERTEX> v, AMG_Node<NT_VERTEX> cv, ElasticityAMGFactory<D>::TM & mat) const
+  {
+    CalcQHh(get<0>(cmesh.Data())->Data()[cv], get<0>(fmesh.Data())->Data()[v], mat);
+  }
 
 
   template<int D>
   INLINE void ElasticityAMGFactory<D> :: CalcRMBlock (const ElasticityMesh<D> & fmesh, const AMG_Node<NT_EDGE> & edge,
-						      FlatMatrix<typename ElasticityAMGFactory<D>::TM> mat) const
+  						      FlatMatrix<typename ElasticityAMGFactory<D>::TM> mat) const
   {
-    /**
-       I |  0.5 * sk(t)| -I |  0.5 * sk(t) 
-       0 |      I      |  0 |     -I
-    **/
-    const auto & O = static_cast<const ElasticityAMGFactory<D>::Options &>(*this->options);
-
-    Vec<3,double> tang = get<0>(fmesh.Data())->Data()[edge.v[1]].pos
-      - get<0>(fmesh.Data())->Data()[edge.v[0]].pos;
-    // cout << "v0: " << get<0>(fmesh.Data())->Data()[edge.v[0]].pos << endl;
-    // cout << "v1: " << get<0>(fmesh.Data())->Data()[edge.v[1]].pos << endl;
-    // cout << "tang: " << tang << endl;
-    static Matrix<TM> M(1,1);
-    static Matrix<TM> T(1,2);
-    static Matrix<TM> TTM(2,1);
-    SetIdentity(T(0,0));
-    if constexpr(D==2) {
-  	T(0,0)(1,2) =  0.5 * tang(0);
-  	T(0,0)(0,2) = -0.5 * tang(1);
-      }
-    else {
-      T(0,0)(2,4) = - (T(0,0)(1,5) = 0.5 * tang(0));
-      T(0,0)(0,5) = - (T(0,0)(2,3) = 0.5 * tang(1));
-      T(0,0)(1,3) = - (T(0,0)(0,4) = 0.5 * tang(2));
-    }
-    T(0,1) = T(0,0);
-    Iterate<dofpv(D)>([&](auto i) {
-  	T(0,1)(i.value, i.value) = -1.0;
-      });
-    M(0,0) = get<1>(fmesh.Data())->Data()[edge.id]; // cant do Matrix<TM> * TM
-    // cout << "(unreged) M: " << endl; print_tm_mat(cout, M); cout << endl;
-    if (O.reg_rmats) // not so sure if this is the right way to do it...
-      { RegTM<disppv(D), rotpv(D), dofpv(D)>(M(0,0)); }
-    Iterate<2>([&](auto i) {
-  	TTM(i.value,0) = Trans(T(0,i.value)) * M(0,0);
-      });
-    // TTM = TT * M;
-    mat = TTM * T;
-    // cout << "M: " << endl; print_tm_mat(cout, M); cout << endl;
-    // cout << "T: " << endl; print_tm_mat(cout, T); cout << endl;
-    // cout << "TTM: " << endl; print_tm_mat(cout, TTM); cout << endl;
-    // cout << "emat: " << endl; print_tm_mat(cout, mat); cout << endl;
-  } // ElasticityAMGFactory::CalcRMBlock
+    static TM Qij, Qji, QiM, QjM;
+    auto vd = get<0>(fmesh.Data())->Data();
+    auto ed = get<1>(fmesh.Data())->Data();
+    CalcQs( vd[edge.v[0]], vd[edge.v[1]], Qij, Qji);
+    auto & M = ed[edge.id];
+    // Vec<3> t = vd[edge.v[1]].pos - vd[edge.v[0]].pos; cout << "tang 0 -> 1: " << t << endl;
+    // cout << " emat: " << endl; print_tm(cout, M); cout << endl;
+    // cout << " Qij: " << endl; print_tm(cout, Qij); cout << endl;
+    // cout << " Qji: " << endl; print_tm(cout, Qji); cout << endl;
+    
+    QiM = Trans(Qij) * M;
+    QjM = Trans(Qji) * M;
+    mat(0,0) =  QiM * Qij;
+    mat(0,1) = -QiM * Qji;
+    mat(1,0) = -QjM * Qij;
+    mat(1,1) =  QjM * Qji;
+  }
 
 
   /** approx. max ev of A in IP given by B via vector iteration **/
@@ -161,7 +257,6 @@ namespace amg
     }
     return 1/sqrt(maxev);
   } // CalcMinGenEV
-
 
 } // namespace amg
 

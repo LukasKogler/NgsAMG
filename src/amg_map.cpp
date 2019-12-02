@@ -87,6 +87,10 @@ namespace amg
     TAU_PROFILE("ConcDMS::TransferC2F", TAU_CT(*this), TAU_DEFAULT);
 #endif
 
+    // cout << "conc map transC2F " << endl;
+    // for (auto step : sub_steps)
+    //   { cout << typeid(*step).name() << endl; }
+
     if (sub_steps.Size() == 1)
       { sub_steps[0]->TransferC2F(x_fine, x_coarse); }
     else {
@@ -103,6 +107,10 @@ namespace amg
 #ifdef USE_TAU
     TAU_PROFILE("ConcDMS::AddC2F", TAU_CT(*this), TAU_DEFAULT);
 #endif
+
+    // cout << "conc map addc2f " << endl;
+    // for (auto step : sub_steps)
+    //   { cout << typeid(*step).name() << endl; }
 
     if (sub_steps.Size() == 1)
       { sub_steps[0]->AddC2F(fac, x_fine, x_coarse); }
@@ -162,10 +170,20 @@ namespace amg
     TAU_PROFILE("ProlMap::TransferC2F", TAU_CT(*this), TAU_DEFAULT);
 #endif
 
+    // cout << "prol trans c2f " << prol->Height() << " x " << prol->Width() << endl;
+
+    // cout << endl;
+    // print_tm_spmat(cout, *prol);
+    // cout << endl;
+
+    // cout << "x caorse " << endl; prow2(x_coarse->FVDouble()); cout << endl;
+
     RegionTimer rt(timer_hack_prol_c2f());
     x_coarse->Cumulate();
     prol->Mult(*x_coarse, *x_fine);
     x_fine->SetParallelStatus(CUMULATED);
+
+    // cout << "x fine " << endl; prow2(x_fine->FVDouble()); cout << endl;
   }
 
 
@@ -176,9 +194,19 @@ namespace amg
     TAU_PROFILE("ProlMap::AddC2F", TAU_CT(*this), TAU_DEFAULT);
 #endif
 
+    // cout << "prol add c2f" << endl;
+
+    // cout << endl;
+    // print_tm_spmat(cout, *prol);
+    // cout << endl;
+
+    // cout << "x caorse " << endl << x_coarse->FVDouble() << endl;
+
     RegionTimer rt(timer_hack_prol_c2f());
     x_coarse->Cumulate(); x_fine->Cumulate();
     prol->MultAdd(fac, *x_coarse, *x_fine);
+
+    // cout << "x fine " << endl << x_fine->FVDouble() << endl;
   }
 
 
@@ -190,12 +218,14 @@ namespace amg
 
       // cout << "conc prols " << endl;
       // cout << " left:  " << GetProl()->Height() << " x " << GetProl()->Width() << endl;
+      //print_tm_spmat(cout, *prol); cout << endl<< endl;
       // cout << " right: " << opmap->GetProl()->Height() << " x " << opmap->GetProl()->Width() << endl;
+      //print_tm_spmat(cout, *opmap->GetProl()); cout << endl<< endl;
 
       auto comp_prol = MatMultAB<TMAT, SPM_TM_C> (*prol, *opmap->GetProl());
 
       // cout << " comp: "  << comp_prol->Height() << " x " << comp_prol->Width() << endl;
-      // print_tm_spmat(cout, *comp_prol); cout << endl<< endl;
+      //print_tm_spmat(cout, *comp_prol); cout << endl<< endl;
 
       auto comp_map = make_shared<ProlMap<mult_spm_tm<TMAT, SPM_TM_C>>> (comp_prol, GetParDofs(), opmap->GetMappedParDofs());
       return comp_map;
@@ -205,6 +235,20 @@ namespace amg
   }
 
   
+  template<class TMAT>
+  shared_ptr<trans_spm_tm<TMAT>> ProlMap<TMAT> :: GetProlTrans () const
+  {
+    if (prol_trans == nullptr)
+      { const_cast<ProlMap<TMAT>&>(*this).BuildPT(); }
+    return prol_trans;
+  }
+
+  template<class TMAT>
+  void ProlMap<TMAT> :: BuildPT ()
+  {
+    prol_trans = TransposeSPM(*prol);
+  }
+
   template<class TMAT>
   shared_ptr<BaseSparseMatrix> ProlMap<TMAT> :: AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const
   {
@@ -216,7 +260,8 @@ namespace amg
     }
 
     auto& self = const_cast<ProlMap<TMAT>&>(*this);
-    self.prol_trans = TransposeSPM(*prol);
+    if (prol_trans == nullptr)
+      { self.BuildPT(); }
     self.prol = make_shared<SPM_P>(move(*prol));
     self.prol_trans = make_shared<trans_spm<SPM_P>>(move(*prol_trans));
 

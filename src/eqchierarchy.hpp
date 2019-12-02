@@ -131,6 +131,33 @@ namespace amg {
     }
 
 
+    template<class T> Array<MPI_Request> ScatterEQCData (T & tab_in) const
+    {
+      int nreqs = 0;
+      for (auto k : Range(neqcs)) {
+	auto dpsk = dist_procs[k];
+	if (auto dps = dpsk.Size()) {
+	  if ( rank < dpsk[0] )
+	    { nreqs += dps; }
+	  else
+	    { nreqs++; }
+	}
+      }
+      Array<MPI_Request> reqs(nreqs); nreqs = 0;
+      for (auto k : Range(neqcs)) {
+	auto dpsk = dist_procs[k];
+	if (dpsk.Size()) {
+	  if ( rank < dpsk[0] ) {
+	    for (auto p : dpsk)
+	      { reqs[nreqs++] = comm.ISend(tab_in[k], p, MPI_TAG_AMG); }
+	  }
+	  else
+	    { reqs[nreqs++] = comm.IRecv(tab_in[k], dpsk[0], MPI_TAG_AMG); }
+	}
+      }
+      return reqs;
+    }
+
   private:
 
     void SetupFromInitialDPs (Table<int> && vanilla_dps);

@@ -247,7 +247,7 @@ namespace amg
 		  cross_edges[eqc_num], cross_faces[eqc_num]);
   }
 
-  BlockTM* BlockTM :: MapBTM (const BaseCoarseMap & cmap) const
+  BlockTM* BlockTM :: MapBTM (const PairWiseCoarseMap & cmap) const
   {
     static Timer t("MapBTM"); RegionTimer rt(t);
 

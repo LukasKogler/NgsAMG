@@ -5,7 +5,9 @@
 namespace amg
 {
 
-  class BaseCoarseMap;
+  class PairWiseCoarseMap;
+  template<class TMESH> class VDiscardMap;
+  template<class TMESH> class AgglomerateCoarseMap;
   
   // Only topology!
   class TopologicMesh
@@ -79,6 +81,8 @@ namespace amg
   class BlockTM : public TopologicMesh
   {
     template<class TMESH> friend class GridContractMap;
+    template<class TMESH> friend class VDiscardMap;
+    template<class TMESH> friend class AgglomerateCoarseMap;
     friend class NgsAMG_Comm;
   public:
     BlockTM (shared_ptr<EQCHierarchy> _eqc_h);
@@ -101,8 +105,12 @@ namespace amg
     }
     template<NODE_TYPE NT> INLINE int MapENodeToEQC (size_t node_num) const 
     { auto eq = GetEqcOfNode<NT>(node_num); return node_num - disp_eqc[NT][eq]; }
+    template<NODE_TYPE NT> INLINE int MapENodeToEQC (int eq, size_t node_num) const 
+    { return node_num - disp_eqc[NT][eq]; }
     template<NODE_TYPE NT> INLINE int MapCNodeToEQC (size_t node_num) const 
     { auto eq = GetEqcOfNode<NT>(node_num); return node_num - disp_cross[NT][eq]; }
+    template<NODE_TYPE NT> INLINE int MapCNodeToEQC (int eq, size_t node_num) const 
+    { return node_num - disp_cross[NT][eq]; }
     template<NODE_TYPE NT> INLINE int MapNodeToEQC (size_t node_num) const 
     { return (node_num < GetENN<NT>()) ? MapENodeToEQC<NT>(node_num) : MapCNodeToEQC<NT>(node_num); } 
     // template<NODE_TYPE NT> INLINE int MapNodeToEQC (size_t node_num) const 
@@ -117,8 +125,8 @@ namespace amg
     const FlatTM GetBlock (size_t eqc_num) const;
     /** Creates new(!!) block-tm! **/
     // BlockTM* Map (CoarseMap & cmap) const;
-    BlockTM* MapBTM (const BaseCoarseMap & cmap) const;
-    shared_ptr<BlockTM> Map (const BaseCoarseMap & cmap) const
+    BlockTM* MapBTM (const PairWiseCoarseMap & cmap) const;
+    shared_ptr<BlockTM> Map (const PairWiseCoarseMap & cmap) const
     { return shared_ptr<BlockTM>(MapBTM(cmap)); }
   protected:
     shared_ptr<EQCHierarchy> eqc_h;
@@ -169,7 +177,7 @@ namespace amg
     }
     template<NODE_TYPE NT, class TLAM>
     INLINE void ApplyEQ (TLAM lam, bool master_only = false) const {
-      ApplyEQ(Range(GetNEqcs()), lam, master_only);
+      ApplyEQ<NT>(Range(GetNEqcs()), lam, master_only);
       // for (auto eqc : Range(GetNEqcs()))
       // 	if ( !master_only || eqc_h->IsMasterOfEQC(eqc) ) {
       // 	  for (const auto& node : GetENodes<NT>(eqc)) lam(eqc, node);
@@ -177,6 +185,51 @@ namespace amg
       // 	}
     }
     // ugly stuff
+    template<NODE_TYPE NT, class T>
+    void ScatterNodalData (Array<T> & avdata) const {
+      int neqcs = eqc_h->GetNEQCS();
+      if (neqcs < 2) // nothing to do!
+	{ return; }
+      int nreq = 0;
+      Array<int> cnt(neqcs); cnt = 0;
+      for (auto k : Range(1, neqcs)) {
+	cnt[k] = GetENN<NT>(k) + GetCNN<NT>(k);
+	nreq += eqc_h->IsMasterOfEQC(k) ? (eqc_h->GetDistantProcs(k).Size()) : 1;
+      }
+      Table<T> ex_data(cnt);
+      Array<MPI_Request> req(nreq); nreq = 0;
+      auto comm = eqc_h->GetCommunicator();
+      auto & disp_eq = disp_eqc[NT];
+      auto & disp_c  = disp_cross[NT];
+      for (auto k : Range(1, neqcs)) {
+	auto exrow = ex_data[k];
+	if (eqc_h->IsMasterOfEQC(k)) {
+	  exrow.Part(0, GetENN<NT>(k)) = avdata.Part(disp_eq[k], GetENN<NT>(k));
+	  exrow.Part(GetENN<NT>(k)) = avdata.Part(GetENN<NT>() + disp_c[k], GetCNN<NT>(k));
+	  // cout << " for eqc " << k << " send exrow to "; prow(eqc_h->GetDistantProcs(k)); cout << endl;
+	  // cout << GetENN<NT>() << " " << GetENN<NT>(k) << " " << GetCNN<NT>(k) << endl;
+	  // cout << disp_eq[k] << " " << disp_c[k] << endl;
+	  // prow2(exrow); cout << endl;
+	  for (auto p : eqc_h->GetDistantProcs(k))
+	    { req[nreq++] = comm.ISend(exrow, p, MPI_TAG_AMG); }
+	}
+	else
+	  { req[nreq++] = comm.IRecv(exrow, eqc_h->GetDistantProcs(k)[0], MPI_TAG_AMG); }
+      }
+      // cout << " nreq " << req.Size() << " " << nreq << endl;
+      MyMPI_WaitAll(req);
+      for (auto k : Range(1, neqcs)) {
+	if (!eqc_h->IsMasterOfEQC(k)) {
+	  auto exrow = ex_data[k];
+	  // cout << " for eqc " << k << " got exrow "; prow(eqc_h->GetDistantProcs(k)); cout << endl;
+	  // cout << GetENN<NT>() << " " << GetENN<NT>(k) << " " << GetCNN<NT>(k) << endl;
+	  // cout << disp_eq[k] << " " << disp_c[k] << endl;
+	  // prow2(exrow); cout << endl;
+	  avdata.Part(disp_eq[k], GetENN<NT>(k)) = exrow.Part(0, GetENN<NT>(k));
+	  avdata.Part(GetENN<NT>() + disp_c[k], GetCNN<NT>(k)) = exrow.Part(GetENN<NT>(k));
+	}
+      }
+    }
     template<NODE_TYPE NT, class T, class TRED>
     void AllreduceNodalData (Array<T> & avdata, TRED red, bool apply_loc = false) const {
       // TODO: this should be much easier - data is already in eqc-wise form (since nodes are ordered that way now)!
@@ -188,6 +241,8 @@ namespace amg
       Array<int> rowcnt(neqcs);
       for (auto k : Range(neqcs))
 	{ rowcnt[k] = nnodes_eqc[NT][k] + nnodes_cross[NT][k]; }
+      // for (auto k : Range(neqcs))
+	// { cout << "rowcnt[" << k << "] = " << nnodes_eqc[NT][k] << " + " << nnodes_cross[NT][k] << endl; }
       if (!apply_loc) rowcnt[0] = 0;
       Table<T> data(rowcnt);
       int C = 0;
@@ -207,7 +262,11 @@ namespace amg
       // cout << "ARND reduced data: " << endl << reduced_data << endl;
       loop_eqcs([&](auto nodes, auto row)
 		{ if constexpr(NT==NT_VERTEX) for (auto l:Range(nodes.Size())) avdata[nodes[l]] = row[C++];
-		  else for (auto l:Range(nodes.Size())) avdata[nodes[l].id] = row[C++]; },
+		  else for (auto l:Range(nodes.Size())) {
+		      // cout << l << " " << nodes[l] << " to " << C << " " << row.Size() << endl;
+		      avdata[nodes[l].id] = row[C++];
+		    }
+		},
 		reduced_data);
       // cout << "data out: " << endl; prow2(avdata); cout << endl;
     } // CumulateNodalData
@@ -494,7 +553,7 @@ namespace amg
 				       bool build_cells, FlatArray<int> cell_sort);
   
   template<class TMESH> class GridContractMap;
-  
+
   /** Nodal data that can be attached to a Mesh to form an AlgebraicMesh **/
   template<NODE_TYPE NT, class T, class CRTP>
   class AttachedNodeData
@@ -514,8 +573,20 @@ namespace amg
     void SetParallelStatus (PARALLEL_STATUS astat) { stat = astat; }
     Array<T> & GetModData () { return data; }
     FlatArray<T> Data () const { return data; }
+    /**
+       If this was template<class TMAP> void map_data (const TMAP & ...), derived classes would have to write
+       template<> void map_data (const BaseCoarseMap ...), which I don't like because it is higher level code.
+       
+       TODO: would this be a cleaner ?
+          here:    template<> void map_data (const BaseCoarseMap ...) { MapDataToCoarseLevel (map); }
+	           void MapDataToCoarseLevel (const BaseCoarseMap ...) const = 0
+	  in derived: void MapDataToCoarseLevel (const BaseCoarseMap ...) const override;
+    **/
     template<class TMESH>
     INLINE void map_data (const GridContractMap<TMESH> & map, CRTP & cdata) const
+    { map.template MapNodeData<NT, T>(data, stat, &cdata.data); cdata.SetParallelStatus(stat); }
+    template<class TMESH>
+    INLINE void map_data (const VDiscardMap<TMESH> & map, CRTP & cdata) const
     { map.template MapNodeData<NT, T>(data, stat, &cdata.data); cdata.SetParallelStatus(stat); }
     template<class TMAP>
     CRTP* Map (const TMAP & map) const
@@ -582,6 +653,10 @@ namespace amg
       return std::apply([&](auto& ...x){ return make_tuple<T*...>(x->Map(map)...); }, node_data);
     };
 
+    template<class TMAP>
+    std::tuple<T*...> AllocMappedData (const TMAP & map) const
+    { return make_tuple<T*...>(new T(Array<typename T::TDATA>(map.template GetMappedNN<T::TNODE>()), DISTRIBUTED)...); }
+
     shared_ptr<BlockAlgMesh<T...>> Map (CoarseMap<BlockAlgMesh<T...>> & map) {
       static Timer t("BlockAlgMesh::Map (coarse)"); RegionTimer rt(t);
       shared_ptr<BlockTM> crs_btm(BlockTM::MapBTM(map));
@@ -592,7 +667,13 @@ namespace amg
       auto & cm_data = cmesh->Data();
       Iterate<count_ppack<T...>::value>([&](auto i){ get<i.value>(node_data)->map_data(map, *get<i.value>(cm_data)); });
       return cmesh;
-    };
+    }
+
+    void MapDataNoAlloc (AgglomerateCoarseMap<BlockAlgMesh<T...>> & map) {
+      auto cmesh = static_pointer_cast<BlockAlgMesh<T...>> (map.GetMappedMesh());
+      auto & cm_data = cmesh->Data();
+      Iterate<count_ppack<T...>::value>([&](auto i){ get<i.value>(node_data)->map_data(map, *get<i.value>(cm_data)); });
+    }
     
     template<typename... T2> friend std::ostream & operator<<(std::ostream &os, BlockAlgMesh<T2...> & m);
   protected:

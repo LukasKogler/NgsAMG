@@ -74,6 +74,10 @@ namespace amg
 	if (!free_verts->Test(k))
 	  { coll.GroundVertex(k); coll.FixVertex(k); }
     // cout << "min_v: " << min_v << ", NV : " << NV << endl;
+    // cout << " edges: " << endl;
+    // for(const auto & edge : edges)
+      // { cout << "[[" << edge << ", " << GetECW(edge) << "]] "; }
+    // cout << endl;
     // cout << "edges: "; prow(edges); cout << endl;
     TableCreator<int> v2ec(NV);
     for ( ; !v2ec.Done(); v2ec++)
@@ -125,7 +129,7 @@ namespace amg
     for (auto vertex:verts)
       if ((GetVCW(vertex) > MIN_VCW) && (!coll.IsVertexFixed(vertex)) &&
     	  (!coll.IsVertexGrounded(vertex)) && (!coll.IsVertexCollapsed(vertex)) )
-    	{ /**cout << "warning, ground V!!" << endl; **/ coll.GroundVertex(vertex); }
+    	{ /** cout << "ground " << vertex << ", with wt " << GetVCW(vertex) << endl; **/ coll.GroundVertex(vertex); }
   }
 
 
@@ -472,14 +476,22 @@ namespace amg
 
   template<class TMESH>
   CoarseMap<TMESH> :: CoarseMap (shared_ptr<TMESH> _mesh, VWCoarseningData::CollapseTracker &coll)
-    : BaseCoarseMap(), GridMapStep<TMESH>(_mesh)
+    : PairWiseCoarseMap(), GridMapStep<TMESH>(_mesh)
   {
     static Timer t("CoarseMap"); RegionTimer rt(t);
+
+    // cout << "coarsemap, econ fine mesh " << endl << *_mesh->GetEdgeCM() << endl;
     BuildVertexMap(coll);
     if (_mesh->template HasNodes<NT_EDGE>()) BuildEdgeMap(coll);
     // if (_mesh->template HasNodes<NT_FACE>()) BuildMap<NT_FACE>(coll);
     // if (_mesh->template HasNodes<NT_CELL>()) BuildMap<NT_CELL>(coll);
+
+    // cout << "vertex map: " << endl; prow2(GetMap<NT_VERTEX>()); cout << endl << endl;
+    // cout << "edge map: " << endl; prow2(GetMap<NT_EDGE>()); cout << endl << endl;
+    
     mapped_mesh = _mesh->Map(*this);
+    // cout << "coarse mesh econ " << endl << *mapped_mesh->GetEdgeCM() << endl;
+
   }
 
   template<class TMESH>

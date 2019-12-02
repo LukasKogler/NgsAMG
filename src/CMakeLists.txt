@@ -1,20 +1,13 @@
 project(ngs_amg)
 
 cmake_minimum_required(VERSION 3.8)
-
-# add_ngsolve_python_module(ngs_amg SHARED
-#   eqchierarchy.cpp amg_mesh.cpp
-#   amg_coarsen.cpp python_amg.cpp amg_h1.cpp
-#   amg_spmstuff.cpp amg_map.cpp amg_smoother.cpp
-#   amg_matrix.cpp amg_contract.cpp amg_elast.cpp
-#   boomer.cpp amg_smoother2.cpp)
-
 add_ngsolve_python_module(ngs_amg SHARED
   eqchierarchy.cpp amg_mesh.cpp
   amg_coarsen.cpp amg_h1_v2.cpp python_amg.cpp
   amg_spmstuff.cpp amg_map.cpp amg_smoother.cpp
   amg_matrix.cpp amg_contract.cpp amg_elast.cpp
-  boomer.cpp amg_smoother2.cpp amg_smoother3.cpp)
+  boomer.cpp amg_smoother2.cpp amg_smoother3.cpp
+  amg_discard.cpp amg_coarsen2.cpp)
 
 include_directories(${MPI_CXX_INCLUDE_DIRS})
 

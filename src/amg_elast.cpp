@@ -5,6 +5,7 @@
 #include "amg_elast_impl.hpp"
 #include "amg_factory_impl.hpp"
 #include "amg_pc_impl.hpp"
+#include "amg_bla.hpp"
 
 namespace amg
 {
@@ -12,142 +13,66 @@ namespace amg
   /** AttachedEED **/
 
 
-  template<int D> void AttachedEED<D> :: map_data (const BaseCoarseMap & bcmap, AttachedEED<D> & ceed) const
+  template<int D> void AttachedEED<D> :: map_data (const BaseCoarseMap & cmap, AttachedEED<D> & ceed) const
   {
-    CoarseMap<ElasticityMesh<D>> * pcmap = dynamic_cast<CoarseMap<ElasticityMesh<D>>*>(const_cast<BaseCoarseMap*>(&bcmap));
-    assert(pcmap != nullptr); // "AttachedEED with wrong map, how?!
-    auto & cmap(*pcmap);
-    // static_assert(std::is_same<TMESH,ElasticityMesh<D>>::value==1, "AttachedEED with wrong map?!");
-    // cout << " map edges " << endl;
     static Timer t(string("ElEData<")+to_string(D)+string(">::map_data")); RegionTimer rt(t);
-    auto & mesh = static_cast<ElasticityMesh<D>&>(*this->mesh);
-    mesh.CumulateData();
-    auto sp_eqc_h = mesh.GetEQCHierarchy();
-    const auto & eqc_h = *sp_eqc_h;
-    // eqc_h.GetCommunicator().Barrier();
-    auto neqcs = mesh.GetNEqcs();
-    const size_t NE = mesh.template GetNN<NT_EDGE>();
-    ElasticityMesh<D> & cmesh = static_cast<ElasticityMesh<D>&>(*ceed.mesh);
-    const size_t NCE = cmap.template GetMappedNN<NT_EDGE>();
-
-    // cout << " NE NCE " << NE << " " << NCE << endl;
-
-    ceed.data.SetSize(NCE); ceed.data = 0.0;
+    auto & M = static_cast<ElasticityMesh<D>&>(*this->mesh); M.CumulateData();
+    const auto & eqc_h = *M.GetEQCHierarchy();
+    auto& fecon = *M.GetEdgeCM();
+    ElasticityMesh<D> & CM = static_cast<ElasticityMesh<D>&>(*ceed.mesh);
+    auto cedges = CM.template GetNodes<NT_EDGE>();
+    const size_t NV = M.template GetNN<NT_VERTEX>();
+    const size_t NE = M.template GetNN<NT_EDGE>();
+    const size_t CNV = cmap.template GetMappedNN<NT_VERTEX>();
+    const size_t CNE = cmap.template GetMappedNN<NT_EDGE>();
     auto e_map = cmap.template GetMap<NT_EDGE>();
     auto v_map = cmap.template GetMap<NT_VERTEX>();
-    // if (v_map.Size() < 2000) cout << "e_map: " << endl; prow2(e_map); cout << endl << endl;
-    // if (v_map.Size() < 2000) cout << "v_map: " << endl; prow2(v_map); cout << endl << endl;
-    auto pecon = mesh.GetEdgeCM();
-    // cout << "fine mesh ECM: " << endl << *pecon << endl;
-    const auto & econ(*pecon);
-    // cout << "cumulate fm vd!" << endl;
-    auto fvd = get<0>(mesh.Data())->Data();
-    // cout << "cumulate cm vd!" << endl;
-    get<0>(cmesh.Data())->Cumulate();
-    // cout << "cumulates done!" << endl;
-    auto cvd = get<0>(cmesh.Data())->Data();
+    get<0>(M.Data())->Cumulate(); // should be cumulated anyways
+    auto fvd = get<0>(M.Data())->Data();
+    get<0>(CM.Data())->Cumulate(); // we need full vertex positions !
+    auto cvd = get<0>(CM.Data())->Data();
     auto fed = this->Data();
     auto ced = ceed.Data();
-    auto edges = mesh.template GetNodes<NT_EDGE>();
-
-    // cout << "fine edges / mats: " << endl;
-    // for (auto & edge : edges) {
-    //   cout << "fedge: " << edge << ": " << endl; print_tm(cout, fed[edge.id]); cout << endl;
-    // }
-
-    Table<int> c2fe;
-    {
-      TableCreator<int> cc2fe(NCE);
-      for (; !cc2fe.Done(); cc2fe++)
-	for (auto k : Range(NE))
-	  if (is_valid(e_map[k]))
-	    cc2fe.Add(e_map[k], k);
-      c2fe = cc2fe.MoveTable();
-    }
-    Mat<dofpv(D), dofpv(D)> T, TTM;
-    T = 0; Iterate<dofpv(D)>([&](auto i) { T(i.value, i.value) = 1.0; });
-    Mat<disppv(D), disppv(D), double> W;
-    Mat<disppv(D), rotpv(D), double> sktcf0, sktcf1, sktcc;
-    Mat<rotpv(D), rotpv(D), double> B, adbm;
-    auto calc_trafo = [](auto & T, const auto & tAi, const auto & tBj) {
-      Vec<3, double> tang = 0.5 * (tAi + tBj); // t is flipped
-      if constexpr(D==3) {
-	  T(2,4) = - (T(1,5) = tang(0));
-	  T(0,5) = - (T(2,3) = tang(1));
-	  T(1,3) = - (T(0,4) = tang(2));
-	}
-      else {
-	T(1,2) =  tang(0);
-	T(0,2) = -tang(1);
-      }
-    };
-    auto calc_cemat = [&](const auto & cedge, auto & cemat, auto use_fenr) {
-      auto fenrs = c2fe[cedge.id];
-      cemat = 0;
-      for (auto fenr : fenrs) {
-	if (use_fenr(fenr)) {
-	  const auto & fedge = edges[fenr];
-	  int l = (v_map[fedge.v[0]] == cedge.v[0]) ? 0 : 1;
-	  /**
-	     I | sk(tcf0+tcf1)
-	     0 | I
-	  **/
-	  Vec<3> tcf0 =  (fvd[fedge.v[0]].pos - cvd[cedge.v[l]].pos);
-	  Vec<3> tcf1 =  (fvd[fedge.v[1]].pos - cvd[cedge.v[1-l]].pos);
-	  // cout << "t0 " << tcf0 << endl;
-	  // cout << "t1 " << tcf1 << endl;
-	  calc_trafo(T, tcf0, tcf1);
-	  // cout << "fedge " << fedge << endl << " to cedge " << cedge << endl;
-	  auto & FM = fed[fedge.id];
-	  // cout << "FM: " << endl; print_tm(cout, FM); cout << endl;
-	  // cout << "trans: " << endl; print_tm(cout, T); cout << endl;
-	  TTM = Trans(T) * FM;
-	  cemat += TTM * T;
-	  // cout << "cemat now: " << endl; print_tm(cout, cemat); cout << endl;
-	}
-      }
-    };
     typedef Mat<dofpv(D), dofpv(D), double> TM;
-    auto calc_cedata = [&](const auto & edge, TM & cfullmat) {
-      ced[edge.id] = cfullmat;
-    };
-    /** ex-edge matrices:  calc & reduce full cmats **/
-    if (neqcs>1) {
-      Array<int> perow(neqcs);
-      for (auto k : Range(neqcs))
-	perow[k] = cmesh.template GetENN<NT_EDGE>(k) + cmesh.template GetCNN<NT_EDGE>(k);
-      perow[0] = 0;
-      Table<TM> tcemats(perow); perow = 0;
-      cmesh.template ApplyEQ<NT_EDGE>(Range(size_t(1), neqcs), [&](auto eqc, const auto & cedge){
-	  calc_cemat(cedge, tcemats[eqc][perow[eqc]++],
-		     [&](auto fenr) { return eqc_h.IsMasterOfEQC(mesh.template GetEqcOfNode<NT_EDGE>(fenr)); } );
-	}, false); // def, false!
-      Table<TM> cemats = ReduceTable<TM,TM> (tcemats, sp_eqc_h, [&](auto & tab) { return sum_table(tab); });
-      perow = 0;
-      cmesh.template ApplyEQ<NT_EDGE>(Range(size_t(1), neqcs), [&](auto eqc, const auto & cedge){
-	  ced[cedge.id] = cemats[eqc][perow[eqc]++];
-	}, false); // def, false!
-    }
-    /** loc-edge matrices:  all in one **/
-    cmesh.template ApplyEQ<NT_EDGE>(Range(min(neqcs, size_t(1))), [&](auto eqc, const auto & cedge){
-	calc_cemat(cedge, ced[cedge.id], [&](auto fenr) { return true; });
-      }, false); // def, false!
-    ceed.SetParallelStatus(CUMULATED);
-
-    // cout << "coarse edges / mats: " << endl;
-    // auto cedges = cmesh.template GetNodes<NT_EDGE>();
-    // for (auto & edge : cedges) {
-    //   cout << "cedge : " << edge << ": " << endl; print_tm(cout, ced[edge.id]); cout << endl;
-    // }
-
-    // cout << "wait map edge data " << endl;
-    // eqc_h.GetCommunicator().Barrier();
-    // cout << "wait map edge data done " << endl;
+    // TODO: we are modifying coarse v-wts here. HACKY!!
+    Array<double> add_cvw (CNV); add_cvw = 0;
+    Vec<3> posH, posh, tHh;
+    TM TEST = 0;
+    TM QHh(0), FMQ(0);
+    ceed.data.SetSize(CNE); // ced. is a flat-array, so directly access ceed.data
+    ced = 0.0;
+    M.template ApplyEQ<NT_EDGE>([&] (auto eqc, const auto & fedge) LAMBDA_INLINE {
+  	auto cenr = e_map[fedge.id];
+	if (cenr != -1) {
+  	  const auto & cedge = cedges[cenr];
+  	  auto& cemat = ced[cenr];
+  	  posH = 0.5 * (cvd[cedge.v[0]].pos + cvd[cedge.v[1]].pos);
+  	  posh = 0.5 * (fvd[fedge.v[0]].pos + fvd[fedge.v[1]].pos);
+  	  tHh = posh - posH;
+  	  ElasticityAMGFactory<D>::CalcQ(tHh, QHh);
+  	  FMQ = fed[fedge.id] * QHh;
+  	  cemat += Trans(QHh) * FMQ;
+  	}
+  	else { // add largest eval of connection to ground to the coarse vertex-weight
+	  auto tr = calc_trace(fed[fedge.id]) / mat_traits<TM>::HEIGHT; // a guess
+  	  Iterate<2>([&](auto l) LAMBDA_INLINE {
+  	      if (v_map[fedge.v[1-l.value]] == -1) {
+  		auto cvnr = v_map[fedge.v[l.value]];
+  		// cout << l.value << ", v " << fedge.v[l.value] << " -> " << cvnr << endl;
+  		if (cvnr != -1)
+  		  { add_cvw[cvnr] += tr; }
+  	      }
+  	    });
+  	}
+      }, true); // master only
+    CM.template AllreduceNodalData<NT_VERTEX>(add_cvw, [](auto & in) { return sum_table(in); }, false);
+    for (auto k : Range(CNV)) // cvd and add_cvw are both "CUMULATED"
+      { cvd[k].wt += add_cvw[k]; }
+    ceed.SetParallelStatus(DISTRIBUTED);
   } // AttachedEED::map_data
 
 
   /** ElasticityAMGFactory **/
-
 
   template<int D>
   ElasticityAMGFactory<D> :: ElasticityAMGFactory (shared_ptr<ElasticityAMGFactory<D>::TMESH> mesh, shared_ptr<ElasticityAMGFactory<D>::Options> options,
@@ -159,6 +84,10 @@ namespace amg
   template<int D> void ElasticityAMGFactory<D> :: SetOptionsFromFlags (ElasticityAMGFactory<D>::Options & opts, const Flags & flags, string prefix)
   {
     BASE::SetOptionsFromFlags(opts, flags, prefix);
+
+    if (flags.GetDefineFlagX(prefix+string("stable_soc")).IsTrue())
+      { opts.soc_alg = Options::SOC_ALG::ROBUST; }
+
   } // ElasticityAMGFactory::SetOptionsFromFlags
   
 
@@ -187,6 +116,13 @@ namespace amg
     auto vdata = get<0>(M.Data())->Data();
     auto edata = get<1>(M.Data())->Data();
     const auto& econ(*M.GetEdgeCM());
+
+    // cout << " CRSEN, " << NV << " " << NE << endl;
+    // cout << "        " << vdata.Size() << " " << edata.Size() << endl;
+
+    // cout << " vwts: " << endl; prow2(vdata); cout << endl << endl;
+    // cout << " ewts: " << endl; prow2(edata); cout << endl << endl;
+
     Array<double> ecw(NE);
     Array<double> vcw(NV); vcw = 0;
     M.template Apply<NT_EDGE>([&](const auto & edge) {
@@ -196,92 +132,160 @@ namespace amg
 	vcw[edge.v[1]] += tr;
 	// cout << " vcws now " << vcw[edge.v[0]] << " " << vcw[edge.v[1]] << endl;
       }, true);
-    // cout << " v-acc wts " << endl; prow2(vcw); cout << endl;
+    // cout << " v-acc wts " << endl; prow2(vcw); cout << endl << endl;
     M.template AllreduceNodalData<NT_VERTEX>(vcw, [](auto & in) { return sum_table(in); }, false);
     M.template Apply<NT_EDGE>([&](const auto & edge) {
 	auto tr = calc_trace(edata[edge.id]);
-	// cout << " edge " << edge << ", trace = " << tr << endl; // print_tm(cout, edata[edge.id]); cout << endl;
-	double vw = min(vcw[edge.v[0]], vcw[edge.v[1]]);
-	// cout << " vcws " << vcw[edge.v[0]] << " " << vcw[edge.v[1]] << endl;
-	ecw[edge.id] = tr / vw;
+
+	// double vw = min(vcw[edge.v[0]], vcw[edge.v[1]]);
+	// ecw[edge.id] = tr / vw;
+
+	ecw[edge.id] = tr / sqrt(vcw[edge.v[0]] * vcw[edge.v[1]]);
 	// cout << " ecw " << ecw[edge.id] << endl;
       }, false);
-    // cout << " edge-wts for crsening: " << endl; prow2(ecw); cout << endl;
+    // cout << " edge-wts for crsening: " << endl; prow2(ecw); cout << endl << endl;
     return move(ecw);
   } // ElasticityAMGFactory::CalcECWSimple
 
 
   template<int D> Array<double> ElasticityAMGFactory<D> :: CalcECWRobust (shared_ptr<TMESH> mesh) const
   {
-    /**
-       This should detect "edge/corner cases", where vertices are mostly strongly connecyed, but
-       weakly connected in some way (e.g two stiff blocs, connected along an edge or a corner 
-       will be strongly connected in displacements, but weakly in some, or all rotations)
-       
-       I THINK it works in 2d (but it might not). 3d is, I think, broken.
-     **/
-    ElasticityMesh<D> & M(*mesh);
-    // TODO: only works "sequential" for now ...
-    if (mesh->GetEQCHierarchy()->GetCommunicator().Size() > 2)
-      { throw Exception("robust ECW only sequential for now"); } // actually, not sure, it might work
-    auto NV = M.template GetNN<NT_VERTEX>();
-    auto NE = M.template GetNN<NT_EDGE>();
+    const auto & M(*mesh);
+
+    auto old_rrm = static_cast<Options&>(*this->options).reg_rmats;
+    static_cast<Options&>(*this->options).reg_rmats = false;
+
+    M.CumulateData();
+
     auto vdata = get<0>(M.Data())->Data();
     auto edata = get<1>(M.Data())->Data();
-    const auto& econ(*M.GetEdgeCM());
-    Array<double> ecw(NE);
-    Matrix<TM> emat(2,2);
-    Matrix<double> schur(dofpv(D), dofpv(D)), emoo(dofpv(D), dofpv(D));
-    Array<TM> vblocks(NV); vblocks = 0;
-    auto edges = M.template GetNodes<NT_EDGE>();
-    {
-      static Timer t("SetCoarseningOptions - Collect"); RegionTimer rt(t);
-      M.template Apply<NT_EDGE> ([&](const auto & edge) LAMBDA_INLINE {
-	  CalcRMBlock(M, edge, emat);
-	  vblocks[edge.v[0]] += emat(0,0);
-	  vblocks[edge.v[1]] += emat(1,1);
-	}, true);
-    }
-    M.template AllreduceNodalData<NT_VERTEX, TM> (vblocks, [](auto & tab) LAMBDA_INLINE { return move(sum_table(tab)); });
-    {
-      static Timer t("SetCoarseningOptions - Calc"); RegionTimer rt(t);
-      M.template Apply<NT_EDGE>([&](const auto & edge) {
-	  double cws[2] = {0,0};
-	  CalcRMBlock(M, edge, emat);
-	  double tr = 0; Iterate<dofpv(D)>([&](auto i) { tr += emat(0,0)(i.value,i.value); } );
-	  tr /= dofpv(D);
-	  emat /= tr;
-	  // cout << "edge mat: " << endl; print_tm_mat(cout, emat); cout << endl;
-	  Iterate<2>([&](auto i) {
-	      // cout << "edge " << edge << " i " << i.value << endl;
-	      constexpr int j = 1-i;
-	      emoo = vblocks[edge.v[i.value]];
-	      emoo /= tr;
-	      // cout << "invert emoo: " << endl << emoo << endl;
-	      CalcInverse(emoo);
-	      // CalcPseudoInverse<dofpv(D)>(emoo);
-	      // cout << "inverted emoo: " << endl << emoo << endl;
-	      schur = emat(j, j) - emat(j,i.value) * emoo * emat(i.value, j);
-	      emoo = emat(j, j);
-	      // cout << "j-block: " << endl << emoo << endl;
-	      // cout << "schur: " << endl << schur << endl;
-	      cws[i.value] = sqrt(1 - CalcMinGenEV<dofpv(D)>(schur, emoo));
-	    });
-	  // ecw[edge.id] = sqrt(cws[0]*cws[1]);
-	  ecw[edge.id] = cws[0] + cws[1];
-	  // cout << "okj, next edge " << endl;
-	}, false);
-    }
+
+    const auto NV = M.template GetNN<NT_VERTEX>();
+    const auto NE = M.template GetNN<NT_EDGE>();
+
+    constexpr int N = dofpv(D);
+
+    Array<double> ecw(NE); ecw = 0;
+    
+    Array<TM> repl_diag(NV); repl_diag = 0;
+
+    Matrix<double> long_evecs(2*dofpv(D), 2*dofpv(D)), semat(2*dofpv(D), 2*dofpv(D));
+    Vector<double> long_evals(2*dofpv(D));
+
+    Matrix<double> evecs(dofpv(D), dofpv(D)), evm(dofpv(D), dofpv(D));
+    Vector<double> evals(dofpv(D));
+
+    const auto & fecon = *M.GetEdgeCM();
+    cout << "FECON: " << endl << *M.GetEdgeCM() << endl;
+    
+    // Get diagonal blocks of replacement matrix
+    Matrix<TM> edge_mat(2,2);
+    // TM Qij, Qji;
+    M.template Apply<NT_EDGE> ([&](const auto & edge) LAMBDA_INLINE {
+	// CalcQs(vdata[edge.v[0]], vdata[edge.v[1]], Qij, Qji);
+	CalcRMBlock(M, edge, edge_mat);
+	repl_diag[edge.v[0]] += edge_mat(0,0);
+	repl_diag[edge.v[1]] += edge_mat(1,1);
+      }, true); // only master, we cumulate this afterwards
+    // M.template Apply<NT_VERTEX> ([&](auto v) LAMBDA_INLINE {
+    // 	auto& d = repl_diag[v];
+    // 	const double val = vdata[v].wt;
+    // 	cout << " add. diag for " << v << " " << val << endl;
+    // 	Iterate<mat_traits<TM>::HEIGHT>([&](auto i) {
+    // 	    d(i.value, i.value) += 0 * val;
+    // 	  });
+    //   }, true);
+    M.template AllreduceNodalData<NT_VERTEX>(repl_diag, [&](auto tab) LAMBDA_INLINE { return sum_table(tab); });
+
+    Matrix<double> prm(N,N), preve(N,N);
+    Vector<double> preva(N);
+    auto prt_evv = [&](auto & M, string name) {
+      prm = M;
+      LapackEigenValuesSymmetric(prm, preva, preve);
+      cout << " evals " << name << ": "; prow(preva); cout << endl;
+      cout << " evecs " << name << ": " << endl << preve << endl;
+    };
+    
+    Array<int> neibs(20);
+    TM QNh, QNi, QNj, ENi, ENj, Esum;
+
+    TM QHi, AiQHi, Ai, QHj, AjQHj, Aj, Asum, L, R;
+    M.template Apply<NT_EDGE> ([&](const auto & edge) LAMBDA_INLINE {
+	// cout << "------" << endl;
+	// cout << " edge " << edge << endl;
+
+	// CalcQHls (vdata[edge.v[0]], vdata[edge.v[1]], QHi, QHj);
+	CalcQs (vdata[edge.v[0]], vdata[edge.v[1]], QHj, QHi);
+	AiQHi = repl_diag[edge.v[0]] * QHi;
+	Ai = Trans(QHi) * AiQHi;
+	AjQHj = repl_diag[edge.v[1]] * QHj;
+	Aj = Trans(QHj) * AjQHj;
+
+	R = edata[edge.id];
+	if (true) {
+	  auto i_neibs = fecon.GetRowIndices(edge.v[0]);
+	  auto j_neibs = fecon.GetRowIndices(edge.v[1]);
+	  intersect_sorted_arrays(i_neibs, j_neibs, neibs);
+	  Vec<3> posH = 0.5 * (vdata[edge.v[0]].pos + vdata[edge.v[1]].pos);
+	  for (auto n : neibs) {
+	    Vec<3> tNH = vdata[n].pos - posH; // actually, QHN
+	    CalcQ(tNH, QNh);
+
+	    int enri = int(fecon(edge.v[0], n));
+	    Vec<3> tNi = 0.5 * (vdata[edge.v[0]].pos - vdata[n].pos);
+	    CalcQ(tNi, QNi);
+	    ENi = Trans(QNi) * edata[enri] * QNi;
+
+	    int enrj = int(fecon(edge.v[1], n));
+	    Vec<3> tNj = 0.5 * (vdata[edge.v[1]].pos - vdata[n].pos);
+	    CalcQ(tNj, QNj);
+	    ENj = Trans(QNj) * edata[enrj] * QNj;
+
+	    Esum = ENi + ENj;
+	    CalcPseudoInverse<N>(Esum);
+
+	    TM t = ENi * Esum * ENj;
+	    TM addR = Trans(QNh) * t * QNh;
+
+	    R += addR;
+	  }
+	}
+
+
+	double vw0 = vdata[edge.v[0]].wt;
+	double vw1 = vdata[edge.v[1]].wt;
+	double maxw = max(vw0, vw1);
+	double minw = min(vw0, vw1);
+	double fac = (maxw == 0) ? 1.0 : minw/maxw;
+	auto mmev = MIN_EV_HARM (Ai, Aj, R);
+
+	// cout << " vwts " << vw0 << " " << vw1 << " " << fac << endl;
+	// cout << " mmev " << mmev << endl;
+
+	ecw[edge.id] = fac * mmev;
+      }, false); // all exec this
+
+    // }, true); // master computes, then reduce
+    // M.template AllreduceNodalData<NT_EDGE>(ecw, [&](auto tab) LAMBDA_INLINE { return sum_table(tab); });
+
+    static_cast<Options&>(*this->options).reg_rmats = old_rrm;
+
     return move(ecw);
-   } // ElasticityAMGFactory::CalcECWRobust
+  }
 
 
-  /** EmbedVAMG<ElasticityAMGFactory> **/
+    /** EmbedVAMG<ElasticityAMGFactory> **/
 
-  template<class C> void SetEADO (C& O, int D)
+  template<class C> void SetEADO (C& O, shared_ptr<BilinearForm> bfa, int D)
   {
     /** keep vertex positions! **/
     O.keep_vp = true;
+
+    /** Coarsening Algorithm **/
+    O.crs_alg = C::CRS_ALG::AGG;
+    O.agg_wt_geom = false;
+    O.n_levels_d2_agg = 1;
+    O.disc_max_bs = 1;
 
     /** Level-control **/
     // O.first_aaf = 1/pow(3, D);
@@ -304,9 +308,12 @@ namespace amg
     O.sp_max_per_row = 1 + D;
 
     /** Rebuild Mesh**/
-    O.enable_rbm = true;
+    O.enable_rbm = false; // actually broken ...
     O.rbmaf = O.aaf * O.aaf;
     O.first_rbmaf = O.aaf * O.first_aaf;
+
+    /** Discard **/
+    O.enable_disc = false;
 
     /** Embed **/
     // displacement formulations
@@ -318,12 +325,57 @@ namespace amg
     // O.block_s = { 1 };                    // multidim
     // O.block_s = { 1, 1, 1, 1, 1, 1 };     // vector-h1 (3 dim)
     // O.block_s = { disppv(D) + rotpv(D) }; // reordered vector-h1
-  }
+
+
+    /** make a guess wether we have rotations or not, and how the DOFs are ordered **/
+    std::function<Array<size_t>(shared_ptr<FESpace>)> check_space = [&](auto fes) -> Array<size_t> {
+      auto fes_dim = fes->GetDimension();
+      cout << " fes " << typeid(*fes).name() << " dim " << fes_dim << endl;
+      if (auto comp_fes = dynamic_pointer_cast<CompoundFESpace>(fes)) {
+	auto n_spaces = comp_fes->GetNSpaces();
+	Array<size_t> comp_bs;
+	for (auto k : Range(n_spaces))
+	  { comp_bs.Append(check_space((*comp_fes)[k])) ; }
+	size_t sum_bs = std::accumulate(comp_bs.begin(), comp_bs.end(), 0);
+	if (sum_bs == dofpv(D))
+	  { O.with_rots = true; }
+	else if (sum_bs == disppv(D))
+	  { O.with_rots = false; }
+	return comp_bs;
+      }
+      else if (auto reo_fes = dynamic_pointer_cast<ReorderedFESpace>(fes)) {
+	// reordering changes [1,1,1] -> [3]
+	auto base_space = reo_fes->GetBaseSpace();
+	auto unreo_bs = check_space(base_space);
+	size_t sum_bs = std::accumulate(unreo_bs.begin(), unreo_bs.end(), 0);
+	if (sum_bs == dofpv(D))
+	  { O.with_rots = true; }
+	else if (sum_bs == disppv(D))
+	  { O.with_rots = false; }
+	return Array<size_t>({sum_bs});
+      }
+      else if (fes_dim == dofpv(D)) { // only works because mdim+compound does not work, so we never land here in the compound case
+	O.with_rots = true;
+	return Array<size_t>({1});
+      }
+      else if (fes_dim == disppv(D)) {
+	O.with_rots = false;
+	return Array<size_t>({1});
+      }
+      else
+	{ return Array<size_t>({1}); }
+    };
+    O.block_s = check_space(bfa->GetFESpace());
+
+    // cout << " i guiessed " << O.with_rots << " rots, order: " << endl;
+    // cout << O.block_s << endl;
+    
+  } // SetEADO
 
   template<> void EmbedVAMG<ElasticityAMGFactory<2>> :: SetDefaultOptions (EmbedVAMG<ElasticityAMGFactory<2>>::Options& O)
-  { SetEADO (O, 2); }
+  { SetEADO (O, bfa, 2); }
   template<> void EmbedVAMG<ElasticityAMGFactory<3>> :: SetDefaultOptions (EmbedVAMG<ElasticityAMGFactory<3>>::Options& O)
-  { SetEADO (O, 3); }
+  { SetEADO (O, bfa, 3); }
 
 
   template<int DIM, class OPT>
@@ -343,50 +395,104 @@ namespace amg
     // TODO: this has to fit with buildembedding !
     set_bool(O.with_rots, "rots");
 
+    auto sum_bs = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
+    if (sum_bs == 1) {
+      if (auto reo_fes = dynamic_pointer_cast<ReorderedFESpace>(bfa->GetFESpace()))
+	{ sum_bs = reo_fes->GetBaseSpace()->GetDimension(); }
+      else
+	{ sum_bs = bfa->GetFESpace()->GetDimension(); }
+    }
+    if (O.with_rots && (sum_bs != dofpv(DIM)))
+      { throw Exception( string("wrong number of variables ") + to_string(sum_bs) + string(" for disp+rot formulation!")); }
+    else if (!O.with_rots && (sum_bs != disppv(DIM)))
+      { throw Exception( string("wrong number of variables ") + to_string(sum_bs) + string(" for disp formulation!")); }
+
     O.reg_mats = !O.with_rots;
     set_bool(O.reg_mats, "reg_mats");
 
     O.reg_rmats = !O.with_rots;
     set_bool(O.reg_rmats, "reg_rmats");
 
-    auto & obs = flags.GetNumListFlag(pfit("block_s"));
-    if (obs.Size()) { // explicitely given
-      O.block_s.SetSize(obs.Size());
-      for (auto k : Range(obs))
-	{ O.block_s[k] = obs[k]; }
-    }
-    else { // try to do the best I can
-      auto fes_dim = bfa->GetFESpace()->GetDimension();
-      if (!O.with_rots) { // displacement formulation
-	if (fes_dim == disppv(DIM))
-	  { O.block_s = { 1 }; }
-	else if (fes_dim == 1) {
-	  O.block_s.SetSize(disppv(DIM));
-	  O.block_s = 1;
-	}
-	else {
-	  throw Exception(string("Wrong multidim for displacement only formulation, have") + to_string(fes_dim)
-			  + string(", expected") + to_string(disppv(DIM)) + string(" (switch to disp+rot with ") + prefix
-			  + string("_rots=True) !"));
-	}
-      }
-      else { // displacement + rotation formulation
-	if (fes_dim == dofpv(DIM))
-	  { O.block_s = { 1 }; }
-	else if (fes_dim == 1) {
-	  O.block_s.SetSize(dofpv(DIM));
-	  O.block_s = 1;
-	}
-	else {
-	  throw Exception(string("Wrong multidim for disp+rot formulation, have") + to_string(fes_dim)
-			  + string(", expected") + to_string(dofpv(DIM)) + string(" (switch to disp inly with ") + prefix
-			  + string("_rots=False) !"));
-	}
-      }
-    }
-
     /** rebuild mesh - not implemented (also not sure how I would do this ...) **/
+    O.rebuild_mesh = [&](shared_ptr<ElasticityMesh<DIM>> mesh, shared_ptr<BaseSparseMatrix> amat, shared_ptr<ParallelDofs> pardofs) {
 
+      cout << IM(4) << "REBUILD MESH, NV = " << mesh->template GetNNGlobal<NT_VERTEX>() << ", NE = " << mesh->template GetNNGlobal<NT_EDGE>() << endl;
+
+      using TSPM_TM = typename ElasticityAMGFactory<DIM>::TSPM_TM;
+      using TM = typename ElasticityAMGFactory<DIM>::TM;
+      constexpr int N = mat_traits<TM>::HEIGHT;
+      const auto & mat = *static_pointer_cast<TSPM_TM>(amat);
+      
+      auto n_verts = mesh->template GetNN<NT_VERTEX>();
+      auto traverse_graph = [&](const auto& g, auto fun) LAMBDA_INLINE { // vertex->dof,  // dof-> vertex
+	for (auto row : Range(n_verts)) {
+	  auto ri = g.GetRowIndices(row);
+	  auto pos = find_in_sorted_array(int(row), ri); // no duplicates
+	  if (pos+1 < ri.Size())
+	    for (auto j : ri.Part(pos+1))
+	      { fun(row,j); }
+	}
+      }; // traverse_graph
+      size_t n_edges = 0;
+      traverse_graph(mat, [&](auto vk, auto vj) LAMBDA_INLINE { n_edges++; });
+      Array<decltype(AMG_Node<NT_EDGE>::v)> epairs(n_edges);
+      n_edges = 0;
+      traverse_graph(mat, [&](auto vk, auto vj) LAMBDA_INLINE {
+	  if (vk < vj) { epairs[n_edges++] = {int(vk), int(vj)}; }
+	  else { epairs[n_edges++] = {int(vj), int(vk)}; }
+	});
+      mesh->template SetNodes<NT_EDGE> (n_edges, [&](auto num) LAMBDA_INLINE { return epairs[num]; }, // (already v-sorted)
+			       [](auto node_num, auto id) { /* dont care about edge-sort! */ });
+      mesh->ResetEdgeCM();
+
+      n_edges = mesh->template GetNN<NT_EDGE>();
+      
+      cout << IM(4) << "REBUILT MESH, NV = " << mesh->template GetNNGlobal<NT_VERTEX>() << ", NE = " << mesh->template GetNNGlobal<NT_EDGE>() << endl;
+
+
+      /** new edge mats **/
+      auto avd = get<0>(mesh->Data()); avd->Cumulate();
+      auto vdata = avd->Data();
+      auto aed = get<1>(mesh->Data()); aed->SetParallelStatus(DISTRIBUTED);
+      auto & edata = aed->GetModData(); edata.SetSize(mesh->template GetNN<NT_EDGE>());
+      // off-diag entry -> is edge weight
+      auto edges = mesh->template GetNodes<NT_EDGE>();
+      Matrix<double> evecs(N,N);
+      Vector<double> evals(N);
+      TM Qij, Qji, EM;
+      for (auto & edge : edges) {
+	// cout << " re-calc emat for " << edge << endl;
+	// prt_evv<N>(edata[edge.id], "OLD EMAT");
+	ElasticityAMGFactory<DIM>::CalcQs(vdata[edge.v[0]], vdata[edge.v[1]], Qij, Qji);
+	auto metr = mat(edge.v[0], edge.v[1]);
+	// cout << " MAT ETR IS : " << endl; print_tm(cout, metr); cout << endl;
+	EM = -1 * Trans(Qji) * mat(edge.v[0], edge.v[1]) * Qij;
+	// cout << " EM IS : " << endl; print_tm(cout, EM); cout << endl;
+	Iterate<N>([&](auto i) LAMBDA_INLINE {
+	    Iterate<i.value>([&](auto j) LAMBDA_INLINE {
+		EM(i.value, j.value) = (EM(j.value, i.value) = 0.5 * (EM(i.value, j.value) + EM(j.value, i.value)));
+	      });
+	  });
+	// prt_evv<N>(EM, "EM");
+	LapackEigenValuesSymmetric(EM, evals, evecs);
+	// if (evals(0) < 0) {
+	for (auto k : Range(N)) {
+	  auto v = evals(k) > 0 ? sqrt(evals(k)) : 0;
+	  for (auto j : Range(N))
+	    { evecs(k,j) *= v; }
+	}
+	edata[edge.id] = Trans(evecs) * evecs;
+	// }
+	// else
+	  // { edata[edge.id] = EM; }
+	// prt_evv<N>(edata[edge.id], "NEW EMAT");
+      }
+      aed->Cumulate();
+
+      return mesh;
+    };
+
+    
   } // EmbedVAMG::ModifyOptions
 
   template<> void EmbedVAMG<ElasticityAMGFactory<2>> :: ModifyOptions (EmbedVAMG<ElasticityAMGFactory<2>>::Options & O, const Flags & flags, string prefix)
@@ -427,6 +533,8 @@ namespace amg
     auto vdata = a->Data(); // TODO: get penalty dirichlet from row-sums (only taking x/y/z displacement entries)
     const auto & vsort = node_sort[NT_VERTEX];
 
+    // BDDC does not work with multidim anyways, so this should usually be correct!
+
     // vertex-points
     for (auto k : Range(ma->GetNV())) {
       auto vnum = vsort[k];
@@ -453,6 +561,7 @@ namespace amg
 
     const auto& dof_blocks(options->block_s);
     // auto& fvs = *free_verts;
+    // cout << endl << " CALC INIT EMATS " << endl << endl;
     const auto& ffds = *finest_freedofs;
     if ( (dof_blocks.Size() == 1) && (dof_blocks[0] == 1) ) { // multidim
       auto edges = top_mesh->GetNodes<NT_EDGE>();
@@ -462,21 +571,50 @@ namespace amg
 	  auto di = V2D(e.v[0]); auto dj = V2D(e.v[1]);
 	  // cout << "edge " << e << endl << " dofs " << di << " " << dj << endl;
 	  // cout << " mat etr " << endl; print_tm(cout, A(di, dj)); cout << endl;
-	  // double fc = (ffds.Test(di) && ffds.Test(dj)) ? fabsum(A(di, dj)) / disppv(C::DIM) : 1e-4; // after BBDC, diri entries are compressed and mat has no entry 
 	  // after BBDC, diri entries are compressed and mat has no entry (mult multidim BDDC doesnt work anyways)
-	  double fc = (ffds.Test(di) && ffds.Test(dj)) ? fabsum(A(di, dj)) / sqrt(fabsum(A(di,di)) * fabsum(A(dj,dj))) / disppv(C::DIM) : 1e-4;
+	  double etrs = fabsum(A(di,dj));
+	  // double fc = (ffds.Test(di) && ffds.Test(dj)) ? fabsum(A(di, dj)) / disppv(C::DIM) : 1e-4; // after BBDC, diri entries are compressed and mat has no entry 
+	  double fc = (etrs != 0.0) ? etrs / disppv(C::DIM) : 1e-4;
+	  // double fc = (ffds.Test(di) && ffds.Test(dj)) ? fabsum(A(di, dj)) / sqrt(fabsum(A(di,di)) * fabsum(A(dj,dj))) / disppv(C::DIM) : 1e-4;
 	  auto & emat = edata[e.id]; emat = 0;
-	  Iterate<disppv(C::DIM)>([&](auto i) LAMBDA_INLINE { emat(i.value, i.value) = fc; });
+	  // Iterate<disppv(C::DIM)>([&](auto i) LAMBDA_INLINE { emat(i.value, i.value) = fc; });
+
+	  Vec<3> tang = vdata[e.v[1]].pos - vdata[e.v[0]].pos;
+	  double len = L2Norm(tang);
+	  fc /= (len * len);
+	  // if (ffds.Test(di) && ffds.Test(dj)) {
+	  //   auto tri = calc_trace(A(di,di))/disppv(C::DIM);
+	  //   auto trj = calc_trace(A(dj,dj))/disppv(C::DIM);
+	  //   fc /= sqrt(fabs(tri*trj));
+	  // }
+	  Iterate<disppv(C::DIM)>([&](auto i) LAMBDA_INLINE {
+	      Iterate<disppv(C::DIM)>([&](auto j) LAMBDA_INLINE {
+		  emat(i.value, j.value) = fc * tang(i.value) * tang(j.value);
+		});
+	    });
+	  auto fsem = fabsum(emat);
+	  emat *= etrs / fsem;
+
 	  // cout << " emat: " << endl; print_tm(cout, emat); cout << endl;
-	}
+	  // TM X, Qij, Qji;
+	  // C::CalcQs(vdata[e.v[0]], vdata[e.v[0]], Qij, Qji);
+	  // X = - Trans(Qij) * emat * Qji;
+	  // cout << " repl entry: " << endl; print_tm(cout, X); cout << endl;
+	  // Iterate<disppv(C::DIM)>([&](auto i) LAMBDA_INLINE {
+	      // Iterate<disppv(C::DIM)>([&](auto j) LAMBDA_INLINE {
+		  // X(i.value, j.value) -= A(di,dj)(i.value, j.value);
+		// });
+	    // });
+	  // cout << " diff " << endl; print_tm(cout, X);
+    	}
       }
       else if (auto spm_tm = dynamic_pointer_cast<SparseMatrixTM<Mat<dofpv(C::DIM),dofpv(C::DIM),double>>>(spmat)) { // disp+rot
 	const auto& A(*spm_tm);
 	for (auto & e : edges) {
 	  auto di = V2D(e.v[0]); auto dj = V2D(e.v[1]);
-	  // double fc = (ffds.Test(di) && ffds.Test(dj)) ? fabsum(A(di, dj)) / dofpv(C::DIM) : 1e-4; // after BBDC, diri entries are compressed and mat has no entry 
 	  // after BBDC, diri entries are compressed and mat has no entry (mult multidim BDDC doesnt work anyways)
-	  double fc = (ffds.Test(di) && ffds.Test(dj)) ? fabsum(A(di, dj)) / sqrt(fabsum(A(di,di)) * fabsum(A(dj,dj))) / dofpv(C::DIM) : 1e-4;
+	  double fc = (ffds.Test(di) && ffds.Test(dj)) ? fabsum(A(di, dj)) / dofpv(C::DIM) : 1e-4; // after BBDC, diri entries are compressed and mat has no entry 
+	  // double fc = (ffds.Test(di) && ffds.Test(dj)) ? fabsum(A(di, dj)) / sqrt(fabsum(A(di,di)) * fabsum(A(dj,dj))) / dofpv(C::DIM) : 1e-4;
 	  auto & emat = edata[e.id]; emat = 0;
 	  Iterate<dofpv(C::DIM)>([&](auto i) LAMBDA_INLINE { emat(i.value, i.value) = fc; });
 	}
@@ -487,11 +625,115 @@ namespace amg
     else
       { throw Exception("block_s for compound, but called algmesh_alg_scal!"); }
 
+    // cout << endl << " DONE W. INIT EMATS " << endl << endl;
 
     auto mesh = make_shared<typename C::TMESH>(move(*top_mesh), a, b);
 
     return mesh;
   } // EmbedVAMG::BuildAlgMesh_ALG_scal
+
+
+  template<class C> template<class TD2V, class TV2D> shared_ptr<typename C::TMESH>
+  EmbedVAMG<C> :: BuildAlgMesh_ALG_blk (shared_ptr<BlockTM> top_mesh, shared_ptr<BaseSparseMatrix> spmat, TD2V D2V, TV2D V2D) const
+  {
+    // cout << " mesh mat " << top_mesh << " " << spmat << endl;
+    // cout << " BLK NV " << top_mesh->GetNN<NT_VERTEX>() << endl;
+    auto a = new AttachedEVD(Array<ElasticityVertexData>(top_mesh->GetNN<NT_VERTEX>()), CUMULATED); // !! otherwise pos is garbage
+    auto vdata = a->Data(); // TODO: get penalty dirichlet from row-sums (only taking x/y/z displacement entries)
+    const auto & vsort = node_sort[NT_VERTEX];
+
+    // cout << " vsort: " << endl; prow2(vsort); cout << endl;
+
+    // With [on_dofs = select, subset = free], not all vertices in the mesh have a "vertex" in the alg-mesh !
+
+    // vertex-points
+    auto ma_nv = ma->GetNV();
+    size_t first_edge_mid = top_mesh->GetNN<NT_VERTEX>();
+    for (auto k : Range(top_mesh->GetNN<NT_VERTEX>())) {
+      auto d = V2D(k)[0];
+      vdata[k].wt = 0;
+      if (d >= ma_nv) { // starting from here, alg-vertices correspond to edge mid-points
+	first_edge_mid = k;
+	break;
+      }
+      ma->GetPoint(d, vdata[k].pos);
+    }
+    if (first_edge_mid < top_mesh->GetNN<NT_VERTEX>()) {
+      auto fes = bfa->GetFESpace();
+      Array<int> dnums;
+      Vec<3> a, b;
+      for (auto k : Range(ma->GetNEdges())) {
+	fes->GetDofNrs(NodeId(NT_EDGE, k), dnums);
+	if (dnums.Size()) {
+	  auto vnum = D2V(dnums[0]);
+	  if (vnum != -1) {
+	    auto pnums = ma->GetEdgePNums(k);
+	    ma->GetPoint(pnums[0], a);
+	    ma->GetPoint(pnums[1], b);
+	    vdata[vnum].wt = 0;
+	    vdata[vnum].pos = 0.5 * ( a + b );
+	    // cout << " pos " << vnum << " = " << vdata[vnum].pos << endl;
+	  }
+	}
+      }
+    }
+
+    // for (auto k : Range(ma->GetNV())) {
+    //   auto vnum = vsort[k];
+    //   vdata[vnum].wt = 0;
+    //   ma->GetPoint(k, vdata[vnum].pos);
+    // }
+    // edge-mid points, kind of hacky!
+    // if (top_mesh->GetNN<NT_VERTEX>() > ma->GetNV()) {
+    //   Vec<3> a, b;
+    //   auto ma_nv = ma->GetNV();
+    //   for (auto edge_num : Range(ma->GetNEdges())) {
+    // 	auto pnums = ma->GetEdgePNums(edge_num);
+    // 	ma->GetPoint(pnums[0], a);
+    // 	ma->GetPoint(pnums[1], b);
+    // 	auto vnum = vsort[ma_nv + edge_num];
+    // 	vdata[vnum].wt = 0;
+    // 	vdata[vnum].pos = 0.5 * ( a + b );
+    //   }
+    // }
+
+    auto b = new AttachedEED<C::DIM>(Array<ElasticityEdgeData<C::DIM>>(top_mesh->GetNN<NT_EDGE>()), DISTRIBUTED); // !! has to be distr
+    auto edata = b->Data();
+
+    auto edges = top_mesh->GetNodes<NT_EDGE>();
+
+    if (auto spm_tm = dynamic_pointer_cast<SparseMatrixTM<double>>(spmat)) {
+      const auto& ffds = *finest_freedofs;
+      const auto & MAT = *spm_tm;
+      for (const auto & e : edges) {
+	auto dis = V2D(e.v[0]); auto djs = V2D(e.v[1]); auto diss = dis.Size();
+	auto & ed = edata[e.id]; ed = 0;
+	// after BBDC, diri entries are compressed and mat has no entry (mult multidim BDDC doesnt work anyways)
+	if (ffds.Test(dis[0]) && ffds.Test(djs[0])) {
+	  // TODO: should I scale with diagonal inverse here ??
+	  // actually, i think i should scale with diag inv, then sum up, then scale back
+	  TM aij(0);
+	  for (auto i : Range(dis)) { // this could be more efficient
+	    aij(i,i) = MAT(dis[i], djs[i]);
+	    for (auto j = i+1; j < diss; j++)
+	      { aij(i,j) = aij(j,i) = MAT(dis[i], djs[j]); }
+	  }
+	  double fc = fabsum(aij) / diss;
+	  for (auto j : Range(dis))
+	    ed(j,j) = fc;
+	}
+	else { // does not matter what we give in here, just dont want nasty NaNs below, however this is admittedly a bit hacky
+	  ed(0,0) = 0.00042;
+	}
+      }
+    }
+    else
+      { throw Exception(string("not sure how to compute edge weights from mat of type (_blk version called)") + typeid(*spmat).name() + string("!")); }
+
+    auto mesh = make_shared<typename C::TMESH>(move(*top_mesh), a, b);
+
+    return mesh;
+  } // EmbedVAMG::BuildAlgMesh_ALG_blk
 
 
   template<>
@@ -502,7 +744,7 @@ namespace amg
     if ( (pardofs != nullptr) && (pardofs->GetDistantProcs().Size() != 0) ) {
       Array<int> is_zero(A.Height());
       for(auto k : Range(A.Height()))
-	{ is_zero[k] = (A(k,k)(2,2) == 0) ?  1 : 0; }
+	{ is_zero[k] = (fabs(A(k,k)(2,2)) < 1e-10 ) ?  1 : 0; }
       AllReduceDofData(is_zero, MPI_SUM, pardofs);
       for(auto k : Range(A.Height()))
 	if ( (pardofs->IsMasterDof(k)) && (is_zero[k] != 0) )
@@ -511,7 +753,7 @@ namespace amg
     else {
       for(auto k : Range(A.Height())) {
 	auto & diag_etr = A(k,k);
-	if (diag_etr(2,2) == 0)
+	if (fabs(diag_etr(2,2)) < 1e-8)
 	  { diag_etr(2,2) = 1; }
       }
     }
@@ -535,15 +777,21 @@ namespace amg
 	if (pardofs->IsMasterDof(k)) {
 	  auto & dg_etr = A(k,k);
 	  dg_etr = diags[k];
-	  RegTM<3,3,6>(dg_etr);
+	  // cout << " REG DIAG " << k << endl;
+	  // RegTM<3,3,6>(dg_etr); // might be buggy !?
+	  RegTM<0,6,6>(dg_etr);
+	  // cout << endl;
 	}
 	else
 	  { A(k,k) = 0; }
       }
     }
     else {
-      for(auto k : Range(A.Height()))
-	{ RegTM<3,3,6>(A(k,k)); }
+      for(auto k : Range(A.Height())) {
+	// cout << " REG DIAG " << k << endl;
+	// RegTM<3,3,6>(A(k,k));
+	RegTM<0,6,6>(A(k,k));
+      }
     }
 	
     return mat;
@@ -605,23 +853,46 @@ namespace amg
 	   - { disppv x 1, rotpv } (only reordered rot, for some reason)
       **/
 
-      assert( ( O.with_rots && (O.block_s.Size() == dofpv(C::DIM)) ) ||
-	      ( (!O.with_rots) && (O.block_s.Size() == disppv(C::DIM)) ) ); // "elasticity BuildED: disp/disp+rot mismatch");
-      assert(subset_count == O.block_s.Size() * M.template GetNN<NT_VERTEX>()); // "elasticity BuildED: subset_cnt and block_s mismatch");
+	const size_t bssum = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
+	assert( ( O.with_rots && (bssum == dofpv(C::DIM)) ) ||
+		( (!O.with_rots) && (bssum == disppv(C::DIM)) ) ); // "elasticity BuildED: disp/disp+rot mismatch");
+	assert(subset_count == bssum * M.template GetNN<NT_VERTEX>()); // "elasticity BuildED: subset_cnt and block_s mismatch");
 
-      for (auto v : O.block_s)
-	{ if (v != 1) { throw Exception("this block_s is not supported"); } }
+      // for (auto v : O.block_s)
+      // 	{ if (v != 1) { throw Exception("this block_s is not supported"); } }
+      // Array<int> perow(subset_count); perow = 1;
+      // E_D = make_shared<TED>(perow, M.template GetNN<NT_VERTEX>());
+      // const auto bss = O.block_s.Size();
+      // for (auto k : Range(M.template GetNN<NT_VERTEX>())) {
+      // 	for (auto j : Range(bss)) {
+      // 	  auto row = j * M.template GetNN<NT_VERTEX>() + k;
+      // 	  E_D->GetRowIndices(row)[0] = k;
+      // 	  E_D->GetRowValues(row)[0] = 0;
+      // 	  E_D->GetRowValues(row)[0](j) = 1;
+      // 	}
+      // }
+
       Array<int> perow(subset_count); perow = 1;
       E_D = make_shared<TED>(perow, M.template GetNN<NT_VERTEX>());
-      const auto bss = O.block_s.Size();
-      for (auto k : Range(M.template GetNN<NT_VERTEX>())) {
-	for (auto j : Range(bss)) {
-	  auto row = j * M.template GetNN<NT_VERTEX>() + k;
-	  E_D->GetRowIndices(row)[0] = k;
-	  E_D->GetRowValues(row)[0](j) = 1;
+      if (O.dof_ordering == BAO::REGULAR_ORDERING) {
+	size_t row = 0, os_ri = 0;
+	for (auto bs : O.block_s) {
+	  cout << "bs : " << bs << endl;
+	  for (auto k : Range(M.template GetNN<NT_VERTEX>())) {
+	    for (auto j : Range(bs)) {
+	      E_D->GetRowIndices(row)[0] = k;
+	      E_D->GetRowValues(row)[0] = 0;
+	      E_D->GetRowValues(row)[0](os_ri + j) = 1;
+	      row++;
+	    }
+	  }
+	  // cout << *E_D << endl;
+	  os_ri += bs;
 	}
       }
-    }
+      else
+	{ throw Exception("var ordering E_D not implemented"); }
+      }
 
     // cout << "E_D: " << endl;
     // if (E_D)

@@ -101,6 +101,14 @@ namespace amg
 #endif
 #endif
 
+#if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGCRS2_CPP)
+  EXTERN template class Agglomerator<H1AMGFactory>;
+#ifdef ELASTICITY
+  EXTERN template class Agglomerator<ElasticityAMGFactory<2>>;
+  EXTERN template class Agglomerator<ElasticityAMGFactory<3>>;
+#endif
+#endif
+
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGCTR_CPP)
   EXTERN template class CtrMap<double>;
 #ifdef ELASTICITY
@@ -112,6 +120,14 @@ namespace amg
 #ifdef ELASTICITY
   EXTERN template class GridContractMap<ElasticityMesh<2>>;
   EXTERN template class GridContractMap<ElasticityMesh<3>>;
+#endif
+#endif
+
+#if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMG_DISCARD_CPP)
+  EXTERN template class VDiscardMap<H1Mesh>;
+#ifdef ELASTICITY
+  EXTERN template class VDiscardMap<ElasticityMesh<2>>;
+  EXTERN template class VDiscardMap<ElasticityMesh<3>>;
 #endif
 #endif
 
