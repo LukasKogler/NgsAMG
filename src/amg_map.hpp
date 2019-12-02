@@ -14,6 +14,7 @@ namespace amg {
     // virtual void CleanupMeshes () const = 0;
   };
 
+
   /** This maps meshes and their NODES between levels. **/
   class BaseGridMapStep;
   class GridMap
@@ -27,6 +28,7 @@ namespace amg {
   private:
     Array<shared_ptr<BaseGridMapStep>> steps;
   };
+
 
   template<class TMESH>
   class GridMapStep : public BaseGridMapStep
@@ -194,9 +196,13 @@ namespace amg {
     virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const override;
 
     INLINE shared_ptr<TMAT> GetProl () const { return prol; }
+    shared_ptr<trans_spm_tm<TMAT>> GetProlTrans () const;
     INLINE void SetProl (shared_ptr<TMAT> aprol) { prol = aprol; }
 
   protected:
+
+    void BuildPT();
+
     shared_ptr<TMAT> prol;
     shared_ptr<trans_spm_tm<TMAT>> prol_trans;
   };

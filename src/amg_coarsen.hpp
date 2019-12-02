@@ -175,6 +175,7 @@ namespace amg
     shared_ptr<HierarchicVWC::Options> options;
   };
 
+
   class BaseCoarseMap
   {
   public:
@@ -183,6 +184,16 @@ namespace amg
     template<NODE_TYPE NT> INLINE size_t GetNN () const { return NN[NT]; }
     template<NODE_TYPE NT> INLINE size_t GetMappedNN () const { return mapped_NN[NT]; }
     template<NODE_TYPE NT> INLINE FlatArray<int> GetMap () const { return node_maps[NT]; }
+  protected:
+    Array<Array<int>> node_maps = Array<Array<int>> (4);
+    size_t NN[4] = {0,0,0,0};
+    size_t mapped_NN[4] = {0,0,0,0};
+  };
+  
+  
+  class PairWiseCoarseMap : public BaseCoarseMap// workaround
+  {
+  public:
     template<NODE_TYPE NT> INLINE size_t CN_in_EQC (size_t eqc) const
     { return mapped_eqc_firsti[NT][eqc+1] -  mapped_eqc_firsti[NT][eqc]; }
     template<NODE_TYPE NT> INLINE size_t EQC_of_CN (size_t node_num) const {
@@ -199,26 +210,23 @@ namespace amg
     template<NODE_TYPE NT> FlatArray<size_t> GetMappedEqcFirsti () const { return mapped_eqc_firsti[NT]; }
     template<NODE_TYPE NT> FlatArray<size_t> GetMappedCrossFirsti () const { return mapped_cross_firsti[NT]; }
     INLINE FlatArray<decltype(AMG_Node<NT_EDGE>::v)> GetMappedEdges () const { return mapped_E; }
-    protected:
-    Array<Array<int>> node_maps = Array<Array<int>> (4);
-    // Array<size_t> NN = Array<size_t>(4);
-    size_t NN[4] = {0,0,0,0};
-    // Array<size_t> mapped_NN  = Array<size_t>(4);
-    size_t mapped_NN[4] = {0,0,0,0};
+  protected:
+    using BaseCoarseMap::node_maps, BaseCoarseMap::NN, BaseCoarseMap::mapped_NN;
     Array<Array<size_t> > mapped_eqc_firsti = Array<Array<size_t> >(4);
     Array<Array<size_t> > mapped_cross_firsti = Array<Array<size_t> >(4);
     Array<decltype(AMG_Node<NT_EDGE>::v)> mapped_E;
   };
-  
+
+
   template<class TMESH>
-  class CoarseMap : public BaseCoarseMap, public GridMapStep<TMESH> 
+  class CoarseMap : public PairWiseCoarseMap, public GridMapStep<TMESH> 
   {
   public:
     CoarseMap (shared_ptr<TMESH> _mesh, VWCoarseningData::CollapseTracker &coll);
     ~CoarseMap () {}
   protected:
-    using BaseCoarseMap::node_maps, BaseCoarseMap::NN, BaseCoarseMap::mapped_NN,
-      BaseCoarseMap::mapped_eqc_firsti, BaseCoarseMap::mapped_cross_firsti, BaseCoarseMap::mapped_E;
+    using PairWiseCoarseMap::node_maps, PairWiseCoarseMap::NN, PairWiseCoarseMap::mapped_NN,
+      PairWiseCoarseMap::mapped_eqc_firsti, PairWiseCoarseMap::mapped_cross_firsti, PairWiseCoarseMap::mapped_E;
     using GridMapStep<TMESH>::mesh, GridMapStep<TMESH>::mapped_mesh;
     void BuildVertexMap (VWCoarseningData::CollapseTracker& coll);
     void BuildEdgeMap (VWCoarseningData::CollapseTracker& coll);

@@ -97,7 +97,7 @@ namespace amg
       real_t* ubvec = NULL;                 // tolerance
       idx_t metis_options[METIS_NOPTIONS];  // metis-options
       idx_t objval;                         // value of the edgecut/totalv of the partition
-      idx_t * part = &partition[0];         // where to write the partition
+      idx_t * part = partition.Data();         // where to write the partition
       METIS_SetDefaultOptions(metis_options);
       metis_options[METIS_OPTION_OBJTYPE] = METIS_OBJTYPE_VOL;         // minimize communication volume
       metis_options[METIS_OPTION_NCUTS] = (comm.Size()>1000) ? 1 : 2;  // metis will generate this many partitions and return the best
@@ -122,31 +122,35 @@ namespace amg
 	}
       }
       // sort partition by min, rank it has
-      
+      // cout << " partition: "; prow2(partition); cout << endl;
       TableCreator<int> cgs; // not (nparts), because in some cases metis gives enpty parts!!
       Array<int> arra(nparts); arra = comm.Size(); // empty grps will be sorted at the end
-      for (auto k : Range(comm.Size())) arra[partition[k]] = min2(arra[partition[k]], k);
+      if (sep_p0) {
+	for (auto k : Range(1, comm.Size()))
+	  { arra[partition[k]] = min2(arra[partition[k]], k); }
+      }
+      else {
+	for (auto k : Range(comm.Size()))
+	  { arra[partition[k]] = min2(arra[partition[k]], k); }
+      }
       Array<int> arrb(nparts); for (auto k : Range(nparts)) arrb[k] = k;
       QuickSortI(arra, arrb); for (auto k : Range(nparts)) arra[arrb[k]] = k;
       if (sep_p0) {
 	for (; !cgs.Done(); cgs++) {
 	  cgs.Add(0,0);
-	  for (auto p : Range(1, comm.Size())) {
-	    cgs.Add(arra[partition[p]]+1,p);
-	  }
+	  for (auto p : Range(1, comm.Size()))
+	    { cgs.Add(arra[partition[p]]+1,p); }
 	}
       }
       else {
 	for (; !cgs.Done(); cgs++) {
-	  for (auto p : Range(comm.Size())) {
-	    cgs.Add(arra[partition[p]],p);
-	  }
+	  for (auto p : Range(comm.Size()))
+	    { cgs.Add(arra[partition[p]],p); }
 	}
       }
       groups = cgs.MoveTable();
     }
     comm.Bcast(groups, root);
-    // cout << "groups: " << endl << groups << endl;
     return groups;
   }
 
@@ -156,7 +160,9 @@ namespace amg
 			Array<int> && _group, Table<int> && _dof_maps)
     : BaseDOFMapStep(_pardofs, _mapped_pardofs), group(move(_group)), master(group[0]), dof_maps(move(_dof_maps)) 
   {
+    // cout << " CTR MAP, group "; prow(group); cout << endl;
     auto comm = pardofs->GetCommunicator();
+    // cout << "am rank " << comm.Rank() << endl;
     is_gm = comm.Rank() == master;
   }
 
@@ -241,6 +247,8 @@ namespace amg
     TAU_PROFILE("CtrMap::TransferC2F", TAU_CT(*this), TAU_DEFAULT);
 #endif
 
+    // cout << "CTR trans C2F" << endl;
+
     RegionTimer rt(timer_hack_ctr_c2f());
     auto& comm(pardofs->GetCommunicator());
     x_fine->SetParallelStatus(CUMULATED);
@@ -249,8 +257,15 @@ namespace amg
       {
 	if (fvf.Size() > 0)
 	  { MPI_Recv(x_fine->Memory(), fvf.Size(), MyGetMPIType<TV>(), group[0], MPI_TAG_AMG, comm, MPI_STATUS_IGNORE); }
+	// cout << "short x: " << endl;
+	// prow(x_fine->FVDouble());
+	// cout << endl;
 	return;
       }
+
+    // cout << "long x: " << endl;
+    // prow(x_coarse->FVDouble());
+    // cout << endl;
 
     x_coarse->Cumulate();
     auto fvc = x_coarse->FV<TV>();
@@ -263,7 +278,15 @@ namespace amg
     auto loc_map = dof_maps[0];
     for (auto j : Range(loc_map.Size()))
       { fvf(j) = fvc(loc_map[j]); }
+    // cout << "loc data: " << endl;
+    // for (auto j : Range(loc_map.Size()))
+    //   { cout << "[" << j << " " << loc_map[j] << " " << fvc(loc_map[j]) << "] "; }
+    // cout << endl;
     reqs[0] = MPI_REQUEST_NULL; MyMPI_WaitAll(reqs);
+
+    // cout << "short x: " << endl;
+    // prow(x_fine->FVDouble());
+    // cout << endl;
   }
 
 
@@ -273,6 +296,8 @@ namespace amg
 #ifdef USE_TAU
     TAU_PROFILE("CtrMap::AddC2F", TAU_CT(*this), TAU_DEFAULT);
 #endif
+
+    // cout << "ctr c2f, crs " << x_coarse << " master " << is_gm << endl;
 
     /**
        some values are transfered to multiple ranks 
@@ -287,9 +312,12 @@ namespace amg
 	if (fvf.Size() > 0) {
 	  auto b0 = buffers[0];
 	  comm.Recv(b0, group[0], MPI_TAG_AMG);
+	  // cout << "got buf: "; prow(b0); cout << endl;
 	  for (auto k : Range(fvf.Size()))
 	    { fvf(k) += fac * b0[k]; }
 	}
+	// cout << "x fine " << x_fine->Size() << endl;
+	// cout << *x_fine << endl;
 	return;
       }
 
@@ -304,7 +332,13 @@ namespace amg
     auto loc_map = dof_maps[0];
     for (auto j : Range(loc_map.Size()))
       { fvf(j) += fac * fvc(loc_map[j]); }
+    // cout << "loc data: " << endl;
+    // for (auto j : Range(loc_map.Size()))
+      // { cout << "[" << j << " " << loc_map[j] << " " << fvc(loc_map[j]) << "] "; }
+    // cout << endl;
     reqs[0] = MPI_REQUEST_NULL; MyMPI_WaitAll(reqs);
+    // cout << "x fine " << x_fine->Size() << endl;
+    // cout << *x_fine << endl;
   }
 
 
@@ -329,7 +363,7 @@ namespace amg
   {
 
     NgsAMG_Comm comm = pardofs->GetCommunicator();
-
+    
     // cout << "SWAP WITH PROL, AM RANK " << comm.Rank() << " of " << comm.Size() << endl;
     // cout << "loc glob nd " << pardofs->GetNDofLocal() << " " << pardofs->GetNDofGlobal() << endl;
     
@@ -344,7 +378,8 @@ namespace amg
 
       comm.Recv(split_A, master, MPI_TAG_AMG);
 
-      // cout << " got split A: " << endl << *split_A << endl;
+      // cout << " got split A: " << endl;
+      // print_tm_spmat(cout, *split_A); cout << endl;
 
       // do sth like that if whe actually need non-dummy ones
       // Table<int> pd_tab; comm.Recv(pd_tab, master, MPI_TAG_AMG);
@@ -369,6 +404,9 @@ namespace amg
       Array<Array<int>> pdm(group.Size()); // dof-maps after prol
       BitArray colspace(P->Width());
       Array<int> rmap(P->Width());
+
+      // cout << " PROL IN: " << endl;
+      // print_tm_spmat(cout, *P); cout << endl;
 
       /**
 	 Get rows contained in dmap out of prol, re-map colnrs from 0..N, where N is the number
@@ -497,6 +535,11 @@ namespace amg
  
     auto prol_map = make_shared<ProlMap<SparseMatrixTM<TM>>> (split_A, pardofs, mid_pardofs);
 
+    // cout << "new prol_map: " << endl;
+
+    print_tm_spmat(cout, *split_A); cout << endl;
+
+
     pardofs = mid_pardofs;
     mapped_pardofs = (pm_in == nullptr) ? nullptr : pm_in->GetMappedParDofs();
 
@@ -549,7 +592,7 @@ namespace amg
     NgsAMG_Comm comm(pardofs->GetCommunicator());
 
     if (!is_gm) {
-      // cout << " send mat to " << group[0] << endl;
+      // cout << " I DROP, send mat to " << group[0] << endl;
       comm.Send(*mat, group[0], MPI_TAG_AMG);
       // cout << " sent mat to " << group[0] << endl;
       return nullptr;

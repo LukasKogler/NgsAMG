@@ -45,9 +45,38 @@ namespace amg
     { ; }
 
     // templated because i cant static_cast basecoarsemap to elasticitymesh (dont have dim)
-    template<class TMESH> INLINE void map_data (const CoarseMap<TMESH> & cmap, AttachedEVD & cevd) const;
+    template<class TMESH> INLINE void map_data (const AgglomerateCoarseMap<TMESH> & agg_map, AttachedEVD & cevd) const;
+    template<class TMESH> INLINE void map_data (const CoarseMap<TMESH> & cmap, AttachedEVD & cevd) const
+    {
+      static Timer t("AttachedEVD::map_data"); RegionTimer rt(t);
+      auto & cdata = cevd.data;
+      Cumulate();
+      // cout << "(cumul) f-pos: " << endl;
+      // for (auto V : Range(data.Size())) cout << V << ": " << data[V].pos << endl;
+      // cout << endl;
+      cdata.SetSize(cmap.template GetMappedNN<NT_VERTEX>()); cdata = 0.0;
+      auto map = cmap.template GetMap<NT_VERTEX>();
+      // cout << "v_map: " << endl; prow2(map); cout << endl << endl;
+      Array<int> touched(map.Size()); touched = 0;
+      mesh->Apply<NT_EDGE>([&](const auto & e) { // set coarse data for all coll. vertices
+	  auto CV = map[e.v[0]];
+	  if ( (CV == -1) || (map[e.v[1]] != CV) ) return;
+	  touched[e.v[0]] = touched[e.v[1]] = 1;
+	  cdata[CV].pos = 0.5 * (data[e.v[0]].pos + data[e.v[1]].pos);
+	  cdata[CV].wt = data[e.v[0]].wt + data[e.v[1]].wt;
+	}, true); // if stat is CUMULATED, only master of collapsed edge needs to set wt 
+      mesh->AllreduceNodalData<NT_VERTEX>(touched, [](auto & in) { return move(sum_table(in)); } , false);
+      mesh->Apply<NT_VERTEX>([&](auto v) { // set coarse data for all "single" vertices
+	  auto CV = map[v];
+	  if ( (CV != -1) && (touched[v] == 0) )
+	    { cdata[CV] = data[v]; }
+	}, true);
+      // cout << "(distr) c-pos: " << endl;
+      // for (auto CV : Range(cmap.template GetMappedNN<NT_VERTEX>())) cout << CV << ": " << cdata[CV] << endl;
+      // cout << endl;
+      cevd.SetParallelStatus(DISTRIBUTED);
+    } // AttachedEVD::map_data
   }; // class AttachedEVD
-
 
   template<int D> struct EED_TRAIT { typedef void type; };
   template<> struct EED_TRAIT<2> { typedef Mat<3, 3, double> type; };
@@ -72,6 +101,7 @@ namespace amg
   template<int D>
   using ElasticityMesh = BlockAlgMesh<AttachedEVD, AttachedEED<D>>;
 
+
   template<int D> struct ELTM_TRAIT { typedef void type; };
   template<> struct ELTM_TRAIT<2> { typedef Mat<3,3,double> type; };
   template<> struct ELTM_TRAIT<3> { typedef Mat<6,6,double> type; };
@@ -84,6 +114,8 @@ namespace amg
     constexpr static int DIM = D;
     using TMESH = ElasticityMesh<D>;
     using TM = ELTM<D>;
+    using T_V_DATA = ElasticityVertexData;
+    using TEDATA = ElasticityEdgeData<D>;
 
     using BASE = VertexBasedAMGFactory<ElasticityAMGFactory<D>, ElasticityMesh<D>, ELTM<D>>;
     struct Options;
@@ -96,47 +128,26 @@ namespace amg
 
     template<NODE_TYPE NT> INLINE double GetWeight (const TMESH & mesh, const AMG_Node<NT> & node) const;
 
-    INLINE void CalcPWPBlock (const TMESH & fmesh, const TMESH & cmesh, const CoarseMap<TMESH> & map,
+    INLINE void CalcPWPBlock (const TMESH & fmesh, const TMESH & cmesh,
 			      AMG_Node<NT_VERTEX> v, AMG_Node<NT_VERTEX> cv, TM & mat) const;
 
     INLINE void CalcRMBlock (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge, FlatMatrix<TM> mat) const;
+
+    static INLINE void CalcQ  (const Vec<3> & t, TM & Q);
+    static INLINE void ModQ  (const Vec<3> & t, TM & Q);
+    static INLINE void CalcQij (const T_V_DATA & di, const T_V_DATA & dj, TM & Qij);
+    static INLINE void ModQij (const T_V_DATA & di, const T_V_DATA & dj, TM & Qij);
+    static INLINE void CalcQHh (const T_V_DATA & dH, const T_V_DATA & dh, TM & QHh);
+    static INLINE void ModQHh (const T_V_DATA & dH, const T_V_DATA & dh, TM & QHh);
+    static INLINE void CalcQs  (const T_V_DATA & di, const T_V_DATA & dj, TM & Qij, TM & Qji);
+    static INLINE void ModQs  (const T_V_DATA & di, const T_V_DATA & dj, TM & Qij, TM & Qji);
+    static INLINE T_V_DATA CalcMPData (const T_V_DATA & da, const T_V_DATA & db);
 
   protected:
     Array<double> CalcECWSimple (shared_ptr<TMESH> mesh) const;
     Array<double> CalcECWRobust (shared_ptr<TMESH> mesh) const;
   }; // class ElasticityAMGFactory
 
-
-  template<class TMESH> void AttachedEVD :: map_data (const CoarseMap<TMESH> & cmap, AttachedEVD & cevd) const
-  {
-    static Timer t("AttachedEVD::map_data"); RegionTimer rt(t);
-    auto & cdata = cevd.data;
-    Cumulate();
-    // cout << "(cumul) f-pos: " << endl;
-    // for (auto V : Range(data.Size())) cout << V << ": " << data[V].pos << endl;
-    // cout << endl;
-    cdata.SetSize(cmap.template GetMappedNN<NT_VERTEX>()); cdata = 0.0;
-    auto map = cmap.template GetMap<NT_VERTEX>();
-    // cout << "v_map: " << endl; prow2(map); cout << endl << endl;
-    Array<int> touched(map.Size()); touched = 0;
-    mesh->Apply<NT_EDGE>([&](const auto & e) { // set coarse data for all coll. vertices
-	auto CV = map[e.v[0]];
-	if ( (CV == -1) || (map[e.v[1]] != CV) ) return;
-	touched[e.v[0]] = touched[e.v[1]] = 1;
-	cdata[CV].pos = 0.5 * (data[e.v[0]].pos + data[e.v[1]].pos);
-	cdata[CV].wt = data[e.v[0]].wt + data[e.v[1]].wt;
-      }, true); // if stat is CUMULATED, only master of collapsed edge needs to set wt 
-    mesh->AllreduceNodalData<NT_VERTEX>(touched, [](auto & in) { return move(sum_table(in)); } , false);
-    mesh->Apply<NT_VERTEX>([&](auto v) { // set coarse data for all "single" vertices
-	auto CV = map[v];
-	if ( (CV != -1) && (touched[v] == 0) )
-	  { cdata[CV] = data[v]; }
-      }, true);
-    // cout << "(distr) c-pos: " << endl;
-    // for (auto CV : Range(cmap.template GetMappedNN<NT_VERTEX>())) cout << CV << ": " << cdata[CV].pos << endl;
-    // cout << endl;
-    cevd.SetParallelStatus(DISTRIBUTED);
-  } // AttachedEVD::map_data
 
 } // namespace amg
 

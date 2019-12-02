@@ -23,13 +23,13 @@ namespace amg
     
     /** How the DOFs in the subset are mapped to vertices **/
     enum DOF_ORDERING : char { REGULAR_ORDERING = 0,
-			       VARIBALE_ORDERING = 1 };
-    /**	REGULAR: sum(block_s) DOFs per "vertex", determined by ss_select and block_s
+			       VARIABLE_ORDERING = 1 };
+    /**	REGULAR: sum(block_s) DOFs per "vertex", defined by block_s and ss_ranges/ss_select
 	   e.g: block_s = [2,3], then we have NV blocks of 2 vertices, then NV blocks of 3 vertices
 	   each block is increasing and continuous (neither DOFs [12,18] nor DOFs [5,4] are valid blocks) 
-	   
-	VARIABLE: DOFs for vertex k: v_blocks[k] (not conistently implemented)
 	subset must be consistent for all dofs in each block ( so we cannot have a block of DOFs [12,13], but DOF 13 not in subet
+	   
+	VARIABLE: PLACEHOLDER !! || DOFs for vertex k: v_blocks[k] || ignores subset
     **/
     DOF_ORDERING dof_ordering = REGULAR_ORDERING;
     Array<int> block_s; // we are computing NV from this, so don't put freedofs in here, one BS per given range
@@ -151,9 +151,21 @@ namespace amg
 
     typedef BaseEmbedAMGOptions BAO;
 
-    set_enum_opt(O.subset, "on_dofs", {"range", "select"}, BAO::RANGE_SUBSET);
-
+    
     auto fes = bfa->GetFESpace();
+
+    set_enum_opt(O.dof_ordering, "dof_order", {"regular", "variable"}, BAO::REGULAR_ORDERING);
+
+    auto &bs = flags.GetNumListFlag(pfit("dof_blocks"));
+
+    if (bs.Size()) {
+      O.block_s.SetSize(bs.Size());
+      for (auto k : Range(O.block_s))
+	{ O.block_s[k] = int(bs[k]); }
+    }
+
+
+    set_enum_opt(O.subset, "on_dofs", {"range", "select"}, BAO::RANGE_SUBSET);
 
     switch (O.subset) {
     case (BAO::RANGE_SUBSET) : {
@@ -193,24 +205,33 @@ namespace amg
 	  else
 	    { return fes->GetNDof(); }
 	};
-	if (comp_fes != nullptr) {
-	  size_t n_spaces = comp_fes->GetNSpaces();
-	  O.ss_ranges.SetSize(n_spaces);
-	  size_t offset = 0;
-	  for (auto space_nr : Range(n_spaces)) {
-	    auto space = (*comp_fes)[space_nr];
-	    O.ss_ranges[space_nr][0] = offset;
-	    O.ss_ranges[space_nr][1] = offset + get_lo_nd(space);
-	    offset += space->GetNDof();
+	std::function<void(shared_ptr<FESpace>, size_t)> set_lo_ranges =
+	  [&](auto afes, auto offset) LAMBDA_INLINE -> void {
+	  if (auto comp_fes = dynamic_pointer_cast<CompoundFESpace>(afes)) {
+	    size_t n_spaces = comp_fes->GetNSpaces();
+	    size_t sub_os = offset;
+	    for (auto space_nr : Range(n_spaces)) {
+	      auto space = (*comp_fes)[space_nr];
+	      set_lo_ranges(space, sub_os);
+	      sub_os += space->GetNDof();
+	    }
 	  }
-	}
-	else { // per default, take lo-part
-	  O.ss_ranges.SetSize(1);
-	  O.ss_ranges[0][0] = 0;
-	  O.ss_ranges[0][1] = get_lo_nd(fes);
-	}
+	  else if (auto reo_fes = dynamic_pointer_cast<ReorderedFESpace>(afes)) {
+	    // presumably, all vertex-DOFs are low order, and these are still the first ones, so this should be fine
+	    auto base_space = reo_fes->GetBaseSpace();
+	    set_lo_ranges(base_space, offset);
+	  }
+	  else {
+	    INT<2, size_t> r = { offset, offset + get_lo_nd(afes) };
+	    O.ss_ranges.Append(r);
+	    // O.ss_ranges.Append( { offset, offset + get_lo_nd(afes) } ); // for some reason does not work ??
+	  }
+	};
+	O.ss_ranges.SetSize(0);
+	set_lo_ranges(fes, 0);
 	cout << IM(3) << "subset for coarsening defined by low-order range(s)" << endl;
-	cout << IM(5) << O.ss_ranges << endl;
+	//for (auto r : O.ss_ranges)
+	  //cout << r[0] << " " << r[1] << endl;
       }
       break;
     }
@@ -232,15 +253,59 @@ namespace amg
 	}
 	else {
 	  cout << IM(3) << "taking nodalp2 subset for coarsening" << endl;
+	  /** 
+	      Okay, we have to be careful here. We use infomation from O.block_s as a heuristic:
+	        - We assume that the first sum(block_s) dofs of each vertex are the right ones
+		- We assume that we can split the DOFs for each edge into sum(block_s) parts and take the first
+		  one each. Compatible with reordered compound space, because the order of DOFs WITHIN AN EDGE stays the same
+		  example: an edge has 15 DOFs, block_s = [2,1]. then we split the DOFs into
+		  [0..4], [5..10], [10..14] and take DOfs [0, 5, 10].
+	       This works for:
+	        - Vector-H1
+		- [Reordered Vector-H1, Reordered Vector-H1]
+		- Reordered([Vec-H1, Vec-H1])
+		- Reordered([H1, H1, ...])
+		- Ofc H1(dim=..)
+	       (compound of multidim does not work anyways)
+	   **/
 	  O.ss_select = make_shared<BitArray>(fes->GetNDof());
 	  O.ss_select->Clear();
-	  for (auto k : Range(ma->GetNV()))
+	  if ( (O.block_s.Size() == 1) && (O.block_s[0] == 1) ) { // this is probably correct
+	    for (auto k : Range(ma->GetNV()))
 	    { O.ss_select->SetBit(k); }
-	  Array<DofId> dns;
-	  for (auto k : Range(ma->GetNEdges())) {
-	    fes->GetDofNrs(NodeId(NT_EDGE, k), dns);
-	    if (dns.Size())
-	      { O.ss_select->SetBit(dns[0]); }
+	    Array<DofId> dns;
+	    for (auto k : Range(ma->GetNEdges())) {
+	      // fes->GetDofNrs(NodeId(NT_EDGE, k), dns);
+	      fes->GetEdgeDofNrs(k, dns);
+	      if (dns.Size())
+		{ O.ss_select->SetBit(dns[0]); }
+	    }
+	  }
+	  else { // an educated guess
+	    cout << "best guess ! " << endl;
+	    const size_t dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
+	    Array<int> dnums;
+	    auto jumped_set = [&]() {
+	      const int jump = dnums.Size() / dpv;
+	      // int os = 0;
+	      // for (auto k : Range(O.block_s.Size())) {
+	      // 	for (auto j : Range(O.block_s[k]))
+	      // 	  { O.ss_select->SetBit(dnums[os+j]); }
+	      // 	os += O.block_s[k] * jump;
+	      // }
+	      for (auto k : Range(dpv))
+		{ O.ss_select->SetBit(dnums[k*jump]); }
+	    };
+	    for (auto k : Range(ma->GetNV())) {
+	      fes->GetDofNrs(NodeId(NT_VERTEX, k), dnums);
+	      jumped_set(); // probably sets all
+	    }
+	    for (auto k : Range(ma->GetNEdges())) {
+	      fes->GetDofNrs(NodeId(NT_EDGE, k), dnums);
+	      jumped_set();
+	    }
+	    //cout << " best guess numset " << O.ss_select->NumSet() << endl;
+	    //cout << *O.ss_select << endl;
 	  }
 	}
 	cout << IM(3) << "nodalp2 set: " << O.ss_select->NumSet() << " of " << O.ss_select->Size() << endl;
@@ -250,8 +315,6 @@ namespace amg
     default: { throw Exception("Not implemented"); break; }
     }
       
-    set_enum_opt(O.dof_ordering, "dof_order", {"regular", "variable"}, BAO::REGULAR_ORDERING);
-
     set_enum_opt(O.topo, "edges", {"alg", "mesh", "elmat"}, BAO::ALG_TOPO);
 
     set_enum_opt(O.v_pos, "vpos", {"vertex", "given"}, BAO::VERTEX_POS);
@@ -332,6 +395,8 @@ namespace amg
     if (options->spec_ss == BaseEmbedAMGOptions::SPECSS_FREE) {
       cout << IM(3) << "taking subset for coarsening from freedofs" << endl;
       options->ss_select = finest_freedofs;
+      //cout << " freedofs (for coarsening) set " << options->ss_select->NumSet() << " of " << options->ss_select->Size() << endl;
+      //cout << *options->ss_select << endl;
     }
   } // EmbedVAMG::InitLevel
 
@@ -376,6 +441,8 @@ namespace amg
       MPI_Comm mecomm = (c.Size() == 1) ? MPI_COMM_WORLD : AMG_ME_COMM;
       fine_spm->SetParallelDofs(make_shared<ParallelDofs> ( mecomm , move(dps), GetEntryDim(fine_spm.get()), false));
     }
+
+    SetUpMaps();
 
     auto mesh = BuildInitialMesh();
 
@@ -436,7 +503,8 @@ namespace amg
 
     Array<shared_ptr<BaseSmoother>> smoothers(mats.Size()-1);
     for (auto k : Range(size_t(0), mats.Size()-1)) {
-      // cout << " sm " << k << " " << mats.Size() << endl;
+      //cout << " sm " << k << " " << mats.Size() << endl;
+      //cout << *mats[k] << endl;
       smoothers[k] = BuildSmoother (mats[k], dof_map->GetParDofs(k), (k==0) ? finest_freedofs : nullptr);
       smoothers[k]->Finalize(); // do i even need this anymore ?
     }
@@ -447,7 +515,7 @@ namespace amg
 
     amg_mat = make_shared<AMGMatrix> (dof_map, smoothers);
 
-
+    //cout << " now coarse level " << endl;
     // Coarsest level setup
 
     if (mats.Last() != nullptr) { // we might drop out because of redistribution at some point
@@ -463,6 +531,10 @@ namespace amg
 	auto cspm = mats.Last();
 
 	cspm = RegularizeMatrix(cspm, cpds);
+
+	// cout << "cspm: " << endl;
+	// print_tm_spmat(cout, static_cast<SparseMatrix<typename FACTORY::TM>&>(*cspm));
+	// cout << endl;
 
 	if constexpr(MAX_SYS_DIM < mat_traits<typename FACTORY::TM>::HEIGHT) {
 	    throw Exception(string("MAX_SYS_DIM = ") + to_string(MAX_SYS_DIM) + string(", need at least ") +
@@ -530,6 +602,8 @@ namespace amg
   {
     static Timer t("BTM_Mesh"); RegionTimer rt(t);
 
+    throw Exception("I don't think this is functional...");
+
     node_sort.SetSize(4);
 
     typedef BaseEmbedAMGOptions BAO;
@@ -550,6 +624,8 @@ namespace amg
     }
     default: { throw Exception("kinda unexpected case"); break; }
     }
+
+    // TODO: re-map d2v/v2d
 
     // this only works for the simplest case anyways...
     auto fvs = make_shared<BitArray>(top_mesh->template GetNN<NT_VERTEX>()); fvs->Clear();
@@ -597,6 +673,7 @@ namespace amg
     
     // vertices
     auto set_vs = [&](auto nv, auto v2d) {
+      n_verts = nv;
       vert_sort.SetSize(nv);
       top_mesh->SetVs (nv, [&](auto vnr) LAMBDA_INLINE { return fpd->GetDistantProcs(v2d(vnr)); },
 		       [&vert_sort](auto i, auto j){ vert_sort[i] = j; });
@@ -610,12 +687,15 @@ namespace amg
       }
       else
 	{ free_verts->Set(); }
-      // cout << " nr free verts: " << free_verts->NumSet() << " of " << free_verts->Size() << endl;
-      // for (auto k : Range(nv))
-      // 	cout << " (" << k << "::" << free_verts->Test(k) << ")";
-      // cout << endl;
     };
     
+    if (use_v2d_tab) {
+      set_vs(v2d_table.Size(), [&](auto i) LAMBDA_INLINE { return v2d_table[i][0]; });
+    }
+    else {
+      set_vs(v2d_array.Size(), [&](auto i) LAMBDA_INLINE { return v2d_array[i]; });
+    }
+
     // edges 
     auto create_edges = [&](auto v2d, auto d2v) LAMBDA_INLINE {
       auto traverse_graph = [&](const auto& g, auto fun) LAMBDA_INLINE { // vertex->dof,  // dof-> vertex
@@ -626,6 +706,7 @@ namespace amg
 	  if (pos+1 < ri.Size()) {
 	    for (auto col : ri.Part(pos+1)) {
 	      auto j = d2v(col);
+	      // cout << " row col " << row << " " << col << ", vi vj " << k << " " << j << endl;
 	      if (j != -1) {
 		// cout << "dofs " << row << " " << col << " are (orig) vertices " << k << " " << j << ", sorted " << vert_sort[k] << " " << vert_sort[j] << endl;
 		fun(vert_sort[k],vert_sort[j]);
@@ -657,64 +738,210 @@ namespace amg
       // cout << "final n_edges: " << top_mesh->GetNN<NT_EDGE>() << endl;
     }; // create_edges
 
-    if (O.dof_ordering == BAO::REGULAR_ORDERING) {
-      // const auto fes_bs = fpd->GetEntrySize();
-      int dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
-      const auto bs0 = O.block_s[0]; // is this not kind of redundant ?
-      if (O.subset == BAO::RANGE_SUBSET) {
-	auto r0 = O.ss_ranges[0]; const auto maxd = r0[1];
-	const int stride = bs0; // probably 1
-	int dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
-	n_verts = (r0[1] - r0[0]) / stride;
-	auto d2v = [&](auto d) LAMBDA_INLINE { return ( (d % stride == 0) && (d < r0[1]) && (r0[0] <= d) ) ? d/stride : -1; };
-	auto v2d = [&](auto v) LAMBDA_INLINE { return r0[0] + v * stride; };
-	set_vs (n_verts, v2d);
-	create_edges ( v2d , d2v );
-      }
-      else { // SELECTED, subset by bitarray (is this tested??)
-	size_t maxset = 0;
-	auto sz = O.ss_select->Size();
-	for (auto k : Range(sz))
-	  if (O.ss_select->Test(--sz))
-	    { maxset = sz+1; break; }
-	// cout << "maxset " << maxset << endl;
-	n_verts = O.ss_select->NumSet() * dpv;
-	// cout << " dpv numset " << dpv << " " << O.ss_select->NumSet() << " " << O.ss_select->Size() << endl;
-	// cout << "n_verts " << n_verts << endl;
-	Array<int> first_dof(n_verts);
-	Array<int> compress(maxset); compress = -1;
-	for (size_t k = 0, j = 0; k < n_verts; j += bs0)
-	  if (O.ss_select->Test(j))
-	    { first_dof[k] = j; compress[j] = k++; }
-	// cout << "first_dof  "; prow(first_dof); cout << endl << endl;
-	// cout << "compress  "; prow(compress); cout << endl << endl;
-	auto d2v = [&](auto d) LAMBDA_INLINE { return (d+1 > maxset) ? -1 : compress[d]; };
-	auto v2d = [&](auto v) LAMBDA_INLINE { return first_dof[v]; };
-	set_vs (n_verts, v2d);
-	create_edges ( v2d , d2v );
-      }
+    // auto create_edges = [&](auto v2d, auto d2v) LAMBDA_INLINE {
+    if (use_v2d_tab) {
+      // create_edges([&](auto i) LAMBDA_INLINE { return v2d_table[i][0]; },
+      // 		   [&](auto i) LAMBDA_INLINE { return d2v_array[i]; } );
+      create_edges([&](auto i) LAMBDA_INLINE { return v2d_table[i][0]; },
+		   [&](auto i) LAMBDA_INLINE { // I dont like it ...
+		     auto v = d2v_array[i];
+		     if ( (v != -1) && (v2d_table[v][0] == i) )
+		       { return v; }
+		     return -1;
+		   });
     }
-    else { // VARIABLE, subset given via table anyways (is this even tested??)
-      auto& vblocks = O.v_blocks;
-      n_verts = vblocks.Size();
-      auto v2d = [&](auto v) { return vblocks[v][0]; };
-      Array<int> compress(vblocks[n_verts-1][0]); compress = -1;
-      for (auto k : Range(compress.Size())) { compress[v2d(k)] = k; }
-      auto d2v = [&](auto d) -> int { return (d+1 > compress.Size()) ? -1 : compress[d]; };
-      set_vs (n_verts, v2d);
-      create_edges ( v2d , d2v );
+    else {
+      create_edges([&](auto i) LAMBDA_INLINE { return v2d_array[i]; },
+		   [&](auto i) LAMBDA_INLINE { return d2v_array[i]; } );
     }
 
-    cout << IM(3) << "AMG performed on " << top_mesh->GetNNGlobal<NT_VERTEX>() << " vertices, glob ndof is " << fpd->GetNDofGlobal() << endl;
-    cout << IM(3) << "AMG performed on " << top_mesh->GetNNGlobal<NT_EDGE>() << " edges" << endl;
-    if (top_mesh->GetEQCHierarchy()->GetCommunicator().Size() == 1) // this is only loc info
-      { cout << IM(3) << "free dofs " << finest_freedofs->NumSet() << " ndof local is: " << fpd->GetNDofLocal() << endl; }
-
-    // cout << "AMG performed on " << top_mesh->GetNN<NT_VERTEX>() << " local vertices, loc ndof is " << fpd->GetNDofLocal() << endl;
-    // cout << "AMG performed on " << top_mesh->GetNN<NT_EDGE>() << " edges" << endl;
+    // update v2d/d2v with vert_sort
+    if (use_v2d_tab) {
+      Array<int> cnt(n_verts); cnt = 0;
+      for (auto k : Range(n_verts)) {
+	auto vk = vert_sort[k];
+	for (auto d : v2d_table[k])
+	  { d2v_array[d] = vk; }
+      }
+      for (auto k : Range(d2v_array)) {
+	auto vnr = d2v_array[k];
+	if  (vnr != -1)
+	  { v2d_table[vnr][cnt[vnr]++] = k; }
+      }
+    }
+    else {
+      for (auto k : Range(n_verts)) {
+	auto d = v2d_array[k];
+	d2v_array[d] = vert_sort[k];
+      }
+      for (auto k : Range(d2v_array))
+	if  (d2v_array[k] != -1)
+	  { v2d_array[d2v_array[k]] = k; }
+    }
+    
+    //cout << " (sorted) d2v_array: " << endl; prow2(d2v_array); cout << endl << endl;
+    //if (use_v2d_tab) {
+      //cout << " (sorted) v2d_table: " << endl << v2d_table << endl << endl;
+    //}
+    //else {
+    // cout << " (sorted) v2d_array: " << endl; prow2(v2d_array); cout << endl << endl;
+    //}
+    
 
     return top_mesh;
   } // EmbedVAMG :: BTM_Alg
+
+
+  template<class FACTORY>
+  void EmbedVAMG<FACTORY> :: SetUpMaps ()
+  {
+    static Timer t("SetUpMaps"); RegionTimer rt(t);
+
+    typedef BaseEmbedAMGOptions BAO;
+    auto & O(*options);
+
+    const size_t ndof = bfa->GetFESpace()->GetNDof();
+
+    switch(O.subset) {
+    case(BAO::RANGE_SUBSET): {
+
+      size_t in_ss = 0;
+      for (auto range : O.ss_ranges)
+	{ in_ss += range[1] - range[0]; }
+
+      if (O.dof_ordering == BAO::VARIABLE_ORDERING)
+	{ throw Exception("not implemented (but easy)"); }
+      else if (O.dof_ordering == BAO::REGULAR_ORDERING) {
+	const size_t dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
+	const size_t n_verts = in_ss / dpv;
+
+	d2v_array.SetSize(ndof); d2v_array = -1;
+
+	auto n_block_types = O.block_s.Size();
+
+	cout << in_ss << " " << dpv << " " << ndof << " " << n_verts << endl;
+	
+	if (dpv == 1) { // range subset , regular order, 1 dof per V
+	  v2d_array.SetSize(n_verts);
+	  int c = 0;
+	  for (auto range : O.ss_ranges) {
+	    for (auto dof : Range(range[0], range[1])) {
+	      d2v_array[dof] = c;
+	      v2d_array[c++] = dof;
+	    }
+	  }
+	}
+	else if (n_block_types == 1) { // range subset, regular order, N dofs per V in a single block
+	  use_v2d_tab = true;
+	  v2d_table = Table<int>(n_verts, dpv);
+	  auto v2da = v2d_table.AsArray();
+	  int c = 0;
+	  for (auto range : O.ss_ranges) {
+	    for (auto dof : Range(range[0], range[1])) {
+	      d2v_array[dof] = c / dpv;
+	      v2da[c++] = dof;
+	    }
+	  }
+	}
+	else { // range subset , regular order, N dofs per V in multiple blocks
+	  use_v2d_tab = true;
+	  v2d_table = Table<int>(n_verts, dpv);
+	  const int num_block_types = O.block_s.Size();
+	  int block_type = 0; // we currently mapping DOFs in O.block_s[block_type]-blocks
+	  int cnt_block = 0; // how many of those blocks have we gone through
+	  int block_s = O.block_s[block_type];
+	  int bos = 0;
+	  for (auto range_num : Range(O.ss_ranges)) {
+	    auto range = O.ss_ranges[range_num];
+	    while ( (range[1] > range[0]) && (block_type < num_block_types) ) {
+	      int blocks_in_range = (range[1] - range[0]) / block_s; // how many blocks can I fit in here ?
+	      int need_blocks = n_verts - cnt_block; // how many blocks of current size I still need.
+	      auto map_blocks = min2(blocks_in_range, need_blocks);
+	      for (auto l : Range(map_blocks)) {
+		for (auto j : Range(block_s)) {
+		  d2v_array[range[0]] = cnt_block;
+		  v2d_table[cnt_block][bos+j] = range[0]++;
+		}
+		cnt_block++;
+	      }
+	      if (cnt_block == n_verts) {
+		bos += block_s;
+		block_type++;
+		cnt_block = 0;
+		if (block_type < O.block_s.Size())
+		  { block_s = O.block_s[block_type]; }
+	      }
+	    }
+	  }
+	} // range, regular, N dofs, multiple blocks
+      } // REGULAR_ORDERING
+      break;
+    } // RANGE_SUBSET
+    case(BAO::SELECTED_SUBSET): {
+
+      const auto & subset = *O.ss_select;
+      size_t in_ss = subset.NumSet();
+
+      if (O.dof_ordering == BAO::VARIABLE_ORDERING)
+	{ throw Exception("not implemented (but easy)"); }
+      else if (O.dof_ordering == BAO::REGULAR_ORDERING) {
+	const size_t dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
+	const size_t n_verts = in_ss / dpv;
+
+	d2v_array.SetSize(ndof); d2v_array = -1;
+
+	auto n_block_types = O.block_s.Size();
+
+	if (dpv == 1) { // select subset, regular order, 1 dof per V
+	  v2d_array.SetSize(n_verts);
+	  auto& subset = *O.ss_select;
+	  for (int j = 0, k = 0; k < n_verts; j++) {
+	    // cout << j << " " << k << " " << n_verts << " ss " << subset.Test(j) << endl;
+	    if (subset.Test(j)) {
+	      auto d = j; auto svnr = k++;
+	      d2v_array[d] = svnr;
+	      v2d_array[svnr] = d;
+	    }
+	  }
+	}
+	else { // select subset, regular order, N dofs per V
+	  use_v2d_tab = true;
+	  v2d_table = Table<int>(n_verts, dpv);
+	  int block_type = 0; // we currently mapping DOFs in O.block_s[block_type]-blocks
+	  int cnt_block = 0; // how many of those blocks have we gone through
+	  int block_s = O.block_s[block_type];
+	  int j = 0, col_os = 0;
+	  for (auto k : Range(subset.Size())) {
+	    if (subset.Test(k)) {
+	      d2v_array[k] = cnt_block;
+	      v2d_table[cnt_block][col_os + j++] = k;
+	      if (j == block_s) {
+		j = 0;
+		cnt_block++;
+	      }
+	      if (cnt_block == n_verts) {
+		block_type++;
+		cnt_block = 0;
+		col_os += block_s;
+		block_s = O.block_s[block_type];
+	      }
+	    }
+	  }
+ 	} // select subset, reg. order, N dofs per V
+      } // REGULAR_ORDERING
+      break;
+    } // SELECTED_SUBSET
+    } // switch(O.subset)
+    
+    //cout << " (unsorted) d2v_array: " << endl; prow2(d2v_array); cout << endl << endl;
+    //if (use_v2d_tab) {
+    //  cout << " (unsorted) v2d_table: " << endl << v2d_table << endl << endl;
+    //}
+    //else {
+    //  cout << " (unsorted) v2d_array: " << endl; prow2(v2d_array); cout << endl << endl;
+    //}
+
+  } // EmbedVAMG::SetUpMaps
 
 
   template<class FACTORY>
@@ -742,26 +969,6 @@ namespace amg
     eqc_h = make_shared<EQCHierarchy>(fpd, true, maxset);
 
     auto top_mesh = BuildTopMesh(eqc_h);
-
-    /** vertex positions, if we need them **/
-    // if (O.keep_vp) {
-    //   node_pos.SetSize(1);
-    //   auto & vsort = node_sort[0]; // also kinda hard coded for vertex-vertex pos, and no additional permutation
-    //   auto & vpos(node_pos[NT_VERTEX]); vpos.SetSize(top_mesh->template GetNN<NT_VERTEX>());
-    //   // cout << "init vpos: " << endl;
-    //   // Vec<3> kp;
-    //   // for (auto k : Range(vpos.Size())) {
-    //   // 	ma->GetPoint(k,kp);
-    //   // 	cout << k << ": " << kp << endl;
-    //   // }
-    //   // cout << endl;
-    //   for (auto k : Range(ma->GetNV()))
-    // 	ma->GetPoint(k,vpos[vsort[k]]);
-    //   // cout << "sorted vpos: " << endl;
-    //   // cout << vpos << endl;
-    // }
-    
-    /** Convert FreeDofs to FreeVerts (should probably do this above where I have v2d mapping1)**/
 
     return BuildAlgMesh(top_mesh);
   }
@@ -796,65 +1003,23 @@ namespace amg
 
     shared_ptr<TMESH> alg_mesh;
 
-    switch(O.dof_ordering) {
-    case(BAO::VARIBALE_ORDERING): {
-      throw Exception("not implemented (but easy)");
-      break;
+    shared_ptr<BaseMatrix> f_loc_mat;
+    if (auto parmat = dynamic_pointer_cast<ParallelMatrix>(finest_mat))
+      { f_loc_mat = parmat->GetMatrix(); }
+    else
+      { f_loc_mat = finest_mat; }
+    auto spmat = dynamic_pointer_cast<BaseSparseMatrix>(f_loc_mat);
+
+    if (use_v2d_tab) {
+      alg_mesh = BuildAlgMesh_ALG_blk(top_mesh, spmat,
+				      [&](auto d) LAMBDA_INLINE { return d2v_array[d]; },
+				      [&](auto v) LAMBDA_INLINE { return v2d_table[v]; } );
     }
-    case(BAO::REGULAR_ORDERING): {
-      shared_ptr<BaseSparseMatrix> spmat;
-      if (auto parmat = dynamic_pointer_cast<ParallelMatrix>(finest_mat))
-	{ spmat = dynamic_pointer_cast<BaseSparseMatrix>(parmat->GetMatrix()); }
-      else
-	{ spmat = dynamic_pointer_cast<BaseSparseMatrix>(finest_mat); }
-
-      const int dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
-      const auto& block_sizes = O.block_s;
-      const int nblocks = block_sizes.Size();
-
-      if (dpv == 1) { // most of the time - tone DOF per vertex (can be multidim DOF)
-	auto n_verts = top_mesh->GetNN<NT_VERTEX>();
-	auto& vsort = node_sort[NT_VERTEX];
-	Array<int> d2v_array(bfa->GetFESpace()->GetNDof());
-	Array<int> v2d_array(n_verts);
-
-	if (O.subset == BAO::RANGE_SUBSET) {
-	  const auto start = O.ss_ranges[0][0];
-	  for (auto k : Range(n_verts)) {
-	    auto svnr = vsort[k];
-	    auto d = start + k;
-	    d2v_array[d] = svnr;
-	    v2d_array[svnr] = d;
-	  }
-	}
-	else { // BAO::SELECTED_SUBSET
-	  auto& subset = *O.ss_select;
-	  for (int j = 0, k = 0; k < n_verts; j++) {
-	    // cout << j << " " << k << " " << n_verts << " ss " << subset.Test(j) << endl;
-	    if (subset.Test(j)) {
-	      auto d = j; auto svnr = vsort[k++];
-	      d2v_array[d] = svnr;
-	      v2d_array[svnr] = d;
-	    }
-	  }
-	}
-
-	// cout << "vsort: " << endl; prow2(vsort); cout << endl;
-	// cout << "d2v_array: " << endl; prow2(d2v_array); cout << endl;
-	// cout << "v2d_array: " << endl; prow2(v2d_array); cout << endl;
-
-	auto d2v = [&](auto d) LAMBDA_INLINE { return d2v_array[d]; };
-	auto v2d = [&](auto v) LAMBDA_INLINE { return v2d_array[v]; };
-	alg_mesh = BuildAlgMesh_ALG_scal(top_mesh, spmat, d2v, v2d);
-	break;
-      }
-      else { // probably only compound spaces
-	throw Exception("Compound FESpaces todo - but should be easy!! ");
-	break;
-      }
-    } // case(BAO::REGULAR_ORDERING)
-    default: { throw Exception("Invalid DOF_ORDERING!"); break; }
-    } // switch(O.dof_ordering)
+    else {
+      alg_mesh = BuildAlgMesh_ALG_scal(top_mesh, spmat,
+				       [&](auto d) LAMBDA_INLINE { return d2v_array[d]; },
+				       [&](auto v) LAMBDA_INLINE { return v2d_array[v]; } );
+    }
 
     return alg_mesh;
   } // EmbedVAMG::BuildAlgMesh_ALG

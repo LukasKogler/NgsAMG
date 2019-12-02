@@ -1960,7 +1960,8 @@ namespace amg
       // cout << " regularize " << k << endl;
       // cout << " init mat: " << endl;
       // print_tm(cout, mod_diag[k]);
-      RegTM<RMIN, RMMRM, RMAX>(mod_diag[k]);
+      // RegTM<RMIN, RMMRM, RMAX>(mod_diag[k]);
+      RegTM<0, RMAX, RMAX>(mod_diag[k]);
       // cout << " reg mat: " << endl;
       // print_tm(cout, mod_diag[k]);
       // cout << " ----- " << endl;

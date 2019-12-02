@@ -73,6 +73,10 @@ namespace amg
     Array<Array<int>> node_sort;
     Array<Array<Vec<3,double>>> node_pos;
 
+    bool use_v2d_tab = false;
+    Array<int> d2v_array, v2d_array;
+    Table<int> v2d_table;
+
     shared_ptr<AMGMatrix> amg_mat;
 
     shared_ptr<FACTORY> factory;
@@ -88,6 +92,7 @@ namespace amg
     virtual void SetDefaultOptions (Options& O);
     virtual void ModifyOptions (Options & O, const Flags & flags, string prefix = "ngs_amg_");
     
+    void SetUpMaps ();
 
     /** AMG-Mesh; includes topologic and algebraic components **/
 
@@ -110,9 +115,9 @@ namespace amg
     template<class TD2V, class TV2D> // for 1 DOF per vertex (also multidim-DOF)
     shared_ptr<TMESH> BuildAlgMesh_ALG_scal (shared_ptr<BlockTM> top_mesh, shared_ptr<BaseSparseMatrix> spmat,
 					     TD2V D2V, TV2D V2D) const; // implemented seperately for all AMG_CLASS
-    // template<class TD2V, class TV2D> // multiple DOFs per vertex (compound spaces)
-    // shared_ptr<TMESH> BuildAlgMesh_ALG_blk (shared_ptr<BlockTM> top_mesh, shared_ptr<BaseSparseMatrix> spmat,
-    // 					    TD2V D2V, TV2D V2D) const; // implemented seperately for all AMG_CLASS
+    template<class TD2V, class TV2D> // multiple DOFs per vertex (compound spaces)
+    shared_ptr<TMESH> BuildAlgMesh_ALG_blk (shared_ptr<BlockTM> top_mesh, shared_ptr<BaseSparseMatrix> spmat,
+     					    TD2V D2V, TV2D V2D) const; // implemented seperately for all AMG_CLASS
 
     virtual shared_ptr<TMESH> BuildAlgMesh_TRIV (shared_ptr<BlockTM> top_mesh); // implement seperately (but easy)
 

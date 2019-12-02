@@ -67,7 +67,7 @@ namespace amg
 
 	smoothers[level]->Smooth(xl, bl, rl, true, true, true);
 
-	// cout << " x 1  level " << level << ": " << endl << xl << endl;
+	// cout << " x 1  level " << level << ": " << endl << xl.FVDouble() << endl;
 
 	rl.Distribute();
 
@@ -82,8 +82,8 @@ namespace amg
 	t4.Start();
 
 	// if (comm.Rank() == 1) {
-	//   cout << " coarse rhs: " << endl;
-	//   cout << *rhs_level[n_levels-1] << endl;
+	// cout << " coarse rhs: " << endl;
+	// cout << (*rhs_level[n_levels-1]).FVDouble() << endl;
 	// }
 	
 	//{ x_level[n_levels-1]->FVDouble() = 0; }
@@ -95,8 +95,8 @@ namespace amg
 	x_level[n_levels-1]->Cumulate();
 
 	// if (comm.Rank() == 1) {
-	//   cout << " coarse sol: " << endl;
-	//   cout << *x_level[n_levels-1] << endl;
+	// cout << " coarse sol: " << endl;
+	// cout << (*x_level[n_levels-1]).FVDouble() << endl;
 	// }
 
 	t4.Stop();
@@ -123,14 +123,14 @@ namespace amg
 
 	map->AddC2F(level, 1.0, &xl, x_level[level+1].get());
 
-	// cout << " x 2  level " << level << ": " << endl << xl << endl;
+	// cout << " x 2  level " << level << ": " << endl << xl.FVDouble() << endl;
 
 	if (x_level[level+1] == nullptr)
 	  { t5.Stop(); }
 
 	smoothers[level]->SmoothBack(xl, bl, rl, false, false, false);
 	
-	// cout << " x 3  level " << level << ": " << endl << xl << endl;
+	// cout << " x 3  level " << level << ": " << endl << xl.FVDouble() << endl;
       }
 
   } // AMGMatrix::SmoothV

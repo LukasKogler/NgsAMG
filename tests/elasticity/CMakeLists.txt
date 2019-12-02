@@ -15,6 +15,7 @@ endfunction(myadd_test)
 message(STATUS "Copy elasticity test-files from ${CMAKE_CURRENT_SOURCE_DIR} to ${CMAKE_CURRENT_BINARY_DIR}")
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/amg_utils.py DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/mdim DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/compound DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
 message(STATUS "Adding elasticity tests")
 
@@ -25,7 +26,17 @@ myadd_test("el_mdim_simple_p2"  2 ngspy ${MDIM_SIMPLE_CMD})
 myadd_test("el_mdim_simple_p5"  5 ngspy ${MDIM_SIMPLE_CMD})
 
 # mdim - jump
+set (MDIM_JUMP_CMD "-m pytest -k mdim/jump")
+myadd_test("el_mdim_jump_seq" 1 ngspy ${MDIM_JUMP_CMD})
+myadd_test("el_mdim_jump_p2"  2 ngspy ${MDIM_JUMP_CMD})
+myadd_test("el_mdim_jump_p5"  5 ngspy ${MDIM_JUMP_CMD})
+
 # mdim - corner
 # compound - simple
+set (COMP_SIMPLE_CMD "-m pytest -k compound/simple")
+myadd_test("el_comp_simple_seq" 1 ngspy ${COMP_SIMPLE_CMD})
+myadd_test("el_comp_simple_p2"  2 ngspy ${COMP_SIMPLE_CMD})
+myadd_test("el_comp_simple_p5"  5 ngspy ${COMP_SIMPLE_CMD})
+
 # compound - jump
 # compound - corner
