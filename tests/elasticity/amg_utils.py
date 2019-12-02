@@ -367,9 +367,9 @@ def setup_rot_elast(mesh, mu = 1, lam = 0, f_vol = None, multidim = True, reorde
     if dim == 2:
         to_skew = lambda x : ngs.CoefficientFunction( (0, -x[0], x[0], 0), dims = (2,2) )
     else:
-        to_skew = lambda x : ngs.CoefficientFunction( (  0   , -x[2],  x[1], \
-                                                         x[2],    0 , -x[0], \
-                                                         -x[1], x[0],   0), dims = (3,3) )
+        to_skew = lambda x : ngs.CoefficientFunction( (  0   , x[2],  -x[1], \
+                                                         -x[2],    0 , x[0], \
+                                                         x[1], -x[0],   0), dims = (3,3) )
     if multidim:
         mdim = dim + ( (dim-1) * dim) // 2
         V = ngs.H1(mesh, order=order, dirichlet=diri, **fes_opts, dim=mdim)
