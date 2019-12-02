@@ -206,7 +206,7 @@ namespace amg
 	    { return fes->GetNDof(); }
 	};
 	std::function<void(shared_ptr<FESpace>, size_t)> set_lo_ranges =
-	  [&](auto afes, auto offset) LAMBDA_INLINE -> void {
+	  [&](auto afes, auto offset) -> void LAMBDA_INLINE {
 	  if (auto comp_fes = dynamic_pointer_cast<CompoundFESpace>(afes)) {
 	    size_t n_spaces = comp_fes->GetNSpaces();
 	    size_t sub_os = offset;
@@ -230,8 +230,8 @@ namespace amg
 	O.ss_ranges.SetSize(0);
 	set_lo_ranges(fes, 0);
 	cout << IM(3) << "subset for coarsening defined by low-order range(s)" << endl;
-	//for (auto r : O.ss_ranges)
-	  //cout << r[0] << " " << r[1] << endl;
+	for (auto r : O.ss_ranges)
+	  cout << IM(5) << r[0] << " " << r[1] << endl;
       }
       break;
     }
@@ -282,7 +282,6 @@ namespace amg
 	    }
 	  }
 	  else { // an educated guess
-	    cout << "best guess ! " << endl;
 	    const size_t dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
 	    Array<int> dnums;
 	    auto jumped_set = [&]() {
@@ -301,6 +300,7 @@ namespace amg
 	      jumped_set(); // probably sets all
 	    }
 	    for (auto k : Range(ma->GetNEdges())) {
+	      // fes->GetEdgeDofNrs(k, dnums);
 	      fes->GetDofNrs(NodeId(NT_EDGE, k), dnums);
 	      jumped_set();
 	    }
@@ -441,8 +441,6 @@ namespace amg
       MPI_Comm mecomm = (c.Size() == 1) ? MPI_COMM_WORLD : AMG_ME_COMM;
       fine_spm->SetParallelDofs(make_shared<ParallelDofs> ( mecomm , move(dps), GetEntryDim(fine_spm.get()), false));
     }
-
-    SetUpMaps();
 
     auto mesh = BuildInitialMesh();
 
@@ -687,6 +685,10 @@ namespace amg
       }
       else
 	{ free_verts->Set(); }
+      // cout << "diri verts: " << endl;
+      // for (auto k : Range(free_verts->Size()))
+      // 	if (!free_verts->Test(k)) { cout << k << " " << endl; }
+      // cout << endl;
     };
     
     if (use_v2d_tab) {
@@ -819,7 +821,7 @@ namespace amg
 
 	auto n_block_types = O.block_s.Size();
 
-	cout << in_ss << " " << dpv << " " << ndof << " " << n_verts << endl;
+	// cout << in_ss << " " << dpv << " " << ndof << " " << n_verts << endl;
 	
 	if (dpv == 1) { // range subset , regular order, 1 dof per V
 	  v2d_array.SetSize(n_verts);
@@ -852,7 +854,7 @@ namespace amg
 	  int block_s = O.block_s[block_type];
 	  int bos = 0;
 	  for (auto range_num : Range(O.ss_ranges)) {
-	    auto range = O.ss_ranges[range_num];
+	    INT<2,size_t> range = O.ss_ranges[range_num];
 	    while ( (range[1] > range[0]) && (block_type < num_block_types) ) {
 	      int blocks_in_range = (range[1] - range[0]) / block_s; // how many blocks can I fit in here ?
 	      int need_blocks = n_verts - cnt_block; // how many blocks of current size I still need.
@@ -878,6 +880,8 @@ namespace amg
       break;
     } // RANGE_SUBSET
     case(BAO::SELECTED_SUBSET): {
+
+      // cout << " ss_sel " << O.ss_select << endl;
 
       const auto & subset = *O.ss_select;
       size_t in_ss = subset.NumSet();
@@ -911,6 +915,7 @@ namespace amg
 	  int cnt_block = 0; // how many of those blocks have we gone through
 	  int block_s = O.block_s[block_type];
 	  int j = 0, col_os = 0;
+	  const auto blockss = O.block_s.Size();
 	  for (auto k : Range(subset.Size())) {
 	    if (subset.Test(k)) {
 	      d2v_array[k] = cnt_block;
@@ -923,7 +928,8 @@ namespace amg
 		block_type++;
 		cnt_block = 0;
 		col_os += block_s;
-		block_s = O.block_s[block_type];
+		if (block_type + 1 < blockss)
+		  { block_s = O.block_s[block_type]; }
 	      }
 	    }
 	  }
@@ -948,6 +954,8 @@ namespace amg
   shared_ptr<typename FACTORY::TMESH> EmbedVAMG<FACTORY> :: BuildInitialMesh ()
   {
     static Timer t("BuildInitialMesh"); RegionTimer rt(t);
+
+    SetUpMaps();
 
     typedef BaseEmbedAMGOptions BAO;
     auto & O(*options);
@@ -1089,7 +1097,7 @@ namespace amg
      **/
     shared_ptr<T_E_S> E_S = BuildES<N>();
     // cout << "E_S: " << endl;
-    // if (E_S) cout << E_S->Height() << " x " << E_S->Width() << endl;
+    // if (E_S) { cout << E_S->Height() << " x " << E_S->Width() << endl; cout << *E_S << endl; }
     // else cout << " NO E_S!!" << endl;
 
     size_t subset_count = (E_S == nullptr) ? fpds->GetNDofLocal() : E_S->Width();

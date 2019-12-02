@@ -330,7 +330,7 @@ namespace amg
     /** make a guess wether we have rotations or not, and how the DOFs are ordered **/
     std::function<Array<size_t>(shared_ptr<FESpace>)> check_space = [&](auto fes) -> Array<size_t> {
       auto fes_dim = fes->GetDimension();
-      cout << " fes " << typeid(*fes).name() << " dim " << fes_dim << endl;
+      // cout << " fes " << typeid(*fes).name() << " dim " << fes_dim << endl;
       if (auto comp_fes = dynamic_pointer_cast<CompoundFESpace>(fes)) {
 	auto n_spaces = comp_fes->GetNSpaces();
 	Array<size_t> comp_bs;
@@ -641,61 +641,33 @@ namespace amg
     auto a = new AttachedEVD(Array<ElasticityVertexData>(top_mesh->GetNN<NT_VERTEX>()), CUMULATED); // !! otherwise pos is garbage
     auto vdata = a->Data(); // TODO: get penalty dirichlet from row-sums (only taking x/y/z displacement entries)
     const auto & vsort = node_sort[NT_VERTEX];
+    const auto & O(*options);
 
     // cout << " vsort: " << endl; prow2(vsort); cout << endl;
 
     // With [on_dofs = select, subset = free], not all vertices in the mesh have a "vertex" in the alg-mesh !
 
-    // vertex-points
+    /** vertex points **/
     auto ma_nv = ma->GetNV();
-    size_t first_edge_mid = top_mesh->GetNN<NT_VERTEX>();
-    for (auto k : Range(top_mesh->GetNN<NT_VERTEX>())) {
-      auto d = V2D(k)[0];
-      vdata[k].wt = 0;
-      if (d >= ma_nv) { // starting from here, alg-vertices correspond to edge mid-points
-	first_edge_mid = k;
-	break;
-      }
-      ma->GetPoint(d, vdata[k].pos);
-    }
-    if (first_edge_mid < top_mesh->GetNN<NT_VERTEX>()) {
-      auto fes = bfa->GetFESpace();
-      Array<int> dnums;
-      Vec<3> a, b;
-      for (auto k : Range(ma->GetNEdges())) {
-	fes->GetDofNrs(NodeId(NT_EDGE, k), dnums);
-	if (dnums.Size()) {
-	  auto vnum = D2V(dnums[0]);
-	  if (vnum != -1) {
-	    auto pnums = ma->GetEdgePNums(k);
-	    ma->GetPoint(pnums[0], a);
-	    ma->GetPoint(pnums[1], b);
-	    vdata[vnum].wt = 0;
-	    vdata[vnum].pos = 0.5 * ( a + b );
-	    // cout << " pos " << vnum << " = " << vdata[vnum].pos << endl;
-	  }
-	}
+    const auto bs0 = O.block_s[0];
+    Vec<3> pa, pb;
+    for (auto k : Range(top_mesh->template GetNN<NT_VERTEX>())) {
+      auto dnums = V2D(k);
+      auto vnum = vsort[k];
+      vdata[vnum].wt = 0;
+      auto point_num = dnums[0]/bs0;
+      if (point_num < ma_nv)
+	{ ma->GetPoint(point_num, vdata[vnum].pos); }
+      else {
+	auto edge_num = point_num - ma_nv;
+	auto pnums = ma->GetEdgePNums(edge_num);
+	ma->GetPoint(pnums[0], pa);
+	ma->GetPoint(pnums[1], pb);
+	vdata[vnum].pos = 0.5 * ( pa + pb );
       }
     }
 
-    // for (auto k : Range(ma->GetNV())) {
-    //   auto vnum = vsort[k];
-    //   vdata[vnum].wt = 0;
-    //   ma->GetPoint(k, vdata[vnum].pos);
-    // }
-    // edge-mid points, kind of hacky!
-    // if (top_mesh->GetNN<NT_VERTEX>() > ma->GetNV()) {
-    //   Vec<3> a, b;
-    //   auto ma_nv = ma->GetNV();
-    //   for (auto edge_num : Range(ma->GetNEdges())) {
-    // 	auto pnums = ma->GetEdgePNums(edge_num);
-    // 	ma->GetPoint(pnums[0], a);
-    // 	ma->GetPoint(pnums[1], b);
-    // 	auto vnum = vsort[ma_nv + edge_num];
-    // 	vdata[vnum].wt = 0;
-    // 	vdata[vnum].pos = 0.5 * ( a + b );
-    //   }
-    // }
+    // cout << "have vdata: " << endl; prow(vdata); cout << endl;
 
     auto b = new AttachedEED<C::DIM>(Array<ElasticityEdgeData<C::DIM>>(top_mesh->GetNN<NT_EDGE>()), DISTRIBUTED); // !! has to be distr
     auto edata = b->Data();
@@ -710,17 +682,28 @@ namespace amg
 	auto & ed = edata[e.id]; ed = 0;
 	// after BBDC, diri entries are compressed and mat has no entry (mult multidim BDDC doesnt work anyways)
 	if (ffds.Test(dis[0]) && ffds.Test(djs[0])) {
+	  double x = 0;
 	  // TODO: should I scale with diagonal inverse here ??
 	  // actually, i think i should scale with diag inv, then sum up, then scale back
 	  TM aij(0);
 	  for (auto i : Range(dis)) { // this could be more efficient
-	    aij(i,i) = MAT(dis[i], djs[i]);
+	    x += fabs(MAT(dis[i], djs[i]));
 	    for (auto j = i+1; j < diss; j++)
-	      { aij(i,j) = aij(j,i) = MAT(dis[i], djs[j]); }
+	      { x += 2*fabs(MAT(dis[i], djs[j])); }
 	  }
-	  double fc = fabsum(aij) / diss;
-	  for (auto j : Range(dis))
-	    ed(j,j) = fc;
+	  x /= (diss * diss);
+	  if (diss == disppv(C::DIM)) {
+	    Vec<3> tang = vdata[e.v[1]].pos - vdata[e.v[0]].pos;
+	    Iterate<disppv(C::DIM)>([&](auto i) LAMBDA_INLINE {
+		Iterate<disppv(C::DIM)>([&](auto j) LAMBDA_INLINE {
+		    ed(i.value, j.value) = x * tang(i.value) * tang(j.value);
+		  });
+	      });
+	  }
+	  else {
+	    for (auto j : Range(diss))
+	      { ed(j,j) = x; }
+	  }
 	}
 	else { // does not matter what we give in here, just dont want nasty NaNs below, however this is admittedly a bit hacky
 	  ed(0,0) = 0.00042;
@@ -877,7 +860,7 @@ namespace amg
       if (O.dof_ordering == BAO::REGULAR_ORDERING) {
 	size_t row = 0, os_ri = 0;
 	for (auto bs : O.block_s) {
-	  cout << "bs : " << bs << endl;
+	  // cout << "bs : " << bs << endl;
 	  for (auto k : Range(M.template GetNN<NT_VERTEX>())) {
 	    for (auto j : Range(bs)) {
 	      E_D->GetRowIndices(row)[0] = k;
