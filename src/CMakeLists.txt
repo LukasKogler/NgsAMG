@@ -7,7 +7,8 @@ add_ngsolve_python_module(ngs_amg SHARED
   amg_spmstuff.cpp amg_map.cpp amg_smoother.cpp
   amg_matrix.cpp amg_contract.cpp amg_elast.cpp
   boomer.cpp amg_smoother2.cpp amg_smoother3.cpp
-  amg_discard.cpp amg_coarsen2.cpp)
+  amg_discard.cpp
+  amg_agg_h1scal.cpp amg_agg_el2d.cpp amg_agg_el3d.cpp)
 
 include_directories(${MPI_CXX_INCLUDE_DIRS})
 

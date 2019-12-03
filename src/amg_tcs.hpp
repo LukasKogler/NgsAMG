@@ -101,7 +101,7 @@ namespace amg
 #endif
 #endif
 
-#if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGCRS2_CPP)
+#if defined(AMG_EXTERN_TEMPLATES)
   EXTERN template class Agglomerator<H1AMGFactory>;
 #ifdef ELASTICITY
   EXTERN template class Agglomerator<ElasticityAMGFactory<2>>;

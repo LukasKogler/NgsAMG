@@ -21,7 +21,7 @@ namespace amg {
 #include "amg_mesh.hpp"
 #include "amg_map.hpp"
 #include "amg_coarsen.hpp"
-#include "amg_coarsen2.hpp"
+#include "amg_agg.hpp"
 #include "amg_contract.hpp"
 #include "amg_discard.hpp"
 #include "amg_smoother.hpp"

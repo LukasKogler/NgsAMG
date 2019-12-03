@@ -1,9 +1,3 @@
-#define FILE_AMGCRS2_CPP
-
-#include "amg.hpp"
-#include "amg_coarsen2.hpp"
-#include "amg_bla.hpp"
-#include "amg_elast_impl.hpp" // UGH
 
 namespace amg
 {
@@ -1984,8 +1978,5 @@ namespace amg
 
   } // Agglomerator::FormAgglomerates
 
-
-
 } // namespace amg
 
-#include "amg_tcs.hpp"
