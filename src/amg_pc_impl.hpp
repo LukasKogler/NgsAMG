@@ -965,7 +965,7 @@ namespace amg
 	      }
 	    }
 	  }
-	  cout << " after NT " << NT << ", set " << numset << " of " << n_verts << endl;
+	  // cout << " after NT " << NT << ", set " << numset << " of " << n_verts << endl;
 	}
       }
     }
