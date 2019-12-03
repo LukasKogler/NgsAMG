@@ -32,7 +32,7 @@ namespace amg {
 // #include "amg_h1.hpp"
 #include "amg_factory.hpp"
 #include "amg_pc.hpp"
-#include "amg_h1_v2.hpp"
+#include "amg_h1.hpp"
 #include "amg_elast.hpp"
 
 #define AMG_EXTERN_TEMPLATES

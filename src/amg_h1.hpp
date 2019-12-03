@@ -1,16 +1,17 @@
-#ifndef FILE_AMGH1
-#define FILE_AMGH1
+#ifndef FILE_AMGH1_HPP
+#define FILE_AMGH1_HPP
 
 namespace amg
 {
 
   /**
-     Scalar, H1 preconditioner.
-     
+     H1 preconditioner.
+
      The data we need to attach to the mesh is:
-        - one double per vertex (for coarsening weights)
-        - one double per edge (for coarsening weights)
+     - one double per vertex (for coarsening weights)
+     - one double per edge (for coarsening weights)
   **/
+
 
   /** data which we attach to each vertex in the mesh **/
   class H1VData : public AttachedNodeData<NT_VERTEX, double, H1VData>
@@ -23,23 +24,16 @@ namespace amg
 	In this case we just sum up the weights of all nodes that map to the same coarse node.
 	We first distribute and then add values locally. The resulting coarse data is DISTRIBUTED (!).
 	
-	  Note: We cannot sum up cumulated fine values and get cumulated coarse values because 
-	        vertices can (depending on the coarsening algorithm) change equivalence class between levels.
-
-	(public BC it is called from AND<...>, can I find a way to make this protected??)
-     **/
+	Note: We cannot sum up cumulated fine values and get cumulated coarse values because 
+	vertices can (depending on the coarsening algorithm) change equivalence class between levels.
+    **/
+    template<class TMAP> INLINE void map_data_impl (const TMAP & cmap, H1VData & ch1v) const;
     INLINE void map_data (const BaseCoarseMap & cmap, H1VData & ch1v) const
-    {
-      auto & cdata = ch1v.data;
-      cdata.SetSize(cmap.GetMappedNN<NT_VERTEX>()); cdata = 0.0;
-      auto map = cmap.GetMap<NT_VERTEX>();
-      auto lam_v = [&](const AMG_Node<NT_VERTEX> & v)
-    	{ auto cv = map[v]; if (cv != -1) cdata[cv] += data[v]; };
-      bool master_only = (GetParallelStatus()==CUMULATED);
-      mesh->Apply<NT_VERTEX>(lam_v, master_only);
-      ch1v.SetParallelStatus(DISTRIBUTED);
-    }
-  };
+    { map_data_impl(cmap, ch1v); }
+    template<class TMESH> INLINE void map_data (const AgglomerateCoarseMap<TMESH> & cmap, H1VData & ch1v) const
+    { map_data_impl(cmap, ch1v); }
+  }; // class H1VData
+
 
   /** data which we attach to each edge in the mesh **/
   class H1EData : public AttachedNodeData<NT_EDGE, double, H1EData>
@@ -47,83 +41,56 @@ namespace amg
   public:
     using AttachedNodeData<NT_EDGE, double, H1EData>::map_data;
     H1EData (Array<double> && _data, PARALLEL_STATUS _stat) : AttachedNodeData<NT_EDGE, double, H1EData>(move(_data), _stat) {}
+    template<class TMESH> INLINE void map_data_impl (const TMESH & cmap, H1EData & ch1e) const;
     INLINE void map_data (const BaseCoarseMap & cmap, H1EData & ch1e) const
-    {
-      auto & cdata = ch1e.data;
-      cdata.SetSize(cmap.GetMappedNN<NT_EDGE>()); cdata = 0.0;
-      auto map = cmap.GetMap<NT_EDGE>();
-      auto lam_e = [&](const AMG_Node<NT_EDGE>& e)
-	{ auto cid = map[e.id]; if ( cid != decltype(cid)(-1)) { cdata[cid] += data[e.id]; } };
-      bool master_only = (GetParallelStatus()==CUMULATED);
-      mesh->Apply<NT_EDGE>(lam_e, master_only);
-      ch1e.SetParallelStatus(DISTRIBUTED);
-    }
-  };
+    { map_data_impl(cmap, ch1e); }
+    template<class TMESH> INLINE void map_data (const AgglomerateCoarseMap<TMESH> & cmap, H1EData & ch1e) const
+    { map_data_impl(cmap, ch1e); }
+  }; // class H1EData
+
+
   using H1Mesh = BlockAlgMesh<H1VData, H1EData>;
-  class H1AMG : public VWiseAMG<H1AMG, H1Mesh, 1>
+
+  class H1AMGFactory : public VertexBasedAMGFactory<H1AMGFactory, H1Mesh, double>
   {
   public:
     using TMESH = H1Mesh;
-    using VWiseAMG<H1AMG, H1Mesh, 1>::Options;
+    using T_V_DATA = double;
+    using TM = double;
 
-    H1AMG (shared_ptr<TMESH> mesh,  shared_ptr<Options> opts);
+    using BASE = VertexBasedAMGFactory<H1AMGFactory, H1Mesh, double>;
+    using BASE::Options;
 
-    virtual string GetName () const override { return string("H1AMG"); }
+    H1AMGFactory (shared_ptr<TMESH> mesh,  shared_ptr<Options> opts, shared_ptr<BaseDOFMapStep> _embed_step = nullptr);
+
+    static void SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix = "ngs_amg_");
     
-    virtual shared_ptr<BaseSmoother> BuildSmoother  (INT<3> level, shared_ptr<BaseSparseMatrix> mat,
-						     shared_ptr<ParallelDofs> par_dofs,
-						     shared_ptr<BitArray> free_dofs) override;
+    virtual void SetCoarseningOptions (VWCoarseningData::Options & opts, shared_ptr<H1Mesh> mesh) const override;
 
-    template<NODE_TYPE NT> INLINE double GetWeight (const TMESH & mesh, const AMG_Node<NT> & node) const
-    { // TODO: should this be in BlockAlgMesh instead???
-      if constexpr(NT==NT_VERTEX) { return get<0>(mesh.Data())->Data()[node]; }
-      else if constexpr(NT==NT_EDGE) { return get<1>(mesh.Data())->Data()[node.id]; }
-      else return 0;
-    }
+    // these are not the weights for the coarsening - these are just used for determining the S-prol graph!
+    template<NODE_TYPE NT> INLINE double GetWeight (const TMESH & mesh, const AMG_Node<NT> & node) const;
 
-    INLINE void CalcPWPBlock (const TMESH & fmesh, const TMESH & cmesh, const CoarseMap<TMESH> & map,
-			      AMG_Node<NT_VERTEX> v, AMG_Node<NT_VERTEX> cv, double & mat) const
-    { SetIdentity(mat); }
+    INLINE void CalcPWPBlock (const TMESH & fmesh, const TMESH & cmesh,
+			      AMG_Node<NT_VERTEX> v, AMG_Node<NT_VERTEX> cv, double & mat) const;
 
-    INLINE void CalcRMBlock (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge, FlatMatrix<double> mat) const
-    {
-      auto w = GetWeight<NT_EDGE>(fmesh, edge);
-      mat(0,1) = mat(1,0) = - (mat(0,0) = mat(1,1) = w);
-    }
+    INLINE void CalcRMBlock (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge, FlatMatrix<TM> mat) const;
 
-    INLINE void RegDiag (double & val) const { ; }
-
-    virtual void SmoothProlongation_hack (ProlMap<TSPM_TM>* pmap, shared_ptr<TMESH> mesh) const override;
-    void recompute_weights_hack (shared_ptr<H1Mesh> mesh, shared_ptr<SparseMatrixTM<double>> mat) const;
-    
-  };
+    static INLINE void CalcQ (double vdi, double vdj, double & c) { c = 1; }
+    static INLINE void ModQ (double vdi, double vdj, double & c) { c = 1; }
+    static INLINE void CalcQs  (double a, double b, double &c, double &d) { c = 1; d = 1; }
+    static INLINE void ModQs  (double a, double b, double &c, double &d) { c = 1; d = 1; }
+    static INLINE void CalcQij (double a, double b, double &c) { c = 1; }
+    static INLINE void ModQij (double a, double b, double &c) { c = 1; }
+    static INLINE void CalcQHh (double a, double b, double &c) { c = 1; }
+    static INLINE void ModQHh (double a, double b, double &c) { c = 1; }
+    static INLINE double CalcMPData (double a, double b) { return 0; }
 
 
-  // add e-wts connecting to grounded vertices to coarse v-wts. seems not a good idea
-  // INLINE PARALLEL_STATUS H1VData :: map_data (const BaseCoarseMap & cmap, Array<double> & cdata) const
-  // {
-  //   cdata.SetSize(cmap.GetMappedNN<NT_VERTEX>()); cdata = 0.0;
-  //   auto map = cmap.GetMap<NT_VERTEX>();
-  //   auto lam_v = [&](const AMG_Node<NT_VERTEX> & v)
-  //     { auto cv = map[v]; if (cv != -1) cdata[cv] += data[v]; };
-  //   bool master_only = (GetParallelStatus()==CUMULATED);
-  //   mesh->Apply<NT_VERTEX>(lam_v, master_only);
-  //   auto e_map = cmap.GetMap<NT_EDGE>();
-  //   auto aed = get<1>(static_cast<H1Mesh&>(*(static_cast<const CoarseMap<H1Mesh>&>(cmap).GetMesh())).Data()); // dirty!!
-  //   auto ewts = aed->Data();
-  //   auto lam_e = [&](const AMG_Node<NT_EDGE>& e)
-  //     {
-  // 	auto cid = e_map[e.id];
-  // 	if ( cid == decltype(cid)(-1)) {
-  // 	  auto vc0 = map[e.v[0]];
-  // 	  if(vc0 != decltype(vc0)(-1)) cdata[vc0] += ewts[e.id];
-  // 	  else { auto vc1 = map[e.v[1]]; if(vc1 != decltype(vc1)(-1)) cdata[vc1] += ewts[e.id]; }
-  // 	}
-  //     };
-  //   // mesh->Apply<NT_EDGE>(lam_e, (aed->GetParallelStatus()==CUMULATED));
-  //   return DISTRIBUTED;
-  // }
+  }; // class H1AMGFactory
+
 
 } // namespace amg
 
-#endif
+#include "amg_h1_impl.hpp"
+
+#endif // FILE_AMGH1_HPP
