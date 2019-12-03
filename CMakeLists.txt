@@ -5,6 +5,11 @@ cmake_minimum_required(VERSION 3.8)
 
 option( ELASTICITY   "Enable Elasticity AMG" OFF)
 option( USE_TAU   "Enable TAU instrumentation" OFF)
+option( COMPILE_TIMING   "time compiling" OFF)
+
+if (COMPILE_TIMING)
+  set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "${CMAKE_COMMAND} -E time")
+endif (COMPILE_TIMING)
 
 set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH}" "${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_modules")
 
