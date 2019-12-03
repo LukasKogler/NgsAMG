@@ -279,7 +279,7 @@ namespace amg
   template<class C> void SetEADO (C& O, shared_ptr<BilinearForm> bfa, int D)
   {
     /** keep vertex positions! **/
-    O.keep_vp = true;
+    O.store_v_nodes = true;
 
     /** Coarsening Algorithm **/
     O.crs_alg = C::CRS_ALG::AGG;
@@ -389,7 +389,7 @@ namespace amg
     };
 
     /** keep vertex positions (should still be set from default-opts, but make sure anyways) **/
-    O.keep_vp = true;
+    O.store_v_nodes = true;
 
     /** block_s **/
     // TODO: this has to fit with buildembedding !
@@ -529,31 +529,19 @@ namespace amg
     if (spmat == nullptr)
       { throw Exception("BuildAlgMesh_ALG_scal called with no mat!"); }
 
+    const auto & O(*options);
     auto a = new AttachedEVD(Array<ElasticityVertexData>(top_mesh->GetNN<NT_VERTEX>()), CUMULATED); // !! otherwise pos is garbage
     auto vdata = a->Data(); // TODO: get penalty dirichlet from row-sums (only taking x/y/z displacement entries)
     const auto & vsort = node_sort[NT_VERTEX];
 
     // BDDC does not work with multidim anyways, so this should usually be correct!
 
-    // vertex-points
-    for (auto k : Range(ma->GetNV())) {
+    /** vertex-points **/
+    Vec<3> t; const auto & MA(*ma);
+    for (auto k : Range(O.v_nodes)) {
       auto vnum = vsort[k];
       vdata[vnum].wt = 0;
-      ma->GetPoint(k, vdata[vnum].pos);
-    }
-
-    // edge-mid points, kind of hacky!
-    if (top_mesh->GetNN<NT_VERTEX>() > ma->GetNV()) {
-      Vec<3> a, b;
-      auto ma_nv = ma->GetNV();
-      for (auto edge_num : Range(ma->GetNEdges())) {
-	auto pnums = ma->GetEdgePNums(edge_num);
-	ma->GetPoint(pnums[0], a);
-	ma->GetPoint(pnums[1], b);
-	auto vnum = vsort[ma_nv + edge_num];
-	vdata[vnum].wt = 0;
-	vdata[vnum].pos = 0.5 * ( a + b );
-      }
+      GetNodePos(O.v_nodes[k], MA, vdata[vnum].pos, t);
     }
 
     auto b = new AttachedEED<C::DIM>(Array<ElasticityEdgeData<C::DIM>>(top_mesh->GetNN<NT_EDGE>()), DISTRIBUTED); // !! has to be distr
@@ -647,24 +635,12 @@ namespace amg
 
     // With [on_dofs = select, subset = free], not all vertices in the mesh have a "vertex" in the alg-mesh !
 
-    /** vertex points **/
-    auto ma_nv = ma->GetNV();
-    const auto bs0 = O.block_s[0];
-    Vec<3> pa, pb;
-    for (auto k : Range(top_mesh->template GetNN<NT_VERTEX>())) {
-      auto dnums = V2D(k);
+    /** vertex-points **/
+    Vec<3> t; const auto & MA(*ma);
+    for (auto k : Range(O.v_nodes)) {
       auto vnum = vsort[k];
       vdata[vnum].wt = 0;
-      auto point_num = dnums[0]/bs0;
-      if (point_num < ma_nv)
-	{ ma->GetPoint(point_num, vdata[vnum].pos); }
-      else {
-	auto edge_num = point_num - ma_nv;
-	auto pnums = ma->GetEdgePNums(edge_num);
-	ma->GetPoint(pnums[0], pa);
-	ma->GetPoint(pnums[1], pb);
-	vdata[vnum].pos = 0.5 * ( pa + pb );
-      }
+      GetNodePos(O.v_nodes[k], MA, vdata[vnum].pos, t);
     }
 
     // cout << "have vdata: " << endl; prow(vdata); cout << endl;

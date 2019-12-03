@@ -15,7 +15,8 @@ def do_test (rots=False, nodalp2 = False, ms=100, order=3, reo = False, use_bddc
     if not rots and reo=="sep": # "sep" and True are the same here
         return
     sys.stdout.flush()
-    geo, mesh = gen_beam(dim=3, maxh=0.3, lens=[5,1,1], nref=0, comm=ngsolve.mpi_world)
+    geo, mesh = gen_beam(dim=3, maxh=0.4, lens=[4,1,1], nref=0, comm=ngsolve.mpi_world)
+    # geo, mesh = gen_beam(dim=3, maxh=0.3, lens=[5,1,1], nref=0, comm=ngsolve.mpi_world)
     fes_opts = dict()
     if nodalp2:
         if order>=2:
@@ -27,15 +28,20 @@ def do_test (rots=False, nodalp2 = False, ms=100, order=3, reo = False, use_bddc
     pc_opts = { "ngs_amg_max_coarse_size" : 15,
                 "ngs_amg_do_test" : True,
                 "ngs_amg_agg_wt_geom" : False }
-    if nodalp2:
-        pc_opts["ngs_amg_crs_alg"] = "ecol"
+    # if nodalp2:
+        # pc_opts["ngs_amg_crs_alg"] = "ecol"
     # rotations or no rotataions?
     if rots:
         pc_opts["ngs_amg_rots"] = True
     # subset of the low order space    
     if use_bddc:
+        if nodalp2 or order==1 or not ho_wb:
             pc_opts["ngs_amg_on_dofs"] = "select"
             pc_opts["ngs_amg_subset"] = "free"
+        else:
+            # pc_opts["ngs_amg_on_dofs"] = "range"   # per default !
+            # pc_opts["ngs_amg_lo"] = True   # per default !
+            pass
     elif nodalp2:
         if order==2:
             pc_opts["ngs_amg_lo"] = False

@@ -4,6 +4,32 @@
 namespace amg
 {
 
+  INLINE void GetNodePos (NodeId id, const MeshAccess & ma, Vec<3> & pos, Vec<3> & t) {
+    auto set_pts = [&](auto pnums) LAMBDA_INLINE {
+      pos = 0;
+      for (auto k : Range(pnums)) {
+	ma.GetPoint(pnums[k], t);
+	pos += t;
+      }
+      pos *= 1.0/pnums.Size();
+    };
+    switch(id.GetType()) {
+    case(NT_VERTEX) : { ma.GetPoint(id.GetNr(), pos); break; }
+    case(NT_EDGE)   : {
+      auto pnums = ma.GetEdgePNums(id.GetNr());
+      pos = 0;
+      ma.GetPoint(pnums[0], t);
+      pos += t;
+      ma.GetPoint(pnums[1], t);
+      pos += t;
+      pos *= 0.5;
+      break;
+    }
+    case(NT_FACE)   : { set_pts(ma.GetFacePNums(id.GetNr())); break; }
+    case(NT_CELL)   : { set_pts(ma.GetElPNums(ElementId(VOL, id.GetNr()))); break; }
+    }
+  }
+
   INLINE void TimedLapackEigenValuesSymmetric (ngbla::FlatMatrix<double> a, ngbla::FlatVector<double> lami,
 					       ngbla::FlatMatrix<double> evecs)
   {

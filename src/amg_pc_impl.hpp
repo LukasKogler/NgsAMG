@@ -35,6 +35,11 @@ namespace amg
     Array<int> block_s; // we are computing NV from this, so don't put freedofs in here, one BS per given range
     Table<int> v_blocks;
 
+    /** AMG-Vertex <-> Mesh-Node Identification **/
+    bool store_v_nodes = false;
+    bool has_node_dofs[4] = { false, false, false, false };
+    Array<NodeId> v_nodes;
+
     /** How do we define the topology ? **/
     enum TOPO : char { ALG_TOPO = 0,        // by en entry in the finest level sparse matrix (restricted to subset)
 		       MESH_TOPO = 1,       // via the mesh
@@ -76,7 +81,6 @@ namespace amg
   struct EmbedVAMG<FACTORY>::Options : public FACTORY::Options,
 				       public BaseEmbedAMGOptions
   {
-    bool keep_vp = false;
     bool mat_ready = false;
     bool sync = false;
 
@@ -193,6 +197,7 @@ namespace amg
 	if (fes->GetMeshAccess()->GetDimension() == 2)
 	  if (!flags.GetDefineFlagX(pfit("force_nolo")).IsTrue())
 	    { throw Exception("lo = False probably does not make sense in 2D! (set force_nolo to True to override this!)"); }
+	O.has_node_dofs[NT_EDGE] = true;
 	O.ss_ranges.SetSize(1);
 	O.ss_ranges[0][0] = 0;
 	O.ss_ranges[0][1] = fes->GetNDof();
@@ -268,6 +273,7 @@ namespace amg
 		- Ofc H1(dim=..)
 	       (compound of multidim does not work anyways)
 	   **/
+	  O.has_node_dofs[NT_EDGE] = true;
 	  O.ss_select = make_shared<BitArray>(fes->GetNDof());
 	  O.ss_select->Clear();
 	  if ( (O.block_s.Size() == 1) && (O.block_s[0] == 1) ) { // this is probably correct
@@ -803,6 +809,7 @@ namespace amg
     auto & O(*options);
 
     const size_t ndof = bfa->GetFESpace()->GetNDof();
+    size_t n_verts = -1;
 
     switch(O.subset) {
     case(BAO::RANGE_SUBSET): {
@@ -815,7 +822,7 @@ namespace amg
 	{ throw Exception("not implemented (but easy)"); }
       else if (O.dof_ordering == BAO::REGULAR_ORDERING) {
 	const size_t dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
-	const size_t n_verts = in_ss / dpv;
+	n_verts = in_ss / dpv;
 
 	d2v_array.SetSize(ndof); d2v_array = -1;
 
@@ -890,7 +897,7 @@ namespace amg
 	{ throw Exception("not implemented (but easy)"); }
       else if (O.dof_ordering == BAO::REGULAR_ORDERING) {
 	const size_t dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
-	const size_t n_verts = in_ss / dpv;
+	n_verts = in_ss / dpv;
 
 	d2v_array.SetSize(ndof); d2v_array = -1;
 
@@ -939,6 +946,30 @@ namespace amg
     } // SELECTED_SUBSET
     } // switch(O.subset)
     
+    if (O.store_v_nodes) {
+      auto fes = bfa->GetFESpace();
+      size_t numset = 0;
+      O.v_nodes.SetSize(n_verts);
+      for (NODE_TYPE NT : { NT_VERTEX, NT_EDGE, NT_FACE, NT_CELL } ) {
+	if (numset < n_verts) {
+	  Array<int> dnums;
+	  for (auto k : Range(ma->GetNNodes(NT))) {
+	    NodeId id(NT, k);
+	    fes->GetDofNrs(id, dnums);
+	    for (auto dof : dnums) {
+	      auto top_vnum = d2v_array[dof];
+	      if (top_vnum != -1) {
+		O.v_nodes[top_vnum] = id;
+		numset++;
+		break;
+	      }
+	    }
+	  }
+	  cout << " after NT " << NT << ", set " << numset << " of " << n_verts << endl;
+	}
+      }
+    }
+
     //cout << " (unsorted) d2v_array: " << endl; prow2(d2v_array); cout << endl << endl;
     //if (use_v2d_tab) {
     //  cout << " (unsorted) v2d_table: " << endl << v2d_table << endl << endl;
