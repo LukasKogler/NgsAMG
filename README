@@ -1,5 +1,14 @@
 
-If the library fails to compile because it cannot find "methis.h", use
-cmake -DCMAKE_CXX_FLAGS="-I/path_to_your_metis_include_dir"
+Algebraic Multigrid Preconditioners for NGSolve.
+
+Supports H1 and elasticity problems.
+
+This package needs NGSolve to be built with MPI. For the elasticity AMG component,
+NGSolve also has to be built with LAPACK and MAX_SYS_DIM 6 or higher.
+
+Paths to headers of some external NGSolve projects (metis, mumps, umfpack, ..) sometimes
+need to explicitely given to cmake
+
+cmake -DCMAKE_CXX_FLAGS="-I/path_to_these_headers"
 
 If you run into any other issues, contact lukas.kogler@asc.tuwien.ac.at
