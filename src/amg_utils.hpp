@@ -4,7 +4,7 @@
 namespace amg
 {
 
-  INLINE void GetNodePos (NodeId id, const MeshAccess & ma, Vec<3> & pos, Vec<3> & t) {
+  template<int D> INLINE void GetNodePos (NodeId id, const MeshAccess & ma, Vec<D> & pos, Vec<D> & t) {
     auto set_pts = [&](auto pnums) LAMBDA_INLINE {
       pos = 0;
       for (auto k : Range(pnums)) {

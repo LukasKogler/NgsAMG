@@ -7,7 +7,7 @@ using namespace ngsolve;
 #include "amg.hpp"
 
 namespace amg {
-  extern void ExportTDNNSStuff (py::module & m);
+  extern void ExportMCS3D (py::module & m);
 }
 
 namespace amg {
@@ -48,6 +48,6 @@ PYBIND11_MODULE (ngs_amg, m) {
 #ifdef ELASTICITY
   amg::ExportAMGClass<amg::EmbedWithElmats<amg::ElasticityAMGFactory<2>, double, double>>(m, "elast_2d", "2d elasticity amg");
   amg::ExportAMGClass<amg::EmbedWithElmats<amg::ElasticityAMGFactory<3>, double, double>>(m, "elast_3d", "3d elasticity amg");
+  amg::ExportMCS3D(m);
 #endif
-  // amg::ExportTDNNSStuff (m);
 }

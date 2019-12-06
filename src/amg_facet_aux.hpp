@@ -16,7 +16,7 @@ namespace amg
     static constexpr int NRT = (DIM == 3) ? 3 : 1;
     Vec<DIM> mid;
   public:
-    FacetRBModeFE (Vec<3> amid) : mid(amid) { ; }
+    FacetRBModeFE (Vec<DIM> amid) : mid(amid) { ; }
     FacetRBModeFE (shared_ptr<MeshAccess> ma, int facetnr)
     {
       Array<int> pnums;
@@ -37,7 +37,7 @@ namespace amg
 	  shapes(2,1) = x_m_c(0);
 	}
       else {
-	Vec<3> ei, cross;
+	Vec<DIM> ei, cross;
 	for (auto k : Range(NRT)) {
 	  ei = 0; ei(k) = 1;
 	  cross = Cross(ei, x_m_c);
@@ -112,6 +112,7 @@ namespace amg
     shared_ptr<TPMAT> GetPMat () const { return pmat; }
     shared_ptr<TAUX> GetAuxMat () const { return aux_mat; }
     shared_ptr<BitArray> GetAuxFreeDofs () const { return aux_free_verts; }
+    Array<Array<shared_ptr<BaseVector>>> GetRBModes () const;
 
     virtual shared_ptr<BaseVector> CreateAuxVector () const;
 
@@ -139,8 +140,8 @@ namespace amg
     void BuildPMat ();
 
     /** Calc shape/dual shape for mip. Some spaces do not have dual-shapes, then call CalcMappedShape. **/
-    template<class TELEM, class TMIP> INLINE void CSDS_A (const TELEM & fel, const TMIP & mip, FlatMatrix<double> s, FlatMatrix<double> sd);
-    template<class TELEM, class TMIP> INLINE void CSDS_B (const TELEM & fel, const TMIP &mip, FlatMatrix<double> s, FlatMatrix<double> sd);
+    // template<class TELEM, class TMIP> INLINE void CSDS_A (const TELEM & fel, const TMIP & mip, FlatMatrix<double> s, FlatMatrix<double> sd);
+    // template<class TELEM, class TMIP> INLINE void CSDS_B (const TELEM & fel, const TMIP & mip, FlatMatrix<double> s, FlatMatrix<double> sd);
 
     /** Pick out low-order DOFs of node_id **/
     template<class TLAM> INLINE void ItLO_A (NodeId node_id, Array<int> & dnums, TLAM lam);
@@ -172,11 +173,41 @@ namespace amg
   }; // class FacetWiseAuxiliarySpaceAMG
 
 
-  template<class SPACE, ELEMENT_TYPE ET> struct STRUCT_SPACE_EL { /** static_assert(1==0, "what??"); **/ };
-  template<ELEMENT_TYPE ET> struct STRUCT_SPACE_EL<HCurlHighOrderFESpace,ET> { typedef HCurlHighOrderFE<ET> fe_type; };
-  template<ELEMENT_TYPE ET> struct STRUCT_SPACE_EL<HDivHighOrderFESpace,ET> { typedef HDivHighOrderFE<ET> fe_type; };
-  template<ELEMENT_TYPE ET> struct STRUCT_SPACE_EL<FacetFESpace,ET> { typedef VectorFacetVolumeFE<ET> fe_type; };
+
+  /** Space -> Element **/
+  template<class SPACE, ELEMENT_TYPE ET> struct STRUCT_SPACE_EL { typedef void fe_type; };
+
+
   template<class SPACE, ELEMENT_TYPE ET> using SPACE_EL = typename STRUCT_SPACE_EL<SPACE,ET>::fe_type;
+
+
+  /** Does space have dual shapes? **/
+  template<class SPACE> struct SPACE_DS_TRAIT : std::true_type
+  {
+    static constexpr bool take_tang   = false;
+    static constexpr bool take_normal = false;
+  };
+
+  template<class TSPACE, class TELEM, class TMIP> INLINE void CSDS (const TELEM & fel, const TMIP & mip, FlatMatrix<double> s, FlatMatrix<double> sd)
+  {
+    fel.CalcMappedShape(mip, s);
+    if constexpr (SPACE_DS_TRAIT<TSPACE>::value) {
+	fel.CalcDualShape(mip, sd);
+      }
+    else {
+      if constexpr(SPACE_DS_TRAIT<TSPACE>::take_tang) {
+	const auto & nv = mip.GetNV();
+	for (auto k : Range(s.Height()))
+	  { s.Row(k) -= InnerProduct(s.Row(k), nv) * nv; }
+      }
+      else if constexpr (SPACE_DS_TRAIT<TSPACE>::take_normal) {
+	const auto & nv = mip.GetNV();
+	for (auto k : Range(s.Height()))
+	  { s.Row(k) = InnerProduct(s.Row(k), nv) * nv; }
+      }
+      sd = s;
+    }
+  }
 
   constexpr NODE_TYPE FACET_NT (int DIM) {
     if (DIM == 2) { return NT_EDGE; }
