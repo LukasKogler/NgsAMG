@@ -87,8 +87,40 @@ namespace amg
   template<int DIM, class SPACEA, class SPACEB>
   void FacetWiseAuxiliarySpaceAMG<DIM, SPACEA, SPACEB> :: InitLevel (shared_ptr<BitArray> freedofs)
   {
+    /**
+       A facet is Dirichlet in the auxiliary space iff:
+          - all facet-A/facet-B DOfs are dirichlet
+	  - there are no edge-A/edge-B DOFs
+       All other cases have to be enforced weakly.
+     **/
+
+    SetUpFacetMats (); // already need dof-tables here
+
+    if (freedofs) {
+      auto n_facets = ma->GetNFacets();
+      aux_free_verts = make_shared<BitArray>(n_facets);
+      auto & afd = *aux_free_verts; afd.Clear();
+      bool has_diri = false;
+      for (auto facet_nr : Range(n_facets)) {
+	bool af_diri = (flo_a_f[facet_nr].Size() && !freedofs->Test(os_sa + flo_a_f[facet_nr][0])) ? true : false;
+	bool bf_diri = (flo_b_f[facet_nr].Size() && !freedofs->Test(os_sb + flo_b_f[facet_nr][0])) ? true : false;
+	if (af_diri != bf_diri)
+	  { throw Exception("Auxiliary Facet Space AMG needs consistent dirichlet-conditons for all space components!"); }
+	if (af_diri) {
+	  afd.SetBit(facet_nr);
+	  has_diri = true;
+	}
+      }
+      if (has_diri) {
+	if (has_a_e || has_b_e)
+	  { throw Exception("Auxiliary Facet Space AMG with edge-contribs can not handle dirichlet BCs!"); }
+	afd.Invert();
+      }
+      else // all free !
+	{ aux_free_verts = nullptr; }
+    }
+
     AllocAuxMat ();
-    SetUpFacetMats ();
     SetUpAuxParDofs();
     BuildPMat ();
   } // FacetWiseAuxiliarySpaceAMG::InitLevel
@@ -182,6 +214,8 @@ namespace amg
     }
     flo_a_e = cae.MoveTable();
     flo_b_e = cbe.MoveTable();
+    has_a_e = flo_a_e.AsArray().Size() > 0;
+    has_b_e = flo_b_e.AsArray().Size() > 0;
     TableCreator<int> caf(nfacets), cbf(nfacets);
     for ( ; !caf.Done(); caf++, cbf++) {
       cnt_buf = 0;

@@ -87,6 +87,7 @@ namespace amg
 
     /** book-keeping **/
     int apf = 0, ape = 0, bpf = 0, bpe = 0; /** A/B-DOFs per facet/edge **/
+    bool has_a_e = false, has_b_e = false;
     Table<int> flo_a_f, flo_a_e;            /** SpaceA DofNrs for each facet/edge/full facet **/
     Table<int> flo_b_f, flo_b_e;            /** SpaceB DofNrs for each facet/edge/full facet **/
     Array<double> facet_mat_data;           /** Facet matrix buffer **/
