@@ -85,6 +85,14 @@ namespace amg
 #endif
 #endif
 
+#if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMG_BS_CPP)
+  EXTERN template class HybridBS<double>;
+// #ifdef ELASTICITY
+//   EXTERN template class HybridBS<Mat<2,2,double>>;
+//   EXTERN template class HybridBS<Mat<3,3,double>>;
+//   EXTERN template class HybridBS<Mat<6,6,double>>;
+// #endif
+#endif
 
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGCRS_CPP)
   EXTERN template class SeqVWC<FlatTM>;

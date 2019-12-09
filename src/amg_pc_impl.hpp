@@ -41,12 +41,12 @@ namespace amg
     Array<NodeId> v_nodes;
 
     /** How do we define the topology ? **/
-    enum TOPO : char { ALG_TOPO = 0,        // by en entry in the finest level sparse matrix (restricted to subset)
+    enum TOPO : char { ALG_TOPO = 0,        // by entries of the finest level sparse matrix
 		       MESH_TOPO = 1,       // via the mesh
 		       ELMAT_TOPO = 2 };    // via element matrices
     TOPO topo = ALG_TOPO;
 
-    /** How do we compute vertex positions (if we need them) **/
+    /** How do we compute vertex positions (if we need them) (outdated..) **/
     enum POSITION : char { VERTEX_POS = 0,    // take from mesh vertex-positions
 			   GIVEN_POS = 1 };   // supplied from outside
     POSITION v_pos = VERTEX_POS;
@@ -119,8 +119,8 @@ namespace amg
     set_bool(O.mpi_overlap, "sm_mpi_overlap");
     set_bool(O.mpi_thread, "sm_mpi_thread");
 
-    set_bool(opts->mpi_overlap, "sm_mpi_overlap");
-    set_bool(opts->mpi_thread, "sm_mpi_thread");
+    // set_bool(opts->mpi_overlap, "sm_mpi_overlap");
+    // set_bool(opts->mpi_thread, "sm_mpi_thread");
 
     return opts;
   }
@@ -366,7 +366,7 @@ namespace amg
     : Preconditioner(blf, flags, name), bfa(blf)
   {
     options = MakeOptionsFromFlags (flags);
-  } // EmbedVAMG::EmbedVAMG
+  } // EmbedVAMG::EmbedVAMG(..)
 
 
   template<class FACTORY>
@@ -680,7 +680,7 @@ namespace amg
       n_verts = nv;
       vert_sort.SetSize(nv);
       top_mesh->SetVs (nv, [&](auto vnr) LAMBDA_INLINE { return fpd->GetDistantProcs(v2d(vnr)); },
-		       [&vert_sort](auto i, auto j){ vert_sort[i] = j; });
+		       [&vert_sort](auto i, auto j) LAMBDA_INLINE { vert_sort[i] = j; });
       free_verts = make_shared<BitArray>(nv);
       if (finest_freedofs != nullptr) {
 	free_verts->Clear();
@@ -992,7 +992,6 @@ namespace amg
     auto & O(*options);
 
     /** Build inital EQC-Hierarchy **/
-    shared_ptr<EQCHierarchy> eqc_h;
     auto fpd = finest_mat->GetParallelDofs();
     size_t maxset = 0;
     switch (O.subset) {
@@ -1005,6 +1004,7 @@ namespace amg
       break;
     } }
 
+    shared_ptr<EQCHierarchy> eqc_h;
     eqc_h = make_shared<EQCHierarchy>(fpd, true, maxset);
 
     auto top_mesh = BuildTopMesh(eqc_h);
@@ -1281,7 +1281,7 @@ namespace amg
     typedef BaseEmbedAMGOptions BAO;
     const auto &O(*options);
 
-    if (O.energy == BAO::ELMAT_ENERGY) {
+    if (O.energy == BAO::ELMAT_ENERGY) { // TODO: I think this should go to initlevel 
       shared_ptr<FESpace> lofes = bfa->GetFESpace();
       if (auto V = lofes->LowOrderFESpacePtr())
 	{ lofes = V; }

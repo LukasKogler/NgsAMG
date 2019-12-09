@@ -337,12 +337,9 @@ namespace amg
     // apply local smoothing operation with right hand side rhs
     virtual void SmoothLocal (int stage, BaseVector &x, const BaseVector &b) const = 0;
     virtual void SmoothBackLocal (int stage, BaseVector &x, const BaseVector &b) const = 0;
-
     // apply local smoothing, assuming that res is the residuum. update the residuum.
-    virtual void SmoothRESLocal (int stage, BaseVector &x, BaseVector &res) const
-    { throw Exception("SmoothRESLocal not implemented"); }
-    virtual void SmoothBackRESLocal (int stage, BaseVector &x, BaseVector &res) const
-    { throw Exception("SmoothRESLocal not implemented"); }
+    virtual void SmoothRESLocal (int stage, BaseVector &x, BaseVector &res) const = 0;
+    virtual void SmoothBackRESLocal (int stage, BaseVector &x, BaseVector &res) const = 0;
 
     shared_ptr<HybridMatrix2<TM>> A;
     shared_ptr<BaseMatrix> origA;

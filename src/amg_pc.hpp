@@ -25,6 +25,7 @@ namespace amg
   class EmbedVAMG : public Preconditioner
   {
   public:
+    using TFACTORY = FACTORY;
     using TMESH = typename FACTORY::TMESH;
     using TSPM_TM = typename FACTORY::TSPM_TM;
     using TM = typename FACTORY::TM;
@@ -92,7 +93,7 @@ namespace amg
     virtual void SetDefaultOptions (Options& O);
     virtual void ModifyOptions (Options & O, const Flags & flags, string prefix = "ngs_amg_");
     
-    void SetUpMaps ();
+    virtual void SetUpMaps ();
 
     /** AMG-Mesh; includes topologic and algebraic components **/
 
@@ -156,7 +157,7 @@ namespace amg
      basically just overloads addelementmatrix
    **/
   template<class FACTORY, class HTVD = double, class HTED = double>
-  class EmbedWithElmats: public EmbedVAMG<FACTORY>
+  class EmbedWithElmats : public EmbedVAMG<FACTORY>
   {
   public:
     using BASE = EmbedVAMG<FACTORY>;

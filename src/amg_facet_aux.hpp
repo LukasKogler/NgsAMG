@@ -51,8 +51,8 @@ namespace amg
 
   /** An Auxiliary Space Elasticty AMG Preconditioner, obtained by facet-wise embedding of
       the rigid body-modes. **/
-  template<int DIM, class SPACEA, class SPACEB>
-  class FacetWiseAuxiliarySpaceAMG : public Preconditioner
+  template<int DIM, class SPACEA, class SPACEB, class AMG_CLASS>
+  class FacetWiseAuxiliarySpaceAMG : public AMG_CLASS
   {
   public:
 
@@ -61,32 +61,42 @@ namespace amg
       else { return 3; }
     }
 
+    using TFACTORY = typename AMG_CLASS::TFACTORY;
     using TM = Mat<DPV(), DPV(), double>;
     using TV = Vec<DPV(), double>;
     using TPMAT = SparseMatrix<Mat<1,DPV(),double>>;
     using TPMAT_TM = SparseMatrixTM<Mat<1,DPV(),double>>;
     using TAUX = SparseMatrix<Mat<DPV(), DPV(), double>>;
-    using TAUX_TM = SparseMatrix<Mat<DPV(), DPV(), double>>;
+    using TAUX_TM = SparseMatrixTM<Mat<DPV(), DPV(), double>>;
+    using TMESH = typename AMG_CLASS::TMESH;
 
   protected:
 
-    /** The Bilinear-Form we are defined on **/
-    shared_ptr<BilinearForm> blf;
+    using Preconditioner::ma;
+
+    /** Inherided from AMG_CLASS **/
+    using AMG_CLASS::bfa, AMG_CLASS::options, AMG_CLASS::finest_freedofs, AMG_CLASS::finest_mat,
+      AMG_CLASS::factory;
+    using AMG_CLASS::use_v2d_tab, AMG_CLASS::d2v_array, AMG_CLASS::v2d_table, AMG_CLASS::node_sort;
+    using AMG_CLASS::free_verts;
+
+    /** Compound space stuff **/
+    shared_ptr<CompoundFESpace> comp_fes;
 
     /** Where spacea and spaceb are located in the compound space **/
     size_t ind_sa, os_sa, ind_sb, os_sb;
-    shared_ptr<CompoundFESpace> comp_fes;
     shared_ptr<SPACEA> spacea;
     shared_ptr<SPACEB> spaceb;
 
     /** Auxiliary space stuff **/
-    shared_ptr<ParallelDofs> aux_pardofs; /** ParallelDofs for auxiliart space **/
-    shared_ptr<BitArray> aux_free_verts;  /** dirichlet-vertices in aux space **/
-    shared_ptr<TPMAT> pmat;               /** aux-to compound-embedding **/
-    shared_ptr<TAUX> aux_mat;             /** auxiliary space matrix **/
+    shared_ptr<ParallelDofs> aux_pardofs;     /** ParallelDofs for auxiliary space **/
+    shared_ptr<BitArray> aux_free_verts;      /** dirichlet-vertices in aux space **/
+    shared_ptr<TPMAT> pmat;                   /** aux-to compound-embedding **/
+    shared_ptr<TAUX> aux_mat;                 /** auxiliary space matrix **/
 
     /** book-keeping **/
     int apf = 0, ape = 0, bpf = 0, bpe = 0; /** A/B-DOFs per facet/edge **/
+    bool has_e_ctrbs = false;
     bool has_a_e = false, has_b_e = false;
     Table<int> flo_a_f, flo_a_e;            /** SpaceA DofNrs for each facet/edge/full facet **/
     Table<int> flo_b_f, flo_b_e;            /** SpaceB DofNrs for each facet/edge/full facet **/
@@ -95,18 +105,15 @@ namespace amg
     /** Facet matrices: [a_e, a_f, a_e, a_f]^T \times [aux_f] **/
     Array<FlatMatrix<double>> facet_mat;
 
-    bool has_e_ctrbs = false;
-
   public:
 
     /** Constructors **/
 
     FacetWiseAuxiliarySpaceAMG (const PDE & apde, const Flags & aflags, const string aname = "precond")
-      : Preconditioner (&apde, aflags, aname)
+      : AMG_CLASS (apde, aflags, aname)
     { throw Exception("PDE-Constructor not implemented!"); }
 
     FacetWiseAuxiliarySpaceAMG (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string name = "precond");
-
 
     /** New methods **/
 
@@ -117,7 +124,7 @@ namespace amg
 
     virtual shared_ptr<BaseVector> CreateAuxVector () const;
 
-    /** Preconditioner/BaseMatrix method overrides **/
+    /** Inherited from Preconditioner/BaseMatrix **/
     virtual const BaseMatrix & GetAMatrix () const override;
     virtual const BaseMatrix & GetMatrix () const override;
     virtual shared_ptr<BaseMatrix> GetMatrixPtr () override;
@@ -131,6 +138,14 @@ namespace amg
     virtual void FinalizeLevel (const BaseMatrix * mat) override;
     virtual void Update () override;
 
+    /** Inherited from AMG_CLASS **/
+    virtual void SetUpMaps () override;
+    virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (shared_ptr<TMESH> mesh) override;
+    virtual shared_ptr<BaseSmoother> BuildSmoother (shared_ptr<BaseSparseMatrix> m, shared_ptr<ParallelDofs> pds,
+						    shared_ptr<BitArray> freedofs = nullptr) const override;
+    virtual shared_ptr<BaseSmoother> BuildFLS () const;
+    
+
   protected:
 
     /** utility **/
@@ -139,6 +154,9 @@ namespace amg
     void SetUpFacetMats ();
     void SetUpAuxParDofs ();
     void BuildPMat ();
+    // void SetUpAMG ();
+    // shared_ptr<TFACTORY::Options> SetAMGOptions (const Flags & flags);
+    // shared_ptr<TMESH> SetUpAMGMesh ();
 
     /** Calc shape/dual shape for mip. Some spaces do not have dual-shapes, then call CalcMappedShape. **/
     // template<class TELEM, class TMIP> INLINE void CSDS_A (const TELEM & fel, const TMIP & mip, FlatMatrix<double> s, FlatMatrix<double> sd);

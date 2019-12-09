@@ -2,6 +2,9 @@
 #define FILE_AMG_MCS_3D_CPP
 
 #include "amg.hpp"
+#include "amg_elast_impl.hpp"
+#include "amg_factory_impl.hpp"
+#include "amg_pc_impl.hpp"
 #include "amg_facet_aux.hpp"
 #include "amg_hdiv_templates.hpp"
 #include "amg_vfacet_templates.hpp"
@@ -10,7 +13,10 @@
 namespace amg
 {
 
-  using MCS_AMG_PC = FacetWiseAuxiliarySpaceAMG<3, HDivHighOrderFESpace, VectorFacetFESpace>;
+  using MCS_AMG_PC = FacetWiseAuxiliarySpaceAMG<3,
+						HDivHighOrderFESpace,
+						VectorFacetFESpace,
+						EmbedWithElmats<ElasticityAMGFactory<3>, double, double> >;
 
 
   template<> INLINE void MCS_AMG_PC :: Add_Vol (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
@@ -75,12 +81,12 @@ namespace amg
     cout << endl;
   }
 
-  RegisterPreconditioner<FacetWiseAuxiliarySpaceAMG<3, HDivHighOrderFESpace, VectorFacetFESpace>> register_mcs_3d("ngs_amg.mcs3d");
+
+  RegisterPreconditioner<MCS_AMG_PC> register_mcs_3d("ngs_amg.mcs3d");
 
 
   void ExportMCS3D (py::module & m) {
-    ExportFacetAux<FacetWiseAuxiliarySpaceAMG<3, HDivHighOrderFESpace, VectorFacetFESpace>>
-      (m, "mcs3d", "3d MCS elasticity auxiliary space AMG", [&](auto & x) { ; } );
+    ExportFacetAux<MCS_AMG_PC> (m, "mcs3d", "3d MCS elasticity auxiliary space AMG", [&](auto & x) { ; } );
   }
 
 } // namespace amg

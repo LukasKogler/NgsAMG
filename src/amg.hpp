@@ -27,6 +27,7 @@ namespace amg {
 #include "amg_smoother.hpp"
 #include "amg_smoother2.hpp"
 #include "amg_smoother3.hpp"
+#include "amg_blocksmoother.hpp"
 #include "amg_matrix.hpp"
 // #include "amg_precond.hpp"
 // #include "amg_h1.hpp"
