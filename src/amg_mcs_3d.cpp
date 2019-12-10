@@ -39,18 +39,18 @@ namespace amg
       { return; }
     // spacea->FESpace::GetDofNrs(node_id, dnums); // might this do the wrong thing in some cases ??
     const FESpace& F(*spacea); F.GetDofNrs(node_id, dnums);
-    cout << " select A for id " << node_id << ", dnums are "; prow(dnums); cout << endl;
-    cout << " select " << dnums[0] << " ";
+    // cout << " select A for id " << node_id << ", dnums are "; prow(dnums); cout << endl;
+    // cout << " select " << dnums[0] << " ";
     lam(0);
     int p = spacea->GetOrder(node_id);
     if (p >= 1) {
-      cout << dnums[1] << " " << dnums[1+(p*(1+p))/2];
+      // cout << dnums[1] << " " << dnums[1+(p*(1+p))/2];
       // cout << 1 << " " << dnums[(1+p)] << endl;
       lam(1);
       // lam(1+p);
       lam(1+(p*(1+p))/2);
     }
-    cout << endl;
+    // cout << endl;
   }
 
 
@@ -66,20 +66,26 @@ namespace amg
       { return; }
     // spaceb->FESpace::GetDofNrs(node_id, dnums);
     const FESpace& F(*spaceb); F.GetDofNrs(node_id, dnums);
-    cout << " select B for id " << node_id << ", dnums are "; prow(dnums); cout << endl;
-    cout << " select " << dnums[0] << " " << dnums[1] << " ";
+    // cout << " select B for id " << node_id << ", dnums are "; prow(dnums); cout << endl;
+    // cout << " select " << dnums[0] << " " << dnums[1] << " ";
     lam(0); lam(1);
     int p = spaceb->GetOrder(node_id);
     if (p >= 1) {
       /** Actually, I only need (0,x) and (y,0). (x,0) and (0,y) can be omitted.
        ?? This probably means 3, 2*(1+p) ?? **/
       // lam(3); lam(2*(1+p));
-      cout << dnums[2] << " " << dnums[3] << " " << dnums[2*(1+p)] << " " << dnums[2*(1+p)+1];
+      // cout << dnums[2] << " " << dnums[3] << " " << dnums[2*(1+p)] << " " << dnums[2*(1+p)+1];
       lam(2); lam(3);
       lam(2*(1+p)); lam(2*(1+p)+1);
     }
-    cout << endl;
+    // cout << endl;
   }
+
+
+  // template<> shared_ptr<BaseSmoother> MCS_AMG_PC :: BuildFLS () const
+  // {
+    // return nullptr;
+  // } // FacetWiseAuxiliarySpaceAMG::BuildFLS
 
 
   RegisterPreconditioner<MCS_AMG_PC> register_mcs_3d("ngs_amg.mcs3d");

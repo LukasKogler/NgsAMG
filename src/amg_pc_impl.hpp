@@ -365,13 +365,17 @@ namespace amg
   EmbedVAMG<FACTORY> :: EmbedVAMG (shared_ptr<BilinearForm> blf, const Flags & flags, const string name)
     : Preconditioner(blf, flags, name), bfa(blf)
   {
-    options = MakeOptionsFromFlags (flags);
+    if (!flags.GetDefineFlagX("__delay__opts").IsTrue()) // hacky!
+      { options = MakeOptionsFromFlags (flags); }
   } // EmbedVAMG::EmbedVAMG(..)
 
 
   template<class FACTORY>
   void EmbedVAMG<FACTORY> :: InitLevel (shared_ptr<BitArray> freedofs)
   {
+
+    if (options == nullptr)
+      { options = MakeOptionsFromFlags (flags); }
 
     if (freedofs == nullptr) // postpone to FinalizeLevel
       { return; }
@@ -663,18 +667,21 @@ namespace amg
 
 
     // cout << " btm alg, fds " << endl << *finest_freedofs << endl;
-
     // cout << " make mesh from mat: " << endl;
     // shared_ptr<BaseMatrix> fspm;
     // if (auto pm = dynamic_cast<ParallelMatrix*>(finest_mat.get()))
-    //   fspm = pm->GetMatrix();
+    //   { fspm = pm->GetMatrix(); }
     // else
-    //   fspm = finest_mat;
-    // auto msm = dynamic_pointer_cast<SparseMatrix<Mat<3,3,double>, Vec<3,double>, Vec<3,double>>>(fspm);
+    //   { fspm = finest_mat; }
+    // cout << "fmat " << typeid(*finest_mat).name() << endl;
+    // cout << "fspm " << typeid(*fspm).name() << endl;
+    // // auto msm = dynamic_pointer_cast<SparseMatrix<Mat<3,3,double>, Vec<3,double>, Vec<3,double>>>(fspm);
+    // auto msm = dynamic_pointer_cast<SparseMatrix<Mat<6,6,double>, Vec<6,double>, Vec<6,double>>>(fspm);
     // cout << " msm " << msm << endl;
-    // // auto msm = dynamic_pointer_cast<SparseMatrix<Mat<6,6,double>, Vec<6,double>, Vec<6,double>>>(finest_mat);
     // print_tm_spmat(cout, *msm); cout << endl;
-    
+    // cout << " eqc_h : " << endl << *top_mesh->GetEQCHierarchy() << endl;
+
+
     // vertices
     auto set_vs = [&](auto nv, auto v2d) {
       n_verts = nv;
@@ -683,8 +690,12 @@ namespace amg
 		       [&vert_sort](auto i, auto j) LAMBDA_INLINE { vert_sort[i] = j; });
       free_verts = make_shared<BitArray>(nv);
       if (finest_freedofs != nullptr) {
+	// cout << " finest_freedofs 1: " << finest_freedofs << endl;
+	// if (finest_freedofs)
+	  // { prow2(*finest_freedofs); cout << endl; }
 	free_verts->Clear();
 	for (auto k : Range(nv)) {
+	  // cout << k << " dof " << v2d(k) << " sort " << vert_sort[k] << " free " << finest_freedofs->Test(v2d(k)) << endl;
 	  if (finest_freedofs->Test(v2d(k)))
 	    { free_verts->SetBit(vert_sort[k]); }
 	}
@@ -693,7 +704,7 @@ namespace amg
 	{ free_verts->Set(); }
       // cout << "diri verts: " << endl;
       // for (auto k : Range(free_verts->Size()))
-      // 	if (!free_verts->Test(k)) { cout << k << " " << endl; }
+       	// if (!free_verts->Test(k)) { cout << k << " " << endl; }
       // cout << endl;
     };
     
@@ -1003,6 +1014,7 @@ namespace amg
 	  { maxset = sz+1; break; }
       break;
     } }
+    maxset = min2(maxset, fpd->GetNDofLocal());
 
     shared_ptr<EQCHierarchy> eqc_h;
     eqc_h = make_shared<EQCHierarchy>(fpd, true, maxset);
@@ -1099,7 +1111,7 @@ namespace amg
 
 
   template<class FACTORY> template<int N>
-  shared_ptr<BaseDOFMapStep> EmbedVAMG<FACTORY> :: BuildEmbedding_impl (shared_ptr<typename FACTORY::TMESH> mesh)
+  shared_ptr<BaseDOFMapStep> INLINE EmbedVAMG<FACTORY> :: BuildEmbedding_impl (shared_ptr<typename FACTORY::TMESH> mesh)
   {
     /**
        Embedding  = E_SS * E_DOF * P
@@ -1278,17 +1290,7 @@ namespace amg
   EmbedWithElmats<FACTORY, HTVD, HTED> :: EmbedWithElmats (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string name)
     : EmbedVAMG<FACTORY>(bfa, aflags, name), ht_vertex(nullptr), ht_edge(nullptr)
   {
-    typedef BaseEmbedAMGOptions BAO;
-    const auto &O(*options);
-
-    if (O.energy == BAO::ELMAT_ENERGY) { // TODO: I think this should go to initlevel 
-      shared_ptr<FESpace> lofes = bfa->GetFESpace();
-      if (auto V = lofes->LowOrderFESpacePtr())
-	{ lofes = V; }
-      size_t NV = lofes->GetNDof(); // TODO: this overestimates for compound spaces
-      ht_vertex = new HashTable<int, HTVD>(NV);
-      ht_edge = new HashTable<INT<2,int>, HTED>(8*NV);
-    }
+    ;
   }
 
 
@@ -1298,6 +1300,25 @@ namespace amg
     if (ht_vertex != nullptr) delete ht_vertex;
     if (ht_edge   != nullptr) delete ht_edge;
   }
+
+
+  template<class FACTORY, class HTVD, class HTED>
+  void EmbedWithElmats<FACTORY, HTVD, HTED> :: InitLevel (shared_ptr<BitArray> freedofs)
+  {
+    typedef BaseEmbedAMGOptions BAO;
+    const auto &O(*options);
+
+    EmbedVAMG<FACTORY>::InitLevel(freedofs);
+
+    if (O.energy == BAO::ELMAT_ENERGY) {
+      shared_ptr<FESpace> lofes = this->bfa->GetFESpace();
+      if (auto V = lofes->LowOrderFESpacePtr())
+	{ lofes = V; }
+      size_t NV = lofes->GetNDof(); // TODO: this overestimates for compound spaces
+      ht_vertex = new HashTable<int, HTVD>(NV);
+      ht_edge = new HashTable<INT<2,int>, HTED>(8*NV);
+    }
+  } // EmbedWithElmats::InitLevel
 
 
   template<class FACTORY, class HTVD, class HTED>

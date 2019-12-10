@@ -4,8 +4,12 @@
 namespace amg
 {
 
+  class EmbeddedAMGMatrix;
+
+
   class AMGMatrix : public BaseMatrix
   {
+    friend class EmbeddedAMGMatrix;
   protected:
     Array<shared_ptr<BaseVector>> res_level, x_level, rhs_level;
     shared_ptr<DOFMap> map;
@@ -29,7 +33,6 @@ namespace amg
     virtual void MultTransAdd (double s, const BaseVector & b, BaseVector & x) const override;
     virtual void MultAdd (double s, const BaseVector & b, BaseVector & x) const override;
 
-
     virtual int VHeight () const override { return smoothers[0]->Height(); }
     virtual int VWidth () const override { return smoothers[0]->Width(); }
     virtual AutoVector CreateVector () const override { return map->CreateVector(0); };
@@ -46,6 +49,35 @@ namespace amg
     // virtual void GetEV (size_t level, int rank, size_t k_num, BaseVector & vec) const;
   };
   
+
+  class EmbeddedAMGMatrix : public BaseMatrix
+  {
+  protected:
+    shared_ptr<BaseSmoother> fls;
+    shared_ptr<AMGMatrix> clm;
+    shared_ptr<BaseDOFMapStep> ds;
+    shared_ptr<BaseVector> res;
+    shared_ptr<BaseVector> xbuf;
+
+  public:
+    EmbeddedAMGMatrix (shared_ptr<BaseSmoother> _fls, shared_ptr<AMGMatrix> _clm, shared_ptr<BaseDOFMapStep> _ds)
+      : fls(_fls), clm(_clm), ds(_ds)
+    { res = ds->CreateVector(); xbuf = ds->CreateVector(); }
+
+    virtual void MultTrans (const BaseVector & b, BaseVector & x) const override;
+    virtual void Mult (const BaseVector & b, BaseVector & x) const override;
+    virtual void MultTransAdd (double s, const BaseVector & b, BaseVector & x) const override;
+    virtual void MultAdd (double s, const BaseVector & b, BaseVector & x) const override;
+
+    virtual int VHeight () const override { return fls->Height(); }
+    virtual int VWidth () const override { return fls->Height(); }
+    virtual AutoVector CreateVector () const override { return ds->CreateVector(); };
+    virtual AutoVector CreateColVector () const override { return ds->CreateVector(); };
+    virtual AutoVector CreateRowVector () const override { return ds->CreateVector(); };
+    
+    virtual bool IsComplex () const override { return false; }
+  };
+
 } // namespace amg
 
 #endif

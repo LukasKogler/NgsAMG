@@ -565,16 +565,6 @@ namespace amg
   } // EmbedVAMG<ElasticityAMGFactory<3>>::RegularizeMatrix
 
 
-  template<> template<>
-  shared_ptr<BaseDOFMapStep> EmbedVAMG<ElasticityAMGFactory<2>> :: BuildEmbedding_impl<6> (shared_ptr<ElasticityMesh<2>> mesh)
-  { return nullptr; }
-
-
-  template<> template<>
-  shared_ptr<BaseDOFMapStep> EmbedVAMG<ElasticityAMGFactory<3>> :: BuildEmbedding_impl<2> (shared_ptr<ElasticityMesh<3>> mesh)
-  { return nullptr; }
-
-
   template<class C> template<int N>
   shared_ptr<stripped_spm_tm<typename strip_mat<Mat<N, mat_traits<typename C::TM>::HEIGHT, double>>::type>> EmbedVAMG<C> :: BuildED (size_t subset_count, shared_ptr<typename C::TMESH> mesh)
   {

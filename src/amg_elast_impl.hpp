@@ -33,6 +33,8 @@ namespace amg
 	}
       }, true);
 
+    cout << "vmap: " << endl; prow2(vmap); cout << endl;
+
     // Array<double> ccnt(agg_map.template GetMappedNN<NT_VERTEX>()); ccnt = 0;
     // M.template Apply<NT_VERTEX> ([&](auto v) LAMBDA_INLINE {
     // 	auto cv = vmap[v];
@@ -374,7 +376,9 @@ namespace amg
     else
       { throw Exception("block_s for compound, but called algmesh_alg_scal!"); }
 
-    // cout << endl << " DONE W. INIT EMATS " << endl << endl;
+    cout << endl << " DONE W. INIT EMATS " << endl << endl;
+    cout << " v data : " << endl; prow2(vdata); cout << endl;
+    cout << " e data : " << endl; prow2(edata); cout << endl;
 
     auto mesh = make_shared<typename C::TMESH>(move(*top_mesh), a, b);
 
@@ -454,6 +458,15 @@ namespace amg
 
     return mesh;
   } // EmbedVAMG::BuildAlgMesh_ALG_blk
+
+  template<> template<>
+  shared_ptr<BaseDOFMapStep> INLINE EmbedVAMG<ElasticityAMGFactory<2>> :: BuildEmbedding_impl<6> (shared_ptr<ElasticityMesh<2>> mesh)
+  { return nullptr; }
+
+
+  template<> template<>
+  shared_ptr<BaseDOFMapStep> INLINE EmbedVAMG<ElasticityAMGFactory<3>> :: BuildEmbedding_impl<2> (shared_ptr<ElasticityMesh<3>> mesh)
+  { return nullptr; }
 
 } // namespace amg
 

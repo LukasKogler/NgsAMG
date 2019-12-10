@@ -76,12 +76,14 @@ namespace amg
 
     /** Inherided from AMG_CLASS **/
     using AMG_CLASS::bfa, AMG_CLASS::options, AMG_CLASS::finest_freedofs, AMG_CLASS::finest_mat,
-      AMG_CLASS::factory;
-    using AMG_CLASS::use_v2d_tab, AMG_CLASS::d2v_array, AMG_CLASS::v2d_table, AMG_CLASS::node_sort;
-    using AMG_CLASS::free_verts;
+      AMG_CLASS::factory, AMG_CLASS::free_verts;
+    using AMG_CLASS::use_v2d_tab, AMG_CLASS::d2v_array, AMG_CLASS::v2d_array, AMG_CLASS::v2d_table, AMG_CLASS::node_sort;
+    using AMG_CLASS::amg_mat;
+    bool __hacky_test = true;                /** hacky **/
 
     /** Compound space stuff **/
     shared_ptr<CompoundFESpace> comp_fes;
+    shared_ptr<ParallelDofs> comp_pds;        /** without MPI these are dummy pardofs **/
 
     /** Where spacea and spaceb are located in the compound space **/
     size_t ind_sa, os_sa, ind_sb, os_sb;
@@ -89,10 +91,11 @@ namespace amg
     shared_ptr<SPACEB> spaceb;
 
     /** Auxiliary space stuff **/
-    shared_ptr<ParallelDofs> aux_pardofs;     /** ParallelDofs for auxiliary space **/
-    shared_ptr<BitArray> aux_free_verts;      /** dirichlet-vertices in aux space **/
-    shared_ptr<TPMAT> pmat;                   /** aux-to compound-embedding **/
-    shared_ptr<TAUX> aux_mat;                 /** auxiliary space matrix **/
+    shared_ptr<ParallelDofs> aux_pardofs;      /** ParallelDofs for auxiliary space **/
+    // shared_ptr<BitArray> aux_free_verts;    /** dirichlet-vertices in aux space **/
+    shared_ptr<TPMAT> pmat;                    /** aux-to compound-embedding **/
+    shared_ptr<TAUX> aux_mat;                  /** auxiliary space matrix **/
+    shared_ptr<EmbeddedAMGMatrix> emb_amg_mat;  /** as a preconditioner for the compound BLF **/
 
     /** book-keeping **/
     int apf = 0, ape = 0, bpf = 0, bpe = 0; /** A/B-DOFs per facet/edge **/
@@ -119,7 +122,7 @@ namespace amg
 
     shared_ptr<TPMAT> GetPMat () const { return pmat; }
     shared_ptr<TAUX> GetAuxMat () const { return aux_mat; }
-    shared_ptr<BitArray> GetAuxFreeDofs () const { return aux_free_verts; }
+    shared_ptr<BitArray> GetAuxFreeDofs () const { return free_verts; }
     Array<Array<shared_ptr<BaseVector>>> GetRBModes () const;
 
     virtual shared_ptr<BaseVector> CreateAuxVector () const;
@@ -144,7 +147,9 @@ namespace amg
     virtual shared_ptr<BaseSmoother> BuildSmoother (shared_ptr<BaseSparseMatrix> m, shared_ptr<ParallelDofs> pds,
 						    shared_ptr<BitArray> freedofs = nullptr) const override;
     virtual shared_ptr<BaseSmoother> BuildFLS () const;
-    
+    virtual void SetDefaultOptions (typename AMG_CLASS::Options& O) override;
+    virtual void ModifyOptions (typename AMG_CLASS::Options & O, const Flags & flags, string prefix = "ngs_amg_") override;
+    virtual void BuildAMGMat () override;
 
   protected:
 

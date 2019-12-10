@@ -137,7 +137,7 @@ namespace amg
 
     virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (shared_ptr<TMESH> mesh); // basically just dispatch to BuildEmbedding_impl
 
-    template<int N> shared_ptr<BaseDOFMapStep> BuildEmbedding_impl (shared_ptr<TMESH> mesh); // generic
+    template<int N> INLINE shared_ptr<BaseDOFMapStep> BuildEmbedding_impl (shared_ptr<TMESH> mesh); // generic
 
     template<int N> shared_ptr<stripped_spm_tm<typename strip_mat<Mat<N, N, double>>::type>> BuildES (); // generic
 
@@ -170,6 +170,8 @@ namespace amg
     { throw Exception("PDE-constructor not implemented!"); }
 
     ~EmbedWithElmats ();
+
+    virtual void InitLevel (shared_ptr<BitArray> freedofs = nullptr) override;
 
     virtual shared_ptr<BlockTM> BuildTopMesh (shared_ptr<EQCHierarchy> eqc_h) override;
 

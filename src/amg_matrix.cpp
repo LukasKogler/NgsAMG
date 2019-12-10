@@ -383,4 +383,43 @@ namespace amg
     else return comm.AllReduce((rank==arank) ? x_level[level]->FVDouble().Size() : 0, MPI_SUM);
   }
 
+
+  /** EmbeddedAMGMatrix **/
+
+  
+  void EmbeddedAMGMatrix :: MultTrans (const BaseVector & b, BaseVector & x) const
+  {
+    Mult(b, x);
+  } // EmbeddedAMGMatrix::MultTrans
+
+
+  void EmbeddedAMGMatrix :: Mult (const BaseVector & b, BaseVector & x) const
+  {
+    auto & cx = clm->x_level[0];
+    auto & cr = clm->rhs_level[0];
+
+    fls->Smooth(x, b, *res);
+
+    ds->TransferF2C(res.get(), cr.get());
+    clm->SmoothV(*cx, *cr);
+    ds->AddC2F(1.0, &x, cx.get());
+
+    fls->SmoothBack(x, b, *res);
+  } // EmbeddedAMGMatrix::MultTrans
+
+
+  void EmbeddedAMGMatrix :: MultTransAdd (double s, const BaseVector & b, BaseVector & x) const
+  {
+    MultAdd(s, b, x);
+  } // EmbeddedAMGMatrix::MultTrans
+
+
+  void EmbeddedAMGMatrix :: MultAdd (double s, const BaseVector & b, BaseVector & x) const
+  {
+    Mult(b, *xbuf);
+    x += s * *xbuf;
+  } // EmbeddedAMGMatrix::MultTrans
+
+
+
 } // namespace amg
