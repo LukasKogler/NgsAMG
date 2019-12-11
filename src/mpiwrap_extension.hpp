@@ -1,10 +1,6 @@
 #ifndef FILE_MPIWRAP_EXTENSION
 #define FILE_MPIWRAP_EXTENSION
 
-#include "amg.hpp"
-
-#include <ngstd.hpp>
-
 namespace amg
 {
 
