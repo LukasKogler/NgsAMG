@@ -2,7 +2,7 @@
 /** 
     This file is included twice - once with AMG_EXTERN_TEMPLATES, and once without:
        The first include happens from "amg.hpp", to get "extern template class ..."
-       The second includ happens at the end of the ".cpp" files to get "template class ..."
+       The second include happens at the end of the ".cpp" files to get "template class ..."
 **/
 #if (defined(AMG_EXTERN_TEMPLATES) && !defined(FILE_AMGTCS_ONE)) || (!defined(AMG_EXTERN_TEMPLATES) && !defined(FILE_AMGTCS_TWO))
 
