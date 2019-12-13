@@ -3,6 +3,26 @@
 
 namespace amg
 {
+  template<int N>
+  INLINE void TripleProd(double fac, Mat<N,N,double> & out, const Mat<N,N,double> & A, const Mat<N,N,double> & B, const Mat<N,N,double> & C)
+  {
+    static Mat<N,N,double> X;
+    X = B * C;
+    out = fac * A * X;
+  }
+
+  template<int N>
+  INLINE void AddTripleProd(double fac, Mat<N,N,double> & out, const Mat<N,N,double> & A, const Mat<N,N,double> & B, const Mat<N,N,double> & C)
+  {
+    static Mat<N,N,double> X;
+    X = B * C;
+    out += fac * A * X;
+  }
+
+  INLINE void TripleProd(double fac, double & out, const double & A, const double & B, const double & C)
+  { out = fac * A * B * C; }
+  INLINE void AddTripleProd(double fac, double & out, const double & A, const double & B, const double & C)
+  { out += fac * A * B * C; }
 
   
   template<int N>

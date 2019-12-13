@@ -183,9 +183,10 @@ namespace amg
 	  auto v = eqc_verts[j];
 	  auto cid_loc = loc_map[2*j];
 	  if (cid_loc != -1) { // dirichlet, once again!
+	    // cout << v << ", " << j << " in " << eqc << ", locmap " << loc_map[2*j] << flush;
+	    // cout << " " << loc_map[2*j+1] << flush;
 	    int ceq = eqc_h.GetEQCOfID(loc_map[2*j+1]);
-	    // cout << v << ", " << j << " in " << eqc << ", locmap " << loc_map[2*j];
-	    // cout << " " << loc_map[2*j+1] << ", ceq " << ceq;
+	    // cout << ", ceq " << ceq;
 	    auto cid = disps[ceq] + cid_loc;
 	    // cout << ", disp " << disps[ceq] << " -> " << cid << endl;
 	    vmap[v] = cid;
@@ -1140,9 +1141,9 @@ namespace amg
     // cout << " vdata : " << endl; prow2(vdata); cout << endl;
 
     // if (M.template GetNN<NT_VERTEX>() < 1000) {
-      // cout << endl << "AGGLOMERATE, econ " << endl;
-      // cout << econ << endl;
-  // }
+    //   cout << endl << "AGGLOMERATE, econ " << endl;
+    //   cout << econ << endl;
+    // }
 
     // cout << "AGGLOMERATE, calc repl diag " << endl;
 
@@ -1152,8 +1153,10 @@ namespace amg
     M.template Apply<NT_EDGE>([&](const auto & edge) LAMBDA_INLINE {
 	FACTORY::CalcQs(vdata[edge.v[0]], vdata[edge.v[1]], Qij, Qji);
 	const auto & em = edata[edge.id];
-	repl_diag[edge.v[0]] += Trans(Qij) * em * Qij;
-	repl_diag[edge.v[1]] += Trans(Qji) * em * Qji;
+	// repl_diag[edge.v[0]] += Trans(Qij) * em * Qij;
+	AddTripleProd(1.0, repl_diag[edge.v[0]], Trans(Qij), em, Qij);
+	// repl_diag[edge.v[1]] += Trans(Qji) * em * Qji;
+	AddTripleProd(1.0, repl_diag[edge.v[1]], Trans(Qji), em, Qji);
       }, true); // only master, we cumulate this afterwards
     M.template AllreduceNodalData<NT_VERTEX>(repl_diag, [&](auto tab) LAMBDA_INLINE { return sum_table(tab); });
 
@@ -1848,13 +1851,17 @@ namespace amg
 	    auto neib_agg_id = v_to_agg[neibs[0]];
 	    if (neib_agg_id != -1) { // neib is in an agglomerate - I must also be master of N [do not check marked - might be diri!]
 	      auto & neib_agg = agglomerates[neib_agg_id];
+	      auto N_eqc = M.template GetEqcOfNode<NT_VERTEX>(N);
+	      bool could_add = eqa_to_eqb(eqc, N_eqc);
 	      bool can_add = (dist2agg[N] == 0); // (neib_agg.center() == N); // I think in this case this MUST be ok ??
-	      if (!can_add) { // otherwise, re-check SOC (but this should have been checked already)
+	      if ( could_add && (!can_add) ) { // otherwise, re-check SOC (but this should have been checked already)
 		auto soc = CalcSOC_av (neib_agg, v, true);
 		if (soc > MIN_ECW)
 		  { can_add = true; }
 	      }
+	      can_add &= could_add;
 	      if (can_add) { // lucky!
+		// cout << " add hanging " << v << " to agg of " << N << " = " << neib_agg << endl;
 		marked.SetBit(v);
 		v_to_agg[v] = neib_agg_id;
 		dist2agg[v] = 1 + dist2agg[N]; // must be correct - N is the only neib
