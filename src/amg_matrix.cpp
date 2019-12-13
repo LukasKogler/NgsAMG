@@ -33,9 +33,6 @@ namespace amg
   void AMGMatrix :: SmoothV (BaseVector & x, const BaseVector & b) const
   {
     b.Distribute();
-    b.Cumulate(); b.Distribute();
-    x.Distribute(); x.Cumulate();
-    x.Distribute(); x.Cumulate();
 
     static Timer tt ("AMGMatrix::Mult"); RegionTimer rt(tt);
 
