@@ -33,7 +33,7 @@ namespace amg
 	}
       }, true);
 
-    cout << "vmap: " << endl; prow2(vmap); cout << endl;
+    // cout << "vmap: " << endl; prow2(vmap); cout << endl;
 
     // Array<double> ccnt(agg_map.template GetMappedNN<NT_VERTEX>()); ccnt = 0;
     // M.template Apply<NT_VERTEX> ([&](auto v) LAMBDA_INLINE {
@@ -113,9 +113,12 @@ namespace amg
 	Q(1,2) =  t(0);
       }
     else {
-      Q(1,5) = - (Q(2,4) = t(0));
-      Q(2,3) = - (Q(0,5) = t(1));
-      Q(0,4) = - (Q(1,3) = t(2));
+      // Q(1,5) = - (Q(2,4) = t(0));
+      // Q(2,3) = - (Q(0,5) = t(1));
+      // Q(0,4) = - (Q(1,3) = t(2));
+      Q(1,5) = - (Q(2,4) = -t(0));
+      Q(2,3) = - (Q(0,5) = -t(1));
+      Q(0,4) = - (Q(1,3) = -t(2));
     }
   }
 
@@ -376,9 +379,9 @@ namespace amg
     else
       { throw Exception("block_s for compound, but called algmesh_alg_scal!"); }
 
-    cout << endl << " DONE W. INIT EMATS " << endl << endl;
-    cout << " v data : " << endl; prow2(vdata); cout << endl;
-    cout << " e data : " << endl; prow2(edata); cout << endl;
+    // cout << endl << " DONE W. INIT EMATS " << endl << endl;
+    // cout << " v data : " << endl; prow2(vdata); cout << endl;
+    // cout << " e data : " << endl; prow2(edata); cout << endl;
 
     auto mesh = make_shared<typename C::TMESH>(move(*top_mesh), a, b);
 
@@ -467,6 +470,26 @@ namespace amg
   template<> template<>
   shared_ptr<BaseDOFMapStep> INLINE EmbedVAMG<ElasticityAMGFactory<3>> :: BuildEmbedding_impl<2> (shared_ptr<ElasticityMesh<3>> mesh)
   { return nullptr; }
+
+  /** EmbedWithElmats **/
+
+  template<class C, class D, class E> shared_ptr<typename EmbedWithElmats<C,D,E>::TMESH>
+  EmbedWithElmats<C,D,E> :: BuildAlgMesh_ELMAT (shared_ptr<BlockTM> top_mesh)
+  {
+    return nullptr;
+  } // EmbedWithElmats::BuildAlgMesh_ELMAT
+
+
+  // template<class C, class D, class E> void EmbedWithElmats<C,D,E> ::
+  // AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
+  // 		    ElementId ei, LocalHeap & lh)
+  // {
+  //   // if (options->energy != Options::ENERGY::ELMAT_ENERGY)
+  //     // { return; }
+  //   // static Timer t(string("EmbedVAMG<ElasticityAMG<") + to_string(C::DIM) + ">::AddElementMatrix");
+  //   // RegionTimer rt(t);
+  //   // const bool vmajor = (options->block_s.Size()==1) ? 1 : 0;
+  // } // EmbedWithElmats::AddElementMatrix
 
 } // namespace amg
 

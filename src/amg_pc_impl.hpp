@@ -106,21 +106,7 @@ namespace amg
 
     SetOptionsFromFlags(O, flags, prefix);
 
-    auto set_bool = [&](auto& v, string key) {
-      if (v) { v = !flags.GetDefineFlagX(prefix + key).IsFalse(); }
-      else { v = flags.GetDefineFlagX(prefix + key).IsTrue(); }
-    };
-    
-    set_bool(O.sync, "sync");
-    set_bool(O.old_smoothers, "oldsm");
-    set_bool(O.smooth_symmetric, "symsm");
-    set_bool(O.do_test, "do_test");
-    set_bool(O.smooth_lo_only, "smooth_lo_only");
-    set_bool(O.mpi_overlap, "sm_mpi_overlap");
-    set_bool(O.mpi_thread, "sm_mpi_thread");
-
-    // set_bool(opts->mpi_overlap, "sm_mpi_overlap");
-    // set_bool(opts->mpi_thread, "sm_mpi_thread");
+    ModifyOptions(O, flags, prefix);
 
     return opts;
   }
@@ -351,7 +337,18 @@ namespace amg
     else
       { O.sm_ver = BAO::VER3; }
 
-    ModifyOptions(O, flags, prefix);
+    auto set_bool = [&](auto& v, string key) {
+      if (v) { v = !flags.GetDefineFlagX(prefix + key).IsFalse(); }
+      else { v = flags.GetDefineFlagX(prefix + key).IsTrue(); }
+    };
+    
+    set_bool(O.sync, "sync");
+    set_bool(O.old_smoothers, "oldsm");
+    set_bool(O.smooth_symmetric, "symsm");
+    set_bool(O.do_test, "do_test");
+    set_bool(O.smooth_lo_only, "smooth_lo_only");
+    set_bool(O.mpi_overlap, "sm_mpi_overlap");
+    set_bool(O.mpi_thread, "sm_mpi_thread");
 
   } // EmbedVAMG::MakeOptionsFromFlags
 
@@ -1291,7 +1288,7 @@ namespace amg
     : EmbedVAMG<FACTORY>(bfa, aflags, name), ht_vertex(nullptr), ht_edge(nullptr)
   {
     ;
-  }
+  } // EmbedWithElmats(..)
 
 
   template<class FACTORY, class HTVD, class HTED>

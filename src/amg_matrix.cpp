@@ -32,6 +32,11 @@ namespace amg
 
   void AMGMatrix :: SmoothV (BaseVector & x, const BaseVector & b) const
   {
+    b.Distribute();
+    b.Cumulate(); b.Distribute();
+    x.Distribute(); x.Cumulate();
+    x.Distribute(); x.Cumulate();
+
     static Timer tt ("AMGMatrix::Mult"); RegionTimer rt(tt);
 
     static Timer t4("coarse inv");
@@ -395,16 +400,36 @@ namespace amg
 
   void EmbeddedAMGMatrix :: Mult (const BaseVector & b, BaseVector & x) const
   {
+    static Timer tt ("EmbeddedAMGMatrix::Mult"); RegionTimer rt(tt);
+    static Timer tpre ("EmbeddedAMGMatrix::Pre");
+    static Timer tpost ("EmbeddedAMGMatrix::Post");
+
     auto & cx = clm->x_level[0];
     auto & cr = clm->rhs_level[0];
 
-    fls->Smooth(x, b, *res);
+    b.Distribute();
 
-    ds->TransferF2C(res.get(), cr.get());
-    clm->SmoothV(*cx, *cr);
-    ds->AddC2F(1.0, &x, cx.get());
-
-    fls->SmoothBack(x, b, *res);
+    if (fls != nullptr) {
+      tpre.Start();
+      x.FVDouble() = 0;
+      x.SetParallelStatus(CUMULATED);
+      res->FVDouble() = b.FVDouble();
+      res->SetParallelStatus(b.GetParallelStatus());
+      fls->Smooth(x, b, *res, true, true, true);
+      // fls->Smooth(x, b, *res, false, false, false);
+      ds->TransferF2C(res.get(), cr.get());
+      tpre.Stop();
+      clm->SmoothV(*cx, *cr);
+      tpost.Start();
+      ds->AddC2F(1.0, &x, cx.get());
+      fls->SmoothBack(x, b, *res, false, false, false);
+      tpost.Stop();
+    }
+    else { /** **/
+      ds->TransferF2C(&b, cr.get());
+      clm->SmoothV(*cx, *cr);
+      ds->TransferC2F(&x, cx.get());
+    }
   } // EmbeddedAMGMatrix::MultTrans
 
 
@@ -421,5 +446,33 @@ namespace amg
   } // EmbeddedAMGMatrix::MultTrans
 
 
+  void EmbeddedAMGMatrix :: CINV (shared_ptr<BaseVector> x, shared_ptr<BaseVector> b) const
+  {
+    auto & cx = clm->x_level[0];
+    auto & cr = clm->rhs_level[0];
+    ds->TransferF2C(b.get(), cr.get());
+    clm->SmoothV(*cx, *cr);
+    ds->TransferC2F(x.get(), cx.get());
+  } // EmbeddedAMGMatrix::CINV
+
+
+  size_t EmbeddedAMGMatrix :: GetNLevels (int rank) const
+  {
+    return clm->GetNLevels(rank);
+  } // EmbeddedAMGMatrix::GetNLevels
+
+
+  size_t EmbeddedAMGMatrix :: GetNDof (size_t level, int rank) const
+  {
+    return clm->GetNDof(level, rank);
+  } // EmbeddedAMGMatrix::GetNDof
+
+
+  void EmbeddedAMGMatrix :: GetBF (size_t level, int rank, size_t dof, BaseVector & vec) const
+  {
+    auto & cx = clm->x_level[0];
+    clm->GetBF(level, rank, dof, *cx);
+    ds->TransferC2F(&vec, cx.get());
+  } // EmbeddedAMGMatrix::GetBF
 
 } // namespace amg

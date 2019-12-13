@@ -1759,7 +1759,7 @@ namespace amg
 
     for (auto k : Range(G->Height())) {
       if ( !ismaster.Test(k) || (free && !free->Test(k)) )
-	{ continue; }
+	{ mod_diag[k] = 0; continue; }
       auto ad = add_diag[k];
       auto d = diag[k];
       auto & md = mod_diag[k];

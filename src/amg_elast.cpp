@@ -739,20 +739,6 @@ namespace amg
   /** EmbedWithElmats **/
 
 
-  template<class C, class D, class E> shared_ptr<typename EmbedWithElmats<C,D,E>::TMESH>
-  EmbedWithElmats<C,D,E> :: BuildAlgMesh_ELMAT (shared_ptr<BlockTM> top_mesh)
-  {
-    return nullptr;
-  } // EmbedWithElmats::BuildAlgMesh_ELMAT
-
-
-  template<class C, class D, class E> void EmbedWithElmats<C,D,E> ::
-  AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
-		    ElementId ei, LocalHeap & lh)
-  {
-    ;
-  } // EmbedWithElmats::AddElementMatrix
-
   // i had an undefinde reference to map_data without this
   template class AttachedEED<2>;
   template class AttachedEED<3>;

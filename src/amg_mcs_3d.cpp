@@ -71,9 +71,6 @@ namespace amg
     lam(0); lam(1);
     int p = spaceb->GetOrder(node_id);
     if (p >= 1) {
-      /** Actually, I only need (0,x) and (y,0). (x,0) and (0,y) can be omitted.
-       ?? This probably means 3, 2*(1+p) ?? **/
-      // lam(3); lam(2*(1+p));
       // cout << dnums[2] << " " << dnums[3] << " " << dnums[2*(1+p)] << " " << dnums[2*(1+p)+1];
       lam(2); lam(3);
       lam(2*(1+p)); lam(2*(1+p)+1);

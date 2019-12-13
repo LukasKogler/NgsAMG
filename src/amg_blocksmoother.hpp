@@ -20,7 +20,7 @@ namespace amg
   protected:
     shared_ptr<SparseMatrix<TM>> spmat;
     Table<int> blocks;
-    Array<TSCAL> buffer; /** buffer for diagonal inverse mats **/
+    Array<TM> buffer; /** buffer for diagonal inverse mats **/
     Array<FlatMatrix<TM>> dinv; /** diag inverse mats **/
     Table<int> block_colors;
     size_t maxbs;
@@ -28,6 +28,10 @@ namespace amg
   public:
 
     BSmoother (shared_ptr<SparseMatrix<TM>> _spmat,  Table<int> && _blocks, FlatArray<TM> md = FlatArray<TM>(0, nullptr));
+
+    /** Instead of block diag take schur complement w.r.t block-dofs, block_ext_block dofs **/
+    BSmoother (shared_ptr<SparseMatrix<TM>> _spmat,  Table<int> && _blocks, Table<int> && _block_ext_dofs,
+	       FlatArray<TM> md = FlatArray<TM>(0, nullptr));
 
     /** perform "steps" steps of FW/BW Block-Gauss-Seidel sweeps **/
     void Smooth     (BaseVector & x, const BaseVector & b, int steps = 1) const;
@@ -59,6 +63,9 @@ namespace amg
   public:
     HybridBS (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h, Table<int> && blocks,
 	       bool _overlap, bool _in_thread);
+
+    HybridBS (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h, Table<int> && blocks,
+	      Table<int> && block_ext_dofs, bool _overlap, bool _in_thread);
   protected:
 
     /** Filter blocks:

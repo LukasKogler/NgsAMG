@@ -182,7 +182,9 @@ namespace amg
     virtual shared_ptr<TMESH> BuildAlgMesh_ELMAT (shared_ptr<BlockTM> top_mesh);
 
     virtual void AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
-				   ElementId ei, LocalHeap & lh) override;
+				   ElementId ei, LocalHeap & lh) override
+    { ; }
+
   protected:
     using BASE::options;
 

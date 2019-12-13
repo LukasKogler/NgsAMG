@@ -244,9 +244,10 @@ namespace amg
   }
 
   template<class TMAT>
-  void ProlMap<TMAT> :: BuildPT ()
+  void ProlMap<TMAT> :: BuildPT (bool force)
   {
-    prol_trans = TransposeSPM(*prol);
+    if (force || (prol_trans == nullptr))
+      { prol_trans = TransposeSPM(*prol); }
   }
 
   template<class TMAT>
@@ -269,8 +270,10 @@ namespace amg
     // cout << "prol dims " << prol->Height() << " x " << prol->Width() << endl;
     // cout << "fmat dims " << tfmat->Height() << " x " << tfmat->Width() << endl;
     
-    // cout << " fmat: " << endl; print_tm_spmat(cout, *tfmat); cout << endl<< endl;
-    // cout << " prol: " << endl; print_tm_spmat(cout, *prol); cout << endl<< endl;
+    // if (prol->Width() == 486) {
+    //   cout << " fmat: " << endl; print_tm_spmat(cout, *tfmat); cout << endl<< endl;
+    //   cout << " prol: " << endl; print_tm_spmat(cout, *prol); cout << endl<< endl;
+    // }
 
     auto spm_tm = RestrictMatrixTM<SPM_TM_F, TMAT> (*prol_trans, *tfmat, *prol);
 

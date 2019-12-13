@@ -69,13 +69,19 @@ namespace amg
     virtual void MultTransAdd (double s, const BaseVector & b, BaseVector & x) const override;
     virtual void MultAdd (double s, const BaseVector & b, BaseVector & x) const override;
 
-    virtual int VHeight () const override { return fls->Height(); }
-    virtual int VWidth () const override { return fls->Height(); }
+    virtual int VHeight () const override { return (fls == nullptr) ? ds->GetParDofs()->GetNDofLocal() : fls->Height(); }
+    virtual int VWidth () const override  { return (fls == nullptr) ? ds->GetParDofs()->GetNDofLocal() : fls->Height(); }
     virtual AutoVector CreateVector () const override { return ds->CreateVector(); };
     virtual AutoVector CreateColVector () const override { return ds->CreateVector(); };
     virtual AutoVector CreateRowVector () const override { return ds->CreateVector(); };
     
     virtual bool IsComplex () const override { return false; }
+
+    /** used for visualizing base functions **/
+    void CINV (shared_ptr<BaseVector> x, shared_ptr<BaseVector> b) const;
+    virtual size_t GetNLevels (int rank) const;
+    virtual size_t GetNDof (size_t level, int rank) const;
+    virtual void GetBF (size_t level, int rank, size_t dof, BaseVector & vec) const;
   };
 
 } // namespace amg

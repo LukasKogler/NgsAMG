@@ -184,6 +184,10 @@ namespace amg {
       : BaseDOFMapStep(fpd, cpd), prol(aprol), prol_trans(nullptr)
     { ; }
 
+    ProlMap (shared_ptr<TMAT> aprol, shared_ptr<trans_spm_tm<TMAT>> aprolT, shared_ptr<ParallelDofs> fpd, shared_ptr<ParallelDofs> cpd)
+      : BaseDOFMapStep(fpd, cpd), prol(aprol), prol_trans(aprolT)
+    { ; }
+
   public:
 
     virtual void TransferF2C (const BaseVector * x_fine, BaseVector * x_coarse) const override;
@@ -199,9 +203,9 @@ namespace amg {
     shared_ptr<trans_spm_tm<TMAT>> GetProlTrans () const;
     INLINE void SetProl (shared_ptr<TMAT> aprol) { prol = aprol; }
 
-  protected:
+    void BuildPT (bool force = false);
 
-    void BuildPT();
+  protected:
 
     shared_ptr<TMAT> prol;
     shared_ptr<trans_spm_tm<TMAT>> prol_trans;

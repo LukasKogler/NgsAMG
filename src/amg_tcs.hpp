@@ -26,7 +26,10 @@ namespace ngla
 
 #define InstSPMS(N,M)				  \
   EXTERN template class SparseMatrixTM<Mat<N,M,double>>; \
-  EXTERN template class SparseMatrix<Mat<N,M,double>>; \
+  EXTERN template class SparseMatrix<Mat<N,M,double>>;
+
+  // this does not work because of Conj(Trans(Mat<1,3>)) * double does not work for some reason...
+  // EXTERN template class SparseMatrix<Mat<N,M,double>, typename amg::strip_vec<Vec<M,double>>::type, typename amg::strip_vec<Vec<N,double>>::type>;
   
 #if MAX_SYS_DIM < 3
   InstSPMS(3,3);
