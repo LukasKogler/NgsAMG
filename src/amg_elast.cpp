@@ -743,10 +743,17 @@ namespace amg
   template class AttachedEED<2>;
   template class AttachedEED<3>;
 
-  RegisterPreconditioner<EmbedWithElmats<ElasticityAMGFactory<2>, double, double>> register_el2d("ngs_amg.elast2d");
+  // template class EmbedVAMG<ElasticityAMGFactory<2>>;
+  // template class EmbedVAMG<ElasticityAMGFactory<3>>;
 
+  // template class EmbedWithElmats<ElasticityAMGFactory<2>, double, double>;
+  // template class EmbedWithElmats<ElasticityAMGFactory<3>, double, double>;
+
+  RegisterPreconditioner<EmbedWithElmats<ElasticityAMGFactory<2>, double, double>> register_el2d("ngs_amg.elast2d");
   RegisterPreconditioner<EmbedWithElmats<ElasticityAMGFactory<3>, double, double>> register_el3d("ngs_amg.elast3d");
 
 } // namespace amg
 
 #endif
+
+#include "amg_tcs.hpp"

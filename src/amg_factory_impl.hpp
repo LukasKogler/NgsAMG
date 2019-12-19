@@ -113,6 +113,7 @@ namespace amg
     /** agg opts **/
     int n_levels_d2_agg = 1;                    // do this many levels MIS(2)-like aggregates (afterwards MIS(1)-like)
     bool agg_wt_geom = true;                    // use geometric instead of harmonic mean when determining strength of connection
+    bool agg_robust = true;                     // use more expensive, but also more robust edge weights
 
     /** Discard  **/
     bool enable_disc = true;
@@ -189,6 +190,7 @@ namespace amg
     set_num(opts.ecol_after_nlev, "ecol_after_nlev");
     set_num(opts.n_levels_d2_agg, "n_levels_d2_agg");
     set_num(opts.agg_wt_geom, "agg_wt_geom");
+    set_num(opts.agg_robust, "agg_robust");
 
     set_bool(opts.enable_dyn_aaf, "dyn_aaf");
     set_num(opts.aaf, "aaf");
@@ -1365,6 +1367,7 @@ namespace amg
     O.min_ecw = O.min_ecw2;
     agg_opts.vert_thresh = O.min_vcw;
     agg_opts.cw_geom = O.agg_wt_geom;
+    agg_opts.robust = O.agg_robust;
     agg_opts.dist2 = dist2;
     auto agglomerator = make_shared<Agglomerator<FACTORY_CLASS>>(mesh, free_verts, move(agg_opts));
     return agglomerator;

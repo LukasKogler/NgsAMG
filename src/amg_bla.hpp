@@ -4,12 +4,14 @@
 namespace amg
 {
   template<int N>
-  INLINE void TripleProd(double fac, Mat<N,N,double> & out, const Mat<N,N,double> & A, const Mat<N,N,double> & B, const Mat<N,N,double> & C)
+  INLINE Mat<N,N,double> TripleProd(const Mat<N,N,double> & A, const Mat<N,N,double> & B, const Mat<N,N,double> & C)
   {
     static Mat<N,N,double> X;
     X = B * C;
-    out = fac * A * X;
+    return A * X;
   }
+  INLINE double TripleProd(double A, double B, double C)
+  { return A * B * C; }
 
   template<int N>
   INLINE void AddTripleProd(double fac, Mat<N,N,double> & out, const Mat<N,N,double> & A, const Mat<N,N,double> & B, const Mat<N,N,double> & C)
@@ -18,13 +20,31 @@ namespace amg
     X = B * C;
     out += fac * A * X;
   }
-
-  INLINE void TripleProd(double fac, double & out, const double & A, const double & B, const double & C)
-  { out = fac * A * B * C; }
-  INLINE void AddTripleProd(double fac, double & out, const double & A, const double & B, const double & C)
+  INLINE void AddTripleProd(double fac, double out, double A, double B, double C)
   { out += fac * A * B * C; }
 
-  
+
+  template<int N>
+  INLINE Mat<N,N,double> AT_B_A(const Mat<N,N,double> & A, const Mat<N,N,double> & B)
+  {
+    static Mat<N,N,double> X;
+    X = B * A;
+    return Trans(A) * X;
+  }
+  INLINE double AT_B_A (double A, double B)
+  { return A * B * A; }
+
+  template<int N>
+  INLINE void Add_AT_B_A(double fac, Mat<N,N,double> & out, const Mat<N,N,double> & A, const Mat<N,N,double> & B)
+  {
+    static Mat<N,N,double> X;
+    X = B * A;
+    out += Trans(A) * X;
+  }
+  INLINE void Add_AT_B_A(double fac, double & out, double A, double B)
+  { out += fac * A * B * A; }
+
+
   template<int N>
   INLINE double MEV (FlatMatrix<double> L, FlatMatrix<double> R)
   {

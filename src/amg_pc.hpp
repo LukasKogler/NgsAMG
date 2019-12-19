@@ -165,9 +165,7 @@ namespace amg
     
     EmbedWithElmats (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string name = "precond");
 
-    EmbedWithElmats (const PDE & apde, const Flags & aflags, const string aname = "precond")
-      : BASE(apde, aflags, aname)
-    { throw Exception("PDE-constructor not implemented!"); }
+    EmbedWithElmats (const PDE & apde, const Flags & aflags, const string aname = "precond");
 
     ~EmbedWithElmats ();
 

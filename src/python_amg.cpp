@@ -44,10 +44,10 @@ namespace amg {
 
 PYBIND11_MODULE (ngs_amg, m) {
   m.attr("__name__") = "ngs_amg";
-  // amg::ExportAMGClass<amg::EmbedWithElmats<amg::H1AMGFactory, double, double>>(m, "h1_scal", "scalar h1 amg PC");
+  amg::ExportAMGClass<amg::EmbedWithElmats<amg::H1AMGFactory, double, double>>(m, "h1_scal", "scalar h1 amg PC");
 #ifdef ELASTICITY
-  // amg::ExportAMGClass<amg::EmbedWithElmats<amg::ElasticityAMGFactory<2>, double, double>>(m, "elast_2d", "2d elasticity amg");
-  // amg::ExportAMGClass<amg::EmbedWithElmats<amg::ElasticityAMGFactory<3>, double, double>>(m, "elast_3d", "3d elasticity amg");
+  amg::ExportAMGClass<amg::EmbedWithElmats<amg::ElasticityAMGFactory<2>, double, double>>(m, "elast_2d", "2d elasticity amg");
+  amg::ExportAMGClass<amg::EmbedWithElmats<amg::ElasticityAMGFactory<3>, double, double>>(m, "elast_3d", "3d elasticity amg");
   amg::ExportMCS3D(m);
 #endif
 }

@@ -14,8 +14,8 @@ def do_test_2d_lo(jump, ms = 25):
                 "ngs_amg_crs_alg" : "agg",
                 "ngs_amg_agg_wt_geom" : True,
                 "ngs_amg_enable_disc" : False,
-                "ngs_amg_max_levels" : 4,
-                "ngs_amg_enable_sp" : False,
+                #"ngs_amg_max_levels" : 4,
+                "ngs_amg_enable_sp" : True,
                 "ngs_amg_print_log" : True }
     c = ngsolve.Preconditioner(a, "ngs_amg.h1_scal", **pc_opts)
     Solve(a, f, c, ms=ms, tol=1e-6)
@@ -59,11 +59,11 @@ def test_2d_lo_fiber_6():
 
     
 if __name__ == "__main__":
-    #test_2d_lo_1()
-    #test_2d_lo_2()
+    test_2d_lo_1()
+    test_2d_lo_2()
     test_2d_lo_4()
-    #test_2d_lo_6()
-    #test_2d_lo_fiber_1()
-    #test_2d_lo_fiber_2()
-    #test_2d_lo_fiber_4()
-    #test_2d_lo_fiber_6()
+    test_2d_lo_6()
+    test_2d_lo_fiber_1()
+    test_2d_lo_fiber_2()
+    test_2d_lo_fiber_4()
+    test_2d_lo_fiber_6()

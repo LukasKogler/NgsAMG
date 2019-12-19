@@ -1292,6 +1292,15 @@ namespace amg
 
 
   template<class FACTORY, class HTVD, class HTED>
+  EmbedWithElmats<FACTORY, HTVD, HTED> :: EmbedWithElmats (const PDE & apde, const Flags & aflags, const string aname)
+    : BASE(apde, aflags, aname)
+  {
+    /** put this here, there was some linking issue where it would not put this in the library **/
+    throw Exception("PDE-constructor not implemented!");
+  } // EmbedWithElmats(..)
+
+
+  template<class FACTORY, class HTVD, class HTED>
   EmbedWithElmats<FACTORY, HTVD, HTED> ::  ~EmbedWithElmats ()
   {
     if (ht_vertex != nullptr) delete ht_vertex;

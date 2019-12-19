@@ -144,6 +144,7 @@ namespace amg
 
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGH1_CPP)
   EXTERN template class EmbedVAMG<H1AMGFactory>;
+  EXTERN template class EmbedWithElmats<H1AMGFactory, double, double>;
 #endif
 
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGMAP_CPP)
@@ -168,10 +169,12 @@ namespace amg
   EXTERN template class ElasticityAMGFactory<2>;
   EXTERN template class ElasticityAMGFactory<3>;
   //#endif
-  // EXTERN template class EmbedVAMG<ElasticityAMGFactory<2>>;
-  // EXTERN template class EmbedVAMG<ElasticityAMGFactory<3>>;
-  EXTERN template class EmbedWithElmats<ElasticityAMGFactory<2>, double, ElasticityEdgeData<2>>;
-  EXTERN template class EmbedWithElmats<ElasticityAMGFactory<3>, double, ElasticityEdgeData<3>>;
+  EXTERN template class EmbedVAMG<ElasticityAMGFactory<2>>;
+  EXTERN template class EmbedVAMG<ElasticityAMGFactory<3>>;
+  // EXTERN template class EmbedWithElmats<ElasticityAMGFactory<2>, double, ElasticityEdgeData<2>>;
+  // EXTERN template class EmbedWithElmats<ElasticityAMGFactory<3>, double, ElasticityEdgeData<3>>;
+  EXTERN template class EmbedWithElmats<ElasticityAMGFactory<2>, double, double>;
+  EXTERN template class EmbedWithElmats<ElasticityAMGFactory<3>, double, double>;
 #endif
 #endif
 

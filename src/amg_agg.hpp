@@ -81,12 +81,11 @@ namespace amg
   template<class FACTORY>
   class Agglomerator : public AgglomerateCoarseMap<typename FACTORY::TMESH> 
   {
+  public:
 
     using TMESH = typename FACTORY::TMESH;
     using TM = typename FACTORY::TM;
     using TVD = typename FACTORY::T_V_DATA;
-
-  public:
 
     struct Options
     {
@@ -95,19 +94,66 @@ namespace amg
       bool cw_geom = false;
       double dist2 = false;
       int min_new_aggs = 3;
+      bool robust = true;
     };
 
-    Agglomerator (shared_ptr<typename FACTORY::TMESH> _mesh, shared_ptr<BitArray> _free_verts, Options && _opts);
-
   protected:
-
+    
     using AgglomerateCoarseMap<typename FACTORY::TMESH>::mesh;
 
     shared_ptr<BitArray> free_verts;
 
     Options settings;
 
+    /** Used for simplified coarse weights **/
+    Array<double> traces;
+
+  public:
+
+    Agglomerator (shared_ptr<typename FACTORY::TMESH> _mesh, shared_ptr<BitArray> _free_verts, Options && _opts);
+
+  protected:
+
     virtual void FormAgglomerates (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg) override;
+
+    void FormAgglomeratesOld (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg);
+
+    template<class TMU> void FormAgglomerates_impl (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg);
+
+    template<class TMU> INLINE FlatArray<TMU> GetEdgeData ();
+
+    template<class TMU> INLINE void CalcQs (const TVD & di, const TVD & dj, TMU & Qij, TMU & Qji)
+    {
+      if constexpr(std::is_same<TMU, TM>::value)
+	{ FACTORY::CalcQs(di, dj, Qij, Qji); }
+      else
+	{ Qij = Qji = 1; }
+    }
+
+    template<class TMU> INLINE void ModQs (const TVD & di, const TVD & dj, TMU & Qij, TMU & Qji)
+    {
+      if constexpr(std::is_same<TMU, TM>::value)
+	{ FACTORY::ModQs(di, dj, Qij, Qji); }
+      else
+	{ Qij = Qji = 1; }
+    }
+
+    template<class TMU> INLINE void ModQij (const TVD & di, const TVD & dj, TMU & Qij)
+    {
+      if constexpr(std::is_same<TMU, TM>::value)
+	{ FACTORY::ModQij(di, dj, Qij); }
+      else
+	{ Qij = 1; }
+    }
+
+    template<class TMU> INLINE void ModQHh (const TVD & di, const TVD & dj, TMU & QHh)
+    {
+      if constexpr(std::is_same<TMU, TM>::value)
+	{ FACTORY::ModQHh(di, dj, QHh); }
+      else
+	{ QHh = 1; }
+    }
+
   }; // Agglomerator
 
 

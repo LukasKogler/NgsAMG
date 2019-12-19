@@ -444,8 +444,12 @@ namespace amg
     }
   } // EmbedWithElmats<H1AMGFactory, double, double>::AddElementMatrix
 
-  RegisterPreconditioner<EmbedWithElmats<H1AMGFactory, double, double>> register_h1amg_scal("ngs_amg.h1_scal");
-
 } // namespace amg
 
 #include "amg_tcs.hpp"
+
+namespace amg
+{
+  RegisterPreconditioner<EmbedWithElmats<H1AMGFactory, double, double>> register_h1amg_scal("ngs_amg.h1_scal");
+} // namespace amg
+
