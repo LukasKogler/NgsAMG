@@ -6,10 +6,36 @@
 
 namespace amg
 {
+
+  /** An auxiliary space "Element" with a fixed number of DOFs. **/
+  template<int N>
+  class FacetAuxFE
+  {
+  public:
+    static constexpr int ND () { return N; }
+  };
+
+
+  /** An Auxiliary-space "Element", consisting of constants on facets **/
+  template<int DIM>
+  class FacetH1FE : public FacetAuxFE<H1Energy<DIM>::DPV()>
+  {
+  public:
+    FacetH1FE () : FacetAuxFE<H1Energy<DIM>::DPV()> () { ; }
+    INLINE void CalcMappedShape (const BaseMappedIntegrationPoint & mip, 
+				 SliceMatrix<double> shapes) const
+    {
+      shapes = 0;
+      for (auto k : Range(DIM))
+	{ shapes(k,k) = 1; }
+    }
+  };
+
+
   /** An Auxiliary-space "Element", consisting of rigid body modes as basis funcitons,
       for every facet in the mesh. **/
   template<int DIM>
-  class FacetRBModeFE
+  class FacetRBModeFE : public FacetAuxFE<EpsEpsEnergy<DIM>::DPV()>
   {
   protected:
     static constexpr int NDS = (DIM == 3) ? 3 : 2;
