@@ -114,12 +114,77 @@ namespace amg
   }; // class StokesAMGFactory
 
 
-  // /** Stokes AMG Preconditioner for facet-nodal discretizations. E.g. from an auxiliary space.
-  //     Does not directly work with HDiv spaces. **/
-  // template<class TFACTORY>
-  // class StokesAMGPC : public Preconditioner
-  // {
-  // }; // StokesAMGPC
+  /** Stokes AMG Preconditioner for facet-nodal discretizations. E.g. from an auxiliary space.
+      Does not directly work with HDiv spaces. **/
+  template<class TFACTORY>
+  class StokesAMGPC : public BaseAMGPC
+  {
+  public:
+    struct Options; // TODO: this is not entirely consistent
+
+  protected:
+
+    /** Stuff consistent with other AMG PC classes for facet auxiliary PC **/
+    shared_ptr<Options> options;
+
+    shared_ptr<BilinearForm> bfa;
+
+    shared_ptr<BitArray> finest_freedofs, free_verts;
+    shared_ptr<BaseMatrix> finest_mat;
+
+    Array<Array<int>> node_sort;
+    Array<Array<Vec<3,double>>> node_pos;
+
+    bool use_v2d_tab = false;
+    Array<int> d2v_array, v2d_array;
+    //    Table<int> v2d_table; // probably never use this
+
+    shared_ptr<AMGMatrix> amg_mat;
+
+    shared_ptr<FACTORY> factory;
+
+  public:
+
+    /** Constructors **/
+
+    StokesAMGPC (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string name = "precond");
+
+    StokesAMGPC (const PDE & apde, const Flags & aflags, const string aname = "precond");
+
+
+    /** New public methods **/
+
+
+    /** Public methods - consistent with EmbedVAMG **/
+
+    virtual shared_ptr<TMESH> BuildInitialMesh ();
+
+    virtual shared_ptr<FACTORY> BuildFactory (shared_ptr<TMESH> mesh);
+
+    virtual void BuildAMGMat ();
+
+
+    /** Public methods inherited from Preconditioner **/
+
+    virtual void InitLevel (shared_ptr<BitArray> freedofs = nullptr) override;
+
+    virtual void FinalizeLevel (const BaseMatrix * mat) override;
+
+    virtual void Update () override;
+
+
+  protected:
+
+    /** Protected methods inherited from Preconditioner (I think none) **/
+
+    /** New protected methods - internal utility**/
+
+    virtual shared_ptr<TMESH> BuildInitialMesh ();
+
+    virtual shared_ptr<BlockTM> BuildTopMesh (shared_ptr<EQCHierarchy> eqc_h);
+
+
+  }; // StokesAMGPC
 
 
 } // namespace amg

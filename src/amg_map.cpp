@@ -48,6 +48,26 @@ namespace amg
   }
 
 
+  // bool ConcDMS :: CanPullBack (shared_ptr<BaseDOFMapStep> other)
+  // {
+  //   bool can_do_it = true;
+  //   for (auto step : sub_steps)
+  //     { can_do_it &= step->CanPullBack(other); }
+  //   return can_do_it;
+  // }
+
+
+  // shared_ptr<BaseDOFMapStep> ConcDMS :: PullBack (shared_ptr<BaseDOFMapStep> other)
+  // {
+  //   if (!CanPullBack(other))
+  //     { return nullptr; }
+  //   shared_ptr<BaseDOFMapStep> out = other;
+  //   for (int k = sub_steps.Size()-1; k >=0; k--)
+  //     { out = sub_steps[k]->PullBack(out); }
+  //   return out;
+  // }
+
+
   void ConcDMS :: TransferF2C (const BaseVector * x_fine, BaseVector * x_coarse) const
   {
 #ifdef USE_TAU

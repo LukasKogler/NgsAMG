@@ -29,7 +29,8 @@ namespace amg
     INLINE FlatArray<int> members () const { return mems; }
     INLINE void AddSort (int v) { insert_into_sorted_array(v, mems); }
     INLINE void Add (int v) { AddSort(v); }
-  };
+  }; // Agglomerate
+
   INLINE std::ostream & operator<<(std::ostream &os, const Agglomerate& agg) {
     os << "agg. id " << agg.id << ", n members " << agg.mems.Size() << ", center " << agg.center() << ", all mems: ";
     prow2(agg.mems, os);
@@ -37,7 +38,8 @@ namespace amg
   }
 
   template<class TMESH>
-  class AgglomerateCoarseMap : public BaseCoarseMap, public GridMapStep<TMESH>
+  class AgglomerateCoarseMap : public GridMapStep<TMESH>,
+			       public BaseCoarseMap
   {
     friend class BlockTM;
 
@@ -71,7 +73,7 @@ namespace amg
   //   template<NODE_TYPE NT> INLINE FlatArray<int> GetMap () const { return node_maps[NT]; }
   //   template<NODE_TYPE NT> INLINE size_t GetMappedNN () const { return mapped_nn[NT]; }
 
-  };
+  }; // class AgglomerateCoarseMap
 
 
   /**

@@ -16,7 +16,6 @@ namespace amg {
 
 
   /** This maps meshes and their NODES between levels. **/
-  class BaseGridMapStep;
   class GridMap
   {
   public:
@@ -69,7 +68,12 @@ namespace amg {
       return make_shared<S_ParallelBaseVectorPtr<double>>
 	(mapped_pardofs->GetNDofLocal(), mapped_pardofs->GetEntrySize(), mapped_pardofs, DISTRIBUTED);
     }
+    /** "me - other" -> "conc" **/
+    virtual bool CanConcatenate (shared_ptr<BaseDOFMapStep> other) { return false; }
     virtual shared_ptr<BaseDOFMapStep> Concatenate (shared_ptr<BaseDOFMapStep> other) { return nullptr; }
+    /** "me - other" -> "new other - new me" **/
+    virtual bool CanPullBack (shared_ptr<BaseDOFMapStep> other) { return false; }
+    virtual shared_ptr<BaseDOFMapStep> PullBack (shared_ptr<BaseDOFMapStep> other) { return nullptr; }
     shared_ptr<ParallelDofs> GetParDofs () const { return pardofs; }
     shared_ptr<ParallelDofs> GetMappedParDofs () const { return mapped_pardofs; }
     virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const = 0;
@@ -147,6 +151,9 @@ namespace amg {
     virtual void AddC2F (double fac, BaseVector * x_fine, const BaseVector * x_coarse) const override;
 
     virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const override;
+
+    // virtual bool CanPullBack (shared_ptr<BaseDOFMapStep> other) override;
+    // virtual shared_ptr<BaseDOFMapStep> PullBack (shared_ptr<BaseDOFMapStep> other) override;
   };
 
 

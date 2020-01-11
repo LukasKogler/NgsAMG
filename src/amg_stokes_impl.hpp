@@ -2,6 +2,9 @@ namespace amg
 {
 
 
+  /** --- StokesAMGFactory --- **/
+
+
   template<int D> template<class TMAP> shared_ptr<StokesAMGFactory<D>::TSPM_TM>
   StokesAMGFactory<D> :: BuildPWProl_impl (shared_ptr<TMAP> cmap, shared_ptr<ParallelDofs> fpd) const
   {
@@ -64,6 +67,101 @@ namespace amg
 
 
   } // StokesAMGFactory::BuildPWProl_impl
+
+
+  template<int D>
+  void StokesAMGFactory<D> :: SmoothProlongation (shared_ptr<ProlMap<TSPM_TM>> pmap, shared_ptr<TMESH> mesh) const
+  {
+    /**  I) Smooth normally for agg boundaries
+        II) Fix agg interiors **/
+  } // StokesAMGFactory::SmoothProlongation
+
+
+  template<int D>
+  void StokesAMGFactory<D> :: FillAggs (shared_ptr<TSPM_TM> prol, shared_ptr<TMESH> mesh, Table<int> & aggs) const
+  {
+  } // StokesAMGFactory::FillAggs
+
+
+  /** --- END StokesAMGFactory --- **/
+
+
+  /** --- StokesAMGPC --- **/
+
+
+  template<class FACTORY>
+  struct StokesAMGPC<FACTORY> :: Options : public FACTORY::Options,
+					   public BaseAMGOptions
+  {
+    ;
+  }; // StokesAMGPC::Options
+
+
+  template<class FACTORY>
+  StokesAMGPC<FACTORY> :: StokesAMGPC (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string name)
+    : Preconditioner(bfa, aflags, name)
+  {
+    ;
+  } // StokesAMGPC::StokesAMGPC
+
+
+  template<class FACTORY>
+  StokesAMGPC<FACTORY> :: StokesAMGPC (const PDE & apde, const Flags & aflags, const string aname)
+  {
+    throw Exception("StokesAMGPC PDE-constructor not implemented!!");
+  } // StokesAMGPC::StokesAMGPC
+
+
+  template<class FACTORY>
+  shared_ptr<TMESH> StokesAMGPC<FACTORY> :: BuildInitialMesh ()
+  {
+    return nullptr;
+  } // StokesAMGPC::BuildInitialMesh
+
+
+  template<class FACTORY>
+  shared_ptr<TMESH> StokesAMGPC<FACTORY> :: BuildTopMesh (shared_ptr<EQCHierarchy> eqc_h)
+  {
+    return nullptr;
+  } // StokesAMGPC::BuildInitialMesh
+
+
+  template<class FACTORY>
+  shared_ptr<FACTORY> StokesAMGPC<FACTORY> :: BuildFactory (shared_ptr<TMESH> mesh)
+  {
+    return nullptr;
+  } // StokesAMGPC::BuildFactory
+
+
+  template<class FACTORY>
+  void StokesAMGPC<FACTORY> :: BuildAMGMat ()
+  {
+    ;
+  } // StokesAMGPC::BuildAMGMat
+
+
+  template<class FACTORY>
+  void StokesAMGPC<Factory> :: InitLevel (shared_ptr<BitArray> freedofs)
+  {
+    // I think this should never be called
+  } // StokesAMGPC::InitLevel
+
+
+  template<class FACTORY>
+  void StokesAMGPC<Factory> :: FinalizeLevel (const BaseMatrix * mat)
+  {
+    // I think this should never be called
+  } // StokesAMGPC::FinalizeLevel
+
+
+  template<class FACTORY>
+  void StokesAMGPC<Factory> :: Update ()
+  {
+    // I think this should never be called
+  } // StokesAMGPC::Update
+
+
+  /** --- END StokesAMGPC --- **/
 
 
 } // namespace amg

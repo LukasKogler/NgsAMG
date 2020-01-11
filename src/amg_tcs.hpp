@@ -113,7 +113,7 @@ namespace amg
 #endif
 
 #if defined(AMG_EXTERN_TEMPLATES)
-  EXTERN template class Agglomerator<H1AMGFactory>;
+  // EXTERN template class Agglomerator<H1AMGFactory>;
 #ifdef ELASTICITY
   EXTERN template class Agglomerator<ElasticityAMGFactory<2>>;
   EXTERN template class Agglomerator<ElasticityAMGFactory<3>>;

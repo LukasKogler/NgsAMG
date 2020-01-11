@@ -2,7 +2,8 @@
 
 namespace amg
 {
-  TopologicMesh :: TopologicMesh (size_t nv, size_t ne, size_t nf, size_t nc)
+  TopologicMesh :: TopologicMesh (shared_ptr<EQCHierarchy> _eqc_h, size_t nv, size_t ne, size_t nf, size_t nc)
+    : eqc_h(_eqc_h)
   {
     nnodes[0] = nnodes_glob[0] = nv;
     nnodes[1] = nnodes_glob[1] = ne;
@@ -11,7 +12,8 @@ namespace amg
   }
 
   TopologicMesh :: TopologicMesh (TopologicMesh && other)
-    : verts(move(other.verts)), edges(move(other.edges)),
+    : eqc_h(other.eqc_h),
+      verts(move(other.verts)), edges(move(other.edges)),
       faces(move(other.faces)), cells(move(other.cells))
   {
     for(auto l:Range(4)) {
@@ -100,7 +102,7 @@ namespace amg
 
   
   BlockTM :: BlockTM (shared_ptr<EQCHierarchy> _eqc_h)
-    : TopologicMesh(), eqc_h(_eqc_h), disp_eqc(4), disp_cross(4)
+    : TopologicMesh(_eqc_h), disp_eqc(4), disp_cross(4)
   {
     auto neqcs = eqc_h->GetNEQCS();
     for (auto l:Range(4)) {

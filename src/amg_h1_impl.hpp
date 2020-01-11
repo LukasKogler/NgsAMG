@@ -1,70 +1,71 @@
-#ifndef FILE_AMGH1_IMPL_HPP
-#define FILE_AMGH1_IMPL_HPP
+#ifndef FILE_AMG_H1_IMPL_HPP
+#define FILE_AMG_H1_IMPL_HPP
 
 namespace amg
 {
 
-  template<class TMAP> INLINE void H1VData :: map_data_impl (const TMAP & cmap, H1VData & ch1v) const
+  template<class FACTORY, class HTVD, class HTED>
+  void ElmatVAMG<FACTORY, HTVD, HTED> :: AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
+										     ElementId ei, LocalHeap & lh)
   {
-    auto & cdata = ch1v.data;
-    cdata.SetSize(cmap.template GetMappedNN<NT_VERTEX>()); cdata = 0.0;
-    auto map = cmap.template GetMap<NT_VERTEX>();
-    auto lam_v = [&](const AMG_Node<NT_VERTEX> & v)
-      { auto cv = map[v]; if (cv != -1) cdata[cv] += data[v]; };
-    bool master_only = (GetParallelStatus()==CUMULATED);
-    mesh->Apply<NT_VERTEX>(lam_v, master_only);
+    typedef BaseEmbedAMGOptions BAO;
+    const auto &O(*options);
 
-    auto emap = cmap.template GetMap<NT_EDGE>();
-    auto aed = get<1>(static_cast<H1Mesh*>(mesh)->Data()); aed->Cumulate(); // should be NOOP
-    auto edata = aed->Data();
-    mesh->Apply<NT_EDGE>( [&](const auto & e) LAMBDA_INLINE {
-	if (emap[e.id] == -1) {
-	  Iterate<2>([&](auto i) LAMBDA_INLINE {
-	      if (map[e.v[i.value]] == -1) {
-		auto cv = map[e.v[1-i.value]];
-		if (cv != -1) {
-		  cdata[cv] += edata[e.id];
-		}
-	      }
-	    });
-	}
-      }, master_only);
-    ch1v.SetParallelStatus(DISTRIBUTED);
-  }
+    if (O.energy != BAO::ELMAT_ENERGY)
+      { return; }
 
+    // vertex weights
+    static Timer t("AddElementMatrix");
+    static Timer t1("AddElementMatrix - inv");
+    static Timer t3("AddElementMatrix - v-schur");
+    static Timer t5("AddElementMatrix - e-schur");
+    RegionTimer rt(t);
+    size_t ndof = dnums.Size();
+    BitArray used(ndof, lh);
+    FlatMatrix<double> ext_elmat(ndof+1, ndof+1, lh);
+    {
+      ThreadRegionTimer reg (t5, TaskManager::GetThreadId());
+      ext_elmat.Rows(0,ndof).Cols(0,ndof) = elmat;
+      ext_elmat.Row(ndof) = 1;
+      ext_elmat.Col(ndof) = 1;
+      ext_elmat(ndof, ndof) = 0;
+      CalcInverse (ext_elmat);
+    }
+    {
+      RegionTimer reg (t1);
+      for (size_t i = 0; i < dnums.Size(); i++)
+        {
+          Mat<2,2,double> ai;
+          ai(0,0) = ext_elmat(i,i);
+          ai(0,1) = ai(1,0) = ext_elmat(i, ndof);
+          ai(1,1) = ext_elmat(ndof, ndof);
+          ai = Inv(ai);
+          double weight = fabs(ai(0,0));
+          // vertex_weights_ht.Do(INT<1>(dnums[i]), [weight] (auto & v) { v += weight; });
+          (*ht_vertex)[dnums[i]] += weight;
+        }
+    }
+    {
+      RegionTimer reg (t3);
+      for (size_t i = 0; i < dnums.Size(); i++)
+        for (size_t j = 0; j < i; j++)
+          {
+            Mat<3,3,double> ai;
+            ai(0,0) = ext_elmat(i,i);
+            ai(1,1) = ext_elmat(j,j);
+            ai(0,1) = ai(1,0) = ext_elmat(i,j);
+            ai(2,2) = ext_elmat(ndof,ndof);
+            ai(0,2) = ai(2,0) = ext_elmat(i,ndof);
+            ai(1,2) = ai(2,1) = ext_elmat(j,ndof);
+            ai = Inv(ai);
+            double weight = fabs(ai(0,0));
+            // edge_weights_ht.Do(INT<2>(dnums[j], dnums[i]).Sort(), [weight] (auto & v) { v += weight; });
+	    (*ht_edge)[INT<2, int>(dnums[j], dnums[i]).Sort()] += weight;
+          }
+    }
+  } // EmbedWithElmats<H1AMGFactory, double, double>::AddElementMatrix
 
-  template<class TMESH> INLINE void H1EData :: map_data_impl (const TMESH & cmap, H1EData & ch1e) const
-  {
-    auto & cdata = ch1e.data;
-    cdata.SetSize(cmap.template GetMappedNN<NT_EDGE>()); cdata = 0.0;
-    auto map = cmap.template GetMap<NT_EDGE>();
-    auto lam_e = [&](const AMG_Node<NT_EDGE>& e)
-      { auto cid = map[e.id]; if ( cid != decltype(cid)(-1)) { cdata[cid] += data[e.id]; } };
-    bool master_only = (GetParallelStatus()==CUMULATED);
-    mesh->Apply<NT_EDGE>(lam_e, master_only);
-    ch1e.SetParallelStatus(DISTRIBUTED);
-  }
-
-
-  template<NODE_TYPE NT> INLINE double H1AMGFactory :: GetWeight (const TMESH & mesh, const AMG_Node<NT> & node) const
-  {
-    if constexpr(NT==NT_VERTEX) { return get<0>(mesh.Data())->Data()[node]; }
-    else if constexpr(NT==NT_EDGE) { return get<1>(mesh.Data())->Data()[node.id]; }
-    else return 0;
-  }
-
-
-  INLINE void H1AMGFactory :: CalcPWPBlock (const TMESH & fmesh, const TMESH & cmesh,
-					    AMG_Node<NT_VERTEX> v, AMG_Node<NT_VERTEX> cv, double & mat) const
-  { SetIdentity(mat); }
-
-
-  INLINE void H1AMGFactory :: CalcRMBlock (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge, FlatMatrix<double> mat) const
-  {
-    auto w = GetWeight<NT_EDGE>(fmesh, edge);
-    mat(0,1) = mat(1,0) = - (mat(0,0) = mat(1,1) = w);
-  }
 
 } // namespace amg
 
-#endif // FILE_AMGH1_IMPL_HPP
+#endif

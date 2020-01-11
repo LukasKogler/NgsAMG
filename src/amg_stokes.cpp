@@ -30,6 +30,15 @@ namespace amg
   {
     /**  I) Smooth normally for agg boundaries
         II) Fix agg interiors **/
+    /**
+       I need agglomerates of vertices, and maps of edges. Can I get those from the prol itself??
+       I guess I can get an implicit map of edge-nrs from prol - remaining edges have only one entry
+       in row -> probably can get facets. 
+         -) what about MPI??
+	 -) is this the only way that there is only one entry?? What about coarse level dangling vertex?? <- actually, a problem!
+
+       I definitely need a coarse-map here ...
+     **/
     FillAggs(prol, ...);
   } // StokesAMGFactory::SmoothProlongation
 

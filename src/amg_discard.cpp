@@ -8,7 +8,7 @@ namespace amg
 
   template<class TMESH>
   VDiscardMap<TMESH> :: VDiscardMap (shared_ptr<TMESH> _mesh, size_t _max_bs)
-    : GridMapStep<TMESH>(_mesh), max_bs(_max_bs)
+    : BaseDiscardMap(), GridMapStep<TMESH>(_mesh), max_bs(_max_bs)
   {
     CalcDiscard();
     // SetUpMM();

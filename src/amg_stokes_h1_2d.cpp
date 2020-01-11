@@ -9,6 +9,7 @@
 #include "amg_hdiv_templates.hpp"
 #include "amg_vfacet_templates.hpp"
 #include "amg_facet_aux_impl.hpp"
+#include "amg_energy.hpp"
 #include "amg_stokes.hpp"
 #include "amg_stokes_impl.hpp"
 

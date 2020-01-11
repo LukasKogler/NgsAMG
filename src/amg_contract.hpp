@@ -7,7 +7,7 @@ namespace amg
   Table<int> PartitionProcsMETIS (BlockTM & mesh, int nparts, bool sep_p0 = true);
 
   template<class TV>
-  class CtrMap : public BaseDOFMapStep
+  class CtrMap : public BaseDOFMapStep, public std::enable_shared_from_this<CtrMap<TV>>
   {
   public:
 
@@ -33,8 +33,7 @@ namespace amg
       return DoAssembleMatrix(spm);
     }
     
-    virtual shared_ptr<BaseDOFMapStep> Concatenate (shared_ptr<BaseDOFMapStep> other) override
-    { return nullptr; }
+    virtual shared_ptr<BaseDOFMapStep> Concatenate (shared_ptr<BaseDOFMapStep> other) override;
     
     bool DoSwap (bool in);
 

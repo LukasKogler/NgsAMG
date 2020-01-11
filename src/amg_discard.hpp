@@ -4,23 +4,48 @@
 namespace amg
 {
 
-  template<class TMESH>
-  class VDiscardMap : public GridMapStep<TMESH>
+  class BaseDiscardMap : public BaseCoarseMap
   {
+  protected:
+    shared_ptr<BitArray> dropped_nodes[4];
+    size_t dropped_NN[4];
+  public:
+
+    BaseDiscardMap ()
+      : BaseCoarseMap()
+    {
+      for (auto k : Range(4)) {
+	dropped_NN[k] = 0;
+	dropped_nodes[k] = nullptr;
+      }
+    }
+
+    ~BaseDiscardMap () { ; }
+
+    template<NODE_TYPE NT> shared_ptr<BitArray> GetDroppedNodes () const
+    { return dropped_nodes[NT]; }
+
+    template<NODE_TYPE NT> size_t GetNDroppedNodes () const
+    { return dropped_NN[NT]; }
+
+  }; // class BaseDiscardMap
+
+  template<class TMESH>
+  class VDiscardMap : public BaseDiscardMap,
+		      public GridMapStep<TMESH>
+  {
+  protected:
+    size_t max_bs;
+    using GridMapStep<TMESH>::mesh, GridMapStep<TMESH>::mapped_mesh;
+    using BaseCoarseMap::NN, BaseCoarseMap::mapped_NN;
+
+    shared_ptr<Table<size_t>> vertex_blocks;
+
   public:
 
     VDiscardMap (shared_ptr<TMESH> _mesh, size_t _max_bs = 5);
 
-    shared_ptr<BitArray> GetDroppedVerts () const { return dropped_vert; }
-
     shared_ptr<Table<size_t>> GetVertexBlocks () const { return vertex_blocks; }
-
-    // TODO: mapped_nnodes[NT_VERTEX] shoulde be comnputable much easier!
-    template<NODE_TYPE NT> size_t GetMappedNN () const { return mapped_nnodes[NT]; }
-    template<NODE_TYPE NT> FlatArray<int> GetNodeMap () const { return node_maps[NT]; }
-    template<NODE_TYPE NT> FlatArray<int> GetMap () const { return node_maps[NT]; }
-
-    size_t GetNDroppedVerts () const { return dropped_vert->NumSet(); }
 
     virtual shared_ptr<TopologicMesh> GetMappedMesh () const override;
 
@@ -29,15 +54,6 @@ namespace amg
     void CalcDiscard ();
     void SetUpMM ();
 
-    size_t max_bs;
-    using GridMapStep<TMESH>::mesh, GridMapStep<TMESH>::mapped_mesh;
-
-    shared_ptr<BitArray> dropped_vert;
-    shared_ptr<Table<size_t>> vertex_blocks;
-
-    Array<size_t> mapped_nnodes;
-    Array<Array<int>> node_maps;
-
   public:
 
     template<NODE_TYPE NT, typename T>
@@ -45,10 +61,9 @@ namespace amg
     {
       if constexpr( (NT != NT_VERTEX) && (NT != NT_EDGE) )
 		    { throw Exception("VDiscardMap does not have a map for that NT!!"); }
-      const auto mapped_nn = mapped_nnodes[NT];
       auto & map = node_maps[NT];
       auto & cd (*cdata);
-      cd.SetSize(mapped_nn);
+      cd.SetSize(mapped_NN[NT]);
       for (auto k : Range(map))
 	if (map[k] != size_t(-1))
 	  { cd[map[k]] = data[k]; }

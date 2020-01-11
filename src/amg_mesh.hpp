@@ -14,9 +14,11 @@ namespace amg
   {
     friend class NgsAMG_Comm;
   public:
-    TopologicMesh (size_t nv = 0, size_t ne = 0, size_t nf = 0, size_t nc = 0);
+    TopologicMesh (shared_ptr<EQCHierarchy> _eqc_h, size_t nv = 0, size_t ne = 0, size_t nf = 0, size_t nc = 0);
     TopologicMesh (TopologicMesh && other);
     virtual ~TopologicMesh() { ; }
+    shared_ptr<EQCHierarchy> GetEQCHierarchy () const { return eqc_h; }
+    INLINE size_t GetNEqcs () const { return (eqc_h == nullptr) ? 0 : eqc_h->GetNEQCS(); }
     template<NODE_TYPE NT> INLINE bool HasNodes () const { return has_nodes[NT]; }
     template<NODE_TYPE NT> INLINE size_t GetNN () const { return nnodes[NT]; }
     template<NODE_TYPE NT> INLINE size_t GetNNGlobal () const  { return nnodes_glob[NT]; }
@@ -36,6 +38,7 @@ namespace amg
     virtual void ResetEdgeCM () const { econ = nullptr; }
     friend std::ostream & operator<<(std::ostream &os, const TopologicMesh& p);
   protected:
+    shared_ptr<EQCHierarchy> eqc_h;
     bool has_nodes[4] = {false, false, false, false};
     size_t nnodes[4];
     size_t nnodes_glob[4];
@@ -50,7 +53,11 @@ namespace amg
   class FlatTM : public TopologicMesh
   {
   public:
-    FlatTM () { ; }
+
+    FlatTM ()
+      : TopologicMesh(nullptr) // TODO: fix this
+    { ; }
+
     FlatTM (FlatArray<AMG_Node<NT_VERTEX>> av, FlatArray<AMG_Node<NT_EDGE>> ae,
 	    FlatArray<AMG_Node<NT_FACE>> af  , FlatArray<AMG_Node<NT_CELL>> ac,
 	    FlatArray<AMG_Node<NT_EDGE>> ace , FlatArray<AMG_Node<NT_FACE>> acf);
@@ -89,8 +96,6 @@ namespace amg
     BlockTM (BlockTM && other);
     BlockTM ();
     ~BlockTM () { ; }
-    shared_ptr<EQCHierarchy> GetEQCHierarchy () const { return eqc_h; }
-    INLINE size_t GetNEqcs () const { return eqc_verts.Size(); }
     template<NODE_TYPE NT> INLINE size_t GetENN () const { return disp_eqc[NT].Last(); }
     template<NODE_TYPE NT> INLINE size_t GetENN (size_t eqc_num) const { return nnodes_eqc[NT][eqc_num]; }
     template<NODE_TYPE NT> INLINE size_t GetCNN () const { return disp_cross[NT].Last(); }
@@ -129,7 +134,6 @@ namespace amg
     shared_ptr<BlockTM> Map (const PairWiseCoarseMap & cmap) const
     { return shared_ptr<BlockTM>(MapBTM(cmap)); }
   protected:
-    shared_ptr<EQCHierarchy> eqc_h;
     /** eqc-block-views of data **/
     // Array<shared_ptr<FlatTM>> mesh_blocks;
     /** eqc-wise data **/

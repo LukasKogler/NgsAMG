@@ -175,6 +175,18 @@ namespace amg
   }
   
 
+  template<calss TV>
+  shared_ptr<BaseDOFMapStep> CtrMap<TV> :: Concatenate (shared_ptr<BaseDOFMapStep> other)
+  {
+    if ( auto rmap = dynamic_pointer_cast<CtrMap<TV>>(other) ) {
+      Array<shared_ptr<BaseDOFMapStep>> sub_steps ({ shared_from_this(), other });
+      return make_shrade<ConcDMS> (steps);
+    }
+    else
+      { return nullptr; }
+  } // CtrMao::Concatenate
+
+
   INLINE Timer & timer_hack_ctr_f2c () { static Timer t("CtrMap::F2C"); return t; }
   INLINE Timer & timer_hack_ctr_c2f () { static Timer t("CtrMap::C2F"); return t; }
 
@@ -537,7 +549,7 @@ namespace amg
 
     // cout << "new prol_map: " << endl;
 
-    print_tm_spmat(cout, *split_A); cout << endl;
+    // print_tm_spmat(cout, *split_A); cout << endl;
 
 
     pardofs = mid_pardofs;

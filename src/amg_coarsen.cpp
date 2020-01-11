@@ -474,6 +474,25 @@ namespace amg
     }
   } // HierarchicVWC :: Collapse
 
+
+  shared_ptr<BaseCoarseMap> BaseCoarseMap :: Concatenate (shared_ptr<BaseCoarseMap> right_map)
+  {
+    auto cmap = make_shared<BaseCoarseMap>();
+    for ( NODE_TYPE NT : { NT_VERTEX, NT_EDGE, NT_FACE, NT_CELL } ) {
+      cmap->NN[NT] = GetNN<NT>();
+      cmap->CNN[NT] = right_map->mapped_NN[NT];
+      FlatArray<int> lmap = GetMap<NT>(), rmap = right_map->GetMap<NT>();
+      Array<int> & cnm = cmap->node_maps[NT];
+      cnm.SetSize(GetNN<NT>());
+      for (auto k : Range(GetNN<NT>()]) {
+	auto midnum = lmap[k];
+	cnm[k] = (midnum == -1) ? -1 : rmap[midnum];
+      }
+    }
+    return cmap;
+  } // BaseCoarseMap::Concatenate
+
+
   template<class TMESH>
   CoarseMap<TMESH> :: CoarseMap (shared_ptr<TMESH> _mesh, VWCoarseningData::CollapseTracker &coll)
     : PairWiseCoarseMap(), GridMapStep<TMESH>(_mesh)
