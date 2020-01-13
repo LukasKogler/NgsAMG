@@ -16,11 +16,13 @@ namespace amg
     size_t max_meas = 50;                       // maximal maesure of coarsest mesh
 
     /** Coarsening **/
+    // TODO: deal with multistep/interleave properly
     bool enable_multistep = true;               // allow chaining multiple coarsening steps
-    bool enable_dyn_crs = true;                 // enable dynamic coarsening ratios
+    bool use_static_crs = true;                 // use static coarsening ratio
     double aaf = 0.1;                           // (static crs ratio) chain edge-collapse maps until mesh is decreased by factor aaf
     double first_aaf = 0.05;                    // (static crs ratio) (smaller) factor for first level. -1 for dont use
     double aaf_scale = 1;                       // (static crs ratio) scale aaf, e.g if 2:   first_aaf, aaf, 2*aaf, 4*aaf, .. (or aaf, 2*aaf, ...)
+    bool enable_dyn_crs = true;                 // use dynamic coarsening ratios
 
     /** Contract (Re-Distribute) **/
     bool enable_redist = true;                  // allow re-distributing on coarse levels
@@ -125,6 +127,7 @@ namespace amg
     shared_ptr<TopologicMesh> curr_mesh;
     shared_ptr<ParallelDofs> curr_pds;
     /** built maps **/
+    shared_ptr<BaseDOFMapStep> dof_map;
     shared_ptr<BaseDiscardMap> disc_map;
     shared_ptr<BaseCoarseMap> crs_map;
     shared_ptr<BitArray> free_nodes;
@@ -151,7 +154,9 @@ namespace amg
     shared_ptr<ParallelDofs> pardofs = nullptr;
     shared_ptr<BaseSparseMatrix> mat = nullptr;
     shared_ptr<BaseDOFMapStep> embed_map = nullptr; // embedding
-    shared_ptr<BaseGridMapStep> grid_map = nullptr; // map to next level
+    // map to next level: embed -> disc -> crs (-> ctr)
+    shared_ptr<BaseDiscardMap> disc_map = nullptr;
+    shared_ptr<BaseCoarseMap> crs_map = nullptr;
     shared_ptr<BitArray> free_nodes = nullptr;
   }; // BaseAMGFactory::AMGLevel
 
@@ -362,7 +367,7 @@ namespace amg
 
     auto state = NewState(amg_levels[0]);
 
-    RSU(amg_levels, *state, dof_map);
+    RSU(amg_levels, dof_map, *state);
 
     if (options->print_log)
       { logger->PrintLog(cout); }
@@ -384,7 +389,7 @@ namespace amg
 
     logger->LogLevel (f_lev);
 
-    shared_ptr<BaseDOFMapStep> step = DoStep(f_lev, state, c_lev);
+    shared_ptr<BaseDOFMapStep> step = DoStep(f_lev, c_lev, state);
 
     if ( (step == nullptr) || (c_lev.mesh == f_lev.mesh) || (c_lev.mat == f_lev.mat) )
       { return; } // step not performed correctly - coarsening is probably stuck
@@ -413,7 +418,7 @@ namespace amg
   } // BaseAMGFactory::RSU
 
 
-  shared_ptr<BaseDOFMapStep> BaseAMGFactory :: DoStep (const AMGLevel & f_lev, AMGLevel & c_lev, State & state)
+  shared_ptr<BaseDOFMapStep> BaseAMGFactory :: DoStep (AMGLevel & f_lev, AMGLevel & c_lev, State & state)
   {
     const auto & O(*options);
 
@@ -422,19 +427,19 @@ namespace amg
     if (f_lev.level == 0)
       { state.last_redist_meas = curr_meas; }
 
-    shared_ptr<BaseDOFMapStep> embed_step = move(f_lev.emb_step), disc_step;
+    shared_ptr<BaseDOFMapStep> embed_step = move(f_lev.embed_map), disc_step;
 
-    CalcCoarsenOpts(state);
+    // CalcCoarsenOpts(state); // TODO: proper update of coarse cols for ecol?
 
-    if ( O.enable_disc && (f_lev.level != 0) ) {
+    if ( O.enable_redist && (f_lev.level != 0) ) {
       if ( TryDiscardStep(state) ) {
-	disc_step = move(state.dof_step);
+	disc_step = move(state.dof_map);
 	curr_meas = ComputeMeshMeasure(*state.curr_mesh);
       }
     }
 
     if (O.keep_grid_maps)
-      { f_lev.disc_map = disc_step; }
+      { f_lev.disc_map = state.disc_map; }
 
     shared_ptr<BaseDOFMapStep> prol_map, rd_map;
     { /** Coarse/Redist maps - constructed interleaved, but come out untangled. **/
@@ -448,7 +453,7 @@ namespace amg
 	cm_chunks.SetSize0();
 	auto sp_fm = state.curr_mesh;
 	auto comm = static_cast<BlockTM&>(*sp_fm).GetEQCHierarchy()->GetCommunicator();
-	could_recover = ( O.enable_redist && (comm.Size() > 2) && (state.level[2] == 0) );
+	bool could_recover = ( O.enable_redist && (comm.Size() > 2) && (state.level[2] == 0) );
 	bool crs_stuck = false;
 	do { /** coarsen until stuck or goal reached **/
 	  auto fm = state.curr_mesh;
@@ -462,22 +467,24 @@ namespace amg
 	      // last step was closer than current step - reset to last step
 	      state.curr_mesh = fm;
 	      state.curr_pds = fpds;
-	      state.grid_map = nullptr;
-	      state.dpf_map = nullptr;
+	      state.crs_map = nullptr;
+	      state.disc_map = nullptr;
+	      state.dof_map = nullptr;
 	      goal_reached = true;
 	    }
+	    else
+	      { curr_meas = c_meas; }
 	    if ( (!goal_reached) && could_recover)
 	      { crs_stuck |= meas_fac > O.rd_crs_thresh; }  // bad coarsening - try to recover via redist
-	    curr_meas = c_meas;
-	    auto gm = move(state.grid_map);
-	    auto cm = dynamic_pointer_cast<BaseCoarseMap>(gm);
+	    auto cm = move(state.crs_map);
+	    auto gm = dynamic_pointer_cast<BaseGridMapStep>(cm);
 	    if (cm == nullptr)
-	      { throw Exception("Not a coarse map??"); }
+	      { throw Exception("Not a BGM??"); }
 	    cm_chunks.Append(cm);
 	  }
 	  else // coarsening failed completely
 	    { crs_stuck = true; }
-	} while ( (!crs_stuck) && (!goal_reached) )
+	} while ( (!crs_stuck) && (!goal_reached) );
 
 	/** concatenate coarse map chunks **/
 	shared_ptr<BaseCoarseMap> c_step = nullptr;
@@ -518,7 +525,8 @@ namespace amg
 	  { could_recover = false; }
       } while ( (could_recover) && (curr_meas > goal_meas) );
 
-      /** If not forced to before, smooth prol here **/
+      /** If not forced to before, smooth prol here.
+	  TODO: check if other version would be possible here (that one should be better anyways!)  **/
       if ( (O.enable_sp) && (!O.sp_needs_meshes) && (prol_map != nullptr) )
 	{ prol_map = SmoothedProlMap(prol_map, fm); }
 
@@ -782,6 +790,47 @@ namespace amg
     auto pds = make_shared<ParallelDofs> (eqc_h.GetCommunicator(), move(tab) /* cdps.MoveTable() */, BS, false);
     return pds;
   } // NodalAMGFactory::BuildParallelDofs
+
+
+  template<NODE_TYPE NT, int BS, class TMESH>
+  size_t NodalAMGFactory<NT, BS, TMESH> :: ComputeGoal (const AMGLevel & f_lev, State & state)
+  {
+    auto &O(*options);
+
+    // TODO: we have to respect enable_multistep/interleave here
+
+    auto curr_meas = ComputeMeshMeasure(*fmesh);
+
+    size_t goal_meas = (curr_meas == 0) ? 0 : 1;
+
+    auto fmesh = f_lev.mesh;
+
+    /** static coarsening ratio **/
+    if (O.enable_static_crs) {
+      double af = ( (f_lev.level == 0) && (O.first_aaf != -1) ) ?
+	O.first_aaf : ( pow(O.aaf_scale, f_cap.level - ( (O.first_aaf == -1) ? 0 : 1) ) * O.aaf );
+      goal_meas = max( size_t(min(af, 0.9) * curr_meas), max(O.max_meas, size_t(1)));
+    }
+
+    // dynamic coarsening ratio has to be handled by derived classes
+    // TODO: There should also be a ComputeGoal in VertexAMGFactory which can take advantage of this!
+    /** We want to find the right agglomerate size, as a heutristic take 1/(1+avg number of strong neighbours) **/
+    // size_t curr_ne = fmesh->template GetNNGlobal<NT_EDGE>();
+    // size_t curr_nv = fmesh->template GetNNGlobal<NT_VERTEX>();
+    // double edge_per_v = 2 * double(curr_ne) / double(curr_nv);
+    // if (O.enable_dyn_aaf) {
+    //   const double MIN_ECW = coarsen_opts->min_ecw;
+    //   const auto& ecw = coarsen_opts->ecw;
+    //   size_t n_s_e = 0;
+    //   cmesh->template Apply<NT_EDGE>([&](const auto & e) { if (ecw[e.id] > MIN_ECW) { n_s_e++; } }, true);
+    //   n_s_e = cmesh->GetEQCHierarchy()->GetCommunicator().AllReduce(n_s_e, MPI_SUM);
+    //   double s_e_per_v = 2 * double(n_s_e) / double(cmesh->template GetNNGlobal<NT_VERTEX>());
+    //   double dynamic_goal_fac = 1.0 / ( 1 + s_e_per_v );
+    //   goal_meas = max( size_t(min2(0.5, dynamic_goal_fac) * curr_meas), max(O.max_meas, size_t(1)));
+    // } // dyn_aaf
+
+    return goal_meas;
+  } // NodalAMGFactory::ComputeGoal
 
 
   template<NODE_TYPE NT, int BS, class TMESH>

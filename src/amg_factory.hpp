@@ -26,11 +26,13 @@ namespace amg
 
   protected:
 
-    void RSU (Array<AMGLevel> & amg_levels, shared_ptr<DOFMap> dof_map, State & state);
+    void RSU (Array<AMGLevel> & amg_levels, shared_ptr<DOFMap> & dof_map, State & state);
 
     static void SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix = "ngs_amg_");
 
     virtual shared_ptr<ParallelDofs> BuildParallelDofs (shared_ptr<TopologicMesh> amesh) const = 0;
+
+    virtual shared_ptr<BaseDOFMapStep> DoStep (AMGLevel & f_lev, AMGLevel & c_lev, State & state);
 
     /** Used for controlling coarse levels and deciding on redistributing **/
     virtual size_t ComputeMeshMeasure (const TopologicMesh & m) const = 0;
@@ -44,6 +46,7 @@ namespace amg
     virtual bool TryDiscardStep (State & state) = 0;
 
     /** Coarse **/
+    virtual size_t ComputeGoal (const AMGLevel & f_lev, State & state) = 0;
     virtual bool TryCoarseStep (State & state) = 0;
     virtual shared_ptr<BaseCoarseMap> BuildCoarseMap (State & state) = 0;
     virtual shared_ptr<BaseDOFMapStep> PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<ParallelDofs> fpds, shared_ptr<ParallelDofs> cpds) = 0;
@@ -79,6 +82,8 @@ namespace amg
     virtual double ComputeLocFrac (const TopologicMesh & m) const override;
 
     virtual shared_ptr<ParallelDofs> BuildParallelDofs (shared_ptr<TopologicMesh> amesh) const override;
+
+    virtual size_t ComputeGoal (const AMGLevel & f_lev, State & state) override;
 
     virtual shared_ptr<BaseGridMapStep> BuildContractMap (double factor, shared_ptr<TopologicMesh> mesh) const override;
     virtual shared_ptr<BaseDOFMapStep> BuildDOFContractMap (shared_ptr<BaseGridMapStep> cmap, shared_ptr<ParallelDofs> fpd) const override;

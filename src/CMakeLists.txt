@@ -5,8 +5,8 @@ cmake_minimum_required(VERSION 3.8)
 # amg_agg_*.*pp compile a long time, so start with those
 add_ngsolve_python_module(ngs_amg SHARED
   amg_agg_h1scal.cpp amg_agg_el2d.cpp amg_agg_el3d.cpp
-  eqchierarchy.cpp amg_mesh.cpp
-  amg_coarsen.cpp amg_h1.cpp python_amg.cpp
+  eqchierarchy.cpp amg_mesh.cpp amg_coarsen.cpp
+  amg_h1_dim1.cpp python_amg.cpp
   amg_spmstuff.cpp amg_map.cpp amg_smoother.cpp
   amg_matrix.cpp amg_contract.cpp amg_elast.cpp
   boomer.cpp amg_smoother2.cpp amg_smoother3.cpp
