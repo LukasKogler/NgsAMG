@@ -6,7 +6,7 @@ namespace amg
 
   template<class FACTORY, class HTVD, class HTED>
   void ElmatVAMG<FACTORY, HTVD, HTED> :: AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
-										     ElementId ei, LocalHeap & lh)
+							   ElementId ei, LocalHeap & lh)
   {
     typedef BaseEmbedAMGOptions BAO;
     const auto &O(*options);

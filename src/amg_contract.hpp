@@ -75,7 +75,7 @@ namespace amg
   
 
   template<class TMESH>
-  class GridContractMap : public GridMapStep<TMESH>
+  class GridContractMap : public BaseGridMapStep
   {
     static_assert(std::is_base_of<BlockTM, TMESH>::value, "GridContractMap can only be constructed for Meshes that inherit from BlockTM!");
   public:
@@ -94,7 +94,7 @@ namespace amg
     template<NODE_TYPE NT> INLINE size_t GetMappedNN () const { return (is_gm) ? mapped_NN[NT] : 0; }
     
   protected:
-    using GridMapStep<TMESH>::mesh, GridMapStep<TMESH>::mapped_mesh;
+    using BaseGridMapStep::mesh, BaseGridMapStep::mapped_mesh;
     
     shared_ptr<EQCHierarchy> eqc_h = nullptr;
     shared_ptr<EQCHierarchy> c_eqc_h = nullptr;

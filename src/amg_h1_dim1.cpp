@@ -7,22 +7,26 @@
 #include "amg_factory_impl.hpp"
 #include "amg_factory_vertex.hpp"
 #include "amg_factory_vertex_impl.hpp"
+#include "amg_pc.hpp"
+#include "amg_pc_impl.hpp"
+#include "amg_pc_vertex.hpp"
+#include "amg_pc_vertex_impl.hpp"
 #include "amg_h1.hpp"
 #include "amg_h1_impl.hpp"
 
 namespace amg
 {
 
-  extern template class Agglomerator<H1AMGFactory>;
+  // extern template class Agglomerator<H1AMGFactory>;
 
-  // template class H1AMGFactory<1>;
+  template class H1AMGFactory<1>;
 
   // using PCC = VertexAMGPC<H1AMGFactory<1>>;
-  using PCC = ElmatVAMG<H1AMGFactory<1>, double, double>;
+  // using PCC = ElmatVAMG<H1AMGFactory<1>, double, double>;
 
-  template class PCC;
+  // template class PCC;
 
-  RegisterPreconditioner<PCC> register_h1amg_1d ("ngs_amg.h1_scal");
+  // RegisterPreconditioner<PCC> register_h1amg_1d ("ngs_amg.h1_scal");
 
 } // namespace amg
 

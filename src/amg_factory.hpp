@@ -63,7 +63,7 @@ namespace amg
 
 
   /** BS DOFs per node of type NT **/
-  template<NODE_TYPE ANT, int ABS, class ATMESH>
+  template<NODE_TYPE ANT, class ATMESH, int ABS>
   class NodalAMGFactory : public BaseAMGFactory
   {
   public:

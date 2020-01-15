@@ -11,8 +11,8 @@ namespace amg
     size_t dropped_NN[4];
   public:
 
-    BaseDiscardMap ()
-      : BaseCoarseMap()
+    BaseDiscardMap (shared_ptr<TopologicMesh> mesh, shared_ptr<TopologicMesh> mapped_mesh = nullptr)
+      : BaseCoarseMap(mesh, mapped_mesh)
     {
       for (auto k : Range(4)) {
 	dropped_NN[k] = 0;
@@ -30,13 +30,13 @@ namespace amg
 
   }; // class BaseDiscardMap
 
+
   template<class TMESH>
-  class VDiscardMap : public BaseDiscardMap,
-		      public GridMapStep<TMESH>
+  class VDiscardMap : public BaseDiscardMap
   {
   protected:
     size_t max_bs;
-    using GridMapStep<TMESH>::mesh, GridMapStep<TMESH>::mapped_mesh;
+    using BaseGridMapStep::mesh, BaseGridMapStep::mapped_mesh;
     using BaseCoarseMap::NN, BaseCoarseMap::mapped_NN;
 
     shared_ptr<Table<size_t>> vertex_blocks;

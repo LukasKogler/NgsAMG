@@ -15,6 +15,8 @@ namespace amg
     static constexpr int DPV = DIM;
     typedef typename strip_mat<Mat<DIM,DIM,double>>::type TM;
 
+    static INLINE double GetApproxWeight (const TED & ed) { return ed; }
+
     static INLINE void CalcQ  (const Vec<3> & t, TM & Q);
     static INLINE void ModQ  (const Vec<3> & t, TM & Q);
     static INLINE void CalcQij (const TVD & di, const TVD & dj, TM & Qij);

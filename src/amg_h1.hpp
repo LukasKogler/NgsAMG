@@ -33,8 +33,8 @@ namespace amg
 
   using H1Mesh = BlockAlgMesh<H1VData, H1EData>;
 
-  // template<int ADIM>
-  class H1AMGFactory : public VertexAMGFactory<H1AMGFactory, H1Mesh, H1Energy<1>::DPV>
+  template<int ADIM>
+  class H1AMGFactory<ADIM> : public VertexAMGFactory<H1AMGFactory<ADIM>, H1Mesh, H1Energy<ADIM>::DPV>
   {
   public:
     using BASE = VBasedAMGFactory<H1Factory>;

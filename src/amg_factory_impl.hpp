@@ -7,10 +7,9 @@ namespace amg
 
   class BaseAMGFactory :: Options
   {
-  protected:
+  public:
     string prefix = "ngs_amg_";                 // prefix for flags
 
-  public:
     /** General Level-Control **/
     size_t max_n_levels = 10;                   // maximun number of multigrid levels (counts first level, so at least 2)
     size_t max_meas = 50;                       // maximal maesure of coarsest mesh
@@ -132,8 +131,9 @@ namespace amg
     shared_ptr<BaseCoarseMap> crs_map;
     shared_ptr<BitArray> free_nodes;
     /** book-keeping **/
-    bool first_redist_used;
-    size_t last_redist_meas;
+    bool first_redist_used = false;
+    size_t last_redist_meas = 0;
+    bool need_rd = false;
   }; // BaseAMGFactory::State
 
 
@@ -455,11 +455,14 @@ namespace amg
       Array<shared_ptr<BaseDOFMapStep>> dof_maps;
       Array<int> prol_inds;
       shared_ptr<BaseCoarseMap> first_cmap;
+      Array<shared_ptr<BaseDOFMapStep>> rd_chunks;
 
+      bool could_recover = O.enable_redist;
+	
       do { /** coarsen until goal reached or stuck **/
 	cm_chunks.SetSize0();
-	auto comm = static_cast<BlockTM&>(*).GetEQCHierarchy()->GetCommunicator();
-	bool could_recover = ( O.enable_redist && (comm.Size() > 2) && (state.level[2] == 0) );
+	auto comm = static_cast<BlockTM&>(*state.curr_mesh).GetEQCHierarchy()->GetCommunicator();
+	could_recover = ( O.enable_redist && (comm.Size() > 2) && (state.level[2] == 0) );
 	bool crs_stuck = false, rded_out = false;
 	auto cm_fpds = state.curr_pds;
 	do { /** coarsen until stuck or goal reached **/
@@ -493,6 +496,8 @@ namespace amg
 	    { crs_stuck = true; }
 	} while ( (!crs_stuck) && (!goal_reached) );
 
+	state.need_rd = crs_stuck;
+
 	/** concatenate coarse map chunks **/
 	shared_ptr<BaseCoarseMap> c_step = nullptr;
 	if ( cm_chunks.Size() )
@@ -508,9 +513,9 @@ namespace amg
 	  shared_ptr<BaseDOFMapStep> pmap = PWProlMap(c_step, cm_fpds, state.curr_pds);
 
 	  /** Save the first coarse-map - we might be able to use it later to get a slightly better smoothed prol! **/
-	  if (first_cm == nullptr) {
+	  if (first_cmap == nullptr) {
 	    first_cmap = c_step;
-	    prol_inds.Append(dmaps.Size());
+	    prol_inds.Append(dof_maps.Size());
 	    mesh1 = first_cmap->GetMesh(); mesh_meas[1] = ComputeMeshMeasure(*mesh1);
 	    mesh2 = first_cmap->GetMappedMesh(); mesh_meas[2] = ComputeMeshMeasure(*mesh2);
 	  }
@@ -523,7 +528,7 @@ namespace amg
 	if (O.enable_redist && (state.level[2] == 0) ) {
 	  if ( TryContractStep(state) ) { // redist successfull
 	    state.level[2]++; // count up redist
-	    dof_maps.Append(move(state.dof_step));
+	    dof_maps.Append(move(state.dof_map));
 	    if (state.curr_mesh == nullptr)
 	      { rded_out = true; break; }
 	    mesh3 = state.curr_mesh; mesh_meas[3] = ComputeMeshMeasure(*mesh3);
@@ -539,6 +544,7 @@ namespace amg
 	  or if it is preferrable to smoothing the concatenated prol with only fine mesh. **/
       bool sp_done = false;
       if ( O.enable_sp ) {
+	auto comm = mesh1->GetEQCHierarchy()->GetCommunicator();
 	comm.AllReduce(mesh_meas, MPI_MAX);
 	double frac21 = (mesh_meas[1] == 0) ? 0.0 : double(mesh_meas[2]) / mesh_meas[1];
 	double frac32 = (mesh_meas[2] == 0) ? 0.0 : double(mesh_meas[3]) / mesh_meas[2];
@@ -548,7 +554,7 @@ namespace amg
 	  sp_done = true;
 	  if (prol_inds.Size() > 0) { // might be rded out!
 	    auto pmap = dof_maps[prol_inds[0]];
-	    dof_maps[prol_inds[0]] = SmoothProlMap(pmap, first_cmap);
+	    dof_maps[prol_inds[0]] = SmoothedProlMap(pmap, first_cmap);
 	    first_cmap = nullptr; // no need for this anymore
 	  }
 	}
@@ -558,9 +564,8 @@ namespace amg
       int do_last_pb = 0;
       if ( ( (prol_inds.Size()>0) && (prol_inds.Last() != dof_maps.Size()-1) ) ||
 	   ( (prol_inds.Size() == 0) && (dof_maps.Size() > 0) ) ) { // last map is redist
-	if (dof_maps.Last()->GetParDofs()->GetCommunicator().AllReduce(do_last_pb, MPI_MAX)) { // cannot use mapped pardofs!
-	  dof_maps->PullBack(nullptr);
-	}
+	if (dof_maps.Last()->GetParDofs()->GetCommunicator().AllReduce(do_last_pb, MPI_MAX)) // cannot use mapped pardofs!
+	  { dof_maps.Last()->PullBack(nullptr); }
       }
 
       bool first_rd = false;
@@ -569,17 +574,17 @@ namespace amg
 	  if (prol_map == nullptr)
 	    { prol_map = dof_maps[map_ind]; }
 	  else
-	    { prol_map = dof_map[map_ind]->Concatenate(prol_map); }
+	    { prol_map = dof_maps[map_ind]->Concatenate(prol_map); }
 	  pii--;
 	}
-	else { // rd map !
+	else { // rd map
 	  if (first_rd) {
 	    do_last_pb = prol_map != nullptr;
 	    auto comm = dof_maps[map_ind]->GetParDofs()->GetCommunicator(); // cannot use mapped pardofs!
 	    comm.AllReduce(do_last_pb, MPI_MAX);
 	  }
 	  if (prol_map != nullptr)
-	    { prol_map = dof_map[map_ind]->PullBack(prol_map); }
+	    { prol_map = dof_maps[map_ind]->PullBack(prol_map); }
 	}
       }
 
@@ -635,8 +640,10 @@ namespace amg
 
   bool BaseAMGFactory :: TryCoarseStep (State & state)
   {
+    auto & O(*options);
+
     /** build coarse map **/
-    shared_ptr<BaseGridMapStep> cmap = BuildCoarseMap(state);
+    shared_ptr<BaseCoarseMap> cmap = BuildCoarseMap(state);
 
     if (cmap == nullptr) // could not build map
       { return false; }
@@ -645,12 +652,12 @@ namespace amg
     bool accept_crs = true;
 
     auto cmesh = cmap->GetMappedMesh();
-    auto comm = state.curr_mesh
+    auto comm = state.curr_mesh;
 
-    size_t f_meas = ComputeMeshMeasure(*state.mesh), c_meas = ComputeMeshMeasure(*cmesh);
-    double cfac = (f_meas == 0) ? 0 : c_meas / f_meas;
+    size_t f_meas = ComputeMeshMeasure(*state.curr_mesh), c_meas = ComputeMeshMeasure(*cmesh);
+    double cfac = (f_meas == 0) ? 0 : double(c_meas) / f_meas;
 
-    bool map_op = true;
+    bool map_ok = true;
 
     map_ok &= ( c_meas < f_meas ); // coarsening is stuck
 
@@ -660,9 +667,9 @@ namespace amg
     if (!map_ok)
       { return false; }
 
-    state.curr_mesh = cmesh;
-    state.curr_pds = BuildParallelDofs(*cmesh);
-    state.grid_map = cmap;
+    state.curr_mesh = cmap->GetMappedMesh();
+    state.curr_pds = BuildParallelDofs(state.curr_mesh);
+    state.crs_map = cmap;
 
     return true;
   } // BaseAMGFactory::TryCoarseStep
@@ -718,7 +725,7 @@ namespace amg
   } // BaseAMGFactory::FindRDFac
 
 
-  bool BaseAMGFactory :: TryContractStep (State & state, bool need_rd)
+  bool BaseAMGFactory :: TryContractStep (State & state)
   {
     static Timer t("TryContractStep");
     RegionTimer rt(t);
@@ -730,10 +737,10 @@ namespace amg
     double meas = ComputeMeshMeasure(M);
 
     /** cannot redistribute if when is turned off or when we are already basically sequential **/
-    if ( (!O.enable_rd) || (comm.Size() <= 2) )
+    if ( (!O.enable_redist) || (comm.Size() <= 2) )
       { return false; }
 
-    bool want_redist = need_rd; // probably coarsening is slowing
+    bool want_redist = state.need_rd; // probably coarsening is slowing
 
     if (!want_redist) { // check if mesh is becoming too non-local
       double loc_frac = ComputeLocFrac(M);
@@ -745,7 +752,7 @@ namespace amg
     }
   
     if ( (!want_redist) && (O.enable_static_redist) ) { // check for static threshhold 
-      double af = ( (!state.first_rd_used) && (O.first_rdaf != -1) ) ?
+      double af = ( (!state.first_redist_used) && (O.first_rdaf != -1) ) ?
 	O.first_rdaf : ( pow(O.rdaf_scale, state.level[0] - ( (O.first_rdaf == -1) ? 0 : 1) ) * O.rdaf );
       size_t goal_meas = max( size_t(min(af, 0.9) * state.last_redist_meas), max(O.rd_seq_nv, size_t(1)));
       want_redist |= (meas < goal_meas);
@@ -761,11 +768,11 @@ namespace amg
     if (state.free_nodes != nullptr)
       { throw Exception("free-node redist update todo"); /** do sth here..**/ }
 
-    state.grid_step = rd_map;
     state.first_redist_used = true;
     state.last_redist_meas = meas;
     state.curr_mesh = rd_map->GetMappedMesh();
-    state.dof_step = BuildDOFContractMap(rd_map, state.curr_pds);
+    state.dof_map = BuildDOFContractMap(rd_map, state.curr_pds);
+    state.need_rd = false;
 
     return true;
   } // BaseAMGFactory::TryContractStep
@@ -776,9 +783,10 @@ namespace amg
     auto s = AllocState();
     InitState(*s, lev);
     return s;
-  }
+  } // BaseAMGFactory::NewState
 
-  void BaseAMGFactory :: InitState (BaseAMGFactory::State& state, AMGLevel & lev)
+
+  void BaseAMGFactory :: InitState (BaseAMGFactory::State& state, AMGLevel & lev) const
   {
     state.level = { 0, 0, 0 };
 
@@ -787,16 +795,17 @@ namespace amg
 
     state.disc_map = nullptr;
     state.crs_map = nullptr;
-    state.free_ndoes = lev.free_nodes;
+    state.free_nodes = lev.free_nodes;
 
     state.first_redist_used = false;
     state.last_redist_meas = ComputeMeshMeasure(*lev.mesh);
-  }
+  } // BaseAMGFactory::InitState
+
 
   void BaseAMGFactory :: SetOptionsFromFlags (BaseAMGFactory::Options& opts, const Flags & flags, string prefix)
   {
-    options->prefix = prefix;
-    options->SetFromFlags(flags);
+    opts.prefix = prefix;
+    opts.SetFromFlags(flags);
   } // BaseAMGFactory::SetOptionsFromFlags
 
   /** END BaseAMGFactory **/
@@ -804,72 +813,90 @@ namespace amg
 
   /** NodalAMGFactory **/
 
-  template<NODE_TYPE NT, int BS, class TMESH>
-  NodalAMGFactory<NT, BS, TMESH> :: NodalAMGFactory (shared_ptr<Options> _opts)
+  template<NODE_TYPE NT, class TMESH, int BS>
+  NodalAMGFactory<NT, TMESH, BS> :: NodalAMGFactory (shared_ptr<Options> _opts)
     : BaseAMGFactory(_opts)
-  { ; }
+  {
+    ;
+  } // NodalAMGFactory(..)
 
 
-  template<NODE_TYPE NT, int BS, class TMESH>
-  size_t NodalAMGFactory<NT, BS, TMESH> :: ComputeMeshMeasure (const TopologicMesh & m) const
+  template<NODE_TYPE NT, class TMESH, int BS>
+  size_t NodalAMGFactory<NT, TMESH, BS> :: ComputeMeshMeasure (const TopologicMesh & m) const
   {
     return m.template GetNNGlobal<NT>();
   } // NodalAMGFactory::ComputeMeshMeasure
 
 
-  template<NODE_TYPE NT, int BS, class TMESH>
-  double NodalAMGFactory<NT, BS, TMESH> :: ComputeLocFrac (const TopologicMesh & m) const
+  template<NODE_TYPE NT, class TMESH, int BS>
+  double NodalAMGFactory<NT, TMESH, BS> :: ComputeLocFrac (const TopologicMesh & am) const
   {
-    auto nng = m.template GetNNGlobal<NT_VERTEX>();
-    size_t nnloc = (m.GetEQCHierarchy()->GetNEQCS() > 1) ? m.template GetENN<NT_VERTEX>(0) : 0;
-    auto nnlocg = m.GetEQCHierarchy()->GetCommunicator().AllReduce(nnloc, MPI_SUM);
-    return double(nnlocg) / nng;
+    auto btm_ptr = dynamic_cast<BlockTM*>(&am);
+    if (btm_ptr == nullptr)
+      { return 1.0; }
+    else {
+      auto & m (*btm_ptr);
+      auto nng = m.template GetNNGlobal<NT_VERTEX>();
+      size_t nnloc = (m.GetEQCHierarchy()->GetNEQCS() > 1) ? m.template GetENN<NT_VERTEX>(0) : 0;
+      auto nnlocg = m.GetEQCHierarchy()->GetCommunicator().AllReduce(nnloc, MPI_SUM);
+      return double(nnlocg) / nng;
+    }
   } // NodalAMGFactory::ComputeLocFrac
 
 
-  template<NODE_TYPE NT, int BS, class TMESH>
-  shared_ptr<ParallelDofs> NodalAMGFactory<NT, BS, TMESH> :: BuildParallelDofs (shared_ptr<TopologicMesh> amesh) const
+  template<NODE_TYPE NT, class TMESH, int BS>
+  shared_ptr<ParallelDofs> NodalAMGFactory<NT, TMESH, BS> :: BuildParallelDofs (shared_ptr<TopologicMesh> amesh) const
   {
-    const auto & mesh = *amesh;
-    const auto & eqc_h = *mesh.GetEQCHierarchy();
-    size_t neqcs = eqc_h.GetNEQCS();
-    size_t ndof = mesh.template GetNN<NT>();
-    TableCreator<int> cdps(ndof);
-    for (; !cdps.Done(); cdps++) {
-      for (auto eq : Range(neqcs)) {
-	auto dps = eqc_h.GetDistantProcs(eq);
-	auto verts = mesh.template GetENodes<NT>(eq);
-	for (auto vnr : verts) {
-	  for (auto p:dps) cdps.Add(vnr, p);
+    BlockTM* btm_ptr = dynamic_pointer_cast<BlockTM*>(amesh);
+    if (btm_ptr == nullptr) {
+      throw Exception("TODO: dummy pardofs here!");
+      return nullptr;
+    }
+    else {
+      const auto & mesh = *btm_ptr;
+      const auto & eqc_h = *mesh.GetEQCHierarchy();
+      size_t neqcs = eqc_h.GetNEQCS();
+      size_t ndof = mesh.template GetNN<NT>();
+      TableCreator<int> cdps(ndof);
+      for (; !cdps.Done(); cdps++) {
+	for (auto eq : Range(neqcs)) {
+	  auto dps = eqc_h.GetDistantProcs(eq);
+	  auto verts = mesh.template GetENodes<NT>(eq);
+	  for (auto vnr : verts) {
+	    for (auto p : dps) cdps.Add(vnr, p);
+	  }
 	}
       }
+      auto tab = cdps.MoveTable();
+      auto pds = make_shared<ParallelDofs> (eqc_h.GetCommunicator(), move(tab) /* cdps.MoveTable() */, BS, false);
+      return pds;
     }
-    auto tab = cdps.MoveTable();
-    auto pds = make_shared<ParallelDofs> (eqc_h.GetCommunicator(), move(tab) /* cdps.MoveTable() */, BS, false);
-    return pds;
   } // NodalAMGFactory::BuildParallelDofs
 
 
-  template<NODE_TYPE NT, int BS, class TMESH>
-  size_t NodalAMGFactory<NT, BS, TMESH> :: ComputeGoal (const AMGLevel & f_lev, State & state)
+  template<NODE_TYPE NT, class TMESH, int BS>
+  size_t NodalAMGFactory<NT, TMESH, BS> :: ComputeGoal (const AMGLevel & f_lev, State & state)
   {
     auto &O(*options);
 
     // TODO: we have to respect enable_multistep/interleave here
 
+    auto fmesh = f_lev.mesh;
+
     auto curr_meas = ComputeMeshMeasure(*fmesh);
 
     size_t goal_meas = (curr_meas == 0) ? 0 : 1;
 
-    auto fmesh = f_lev.mesh;
-
     /** static coarsening ratio **/
-    if (O.enable_static_crs) {
+    if (O.use_static_crs) {
       double af = ( (f_lev.level == 0) && (O.first_aaf != -1) ) ?
-	O.first_aaf : ( pow(O.aaf_scale, f_cap.level - ( (O.first_aaf == -1) ? 0 : 1) ) * O.aaf );
+	O.first_aaf : ( pow(O.aaf_scale, f_lev.level - ( (O.first_aaf == -1) ? 0 : 1) ) * O.aaf );
       goal_meas = max( size_t(min(af, 0.9) * curr_meas), max(O.max_meas, size_t(1)));
     }
 
+    /** dynamic coarsening ratio **/
+    // if (O.use_dyn_crs) {
+    // }
     // dynamic coarsening ratio has to be handled by derived classes
     // TODO: There should also be a ComputeGoal in VertexAMGFactory which can take advantage of this!
     /** We want to find the right agglomerate size, as a heutristic take 1/(1+avg number of strong neighbours) **/
@@ -891,35 +918,35 @@ namespace amg
   } // NodalAMGFactory::ComputeGoal
 
 
-  template<NODE_TYPE NT, int BS, class TMESH>
-  shared_ptr<BaseGridMapStep> NodalAMGFactory<NT, BS, TMESH> :: BuildContractMap (double factor, shared_ptr<TopologicMesh> mesh) const
+  template<NODE_TYPE NT, class TMESH, int BS>
+  shared_ptr<BaseGridMapStep> NodalAMGFactory<NT, TMESH, BS> :: BuildContractMap (double factor, shared_ptr<TopologicMesh> mesh) const
   {
     static Timer t("BuildContractMap"); RegionTimer rt(t);
 
     if (mesh == nullptr)
       { throw Exception("BuildContractMap needs a mesh!"); }
     auto m = dynamic_pointer_cast<TMESH>(mesh);
-    if (m = nullptr)
+    if (m == nullptr)
       { throw Exception(string("Invalid mesh type ") + typeid(*mesh).name() + string(" for BuildContractMap")); }
 
     // at least 2 groups - dont send everything from 1 to 0 for no reason
     int n_groups = (factor == -1) ? 2 : max2(int(2), int(1 + std::round( (mesh->GetEQCHierarchy()->GetCommunicator().Size()-1) * factor)));
-    Table<int> groups = PartitionProcsMETIS (*mesh, n_groups);
+    Table<int> groups = PartitionProcsMETIS (*m, n_groups);
 
-    return make_shared<GridContractMap<TMESH>>(move(groups), mesh);
+    return make_shared<GridContractMap<TMESH>>(move(groups), m);
   } // NodalAMGFactory::BuildContractMap
 
 
-  template<NODE_TYPE NT, int BS, class TMESH>
-  shared_ptr<BaseDOFMapStep> NodalAMGFactory<NT, BS, TMESH> :: BuildDOFContractMap (shared_ptr<BaseGridMapStep> cmap, shared_ptr<ParallelDofs> fpd) const
+  template<NODE_TYPE NT, class TMESH, int BS>
+  shared_ptr<BaseDOFMapStep> NodalAMGFactory<NT, TMESH, BS> :: BuildDOFContractMap (shared_ptr<BaseGridMapStep> cmap, shared_ptr<ParallelDofs> fpd) const
   {
     static Timer t("BuildDOFContractMap"); RegionTimer rt(t);
 
     if (cmap == nullptr)
       { throw Exception("BuildDOFContractMap needs a mesh!"); }
-    auto cm = dynamic_pointer_cast<GridContractMap<TMESH>>(mesh);
-    if (cm = nullptr)
-      { throw Exception(string("Invalid map type ") + typeid(*mesh).name() + string(" for BuildContractMap")); }
+    auto cm = dynamic_pointer_cast<GridContractMap<TMESH>>(cmap);
+    if (cm == nullptr)
+      { throw Exception(string("Invalid map type ") + typeid(*cmap).name() + string(" for BuildContractMap")); }
 
     auto fg = cm->GetGroup();
     Array<int> group(fg.Size()); group = fg;

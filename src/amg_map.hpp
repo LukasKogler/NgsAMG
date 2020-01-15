@@ -10,13 +10,13 @@ namespace amg {
   protected:
     shared_ptr<TopologicMesh> mesh, mapped_mesh;
   public:
-    BaseGridMapStep (shared_ptr<TopologicMesh> mesh, shared_ptr<TopologicMesh> _mapped_mesh = nullptr)
+    BaseGridMapStep (shared_ptr<TopologicMesh> _mesh, shared_ptr<TopologicMesh> _mapped_mesh = nullptr)
       : mesh(_mesh), mapped_mesh(_mapped_mesh)
     { ; }
     virtual ~ BaseGridMapStep () { ; }
-    shared_ptr<TopologicMesh> GetMesh () const { return mesh; }
-    shared_ptr<TopologicMesh> GetMappedMesh () const { return mapped_mesh; }
-    virtual void CleanupMeshes () const
+    virtual shared_ptr<TopologicMesh> GetMesh () const { return mesh; }
+    virtual shared_ptr<TopologicMesh> GetMappedMesh () const { return mapped_mesh; }
+    virtual void CleanupMeshes ()
     {
       mesh = nullptr;
       mapped_mesh = nullptr;

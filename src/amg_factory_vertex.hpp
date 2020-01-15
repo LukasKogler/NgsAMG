@@ -8,27 +8,41 @@ namespace amg
   class VertexAMGFactoryOptions;
 
   template<class FACTORY_CLASS, class ATMESH, int ABS>
-  class VertexAMGFactory : public NodalAMGFactory<NT_VERTEX, ABS>
+  class VertexAMGFactory : public NodalAMGFactory<NT_VERTEX, ATMESH, ABS>
   {
     static_assert(ABS == FACTORY_CLASS::BS, "BS must match");
-    static_assert(ATMESH == FACTORY_CLASS::TMESH, "TMESH must match");
+    static_assert(std::is_same<ATMESH, typename FACTORY_CLASS::TMESH>::value, "TMESH must match");
 
   public:
-    using BASE_CLASS = NodalAMGFactory<NT_VERTEX, FACTORY_CLASS::BS>;
-    using Options = BASE_CLASS::Options;
-    using BS = ABS;
-    using TMESH = TMESH;
-    using FACTORY_CLASS::ENERGY;
-    using TM = ENERGY::TM;
+    using TMESH = ATMESH;
+    static constexpr int BS = ABS;
+    using BASE_CLASS = NodalAMGFactory<NT_VERTEX, TMESH, BS>;
+    using ENERGY = typename FACTORY_CLASS::ENERGY;
+    using TM = typename ENERGY::TM;
     using TSPM_TM = stripped_spm_tm<TM>;
+
+    using AMGLevel = typename BaseAMGFactory::AMGLevel;
+    using Options = VertexAMGFactoryOptions;
+    class State;
+
+  protected:
+    using BaseAMGFactory::options;
+    
+  public:
+    VertexAMGFactory (shared_ptr<Options> opts);
+
+    ~VertexAMGFactory ();
 
   protected:
 
+    /** State **/
+    virtual BaseAMGFactory::State* AllocState () const override;
+    virtual void InitState (BaseAMGFactory::State & state, BaseAMGFactory::AMGLevel & lev) const override;
+
     /** Coarse **/
-    virtual shared_ptr<BaseCoarseMap> BuildCoarseMap (State & state) override;
-    virtual shared_ptr<BaseCoarseMap> BuildAggMap (State & state);
-    virtual shared_ptr<BaseCoarseMap> BuildECMap (State & state);
-    virtual shared_ptr<BaseCoarseMap> BuildCoarseMap (State & state) override;
+    virtual shared_ptr<BaseCoarseMap> BuildCoarseMap (BaseAMGFactory::State & state) override;
+    virtual shared_ptr<BaseCoarseMap> BuildAggMap (BaseAMGFactory::State & state);
+    virtual shared_ptr<BaseCoarseMap> BuildECMap (BaseAMGFactory::State & state);
     virtual shared_ptr<BaseDOFMapStep> PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<ParallelDofs> fpds, shared_ptr<ParallelDofs> cpds) override;
     virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<TopologicMesh> fmesh) override;
     virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap) override;
