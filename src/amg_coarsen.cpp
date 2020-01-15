@@ -477,7 +477,7 @@ namespace amg
 
   shared_ptr<BaseCoarseMap> BaseCoarseMap :: Concatenate (shared_ptr<BaseCoarseMap> right_map)
   {
-    auto cmap = make_shared<BaseCoarseMap>();
+    auto cmap = make_shared<BaseCoarseMap>(this->mesh, right_map->mapped_mesh);
     for ( NODE_TYPE NT : { NT_VERTEX, NT_EDGE, NT_FACE, NT_CELL } ) {
       cmap->NN[NT] = GetNN<NT>();
       cmap->CNN[NT] = right_map->mapped_NN[NT];

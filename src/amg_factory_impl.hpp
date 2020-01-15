@@ -446,15 +446,22 @@ namespace amg
       bool have_options = O.enable_redist;
       bool goal_reached = (curr_meas < goal_meas);
       Array<shared_ptr<BaseCoarseMap>> cm_chunks;
-      Array<shared_ptr<BaseDOFMapStep>> rd_chunks;
-      shared_ptr<TopologicMesh> sp_fm = state.curr_mesh;
+
+      INT<4> mesh_meas = {0,0,0,0};
+	/** mesh0 -(ctr)-> mesh1 -(first_crs)-> mesh2 -(crs/ctr)-> mesh3
+	    mesh0-mesh1, and mesh2-mesh3 can be the same **/
+      shared_ptr<TopologicMesh> mesh0 = nullptr, mesh1 = nullptr, mesh2 = nullptr, mesh3 = nullptr;
+      mesh1 = state.curr_mesh; mesh_meas[0] = ComputeMeshMeasure(*mesh1);
+      Array<shared_ptr<BaseDOFMapStep>> dof_maps;
+      Array<int> prol_inds;
+      shared_ptr<BaseCoarseMap> first_cmap;
 
       do { /** coarsen until goal reached or stuck **/
 	cm_chunks.SetSize0();
-	auto sp_fm = state.curr_mesh;
-	auto comm = static_cast<BlockTM&>(*sp_fm).GetEQCHierarchy()->GetCommunicator();
+	auto comm = static_cast<BlockTM&>(*).GetEQCHierarchy()->GetCommunicator();
 	bool could_recover = ( O.enable_redist && (comm.Size() > 2) && (state.level[2] == 0) );
-	bool crs_stuck = false;
+	bool crs_stuck = false, rded_out = false;
+	auto cm_fpds = state.curr_pds;
 	do { /** coarsen until stuck or goal reached **/
 	  auto fm = state.curr_mesh;
 	  auto fpds = state.curr_pds;
@@ -498,25 +505,28 @@ namespace amg
 
 	if (c_step != nullptr) {
 	  /** build pw-prolongation **/
-	  auto pmap = BuildPWProlMap(c_step, fpds, state.curr_pds);
+	  shared_ptr<BaseDOFMapStep> pmap = PWProlMap(c_step, cm_fpds, state.curr_pds);
 
-	  /** If we need meshes for sprol, we have to do this here.
-	      Thats the best we can do. **/
-	  if ( O.enable_sp && O.sp_needs_meshes && (sp_fm != nullptr) )
-	    { pmap = SmoothProlMap(pmap, sp_fm, state.curr_mesh); sp_fm = nullptr; }
+	  /** Save the first coarse-map - we might be able to use it later to get a slightly better smoothed prol! **/
+	  if (first_cm == nullptr) {
+	    first_cmap = c_step;
+	    prol_inds.Append(dmaps.Size());
+	    mesh1 = first_cmap->GetMesh(); mesh_meas[1] = ComputeMeshMeasure(*mesh1);
+	    mesh2 = first_cmap->GetMappedMesh(); mesh_meas[2] = ComputeMeshMeasure(*mesh2);
+	  }
 
-	  /** pull back prol through redists **/
-	  for (int k = rd_chunks.Size()-1; k >=0; k--)
-	    { pmap = rd_chunks[k]->PullBack(pmap); }
-	  
-	  prol_map = (prol_map == nullptr) ? pmap : prol_map->Concatenate(pmap);
+	  mesh3 = c_step->GetMappedMesh(); mesh_meas[3] = ComputeMeshMeasure(*mesh3);
+	  dof_maps.Append(pmap);
 	}
 
 	/** try to recover via redistribution **/
 	if (O.enable_redist && (state.level[2] == 0) ) {
 	  if ( TryContractStep(state) ) { // redist successfull
 	    state.level[2]++; // count up redist
-	    rd_chunks.Apend(move(state.dof_step));
+	    dof_maps.Append(move(state.dof_step));
+	    if (state.curr_mesh == nullptr)
+	      { rded_out = true; break; }
+	    mesh3 = state.curr_mesh; mesh_meas[3] = ComputeMeshMeasure(*mesh3);
 	  }
 	  else // redist rejected
 	    { could_recover = false; }
@@ -525,10 +535,58 @@ namespace amg
 	  { could_recover = false; }
       } while ( (could_recover) && (curr_meas > goal_meas) );
 
+      /** Smooth the first prol-step, using the first coarse-map if we need coarse-map for smoothing,
+	  or if it is preferrable to smoothing the concatenated prol with only fine mesh. **/
+      bool sp_done = false;
+      if ( O.enable_sp ) {
+	comm.AllReduce(mesh_meas, MPI_MAX);
+	double frac21 = (mesh_meas[1] == 0) ? 0.0 : double(mesh_meas[2]) / mesh_meas[1];
+	double frac32 = (mesh_meas[2] == 0) ? 0.0 : double(mesh_meas[3]) / mesh_meas[2];
+	/** need cmap || only one coarse map || first cmap is a significant part of coarsening **/
+	bool do_sp_now = O.sp_needs_cmap || (mesh3 == mesh2) || (frac21 < 1.333 * frac32);
+	if (do_sp_now) {
+	  sp_done = true;
+	  if (prol_inds.Size() > 0) { // might be rded out!
+	    auto pmap = dof_maps[prol_inds[0]];
+	    dof_maps[prol_inds[0]] = SmoothProlMap(pmap, first_cmap);
+	    first_cmap = nullptr; // no need for this anymore
+	  }
+	}
+      }
+
+      /** Untangle prol/ctr-maps to one prol followed by one ctr map. **/
+      int do_last_pb = 0;
+      if ( ( (prol_inds.Size()>0) && (prol_inds.Last() != dof_maps.Size()-1) ) ||
+	   ( (prol_inds.Size() == 0) && (dof_maps.Size() > 0) ) ) { // last map is redist
+	if (dof_maps.Last()->GetParDofs()->GetCommunicator().AllReduce(do_last_pb, MPI_MAX)) { // cannot use mapped pardofs!
+	  dof_maps->PullBack(nullptr);
+	}
+      }
+
+      bool first_rd = false;
+      for (int map_ind = dof_maps.Size() - 1, pii = prol_inds.Size() - 1; map_ind >= 0; map_ind--) {
+	if ( (pii >= 0) && (map_ind == prol_inds[pii]) ) { // prol map
+	  if (prol_map == nullptr)
+	    { prol_map = dof_maps[map_ind]; }
+	  else
+	    { prol_map = dof_map[map_ind]->Concatenate(prol_map); }
+	  pii--;
+	}
+	else { // rd map !
+	  if (first_rd) {
+	    do_last_pb = prol_map != nullptr;
+	    auto comm = dof_maps[map_ind]->GetParDofs()->GetCommunicator(); // cannot use mapped pardofs!
+	    comm.AllReduce(do_last_pb, MPI_MAX);
+	  }
+	  if (prol_map != nullptr)
+	    { prol_map = dof_map[map_ind]->PullBack(prol_map); }
+	}
+      }
+
       /** If not forced to before, smooth prol here.
 	  TODO: check if other version would be possible here (that one should be better anyways!)  **/
-      if ( (O.enable_sp) && (!O.sp_needs_meshes) && (prol_map != nullptr) )
-	{ prol_map = SmoothedProlMap(prol_map, fm); }
+      if ( O.enable_sp && (!sp_done) )
+	{ prol_map = SmoothedProlMap(prol_map, mesh1); }
 
       /** pack rd-maps into one step**/
       if (rd_chunks.Size() == 1)

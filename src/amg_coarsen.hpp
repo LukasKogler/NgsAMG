@@ -176,10 +176,12 @@ namespace amg
   };
 
 
-  class BaseCoarseMap
+  class BaseCoarseMap : public BaseGridMapStep
   {
   public:
-    BaseCoarseMap () { ; } //{ NN = 0; mapped_NN = 0; }
+    BaseCoarseMap (shared_ptr<TopologicMesh> mesh, shared_ptr<TopologicMesh> mapped_mesh = nullptr)
+      : BaseGridMapStep(mesh, mapped_mesh)
+    { ; } //{ NN = 0; mapped_NN = 0; }
     virtual ~BaseCoarseMap () { ; }
     template<NODE_TYPE NT> INLINE size_t GetNN () const { return NN[NT]; }
     template<NODE_TYPE NT> INLINE size_t GetMappedNN () const { return mapped_NN[NT]; }
@@ -220,7 +222,7 @@ namespace amg
 
 
   template<class TMESH>
-  class CoarseMap : public PairWiseCoarseMap, public GridMapStep<TMESH> 
+  class CoarseMap : public PairWiseCoarseMap
   {
   public:
     CoarseMap (shared_ptr<TMESH> _mesh, VWCoarseningData::CollapseTracker &coll);
@@ -228,7 +230,7 @@ namespace amg
   protected:
     using PairWiseCoarseMap::node_maps, PairWiseCoarseMap::NN, PairWiseCoarseMap::mapped_NN,
       PairWiseCoarseMap::mapped_eqc_firsti, PairWiseCoarseMap::mapped_cross_firsti, PairWiseCoarseMap::mapped_E;
-    using GridMapStep<TMESH>::mesh, GridMapStep<TMESH>::mapped_mesh;
+    using BaseGridMapStep::mesh, BaseGridMapStep::mapped_mesh;
     void BuildVertexMap (VWCoarseningData::CollapseTracker& coll);
     void BuildEdgeMap (VWCoarseningData::CollapseTracker& coll);
   };

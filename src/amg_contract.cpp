@@ -178,12 +178,13 @@ namespace amg
   template<calss TV>
   shared_ptr<BaseDOFMapStep> CtrMap<TV> :: Concatenate (shared_ptr<BaseDOFMapStep> other)
   {
-    if ( auto rmap = dynamic_pointer_cast<CtrMap<TV>>(other) ) {
-      Array<shared_ptr<BaseDOFMapStep>> sub_steps ({ shared_from_this(), other });
-      return make_shrade<ConcDMS> (steps);
-    }
-    else
-      { return nullptr; }
+    return nullptr;
+    // if ( auto rmap = dynamic_pointer_cast<CtrMap<TV>>(other) ) {
+    //   Array<shared_ptr<BaseDOFMapStep>> sub_steps ({ shared_from_this(), other });
+    //   return make_shrade<ConcDMS> (steps);
+    // }
+    // else
+    //   { return nullptr; }
   } // CtrMao::Concatenate
 
 
@@ -368,6 +369,22 @@ namespace amg
       { comm.Recv(doit, master, MPI_TAG_AMG); }
     return doit != 0;
   }
+
+
+  template<class TV>
+  shared_ptr<BaseDOFMapStep> CtrMap<TV> :: PullBack (shared_ptr<BaseDOFMapStep> other)
+  {
+    if ( (is_gm) && (other == nullptr) ) {
+      throw Exception("CtrMap master needs map for PullBack");
+      return nullptr;
+    }
+    auto prol_map = dynamic_pointer_cast<ProlMap<SparseMatrixTM<TM>>>(other);
+    if ( (is_gm) && (prol_map == nullptr) ) {
+      throw Exception(string("CtrMap got Invalid type ") + typeid(*other).name() + string(" for PullBack!"));
+      return nullptr;
+    }
+    return SwapWithProl(prol_map);
+  } // CtrMap::PullBack
 
 
   template<class TV>

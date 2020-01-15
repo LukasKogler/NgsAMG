@@ -40,6 +40,8 @@ namespace amg
     // prol after contract becomes new prol before new contract
     shared_ptr<ProlMap<SparseMatrixTM<TM>>> SwapWithProl (shared_ptr<ProlMap<SparseMatrixTM<TM>>> pm);
 
+    virtual shared_ptr<BaseDOFMapStep> PullBack (shared_ptr<BaseDOFMapStep> other) override;
+
     INLINE bool IsMaster () const { return is_gm; }
 
     // TODO: bad hack because NgsAMG_Comm -> MPI_Comm -> NgsMPI_Comm in pardofs constructor (ownership lost!)

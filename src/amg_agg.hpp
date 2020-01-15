@@ -38,8 +38,7 @@ namespace amg
   }
 
   template<class TMESH>
-  class AgglomerateCoarseMap : public GridMapStep<TMESH>,
-			       public BaseCoarseMap
+  class AgglomerateCoarseMap : public BaseCoarseMap
   {
     friend class BlockTM;
 
@@ -55,7 +54,7 @@ namespace amg
 
     using BaseCoarseMap::node_maps, BaseCoarseMap::NN, BaseCoarseMap::mapped_NN;
 
-    using GridMapStep<TMESH>::mesh, GridMapStep<TMESH>::mapped_mesh;
+    using BaseGridMapStep::mesh, BaseGridMapStep::mapped_mesh;
 
     virtual void FormAgglomerates (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg) = 0;
 

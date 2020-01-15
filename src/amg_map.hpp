@@ -7,11 +7,20 @@ namespace amg {
 
   class BaseGridMapStep
   {
+  protected:
+    shared_ptr<TopologicMesh> mesh, mapped_mesh;
   public:
-    virtual ~BaseGridMapStep () { ; }
-    virtual shared_ptr<TopologicMesh> GetMesh () const = 0;
-    virtual shared_ptr<TopologicMesh> GetMappedMesh () const = 0;
-    // virtual void CleanupMeshes () const = 0;
+    BaseGridMapStep (shared_ptr<TopologicMesh> mesh, shared_ptr<TopologicMesh> _mapped_mesh = nullptr)
+      : mesh(_mesh), mapped_mesh(_mapped_mesh)
+    { ; }
+    virtual ~ BaseGridMapStep () { ; }
+    shared_ptr<TopologicMesh> GetMesh () const { return mesh; }
+    shared_ptr<TopologicMesh> GetMappedMesh () const { return mapped_mesh; }
+    virtual void CleanupMeshes () const
+    {
+      mesh = nullptr;
+      mapped_mesh = nullptr;
+    }
   };
 
 
@@ -29,17 +38,17 @@ namespace amg {
   };
 
 
-  template<class TMESH>
-  class GridMapStep : public BaseGridMapStep
-  {
-  public:
-    GridMapStep (shared_ptr<TMESH> _mesh) : mesh(_mesh), mapped_mesh(nullptr) { ; };
-    virtual shared_ptr<TopologicMesh> GetMesh () const override { return mesh; }
-    virtual shared_ptr<TopologicMesh> GetMappedMesh () const override { return mapped_mesh; }
-    // virtual void CleanupMeshes () const { mesh = nullptr; mapped_mesh = nullptr; }
-  protected:
-    shared_ptr<TMESH> mesh, mapped_mesh;
-  };
+  // template<class TMESH>
+  // class GridMapStep : public BaseGridMapStep
+  // {
+  // public:
+  //   GridMapStep (shared_ptr<TMESH> _mesh) : mesh(_mesh), mapped_mesh(nullptr) { ; };
+  //   virtual shared_ptr<TopologicMesh> GetMesh () const override { return mesh; }
+  //   virtual shared_ptr<TopologicMesh> GetMappedMesh () const override { return mapped_mesh; }
+  //   // virtual void CleanupMeshes () const { mesh = nullptr; mapped_mesh = nullptr; }
+  // protected:
+  //   shared_ptr<TMESH> mesh, mapped_mesh;
+  // };
 
   /**
      At the minimum, we have to be able to:
@@ -72,7 +81,6 @@ namespace amg {
     virtual bool CanConcatenate (shared_ptr<BaseDOFMapStep> other) { return false; }
     virtual shared_ptr<BaseDOFMapStep> Concatenate (shared_ptr<BaseDOFMapStep> other) { return nullptr; }
     /** "me - other" -> "new other - new me" **/
-    virtual bool CanPullBack (shared_ptr<BaseDOFMapStep> other) { return false; }
     virtual shared_ptr<BaseDOFMapStep> PullBack (shared_ptr<BaseDOFMapStep> other) { return nullptr; }
     shared_ptr<ParallelDofs> GetParDofs () const { return pardofs; }
     shared_ptr<ParallelDofs> GetMappedParDofs () const { return mapped_pardofs; }
