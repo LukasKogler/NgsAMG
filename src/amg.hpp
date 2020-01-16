@@ -29,13 +29,5 @@ namespace amg {
 #include "amg_smoother3.hpp"
 #include "amg_blocksmoother.hpp"
 #include "amg_matrix.hpp"
-#include "amg_factory.hpp"
-#include "amg_pc.hpp"
-#include "amg_h1.hpp"
-#include "amg_elast.hpp"
-
-#define AMG_EXTERN_TEMPLATES
-#include "amg_tcs.hpp"
-#undef AMG_EXTERN_TEMPLATES
 
 #endif

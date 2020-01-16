@@ -7,17 +7,14 @@ namespace amg
   /** DOFs attached to vertices, edge-wise energy. **/
   class VertexAMGFactoryOptions;
 
-  template<class FACTORY_CLASS, class ATMESH, int ABS>
+  template<class AENERGY, class ATMESH, int ABS>
   class VertexAMGFactory : public NodalAMGFactory<NT_VERTEX, ATMESH, ABS>
   {
-    static_assert(ABS == FACTORY_CLASS::BS, "BS must match");
-    static_assert(std::is_same<ATMESH, typename FACTORY_CLASS::TMESH>::value, "TMESH must match");
-
   public:
+    using ENERGY = AENERGY;
     using TMESH = ATMESH;
     static constexpr int BS = ABS;
     using BASE_CLASS = NodalAMGFactory<NT_VERTEX, TMESH, BS>;
-    using ENERGY = typename FACTORY_CLASS::ENERGY;
     using TM = typename ENERGY::TM;
     using TSPM_TM = stripped_spm_tm<TM>;
 

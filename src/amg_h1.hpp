@@ -31,18 +31,20 @@ namespace amg
     { map_data_impl(cmap, ch1e); }
   }; // class H1EData
 
+
   using H1Mesh = BlockAlgMesh<H1VData, H1EData>;
 
+
   template<int ADIM>
-  class H1AMGFactory<ADIM> : public VertexAMGFactory<H1AMGFactory<ADIM>, H1Mesh, H1Energy<ADIM>::DPV>
+  class H1AMGFactory : public VertexAMGFactory<H1Energy<DIM, double, double>, H1Mesh, ADIM>
   {
   public:
-    using BASE = VBasedAMGFactory<H1Factory>;
-    using TMESH = H1Mesh<DIM>;
-    using ENERGY = H1Energy<DIM>;
-    using DIM = ADIM;
-    using BS = ENERGY::DPV;
-    using Options = BASE::Options;
+    using BASE = VertexAMGFactory<H1AMGFactory<ADIM>, H1Mesh, ADIM>;
+    static constexpr int DIM = ADIM;
+    using ENERGY = H1Energy<DIM, double, double>;
+    using TMESH = H1Mesh;
+    static constexpr int BS = ENERGY::DPV;
+    using Options = typename BASE::Options;
 
   protected:
     using BASE::options;

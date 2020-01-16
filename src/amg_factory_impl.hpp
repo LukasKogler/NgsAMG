@@ -8,8 +8,6 @@ namespace amg
   class BaseAMGFactory :: Options
   {
   public:
-    string prefix = "ngs_amg_";                 // prefix for flags
-
     /** General Level-Control **/
     size_t max_n_levels = 10;                   // maximun number of multigrid levels (counts first level, so at least 2)
     size_t max_meas = 50;                       // maximal maesure of coarsest mesh
@@ -56,16 +54,14 @@ namespace amg
     bool print_log = true;                      // print log to shell
     string log_file = "";                       // which file to print log to (none if empty)
 
-    Options (string _prefix = "ngs_amg_")
-      : prefix(_prefix)
-    { ; }
+    Options () { ; }
 
-    virtual void SetFromFlags (const Flags & flags);
+    virtual void SetFromFlags (const Flags & flags, string prefix);
 
   }; // BaseAMGFactory::Options
 
 
-  void BaseAMGFactory::Options :: SetFromFlags (const Flags & flags)
+  void BaseAMGFactory::Options :: SetFromFlags (const Flags & flags, string prefix)
   {
     auto set_enum_opt = [&] (auto & opt, string key, Array<string> vals) {
       string val = flags.GetStringFlag(prefix + key, "");
@@ -151,6 +147,7 @@ namespace amg
   {
     int level;
     shared_ptr<TopologicMesh> mesh = nullptr;
+    shared_ptr<EQCHierarchy> eqc_h = nullptr;
     shared_ptr<ParallelDofs> pardofs = nullptr;
     shared_ptr<BaseSparseMatrix> mat = nullptr;
     shared_ptr<BaseDOFMapStep> embed_map = nullptr; // embedding
@@ -631,6 +628,7 @@ namespace amg
     /** assemble coarse level matrix and set return vals **/
     c_lev.level = f_lev.level + 1;
     c_lev.mesh = state.curr_mesh;
+    c_lev.eqc_h = c_lev.mesh->GetEQCHierarchy();
     c_lev.pardofs = state.curr_pds;
     c_lev.mat = final_step->AssembleMatrix(f_lev.mat);
 
@@ -804,8 +802,7 @@ namespace amg
 
   void BaseAMGFactory :: SetOptionsFromFlags (BaseAMGFactory::Options& opts, const Flags & flags, string prefix)
   {
-    opts.prefix = prefix;
-    opts.SetFromFlags(flags);
+    opts.SetFromFlags(flags, prefix);
   } // BaseAMGFactory::SetOptionsFromFlags
 
   /** END BaseAMGFactory **/

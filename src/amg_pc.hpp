@@ -10,7 +10,7 @@ namespace amg
   {
   public:
     
-    struct Options;
+    class Options;
 
   protected:
     shared_ptr<Options> options;
@@ -46,19 +46,27 @@ namespace amg
   protected:
     
     /** Options: construct, set default, set from flags, modify **/
-    virtual shared_ptr<Options> MakeOptionsFromFlags (const Flags & flags, string prefix = "ngs_amg_");
+    shared_ptr<Options> MakeOptionsFromFlags (const Flags & flags, string prefix = "ngs_amg_");
     virtual shared_ptr<Options> NewOpts () = 0;
-    virtual void SetOptionsFromFlags (Options& O, const Flags & flags, string prefix = "ngs_amg_");
     virtual void SetDefaultOptions (Options& O);
-    virtual void ModifyOptions (Options & O);
+    virtual void SetOptionsFromFlags (Options& O, const Flags & flags, string prefix = "ngs_amg_");
+    virtual void ModifyOptions (Options & O, const Flags & flags, string prefix = "ngs_amg_");
 
     virtual shared_ptr<TopologicMesh> BuildInitialMesh () = 0;
     virtual shared_ptr<BaseAMGFactory> BuildFactory () = 0;
     
+    virtual void Finalize ();
     virtual void BuildAMGMat ();
 
     virtual void InitFinestLevel (BaseAMGFactory::AMGLevel & finest_level);
     virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (shared_ptr<TopologicMesh> mesh) = 0;
+
+    virtual shared_ptr<BaseSmoother> BuildSmoother (const BaseAMGFactory::AMGLevel & amg_level);
+
+    virtual shared_ptr<BaseSmoother> BuildGSSmoother (shared_ptr<BaseSparseMatrix> spm, shared_ptr<ParallelDofs> pardofs,
+						      shared_ptr<EQCHierarchy> eqc_h, shared_ptr<BitArray> freedofs = nullptr);
+    virtual shared_ptr<BaseSmoother> BuildBGSSmoother (shared_ptr<BaseSparseMatrix> spm, shared_ptr<ParallelDofs> pardofs,
+						       shared_ptr<EQCHierarchy> eqc_h, Table<int> && blocks);
 
   }; // BaseAMGPC
 

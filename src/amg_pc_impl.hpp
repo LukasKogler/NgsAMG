@@ -6,8 +6,10 @@ namespace amg
 
   /** Options **/
 
-  struct BaseAMGPC :: Options
+  class BaseAMGPC :: Options
   {
+  public:
+
     /** What we do on the coarsest level **/
     enum CLEVEL : char { INV_CLEV = 0,        // invert coarsest level
 			 SMOOTH_CLEV = 1,    // smooth coarsest level
@@ -36,6 +38,61 @@ namespace amg
     /** Misc **/
     bool sync = false;                   // synchronize via MPI-Barrier in places
     bool do_test = false;                // perform PC-test for amg_mat
+
+  public:
+
+    Options () { ; }
+
+
+    virtual void SetFromFlags (const Flags & flags, string prefix)
+    {
+      auto set_enum_opt = [&] (auto & opt, string key, Array<string> vals, auto default_val) {
+	string val = flags.GetStringFlag(prefix + key, "");
+	bool found = false;
+	for (auto k : Range(vals)) {
+	  if (val == vals[k]) {
+	    found = true;
+	    opt = decltype(opt)(k);
+	    break;
+	  }
+	}
+	if (!found)
+	  { opt = default_val; }
+      };
+
+      auto set_bool = [&](auto& v, string key) {
+	if (v) { v = !flags.GetDefineFlagX(prefix + key).IsFalse(); }
+	else { v = flags.GetDefineFlagX(prefix + key).IsTrue(); }
+      };
+
+      auto set_opt_kv = [&](auto & opt, string name, Array<string> keys, auto vals) {
+	string flag_opt = flags.GetStringFlag(prefix + name, "");
+	for (auto k : Range(keys))
+	  if (flag_opt == keys[k]) {
+	    opt = vals[k];
+	    return;
+	  }
+      };
+
+      set_enum_opt(clev, "clev", {"inv", "sm", "none"}, Options::CLEVEL::INV_CLEV);
+
+      set_opt_kv(cinv_type, "cinv_type", { "masterinverse", "mumps" }, Array<INVERSETYPE>({ MASTERINVERSE, MUMPS }));
+
+      set_opt_kv(cinv_type_loc, "cinv_type_loc", { "pardiso", "pardisospd", "sparsecholesky", "superlu", "superlu_dist", "mumps", "umfpack" },
+		 Array<INVERSETYPE>({ PARDISO, PARDISOSPD, SPARSECHOLESKY, SUPERLU, SUPERLU_DIST, MUMPS, UMFPACK }));
+
+      set_enum_opt(sm_type, "sm_type", {"gs", "bgs"}, Options::SM_TYPE::GS);
+
+      gs_ver = Options::GS_VER(max(0, min(3, int(flags.GetNumFlag(prefix + "gs_ver", 3)))));
+
+      set_bool(sm_mpi_overlap, "sm_mpi_overlap");
+      set_bool(sm_mpi_thread, "sm_mpi_thread");
+
+      set_bool(sync, "sync");
+      set_bool(do_test, "do_test");
+
+    } // Options::SetFromFlags
+
   }; // BaseAMGPC::Options
 
   /** END Options **/
@@ -51,7 +108,7 @@ namespace amg
   BaseAMGPC :: BaseAMGPC (shared_ptr<BilinearForm> blf, const Flags & flags, const string name, shared_ptr<Options> opts)
     : Preconditioner(bfa, flags, name), options(opts), bfa(bfa)
   {
-    if (otps == nullptr)
+    if (opts == nullptr)
       { opts = MakeOptionsFromFlags(flags); }
   } // BaseAMGPC(..)
 
@@ -88,7 +145,9 @@ namespace amg
 
   const BaseMatrix & BaseAMGPC :: GetMatrix () const 
   {
-    return *GetMatrixPtr();
+    if (amg_mat == nullptr)
+      { throw Exception("BaseAMGPC - amg_mat not ready!"); }
+    return *amg_mat;
   } // BaseAMGPC::GetMatrix
 
 
@@ -102,84 +161,36 @@ namespace amg
 
   void BaseAMGPC :: Mult (const BaseVector & b, BaseVector & x) const 
   {
-    GetMatrixptr()->Mult(b, x);
+    GetMatrix().Mult(b, x);
   } // BaseAMGPC::Mult
 
 
   void BaseAMGPC :: MultTrans (const BaseVector & b, BaseVector & x) const 
   {
-    GetMatrixPtr()->MultTrans(b, x);
+    GetMatrix().MultTrans(b, x);
   } // BaseAMGPC::MultTrans
 
 
   void BaseAMGPC :: MultAdd (double s, const BaseVector & b, BaseVector & x) const 
   {
-    GetMatrixPtr()->MultAdd(s, b, x);
+    GetMatrix().MultAdd(s, b, x);
   } // BaseAMGPC::MultAdd
 
 
   void BaseAMGPC :: MultTransAdd (double s, const BaseVector & b, BaseVector & x) const 
   {
-    GetMatrixPtr()->MultTransAdd(s, b, x);
+    GetMatrix().MultTransAdd(s, b, x);
   } // BaseAMGPC::MultTransAdd
 
 
-  shared_ptr<Options> BaseAMGPC :: MakeOptionsFromFlags (const Flags & flags, string prefix)
+  shared_ptr<BaseAMGPC::Options> BaseAMGPC :: MakeOptionsFromFlags (const Flags & flags, string prefix)
   {
     auto opts = NewOpts();
     SetDefaultOptions(*opts);
     SetOptionsFromFlags(*opts, flags, prefix);
     ModifyOptions(*opts, flags, prefix);
+    return opts;
   } // BaseAMGPC::MakeOptionsFromFlags
-
-
-  void BaseAMGPC :: SetOptionsFromFlags (Options& O, const Flags & flags, string prefix)
-  {
-    auto set_enum_opt = [&] (auto & opt, string key, Array<string> vals, auto default_val) {
-      string val = flags.GetStringFlag(prefix + key, "");
-      bool found = false;
-      for (auto k : Range(vals)) {
-	if (val == vals[k]) {
-	  found = true;
-	  opt = decltype(opt)(k);
-	  break;
-	}
-      }
-      if (!found)
-	{ opt = default_val; }
-    };
-
-    auto set_bool = [&](auto& v, string key) {
-      if (v) { v = !flags.GetDefineFlagX(prefix + key).IsFalse(); }
-      else { v = flags.GetDefineFlagX(prefix + key).IsTrue(); }
-    };
-
-    auto set_opt_kv = [&](auto & opt, string name, Array<string> keys, auto vals) {
-      string flag_opt = flags.GetStringFlag(pfit(name), "");
-      for (auto k : Range(keys))
-	if (flag_opt == keys[k]) {
-	  opt = vals[k];
-	  return;
-	}
-    };
-
-    set_enum_opt(O.clev, "clev", {"inv", "sm", "none"}, Options::CLEVEL::INV_CLEV);
-
-    set_opt_kv(O.cinv_type, "cinv_type", { "masterinverse", "mumps" }, Array<INVERSETYPE>({ MASTERINVERSE, MUMPS }));
-
-    set_opt_kv(O.cinv_type_loc, "cinv_type_loc", { "pardiso", "pardisospd", "sparsecholesky", "superlu", "superlu_dist", "mumps", "umfpack" },
-	       Array<INVERSETYPE>({ PARDISO, PARDISOSPD, SPARSECHOLESKY, SUPERLU, SUPERLU_DIST, MUMPS, UMFPACK }));
-
-    set_enum_opt(O.sm_type, "sm_type", {"gs", "bgs"}, Options::SM_TYPE::GS);
-
-    O.gs_ver = Options::GS_VER(max(0, min(3, int(flags.GetNumFlag(pfit("gs_ver"), 3)))));
-
-    set_bool(O.sm_mpi_overlap, "sm_mpi_overlap");
-    set_bool(O.sm_mpi_thread, "sm_mpi_thread");
-
-    set_bool(O.sync, "sync");
-    set_bool(O.do_test, "do_test");
-  } //BaseAMGPC::SetOptionsFromFlags
 
 
   void BaseAMGPC :: SetDefaultOptions (Options& O)
@@ -188,19 +199,16 @@ namespace amg
   } // BaseAMGPC::SetDefaultOptions
 
 
-  void BaseAMGPC :: ModifyOptions (Options & O)
+  void BaseAMGPC :: SetOptionsFromFlags (Options& O, const Flags & flags, string prefix)
+  {
+    O.SetFromFlags(flags, prefix);
+  } //BaseAMGPC::SetOptionsFromFlags
+
+
+  void BaseAMGPC :: ModifyOptions (Options & O, const Flags & flags, string prefix)
   {
     ;
   } // BaseAMGPC::ModifyOptions
-
-
-
-  void BaseAMGPC :: FinalizeLevel (const BaseMatrix * mat)
-  {
-    finest_mat = mat;
-
-    Finalize();
-  } // BaseAMGPC::FinalizeLevel
 
 
   void BaseAMGPC :: Finalize ()
@@ -229,9 +237,7 @@ namespace amg
       fine_spm->SetParallelDofs(make_shared<ParallelDofs> ( mecomm , move(dps), GetEntryDim(fine_spm.get()), false));
     }
 
-    auto mesh = BuildInitialMesh();
-
-    factory = BuildFactory(mesh);
+    factory = BuildFactory();
 
     BuildAMGMat();
   } // BaseAMGPC::Finalize
@@ -245,7 +251,7 @@ namespace amg
 
     Array<BaseAMGFactory::AMGLevel> amg_levels(1); InitFinestLevel(amg_levels[0]);
 
-    factory->SetupLevels(amg_levels, dof_map);
+    factory->SetUpLevels(amg_levels, dof_map);
 
     Array<shared_ptr<BaseSmoother>> smoothers(amg_levels.Size() - 1);
     for (auto k : Range(amg_levels))
@@ -256,13 +262,92 @@ namespace amg
 
   void BaseAMGPC :: InitFinestLevel (BaseAMGFactory::AMGLevel & finest_level)
   {
+    auto finest_mesh = BuildInitialMesh();
+
     finest_level.level = 0;
     finest_level.mesh = finest_mesh; // TODO: get out of factory??
+    finest_level.eqc_h = finest_level.mesh->GetEQCHierarchy();
     auto fpm = dynamic_pointer_cast<ParallelMatrix>(finest_mat)->GetMatrix();
     finest_level.pardofs = fpm->GetParallelDofs();
     finest_level.mat = dynamic_pointer_cast<BaseSparseMatrix>(fpm);
-    finest_level.embed_map = BuildEmbedding();
+    finest_level.embed_map = BuildEmbedding(finest_mesh);
   } // BaseAMGPC::InitFinestLevel
+
+
+  shared_ptr<BaseSmoother> BaseAMGPC :: BuildGSSmoother (shared_ptr<BaseSparseMatrix> spm, shared_ptr<ParallelDofs> pardofs,
+							 shared_ptr<EQCHierarchy> eqc_h, shared_ptr<BitArray> freedofs)
+  {
+    if (spm == nullptr)
+      { throw Exception("BuildGSSmoother needs a mat!"); }
+    if (pardofs == nullptr)
+      { throw Exception("BuildGSSmoother needs pardofs!"); }
+
+    auto & O (*options);
+
+    shared_ptr<BaseSmoother> smoother = nullptr;
+
+    Switch<MAX_SYS_DIM>
+      (GetEntryDim(spm.get()), [&] (auto BS)
+       {
+	 if constexpr( (BS == 4) || (BS == 5) ) {
+	   throw Exception("Smoother for that dim is not compiled!!");
+	   return;
+	 }
+	 else {
+	   switch(O.gs_ver) {
+	   case(Options::GS_VER::VER1) : {
+	     auto spmm = dynamic_pointer_cast<stripped_spm<Mat<BS, BS, double>>>(spm);
+	     smoother = make_shared<HybridGSS<BS>>(spmm, pardofs, freedofs);
+	     break;
+	   }
+	   case(Options::GS_VER::VER2) : {
+	     auto parmat = make_shared<ParallelMatrix>(spm, pardofs, pardofs, C2D);
+	     smoother = make_shared<HybridGSS2<strip_mat<Mat<BS, BS, double>>>> (parmat, freedofs);
+	     break;
+	   }
+	   case(Options::GS_VER::VER3) : {
+	     if (eqc_h == nullptr)
+	       { throw Exception("BuildGSSmoother needs eqc_h!"); }
+	     auto parmat = make_shared<ParallelMatrix>(spm, pardofs, pardofs, C2D);
+	     smoother = make_shared<HybridGSS3<strip_mat<Mat<BS, BS, double>>>> (parmat, eqc_h, freedofs, O.sm_mpi_overlap, O.sm_mpi_thread);
+	     break;
+	   }
+	   default: { throw Exception("Invalid Smoother type!!"); break; }
+	   }
+	 }
+       });
+
+    return smoother;
+  } // BaseAMGPC::BuildBGSSmoother
+
+
+  shared_ptr<BaseSmoother> BaseAMGPC :: BuildBGSSmoother (shared_ptr<BaseSparseMatrix> spm, shared_ptr<ParallelDofs> pardofs,
+							  shared_ptr<EQCHierarchy> eqc_h, Table<int> && blocks)
+  {
+    if (spm == nullptr)
+      { throw Exception("BuildBGSSmoother needs a mat!"); }
+    if (pardofs == nullptr)
+      { throw Exception("BuildBGSSmoother needs pardofs!"); }
+    if (eqc_h == nullptr)
+      { throw Exception("BuildBGSSmoother needs eqc_h!"); }
+
+    auto & O (*options);
+    shared_ptr<BaseSmoother> smoother = nullptr;
+
+    Switch<MAX_SYS_DIM>
+      (GetEntryDim(spm.get()), [&] (auto BS)
+       {
+	 if constexpr( (BS == 4) || (BS == 5) ) {
+	   throw Exception("Smoother for that dim is not compiled!!");
+	   return;
+	 }
+	 else {
+	   smoother = make_shared<HybridBS<strip_mat<Mat<BS, BS, double>>>> (spm, eqc_h, move(blocks), O.sm_mpi_overlap, O.sm_mpi_thread);
+	 }
+       });
+
+    return smoother;
+  } // BaseAMGPC::BuildBGSSmoother
 
 
   /** END BaseAMGPC **/

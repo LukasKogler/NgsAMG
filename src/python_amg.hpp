@@ -1,11 +1,12 @@
 #ifndef FILE_PYTHON_AMG_HPP
 #define FILE_PYTHON_AMG_HPP
 
+#include <python_ngstd.hpp>
 
 namespace amg {
 
-  template<class PCC>
-  void ExportAMGClass (py::module & m, string stra, string strb)
+  template<class PCC, class TLAM>
+  void ExportAMGClass (py::module & m, string stra, string strb, TLAM lam)
   {
     auto amg_class = py::class_<PCC, shared_ptr<PCC>, Preconditioner>(m, stra.c_str() , strb.c_str());
     amg_class.def(py::init([&](shared_ptr<BilinearForm> bfa, py::kwargs kwargs) {
@@ -30,6 +31,7 @@ namespace amg {
 		      shared_ptr<BaseVector> rhs) {
 	     pre.GetAMGMat()->CINV(csol, rhs);
 	   }, py::arg("sol")=nullptr, py::arg("rhs")=nullptr);
+    lam(amg_class);
   } // ExportH1Scal
 
 } // namespace amg

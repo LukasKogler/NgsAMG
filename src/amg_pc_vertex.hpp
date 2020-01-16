@@ -9,10 +9,10 @@ namespace amg
   class VertexAMGPC : public BaseAMGPC
   {
   public:
-    struct Options;
+    class Options;
 
     using FACTORY::DIM;
-    using TMESH = FACTORY::TMESH;
+    using TMESH = typename FACTORY::TMESH;
 
   protected:
 
@@ -41,7 +41,9 @@ namespace amg
     virtual void InitLevel (shared_ptr<BitArray> freedofs = nullptr) override;
 
     virtual shared_ptr<BaseAMGPC::Options> NewOpts () override;
-    virtual void SetOptionsFromFlags (Options& O, const Flags & flags, string prefix = "ngs_amg_") override;
+    virtual void SetDefaultOptions (BaseAMGPC::Options& O) override;
+    virtual void SetOptionsFromFlags (BaseAMGPC::Options& O, const Flags & flags, string prefix = "ngs_amg_") override;
+    virtual void ModifyOptions (BaseAMGPC::Options & O, const Flags & flags, string prefix = "ngs_amg_") override;
 
     virtual shared_ptr<TopologicMesh> BuildInitialMesh () override;
 
@@ -74,14 +76,15 @@ namespace amg
   {
   public:
     using BASE = VertexAMGPC<FACTORY>;
-    struct Options;
+    class Options;
 
     ElmatVAMG (const PDE & apde, const Flags & aflags, const string aname = "precond");
     ElmatVAMG (shared_ptr<BilinearForm> blf, const Flags & flags, const string name, shared_ptr<Options> opts = nullptr);
 
-    ~VertexAMGPC ();
+    ~ElmatVAMG ();
 
     virtual shared_ptr<BlockTM> BuildTopMesh (shared_ptr<EQCHierarchy> eqc_h) override;
+    using BASE::BTM_Mesh, BASE::BTM_Alg;
     virtual shared_ptr<BlockTM> BTM_Elmat (shared_ptr<EQCHierarchy> eqc_h);
 
     void AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,

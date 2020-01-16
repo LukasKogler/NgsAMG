@@ -10,15 +10,13 @@ namespace amg
   public:
     using TVD = T_V_DATA;
     using TED = T_E_DATA;
-    using DIM = DIM;
     // static constexpr int DPV () { return DIM; }
-    static constexpr int DPV = DIM;
+    static constexpr int DIM = ADIM;
+    static constexpr int DPV = ADIM;
     typedef typename strip_mat<Mat<DIM,DIM,double>>::type TM;
 
     static INLINE double GetApproxWeight (const TED & ed) { return ed; }
 
-    static INLINE void CalcQ  (const Vec<3> & t, TM & Q);
-    static INLINE void ModQ  (const Vec<3> & t, TM & Q);
     static INLINE void CalcQij (const TVD & di, const TVD & dj, TM & Qij);
     static INLINE void ModQij (const TVD & di, const TVD & dj, TM & Qij);
     static INLINE void CalcQHh (const TVD & dH, const TVD & dh, TM & QHh);
@@ -40,7 +38,7 @@ namespace amg
   public:
     using TVD = T_V_DATA;
     using TED = T_E_DATA;
-    using DIM = ADIM;
+    static constexpr int DIM = ADIM;
     static constexpr int dofpv () { return (DIM == 2) ? 3 : 6; }
     static constexpr int disppv () { return DIM; }
     static constexpr int rotpv () { return (DIM == 2) ? 1 : 3; }

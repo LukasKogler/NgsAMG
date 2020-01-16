@@ -5,8 +5,8 @@ namespace amg
 {
   /** State **/
 
-  template<class FACTORY, class TMESH, int BS>
-  class VertexAMGFactory<FACTORY, TMESH, BS> :: State : public NodalAMGFactory<NT_VERTEX, TMESH, BS>::State
+  template<class ENERGY, class TMESH, int BS>
+  class VertexAMGFactory<ENERGY, TMESH, BS> :: State : public NodalAMGFactory<NT_VERTEX, TMESH, BS>::State
   {
   public:
     shared_ptr<typename HierarchicVWC<TMESH>::Options> crs_opts;
@@ -37,16 +37,16 @@ namespace amg
 
   public:
 
-    VertexAMGFactoryOptions (string _prefix = "ngs_amg_")
-      : BaseAMGFactory::Options(_prefix)
+    VertexAMGFactoryOptions ()
+      : BaseAMGFactory::Options()
     { ; }
 
-    virtual void SetFromFlags (const Flags & flags) override;
+    virtual void SetFromFlags (const Flags & flags, string prefix) override;
 
   }; // VertexAMGFactoryOptions
 
 
-  void VertexAMGFactoryOptions :: SetFromFlags (const Flags & flags)
+  void VertexAMGFactoryOptions :: SetFromFlags (const Flags & flags, string prefix)
   {
 
     auto set_enum_opt = [&] (auto & opt, string key, Array<string> vals) {
@@ -65,7 +65,7 @@ namespace amg
     auto set_num = [&](auto& v, string key)
       { v = flags.GetNumFlag(prefix + key, v); };
 
-    BaseAMGFactory::Options::SetFromFlags(flags);
+    BaseAMGFactory::Options::SetFromFlags(flags, prefix);
 
     set_enum_opt(crs_alg, "crs_alg", {"ecol", "agg" });
 
@@ -85,30 +85,30 @@ namespace amg
   /** VertexAMGFactory **/
 
 
-  template<class FACTORY, class TMESH, int BS>
-  VertexAMGFactory<FACTORY, TMESH, BS> :: VertexAMGFactory (shared_ptr<Options> opts)
+  template<class ENERGY, class TMESH, int BS>
+  VertexAMGFactory<ENERGY, TMESH, BS> :: VertexAMGFactory (shared_ptr<Options> opts)
     : BASE_CLASS(opts)
   {
     ;
   } // VertexAMGFactory(..)
 
 
-  template<class FACTORY, class TMESH, int BS>
-  VertexAMGFactory<FACTORY, TMESH, BS> :: ~VertexAMGFactory ()
+  template<class ENERGY, class TMESH, int BS>
+  VertexAMGFactory<ENERGY, TMESH, BS> :: ~VertexAMGFactory ()
   {
     ;
   } // ~VertexAMGFactory
 
 
-  template<class FACTORY, class TMESH, int BS>
-  BaseAMGFactory::State* VertexAMGFactory<FACTORY, TMESH, BS> :: AllocState () const
+  template<class ENERGY, class TMESH, int BS>
+  BaseAMGFactory::State* VertexAMGFactory<ENERGY, TMESH, BS> :: AllocState () const
   {
     return new State();
   } // VertexAMGFactory::AllocState
 
 
-  template<class FACTORY, class TMESH, int BS>
-  void VertexAMGFactory<FACTORY, TMESH, BS> :: InitState (BaseAMGFactory::State & state, BaseAMGFactory::AMGLevel & lev) const
+  template<class ENERGY, class TMESH, int BS>
+  void VertexAMGFactory<ENERGY, TMESH, BS> :: InitState (BaseAMGFactory::State & state, BaseAMGFactory::AMGLevel & lev) const
   {
     BASE_CLASS::InitState(state, lev);
 
@@ -117,8 +117,8 @@ namespace amg
   } // VertexAMGFactory::InitState
 
 
-  template<class FACTORY, class TMESH, int BS>
-  shared_ptr<BaseCoarseMap> VertexAMGFactory<FACTORY, TMESH, BS> :: BuildCoarseMap (BaseAMGFactory::State & state)
+  template<class ENERGY, class TMESH, int BS>
+  shared_ptr<BaseCoarseMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildCoarseMap (BaseAMGFactory::State & state)
   {
     auto & O(static_cast<Options&>(*options));
 
@@ -134,11 +134,11 @@ namespace amg
   } // VertexAMGFactory::BuildCoarseMap
 
 
-  template<class FACTORY, class TMESH, int BS>
-  shared_ptr<BaseCoarseMap> VertexAMGFactory<FACTORY, TMESH, BS> :: BuildAggMap (BaseAMGFactory::State & state)
+  template<class ENERGY, class TMESH, int BS>
+  shared_ptr<BaseCoarseMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildAggMap (BaseAMGFactory::State & state)
   {
     auto & O = static_cast<Options&>(*options);
-    typename Agglomerator<FACTORY>::Options agg_opts;
+    typename Agglomerator<ENERGY, TMESH>::Options agg_opts;
     auto mesh = dynamic_pointer_cast<TMESH>(state.curr_mesh);
     if (mesh == nullptr)
       { throw Exception(string("Invalid mesh type ") + typeid(*state.curr_mesh).name() + string(" for BuildAggMap!")); }
@@ -152,8 +152,8 @@ namespace amg
   } // VertexAMGFactory::BuildCoarseMap
 
 
-  template<class FACTORY, class TMESH, int BS>
-  shared_ptr<BaseCoarseMap> VertexAMGFactory<FACTORY, TMESH, BS> :: BuildECMap (BaseAMGFactory::State & astate)
+  template<class ENERGY, class TMESH, int BS>
+  shared_ptr<BaseCoarseMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildECMap (BaseAMGFactory::State & astate)
   {
     throw Exception("finish this up ...");
     auto & state(static_cast<State&>(astate));
@@ -167,8 +167,8 @@ namespace amg
   } // VertexAMGFactory::BuildCoarseMap
 
 
-  template<class FACTORY, class TMESH, int BS>
-  shared_ptr<BaseDOFMapStep> VertexAMGFactory<FACTORY, TMESH, BS> :: PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<ParallelDofs> fpds, shared_ptr<ParallelDofs> cpds)
+  template<class ENERGY, class TMESH, int BS>
+  shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<ParallelDofs> fpds, shared_ptr<ParallelDofs> cpds)
   {
     static Timer t("PWProlMap"); RegionTimer rt(t);
 
@@ -202,8 +202,8 @@ namespace amg
   } // VertexAMGFactory::PWProlMap
 
 
-  template<class FACTORY, class TMESH, int BS>
-  shared_ptr<BaseDOFMapStep> VertexAMGFactory<FACTORY, TMESH, BS> :: SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<TopologicMesh> tfmesh)
+  template<class ENERGY, class TMESH, int BS>
+  shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<TopologicMesh> tfmesh)
   {
     static Timer t("SmoothedProlMap"); RegionTimer rt(t);
 
@@ -553,8 +553,8 @@ namespace amg
   } // VertexAMGFactory::SmoothedProlMap
 
 
-  template<class FACTORY, class TMESH, int BS>
-  shared_ptr<BaseDOFMapStep> VertexAMGFactory<FACTORY, TMESH, BS> :: SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap)
+  template<class ENERGY, class TMESH, int BS>
+  shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap)
   {
     static Timer t("SmoothedProlMap"); RegionTimer rt(t);
 

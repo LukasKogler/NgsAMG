@@ -6,75 +6,68 @@ namespace amg
 
   /** H1Energy **/
 
-  template<int DIM, class T_V_DATA, class T_E_DATA>
-  INLINE H1Energy<DIM, T_V_DATA, T_E_DATA> :: void CalcQ (const Vec<3> & t, TM & Q)
+
+  template<int DIM, class TVD, class TED>
+  INLINE void H1Energy<DIM, TVD, TED> :: CalcQij (const TVD & di, const TVD & dj, TM & Qij)
   {
-    SetIdentity(Q);
-  } // H1Energy::CalcQ
-
-
-  template<int DIM, class T_V_DATA, class T_E_DATA>
-  INLINE H1Energy<DIM, T_V_DATA, T_E_DATA> :: void ModQ (const Vec<3> & t, TM & Q)
-  {
-    ;
-  } // H1Energy::ModQ
-
-
-  template<int DIM, class T_V_DATA, class T_E_DATA>
-  INLINE H1Energy<DIM, T_V_DATA, T_E_DATA> :: void CalcQij (const TVD & di, const TVD & dj, TM & Qij)
-  {
-    CalcQ(Qij);
+    SetIdentity(Qij);
   } // H1Energy::CalcQij
 
 
-  template<int DIM, class T_V_DATA, class T_E_DATA>
-  INLINE H1Energy<DIM, T_V_DATA, T_E_DATA> :: void ModQij (const TVD & di, const TVD & dj, TM & Qij)
+  template<int DIM, class TVD, class TED>
+  INLINE void H1Energy<DIM, TVD, TED> :: ModQij (const TVD & di, const TVD & dj, TM & Qij)
   {
-    ModQ(Qij);
+    ;
   } // H1Energy::ModQij
 
 
-  template<int DIM, class T_V_DATA, class T_E_DATA>
-  INLINE H1Energy<DIM, T_V_DATA, T_E_DATA> :: void CalcQHh (const TVD & dH, const TVD & dh, TM & QHh)
+  template<int DIM, class TVD, class TED>
+  INLINE void H1Energy<DIM, TVD, TED> :: CalcQHh (const TVD & dH, const TVD & dh, TM & QHh)
   {
-    CalcQ(QHh);
+    SetIdentity(QHh);
   } // H1Energy::CalcQHh
 
 
-  template<int DIM, class T_V_DATA, class T_E_DATA>
-  INLINE H1Energy<DIM, T_V_DATA, T_E_DATA> :: void ModQHh (const TVD & dH, const TVD & dh, TM & QHh)
+  template<int DIM, class TVD, class TED>
+  INLINE void H1Energy<DIM, TVD, TED> :: ModQHh (const TVD & dH, const TVD & dh, TM & QHh)
   {
-    ModQ(QHh);
+    ;
   } // H1Energy::ModQHh
 
 
-  template<int DIM, class T_V_DATA, class T_E_DATA>
-  INLINE H1Energy<DIM, T_V_DATA, T_E_DATA> :: void CalcQs (const TVD & di, const TVD & dj, TM & Qij, TM & Qji)
+  template<int DIM, class TVD, class TED>
+  INLINE void H1Energy<DIM, TVD, TED> :: CalcQs (const TVD & di, const TVD & dj, TM & Qij, TM & Qji)
   {
-    CalcQs(Qij);
-    CalcQs(Qji);
+    SetIdentity(Qij);
+    SetIdentity(Qji);
   } // H1Energy::CalcQs
 
 
-  template<int DIM, class T_V_DATA, class T_E_DATA>
-  INLINE H1Energy<DIM, T_V_DATA, T_E_DATA> :: void ModQs (const TVD & di, const TVD & dj, TM & Qij, TM & Qji)
+  template<int DIM, class TVD, class TED>
+  INLINE void H1Energy<DIM, TVD, TED> :: ModQs (const TVD & di, const TVD & dj, TM & Qij, TM & Qji)
   {
-    ModQ(Qij);
-    ModQ(Qji);
+    ;
   } // H1Energy::ModQs
 
 
-  template<int DIM, class T_V_DATA, class T_E_DATA>
-  INLINE H1Energy<DIM, T_V_DATA, T_E_DATA>::TVD H1Energy<DIM, T_V_DATA, T_E_DATA> :: CalcMPData (const TVD & da, const TVD & db)
+  template<int DIM, class TVD, class TED>
+  INLINE typename H1Energy<DIM, TVD, TED>::TVD H1Energy<DIM, TVD, TED> :: CalcMPData (const TVD & da, const TVD & db)
   {
     return TVD(0);
   } // H1Energy::CalcMPData
 
 
-  template<int DIM, class T_V_DATA, class T_E_DATA>
-  INLINE void H1Energy :: CalcRMBlock (FlatMatrix<TM> mat, const TED & ed, const TVD & vdi, const TVD & vdj)
+  template<int DIM, class TVD, class TED>
+  INLINE void H1Energy<DIM, TVD, TED> :: CalcRMBlock (FlatMatrix<TM> mat, const TED & ed, const TVD & vdi, const TVD & vdj)
   {
-    mat(0,0) = 0; Iterate<DIM>([&](auto i) LAMBDA_INLINE { mat(0,0)(i.value, i.value) = calc_trace(ed); });
+    SetScalIdentity(calc_trace(ed), mat(0,0)); 
+    // if (DIM == 1)
+    //   { mat(0,0) = ed; }
+    // else
+    //   {
+    // 	mat(0,0) = 0;
+    // 	Iterate<DIM>([&](auto i) LAMBDA_INLINE { mat(0,0)(i.value, i.value) = calc_trace(ed); });
+    //   }
     mat(1,1) = mat(0,0);
     mat(1,0) = -mat(0,0);
     mat(0,1) = -mat(0,0);
@@ -87,8 +80,8 @@ namespace amg
 
   /** EpsEpsEnergy **/
 
-  template<int DIM, class T_V_DATA, class T_E_DATA>
-  INLINE void EpsEpsEnergy<DIM, T_V_DATA, T_E_DATA> :: CalcQ  (const Vec<DIM> & t, TM & Q)
+  template<int DIM, class TVD, class TED>
+  INLINE void EpsEpsEnergy<DIM, TVD, TED> :: CalcQ  (const Vec<DIM> & t, TM & Q)
   {
     Q = 0;
     Iterate<DIM>([&] (auto i) LAMBDA_INLINE { Q(i.value, i.value) = 1.0; } );
@@ -107,8 +100,8 @@ namespace amg
   } // EpsEpsEnergy::CalcQ
 
 
-  template<int DIM, class T_V_DATA, class T_E_DATA>
-  INLINE void EpsEpsEnergy<DIM, T_V_DATA, T_E_DATA> :: ModQ  (const Vec<DIM> & t, TM & Q)
+  template<int DIM, class TVD, class TED>
+  INLINE void EpsEpsEnergy<DIM, TVD, TED> :: ModQ  (const Vec<DIM> & t, TM & Q)
   {
     if constexpr(DIM == 2) {
 	Q(0,2) = -t(1);
@@ -125,40 +118,40 @@ namespace amg
   } // EpsEpsEnergy::ModQ
 
 
-  template<int DIM, class T_V_DATA, class T_E_DATA>
-  INLINE void EpsEpsEnergy<DIM, T_V_DATA, T_E_DATA> :: CalcQij (const TVD & di, const TVD & dj, TM & Qij)
+  template<int DIM, class TVD, class TED>
+  INLINE void EpsEpsEnergy<DIM, TVD, TED> :: CalcQij (const TVD & di, const TVD & dj, TM & Qij)
   {
     Vec<DIM> t = 0.5 * (dj.pos - di.pos); // i -> j
     CalcQ(t, Qij);
   } // EpsEpsEnergy::CalcQij
 
 
-  template<int DIM, class T_V_DATA, class T_E_DATA>
-  INLINE void EpsEpsEnergy<DIM, T_V_DATA, T_E_DATA> :: ModQij (const TVD & di, const TVD & dj, TM & Qij)
+  template<int DIM, class TVD, class TED>
+  INLINE void EpsEpsEnergy<DIM, TVD, TED> :: ModQij (const TVD & di, const TVD & dj, TM & Qij)
   {
     Vec<DIM> t = 0.5 * (dj.pos - di.pos); // i -> j
     ModQ(t, Qij);
   } // EpsEpsEnergy::ModQij
 
 
-  template<int DIM, class T_V_DATA, class T_E_DATA>
-  INLINE void EpsEpsEnergy<DIM, T_V_DATA, T_E_DATA> :: CalcQHh (const TVD & dH, const TVD & dh, TM & QHh)
+  template<int DIM, class TVD, class TED>
+  INLINE void EpsEpsEnergy<DIM, TVD, TED> :: CalcQHh (const TVD & dH, const TVD & dh, TM & QHh)
   {
     Vec<DIM> t = dh.pos - dH.pos; // H -> h
     CalcQ(t, QHh);
   } // EpsEpsEnergy::CalcQHh
 
 
-  template<int DIM, class T_V_DATA, class T_E_DATA>
-  INLINE void EpsEpsEnergy<DIM, T_V_DATA, T_E_DATA> :: ModQHh (const TVD & dH, const TVD & dh, TM & QHh)
+  template<int DIM, class TVD, class TED>
+  INLINE void EpsEpsEnergy<DIM, TVD, TED> :: ModQHh (const TVD & dH, const TVD & dh, TM & QHh)
   {
     Vec<DIM> t = dh.pos - dH.pos; // H -> h
     ModQ(t, QHh);
   } // EpsEpsEnergy::ModQHh
 
 
-  template<int DIM, class T_V_DATA, class T_E_DATA>
-  INLINE void EpsEpsEnergy<DIM, T_V_DATA, T_E_DATA> :: CalcQs  (const TVD & di, const TVD & dj, TM & Qij, TM & Qji)
+  template<int DIM, class TVD, class TED>
+  INLINE void EpsEpsEnergy<DIM, TVD, TED> :: CalcQs  (const TVD & di, const TVD & dj, TM & Qij, TM & Qji)
   {
     Vec<DIM> t = 0.5 * (dj.pos - di.pos); // i -> j
     CalcQ(t, Qij);
@@ -167,8 +160,8 @@ namespace amg
   } // EpsEpsEnergy::CalcQs
 
 
-  template<int DIM, class T_V_DATA, class T_E_DATA>
-  INLINE void EpsEpsEnergy<DIM, T_V_DATA, T_E_DATA> :: ModQs  (const TVD & di, const TVD & dj, TM & Qij, TM & Qji)
+  template<int DIM, class TVD, class TED>
+  INLINE void EpsEpsEnergy<DIM, TVD, TED> :: ModQs  (const TVD & di, const TVD & dj, TM & Qij, TM & Qji)
   {
     Vec<DIM> t = 0.5 * (dj.pos - di.pos); // i -> j
     ModQ(t, Qij);
@@ -177,15 +170,15 @@ namespace amg
   } // EpsEpsEnergy::ModQs
 
 
-  template<int DIM, class T_V_DATA, class T_E_DATA>
-  INLINE EpsEpsEnergy<DIM, T_V_DATA, T_E_DATA>::TVD EpsEpsEnergy<DIM, T_V_DATA, T_E_DATA> :: CalcMPData (const TVD & da, const TVD & db)
+  template<int DIM, class TVD, class TED>
+  INLINE EpsEpsEnergy<DIM, TVD, TED>::TVD EpsEpsEnergy<DIM, TVD, TED> :: CalcMPData (const TVD & da, const TVD & db)
   {
-    T_V_DATA o; o.pos = 0.5 * (da.pos + db.pos);
+    TVD o; o.pos = 0.5 * (da.pos + db.pos);
     return move(o);
   } // EpsEpsEnergy::CalcMPData
 
 
-  template<int DIM, class T_V_DATA, class T_E_DATA>
+  template<int DIM, class TVD, class TED>
   INLINE void H1Energy :: EpsEpsEnergy (FlatMatrix<TM> mat, const TED & ed, const TVD & vdi, const TVD & vdj)
   {
     static TM Qij, Qji, QiM, QjM;

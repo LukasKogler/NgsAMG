@@ -5,8 +5,9 @@ namespace amg
 {
   /** Options **/
 
-  struct VertexAMGPCOptions
+  class VertexAMGPCOptions
   {
+  public:
     /** Which subset of DOFs to perform the coarsening on **/
     enum DOF_SUBSET : char { RANGE_SUBSET = 0,        // use Union { [ranges[i][0], ranges[i][1]) }
 			     SELECTED_SUBSET = 1 };   // given by bitarray
@@ -55,20 +56,206 @@ namespace amg
 			 ALG_ENERGY = 1,      // from the sparse matrix
 			 ELMAT_ENERGY = 2 };  // from element matrices
     ENERGY energy = ALG_ENERGY;
-  }; // VertexAMGPCOptions
+
+  public:
+    
+    VertexAMGPCOptions () { ; }
+
+    virtual void SetFromFlags (shared_ptr<FESpace> fes, const Flags & flags, string prefix);
+  }; // class VertexAMGPCOptions
 
 
   template<class FACTORY>
-  struct VertexAMGPC<FACTORY> :: Options : public FACTORY::Options,
-					   public VertexAMGPCOptions
+  class VertexAMGPC<FACTORY> :: Options : public FACTORY::Options,
+					  public VertexAMGPCOptions
   {
+  public:
+    virtual void SetFromFlags (shared_ptr<FESpace> fes, const Flags & flags, string prefix) override
+    {
+      FACTORY::Options::SetFromFlags(flags, prefix);
+      VertexAMGPCOptions::SetFromFlags(fes, flags, prefix);
+    }
   }; // VertexAMGPC::Options
 
 
-  template<class FACTORY>
-  struct ElmatVAMG :: Options : public VertexAMGPC::Options
+  template<class FACTORY, class HTVD, class HTED>
+  class ElmatVAMG<FACTORY, HTVD, HTED> :: Options : public VertexAMGPC<FACTORY>::Options
   {
   };
+
+
+  void VertexAMGPCOptions :: SetFromFlags (shared_ptr<FESpace> fes, const Flags & flags, string prefix)
+  {
+
+    auto set_enum_opt = [&] (auto & opt, string key, Array<string> vals, auto default_val) {
+      string val = flags.GetStringFlag(prefix + key, "");
+      bool found = false;
+      for (auto k : Range(vals)) {
+	if (val == vals[k]) {
+	  found = true;
+	  opt = decltype(opt)(k);
+	  break;
+	}
+      }
+      if (!found)
+	{ opt = default_val; }
+    };
+
+    auto ma = fes->GetMeshAccess();
+    auto pfit = [&](string x) LAMBDA_INLINE { return prefix + x; };
+
+    set_enum_opt(subset, "on_dofs", {"range", "select"}, RANGE_SUBSET);
+
+    switch (subset) {
+    case (RANGE_SUBSET) : {
+      auto &low = flags.GetNumListFlag(pfit("lower"));
+      if (low.Size()) { // multiple ranges given by user
+	auto &up = flags.GetNumListFlag(pfit("upper"));
+	ss_ranges.SetSize(low.Size());
+	for (auto k : Range(low.Size()))
+	  { ss_ranges[k] = { size_t(low[k]), size_t(up[k]) }; }
+	cout << IM(3) << "subset for coarsening defined by user range(s)" << endl;
+	cout << IM(5) << ss_ranges << endl;
+	break;
+      }
+      size_t lowi = flags.GetNumFlag(pfit("lower"), -1);
+      size_t upi = flags.GetNumFlag(pfit("upper"), -1);
+      if ( (lowi != size_t(-1)) && (upi != size_t(-1)) ) { // single range given by user
+	ss_ranges.SetSize(1);
+	ss_ranges[0] = { lowi, upi };
+	cout << IM(3) << "subset for coarsening defined by (single) user range" << endl;
+	cout << IM(5) << ss_ranges << endl;
+	break;
+      }
+      auto comp_fes = dynamic_pointer_cast<CompoundFESpace>(fes);
+      if (flags.GetDefineFlagX(pfit("lo")).IsFalse()) { // e.g nodalp2 (!)
+	if (fes->GetMeshAccess()->GetDimension() == 2)
+	  if (!flags.GetDefineFlagX(pfit("force_nolo")).IsTrue())
+	    { throw Exception("lo = False probably does not make sense in 2D! (set force_nolo to True to override this!)"); }
+	has_node_dofs[NT_EDGE] = true;
+	ss_ranges.SetSize(1);
+	ss_ranges[0][0] = 0;
+	ss_ranges[0][1] = fes->GetNDof();
+	cout << IM(3) << "subset for coarsening is ALL DOFs!" << endl;
+      }
+      else { // per default, use only low-order DOFs for coarsening
+	auto get_lo_nd = [](auto & fes) LAMBDA_INLINE {
+	  if (auto lofes = fes->LowOrderFESpacePtr()) // some spaces do not have a lo-space!
+	    { return lofes->GetNDof(); }
+	  else
+	    { return fes->GetNDof(); }
+	};
+	std::function<void(shared_ptr<FESpace>, size_t)> set_lo_ranges =
+	  [&](auto afes, auto offset) -> void LAMBDA_INLINE {
+	  if (auto comp_fes = dynamic_pointer_cast<CompoundFESpace>(afes)) {
+	    size_t n_spaces = comp_fes->GetNSpaces();
+	    size_t sub_os = offset;
+	    for (auto space_nr : Range(n_spaces)) {
+	      auto space = (*comp_fes)[space_nr];
+	      set_lo_ranges(space, sub_os);
+	      sub_os += space->GetNDof();
+	    }
+	  }
+	  else if (auto reo_fes = dynamic_pointer_cast<ReorderedFESpace>(afes)) {
+	    // presumably, all vertex-DOFs are low order, and these are still the first ones, so this should be fine
+	    auto base_space = reo_fes->GetBaseSpace();
+	    set_lo_ranges(base_space, offset);
+	  }
+	  else {
+	    INT<2, size_t> r = { offset, offset + get_lo_nd(afes) };
+	    ss_ranges.Append(r);
+	    // ss_ranges.Append( { offset, offset + get_lo_nd(afes) } ); // for some reason does not work ??
+	  }
+	};
+	ss_ranges.SetSize(0);
+	set_lo_ranges(fes, 0);
+	cout << IM(3) << "subset for coarsening defined by low-order range(s)" << endl;
+	for (auto r : ss_ranges)
+	  { cout << IM(5) << r[0] << " " << r[1] << endl; }
+      }
+      break;
+    }
+    case (SELECTED_SUBSET) : {
+      set_enum_opt(spec_ss, "subset", {"__DO_NOT_SET_THIS_FROM_FLAGS_PLEASE_I_DO_NOT_THINK_THAT_IS_A_GOOD_IDEA__",
+	    "free", "nodalp2"}, SPECSS_NONE);
+      cout << IM(3) << "subset for coarsening defined by bitarray" << endl;
+      // NONE - set somewhere else. FREE - set in initlevel 
+      if (spec_ss == SPECSS_NODALP2) {
+	if (ma->GetDimension() == 2) {
+	  cout << IM(4) << "In 2D nodalp2 does nothing, using default lo base functions!" << endl;
+	  subset = RANGE_SUBSET;
+	  ss_ranges.SetSize(1);
+	  ss_ranges[0][0] = 0;
+	  if (auto lospace = fes->LowOrderFESpacePtr()) // e.g compound has no LO space
+	    { ss_ranges[0][1] = lospace->GetNDof(); }
+	  else
+	    { ss_ranges[0][1] = fes->GetNDof(); }
+	}
+	else {
+	  cout << IM(3) << "taking nodalp2 subset for coarsening" << endl;
+	  /** 
+	      Okay, we have to be careful here. We use infomation from block_s as a heuristic:
+	      - We assume that the first sum(block_s) dofs of each vertex are the right ones
+	      - We assume that we can split the DOFs for each edge into sum(block_s) parts and take the first
+	      one each. Compatible with reordered compound space, because the order of DOFs WITHIN AN EDGE stays the same
+	      example: an edge has 15 DOFs, block_s = [2,1]. then we split the DOFs into
+	      [0..4], [5..10], [10..14] and take DOfs [0, 5, 10].
+	      This works for:
+	      - Vector-H1
+	      - [Reordered Vector-H1, Reordered Vector-H1]
+	      - Reordered([Vec-H1, Vec-H1])
+	      - Reordered([H1, H1, ...])
+	      - Ofc H1(dim=..)
+	      (compound of multidim does not work anyways)
+	  **/
+	  has_node_dofs[NT_EDGE] = true;
+	  ss_select = make_shared<BitArray>(fes->GetNDof());
+	  ss_select->Clear();
+	  if ( (block_s.Size() == 1) && (block_s[0] == 1) ) { // this is probably correct
+	    for (auto k : Range(ma->GetNV()))
+	      { ss_select->SetBit(k); }
+	    Array<DofId> dns;
+	    for (auto k : Range(ma->GetNEdges())) {
+	      // fes->GetDofNrs(NodeId(NT_EDGE, k), dns);
+	      fes->GetEdgeDofNrs(k, dns);
+	      if (dns.Size())
+		{ ss_select->SetBit(dns[0]); }
+	    }
+	  }
+	  else { // an educated guess
+	    const size_t dpv = std::accumulate(block_s.begin(), block_s.end(), 0);
+	    Array<int> dnums;
+	    auto jumped_set = [&] () LAMBDA_INLINE {
+	      const int jump = dnums.Size() / dpv;
+	      for (auto k : Range(dpv))
+		{ ss_select->SetBit(dnums[k*jump]); }
+	    };
+	    for (auto k : Range(ma->GetNV())) {
+	      fes->GetDofNrs(NodeId(NT_VERTEX, k), dnums);
+	      jumped_set(); // probably sets all
+	    }
+	    for (auto k : Range(ma->GetNEdges())) {
+	      // fes->GetEdgeDofNrs(k, dnums);
+	      fes->GetDofNrs(NodeId(NT_EDGE, k), dnums);
+	      jumped_set();
+	    }
+	    //cout << " best guess numset " << ss_select->NumSet() << endl;
+	    //cout << *ss_select << endl;
+	  }
+	}
+	cout << IM(3) << "nodalp2 set: " << ss_select->NumSet() << " of " << ss_select->Size() << endl;
+      }
+      break;
+    }
+    default: { throw Exception("Not implemented"); break; }
+    }
+
+    set_enum_opt(topo, "edges", {"alg", "mesh", "elmat"}, ALG_TOPO);
+    set_enum_opt(v_pos, "vpos", {"vertex", "given"}, VERTEX_POS);
+    set_enum_opt(energy, "energy", {"triv", "alg", "elmat"}, ALG_ENERGY);
+
+  } // VertexAMGPCOptions::SetOptionsFromFlags
+
 
   /** END Options **/
 
@@ -99,16 +286,18 @@ namespace amg
   template<class FACTORY>
   void VertexAMGPC<FACTORY> :: InitLevel (shared_ptr<BitArray> freedofs)
   {
+    auto & O(static_cast<Options&>(*options));
+
     if (freedofs == nullptr) // postpone to FinalizeLevel
       { return; }
 
-    if (bfa->UsesEliminateInternal() || options->smooth_lo_only) {
+    if (bfa->UsesEliminateInternal() || O.smooth_lo_only) {
       auto fes = bfa->GetFESpace();
       auto lofes = fes->LowOrderFESpacePtr();
       finest_freedofs = make_shared<BitArray>(*freedofs);
       auto& ofd(*finest_freedofs);
       if (bfa->UsesEliminateInternal() ) { // clear freedofs on eliminated DOFs
-	auto rmax = (options->smooth_lo_only && (lofes != nullptr) ) ? lofes->GetNDof() : freedofs->Size();
+	auto rmax = (O.smooth_lo_only && (lofes != nullptr) ) ? lofes->GetNDof() : freedofs->Size();
 	for (auto k : Range(rmax))
 	  if (ofd.Test(k)) {
 	    COUPLING_TYPE ct = fes->GetDofCouplingType(k);
@@ -116,7 +305,7 @@ namespace amg
 	      ofd.Clear(k);
 	  }
       }
-      if (options->smooth_lo_only && (lofes != nullptr) ) { // clear freedofs on all high-order DOFs
+      if (O.smooth_lo_only && (lofes != nullptr) ) { // clear freedofs on all high-order DOFs
 	for (auto k : Range(lofes->GetNDof(), freedofs->Size()))
 	  { ofd.Clear(k); }
       }
@@ -124,12 +313,13 @@ namespace amg
     else
       { finest_freedofs = freedofs; }
 
-    if (options->spec_ss == BaseEmbedAMGOptions::SPECSS_FREE) {
+    if (O.spec_ss == VertexAMGPCOptions::SPECIAL_SUBSET::SPECSS_FREE) {
       cout << IM(3) << "taking subset for coarsening from freedofs" << endl;
-      options->ss_select = finest_freedofs;
+      O.ss_select = finest_freedofs;
       //cout << " freedofs (for coarsening) set " << options->ss_select->NumSet() << " of " << options->ss_select->Size() << endl;
       //cout << *options->ss_select << endl;
     }
+
   } // VertexAMGPC<FACTORY>::InitLevel
 
 
@@ -148,180 +338,11 @@ namespace amg
       { throw Exception("Invalid Opts!"); }
     Options & O(*myO);
 
-    auto set_enum_opt = [&] (auto & opt, string key, Array<string> vals, auto default_val) {
-      string val = flags.GetStringFlag(prefix + key, "");
-      bool found = false;
-      for (auto k : Range(vals)) {
-	if (val == vals[k]) {
-	  found = true;
-	  opt = decltype(opt)(k);
-	  break;
-	}
-      }
-      if (!found)
-	{ opt = default_val; }
-    };
-
-    auto pfit = [&](string x) LAMBDA_INLINE { return prefix + x; };
-
-    BaseAMGPC::SetOptionsFromFlags(O, flags, prefix);
-
-    FACTORY::SetOptionsFromFlags(O, flags, prefix);
-
-    set_enum_opt(O.subset, "on_dofs", {"range", "select"}, Options::RANGE_SUBSET);
-
-    switch (O.subset) {
-    case (Options::RANGE_SUBSET) : {
-      auto &low = flags.GetNumListFlag(pfit("lower"));
-      if (low.Size()) { // multiple ranges given by user
-	auto &up = flags.GetNumListFlag(pfit("upper"));
-	O.ss_ranges.SetSize(low.Size());
-	for (auto k : Range(low.Size()))
-	  { O.ss_ranges[k] = { size_t(low[k]), size_t(up[k]) }; }
-	cout << IM(3) << "subset for coarsening defined by user range(s)" << endl;
-	cout << IM(5) << O.ss_ranges << endl;
-	break;
-      }
-      size_t lowi = flags.GetNumFlag(pfit("lower"), -1);
-      size_t upi = flags.GetNumFlag(pfit("upper"), -1);
-      if ( (lowi != size_t(-1)) && (upi != size_t(-1)) ) { // single range given by user
-	O.ss_ranges.SetSize(1);
-	O.ss_ranges[0] = { lowi, upi };
-	cout << IM(3) << "subset for coarsening defined by (single) user range" << endl;
-	cout << IM(5) << O.ss_ranges << endl;
-	break;
-      }
-      auto comp_fes = dynamic_pointer_cast<CompoundFESpace>(fes);
-      if (flags.GetDefineFlagX(pfit("lo")).IsFalse()) { // e.g nodalp2 (!)
-	if (fes->GetMeshAccess()->GetDimension() == 2)
-	  if (!flags.GetDefineFlagX(pfit("force_nolo")).IsTrue())
-	    { throw Exception("lo = False probably does not make sense in 2D! (set force_nolo to True to override this!)"); }
-	O.has_node_dofs[NT_EDGE] = true;
-	O.ss_ranges.SetSize(1);
-	O.ss_ranges[0][0] = 0;
-	O.ss_ranges[0][1] = fes->GetNDof();
-	cout << IM(3) << "subset for coarsening is ALL DOFs!" << endl;
-      }
-      else { // per default, use only low-order DOFs for coarsening
-	auto get_lo_nd = [](auto & fes) LAMBDA_INLINE {
-	  if (auto lofes = fes->LowOrderFESpacePtr()) // some spaces do not have a lo-space!
-	    { return lofes->GetNDof(); }
-	  else
-	    { return fes->GetNDof(); }
-	};
-	std::function<void(shared_ptr<FESpace>, size_t)> set_lo_ranges =
-	  [&](auto afes, auto offset) -> void LAMBDA_INLINE {
-	  if (auto comp_fes = dynamic_pointer_cast<CompoundFESpace>(afes)) {
-	    size_t n_spaces = comp_fes->GetNSpaces();
-	    size_t sub_os = offset;
-	    for (auto space_nr : Range(n_spaces)) {
-	      auto space = (*comp_fes)[space_nr];
-	      set_lo_ranges(space, sub_os);
-	      sub_os += space->GetNDof();
-	    }
-	  }
-	  else if (auto reo_fes = dynamic_pointer_cast<ReorderedFESpace>(afes)) {
-	    // presumably, all vertex-DOFs are low order, and these are still the first ones, so this should be fine
-	    auto base_space = reo_fes->GetBaseSpace();
-	    set_lo_ranges(base_space, offset);
-	  }
-	  else {
-	    INT<2, size_t> r = { offset, offset + get_lo_nd(afes) };
-	    O.ss_ranges.Append(r);
-	    // O.ss_ranges.Append( { offset, offset + get_lo_nd(afes) } ); // for some reason does not work ??
-	  }
-	};
-	O.ss_ranges.SetSize(0);
-	set_lo_ranges(fes, 0);
-	cout << IM(3) << "subset for coarsening defined by low-order range(s)" << endl;
-	for (auto r : O.ss_ranges)
-	  { cout << IM(5) << r[0] << " " << r[1] << endl; }
-      }
-      break;
-    }
-    case (Options::SELECTED_SUBSET) : {
-      set_enum_opt(O.spec_ss, "subset", {"__DO_NOT_SET_THIS_FROM_FLAGS_PLEASE_I_DO_NOT_THINK_THAT_IS_A_GOOD_IDEA__",
-	    "free", "nodalp2"}, Options::SPECSS_NONE);
-      cout << IM(3) << "subset for coarsening defined by bitarray" << endl;
-      // NONE - set somewhere else. FREE - set in initlevel 
-      if (O.spec_ss == Options::SPECSS_NODALP2) {
-	if (ma->GetDimension() == 2) {
-	  cout << IM(4) << "In 2D nodalp2 does nothing, using default lo base functions!" << endl;
-	  O.subset = Options::RANGE_SUBSET;
-	  O.ss_ranges.SetSize(1);
-	  O.ss_ranges[0][0] = 0;
-	  if (auto lospace = fes->LowOrderFESpacePtr()) // e.g compound has no LO space
-	    { O.ss_ranges[0][1] = lospace->GetNDof(); }
-	  else
-	    { O.ss_ranges[0][1] = fes->GetNDof(); }
-	}
-	else {
-	  cout << IM(3) << "taking nodalp2 subset for coarsening" << endl;
-	  /** 
-	      Okay, we have to be careful here. We use infomation from O.block_s as a heuristic:
-	        - We assume that the first sum(block_s) dofs of each vertex are the right ones
-		- We assume that we can split the DOFs for each edge into sum(block_s) parts and take the first
-		  one each. Compatible with reordered compound space, because the order of DOFs WITHIN AN EDGE stays the same
-		  example: an edge has 15 DOFs, block_s = [2,1]. then we split the DOFs into
-		  [0..4], [5..10], [10..14] and take DOfs [0, 5, 10].
-	       This works for:
-	        - Vector-H1
-		- [Reordered Vector-H1, Reordered Vector-H1]
-		- Reordered([Vec-H1, Vec-H1])
-		- Reordered([H1, H1, ...])
-		- Ofc H1(dim=..)
-	       (compound of multidim does not work anyways)
-	   **/
-	  O.has_node_dofs[NT_EDGE] = true;
-	  O.ss_select = make_shared<BitArray>(fes->GetNDof());
-	  O.ss_select->Clear();
-	  if ( (O.block_s.Size() == 1) && (O.block_s[0] == 1) ) { // this is probably correct
-	    for (auto k : Range(ma->GetNV()))
-	    { O.ss_select->SetBit(k); }
-	    Array<DofId> dns;
-	    for (auto k : Range(ma->GetNEdges())) {
-	      // fes->GetDofNrs(NodeId(NT_EDGE, k), dns);
-	      fes->GetEdgeDofNrs(k, dns);
-	      if (dns.Size())
-		{ O.ss_select->SetBit(dns[0]); }
-	    }
-	  }
-	  else { // an educated guess
-	    const size_t dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
-	    Array<int> dnums;
-	    auto jumped_set = [&] () LAMBDA_INLINE {
-	      const int jump = dnums.Size() / dpv;
-	      for (auto k : Range(dpv))
-		{ O.ss_select->SetBit(dnums[k*jump]); }
-	    };
-	    for (auto k : Range(ma->GetNV())) {
-	      fes->GetDofNrs(NodeId(NT_VERTEX, k), dnums);
-	      jumped_set(); // probably sets all
-	    }
-	    for (auto k : Range(ma->GetNEdges())) {
-	      // fes->GetEdgeDofNrs(k, dnums);
-	      fes->GetDofNrs(NodeId(NT_EDGE, k), dnums);
-	      jumped_set();
-	    }
-	    //cout << " best guess numset " << O.ss_select->NumSet() << endl;
-	    //cout << *O.ss_select << endl;
-	  }
-	}
-	cout << IM(3) << "nodalp2 set: " << O.ss_select->NumSet() << " of " << O.ss_select->Size() << endl;
-      }
-      break;
-    }
-    default: { throw Exception("Not implemented"); break; }
-    }
-
-    set_enum_opt(O.topo, "edges", {"alg", "mesh", "elmat"}, Options::ALG_TOPO);
-    set_enum_opt(O.v_pos, "vpos", {"vertex", "given"}, Options::VERTEX_POS);
-    set_enum_opt(O.energy, "energy", {"triv", "alg", "elmat"}, Options::ALG_ENERGY);
-    set_enum_opt(O.clev, "clev", {"inv", "sm", "none"}, Options::INV_CLEV);
-
-  } // VertexAMGPC::SetOptionsFromFlags
+    O.SetFromFlags(bfa->GetFESpace(), flags, prefix);
+  } // VertexAMGPC<FACTORY> :: SetOptionsFromFlags
 
 
+  template<class FACTORY>
   shared_ptr<EQCHierarchy> VertexAMGPC<FACTORY> :: BuildEQCH ()
   {
     auto & O = static_cast<Options&>(*options);
@@ -346,6 +367,7 @@ namespace amg
   } // VertexAMGPC::BuildEQCH
 
 
+  template<class FACTORY>
   shared_ptr<TopologicMesh> VertexAMGPC<FACTORY> :: BuildInitialMesh ()
   {
     static Timer t("BuildInitialMesh"); RegionTimer rt(t);
@@ -541,7 +563,7 @@ namespace amg
   template<class FACTORY>
   shared_ptr<BaseAMGFactory> VertexAMGPC<FACTORY> :: BuildFactory ()
   {
-    return make_shared<FACTORY>(mesh, options);
+    return make_shared<FACTORY>(options);
   } // VertexAMGPC::BuildFactory
 
 
@@ -753,14 +775,14 @@ namespace amg
   template<class FACTORY>
   shared_ptr<typename FACTORY::TMESH> VertexAMGPC<FACTORY> :: BuildAlgMesh (shared_ptr<BlockTM> top_mesh)
   {
-    Options & O = static_casst<Options&>(*options);
+    Options & O = static_cast<Options&>(*options);
 
     shared_ptr<TMESH> alg_mesh;
 
     switch(O.energy) {
-    case(BAO::TRIV_ENERGY): { alg_mesh = BuildAlgMesh_TRIV(top_mesh); break; }
-    case(BAO::ALG_ENERGY): { alg_mesh = BuildAlgMesh_ALG(top_mesh); break; }
-    case(BAO::ELMAT_ENERGY): { throw Exception("Cannot do elmat energy!"); }
+    case(Options::TRIV_ENERGY): { alg_mesh = BuildAlgMesh_TRIV(top_mesh); break; }
+    case(Options::ALG_ENERGY): { alg_mesh = BuildAlgMesh_ALG(top_mesh); break; }
+    case(Options::ELMAT_ENERGY): { throw Exception("Cannot do elmat energy!"); }
     default: { throw Exception("Invalid Energy!"); break; }
     }
 
@@ -769,14 +791,11 @@ namespace amg
 
 
   template<class FACTORY>
-  shared_ptr<TopologicMesh> VertexAMGPC<FACTORY> :: BuildAlgMesh_ALG (shared_ptr<BlockTM> top_mesh)
+  shared_ptr<typename FACTORY::TMESH> VertexAMGPC<FACTORY> :: BuildAlgMesh_ALG (shared_ptr<BlockTM> top_mesh)
   {
     static Timer t("BuildAlgMesh_ALG"); RegionTimer rt(t);
 
-    typedef BaseEmbedAMGOptions BAO;
-    auto & O(*options);
-
-    shared_ptr<FACTORY::TMESH> alg_mesh;
+    shared_ptr<typename FACTORY::TMESH> alg_mesh;
 
     shared_ptr<BaseMatrix> f_loc_mat;
     if (auto parmat = dynamic_pointer_cast<ParallelMatrix>(finest_mat))
@@ -823,7 +842,7 @@ namespace amg
   ElmatVAMG<FACTORY, HTVD, HTED> :: ElmatVAMG (shared_ptr<BilinearForm> blf, const Flags & flags, const string name, shared_ptr<Options> opts)
     : VertexAMGPC<FACTORY>(blf, flags, name, nullptr)
   {
-    options = (opts == nullptr) ? MakeOptionsFromFlags(flags) : opts;
+    options = (opts == nullptr) ? this->MakeOptionsFromFlags(flags) : opts;
   } // ElmatVAMG(..)
 
 
