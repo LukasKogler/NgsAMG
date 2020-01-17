@@ -65,8 +65,11 @@ namespace amg
 
     virtual shared_ptr<BaseSmoother> BuildGSSmoother (shared_ptr<BaseSparseMatrix> spm, shared_ptr<ParallelDofs> pardofs,
 						      shared_ptr<EQCHierarchy> eqc_h, shared_ptr<BitArray> freedofs = nullptr);
+    virtual shared_ptr<BitArray> GetFreeDofs (const BaseAMGFactory::AMGLevel & amg_level);
+
     virtual shared_ptr<BaseSmoother> BuildBGSSmoother (shared_ptr<BaseSparseMatrix> spm, shared_ptr<ParallelDofs> pardofs,
 						       shared_ptr<EQCHierarchy> eqc_h, Table<int> && blocks);
+    virtual Table<int>&& GetGSBlocks (const BaseAMGFactory::AMGLevel & amg_level);
 
   }; // BaseAMGPC
 

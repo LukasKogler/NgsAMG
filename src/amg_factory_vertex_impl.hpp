@@ -113,7 +113,7 @@ namespace amg
     BASE_CLASS::InitState(state, lev);
 
     auto & s(static_cast<State&>(state));
-    s.crs_otps = nullptr;
+    s.crs_opts = nullptr;
   } // VertexAMGFactory::InitState
 
 
@@ -138,7 +138,8 @@ namespace amg
   shared_ptr<BaseCoarseMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildAggMap (BaseAMGFactory::State & state)
   {
     auto & O = static_cast<Options&>(*options);
-    typename Agglomerator<ENERGY, TMESH>::Options agg_opts;
+    typedef Agglomerator<ENERGY, TMESH, ENERGY::NEED_ROBUST> AGG_CLASS;
+    typename AGG_CLASS::Options agg_opts;
     auto mesh = dynamic_pointer_cast<TMESH>(state.curr_mesh);
     if (mesh == nullptr)
       { throw Exception(string("Invalid mesh type ") + typeid(*state.curr_mesh).name() + string(" for BuildAggMap!")); }
@@ -147,7 +148,8 @@ namespace amg
     agg_opts.cw_geom = O.ecw_geom;
     agg_opts.robust = O.ecw_robust;
     agg_opts.dist2 = ( state.level[1] == 0 ) && ( state.level[0] < O.n_levels_d2_agg );
-    auto agglomerator = make_shared<Agglomerator<FACTORY>>(mesh, state.free_nodes, move(agg_opts));
+    // auto agglomerator = make_shared<Agglomerator<FACTORY>>(mesh, state.free_nodes, move(agg_opts));
+    auto agglomerator = make_shared<AGG_CLASS>(mesh, state.free_nodes, move(agg_opts));
     return agglomerator;
   } // VertexAMGFactory::BuildCoarseMap
 
@@ -285,7 +287,7 @@ namespace amg
 	}
 	trow.SetSize(0);
 	tcv.SetSize(0);
-	auto EQ = fmesh.template GetEqcOfNode<NT_VERTEX>(V);
+	auto EQ = FM.template GetEqcOfNode<NT_VERTEX>(V);
 	auto ovs = fecon.GetRowIndices(V);
 	auto eis = fecon.GetRowValues(V);
 	size_t pos;
@@ -293,7 +295,7 @@ namespace amg
 	  auto ov = ovs[j];
 	  auto cov = vmap[ov];
 	  if (is_invalid(cov) || cov==CV) continue;
-	  auto oeq = fmesh.template GetEqcOfNode<NT_VERTEX>(ov);
+	  auto oeq = FM.template GetEqcOfNode<NT_VERTEX>(ov);
 	  // cout << V << " " << ov << " " << cov << " " << EQ << " " << oeq << " " << eqc_h.IsLEQ(EQ, oeq) << endl;
 	  if (eqc_h.IsLEQ(EQ, oeq)) {
 	    // auto wt = self.template GetWeight<NT_EDGE>(fmesh, all_fedges[eis[j]]);
@@ -353,7 +355,7 @@ namespace amg
 	// cout << endl << "------" << endl << "ROW FOR " << V << " -> " << CV << endl << "------" << endl;
 	HeapReset hr(lh);
 	// Find which fine vertices I can include
-	auto EQ = fmesh.template GetEqcOfNode<NT_VERTEX>(V);
+	auto EQ = FM.template GetEqcOfNode<NT_VERTEX>(V);
 	auto graph_row = graph[V];
 	auto all_ov = fecon.GetRowIndices(V);
 	auto all_oe = fecon.GetRowValues(V);
@@ -363,7 +365,7 @@ namespace amg
 	  auto cov = vmap[ov];
 	  if (is_valid(cov)) {
 	    if (graph_row.Contains(cov)) {
-	      auto eq = fmesh.template GetEqcOfNode<NT_VERTEX>(ov);
+	      auto eq = FM.template GetEqcOfNode<NT_VERTEX>(ov);
 	      if (eqc_h.IsLEQ(EQ, eq)) {
 		uve.Append(INT<2>(ov,all_oe[j]));
 	      } } } }
@@ -566,8 +568,8 @@ namespace amg
     if (prol_map == nullptr)
       { throw Exception(string("Invalid Map type ") + typeid(*pw_step).name() + string(" in SmoothedProlMap!")); }
     
-    const TMESH & FM(static_cast<TMESH&>(cmap->GetMappedMesh())); FM.CumulateData();
-    const TMESH & CM(static_cast<TMESH&>(cmap->GetMappedMesh())); CM.CumulateData();
+    const TMESH & FM(static_cast<TMESH&>(*cmap->GetMesh())); FM.CumulateData();
+    const TMESH & CM(static_cast<TMESH&>(*cmap->GetMappedMesh())); CM.CumulateData();
     const TSPM_TM & pwprol = *prol_map->GetProl();
 
     const auto & eqc_h(*FM.GetEQCHierarchy()); // coarse eqch == fine eqch !!
@@ -609,7 +611,7 @@ namespace amg
 	    { continue; }
 	  if (cov == CV) {
 	    // in_wt += self.template GetWeight<NT_EDGE>(fmesh, );
-	    in_wt += ENERGY::GetApproxWeight(edata[all_fedges[int(eis[j])]].id);
+	    in_wt += ENERGY::GetApproxWeight(edata[int(eis[j])]);
 	    continue;
 	  }
 	  // auto oeq = fmesh.template GetEqcOfNode<NT_VERTEX>(ov);
@@ -666,8 +668,8 @@ namespace amg
       }, true); //
     
     /** Create RM **/
-    auto rmat = make_shared<TSPM_TM>(perow, NCV);
-    const auto & RM = *rmat;
+    shared_ptr<TSPM_TM> rmat = make_shared<TSPM_TM>(perow, NCV);
+    const TSPM_TM & RM = *rmat;
 
     /** Fill Prolongation **/
     LocalHeap lh(2000000, "hold this", false); // ~2 MB LocalHeap
@@ -774,9 +776,9 @@ namespace amg
     // cout << endl << "repl mat (I-omega Dinv A): " << endl;
     // print_tm_spmat(cout, RM); cout << endl;
 
-    auto sprol = prol_map->GetProl();
+    shared_ptr<TSPM_TM> sprol = prol_map->GetProl();
     sprol = MatMultAB(RM, *sprol);
-
+    
     /** Now, unfortunately, we have to distribute matrix entries of sprol. We cannot do this for RM.
 	(we are also using more local fine edges that map to less local coarse edges) **/
     if (eqc_h.GetCommunicator().Size() > 2) {

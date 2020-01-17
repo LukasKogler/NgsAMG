@@ -274,6 +274,22 @@ namespace amg
   } // BaseAMGPC::InitFinestLevel
 
 
+  shared_ptr<BaseSmoother> BaseAMGPC :: BuildSmoother (const BaseAMGFactory::AMGLevel & amg_level)
+  {
+    auto & O (*options);
+    
+    shared_ptr<BaseSmoother> smoother = nullptr;
+
+    switch(O.sm_type) {
+    case(Options::SM_TYPE::GS)  : { smoother = BuildGSSmoother(amg_level.mat, amg_level.pardofs, amg_level.eqc_h, GetFreeDofs(amg_level)); break; }
+    case(Options::SM_TYPE::BGS) : { smoother = BuildBGSSmoother(amg_level.mat, amg_level.pardofs, amg_level.eqc_h, GetGSBlocks(amg_level)); break; }
+    default : { throw Exception("Invalid Smoother type!"); break; }
+    }
+
+    return smoother;
+  } // BaseAMGPC::BuildSmoother
+
+
   shared_ptr<BaseSmoother> BaseAMGPC :: BuildGSSmoother (shared_ptr<BaseSparseMatrix> spm, shared_ptr<ParallelDofs> pardofs,
 							 shared_ptr<EQCHierarchy> eqc_h, shared_ptr<BitArray> freedofs)
   {
@@ -289,7 +305,11 @@ namespace amg
     Switch<MAX_SYS_DIM>
       (GetEntryDim(spm.get()), [&] (auto BS)
        {
-	 if constexpr( (BS == 4) || (BS == 5) ) {
+	 if constexpr( (BS == 4) || (BS == 5)
+#ifndef ELASTICITY
+		       || (BS == 6)
+#endif
+		       ) {
 	   throw Exception("Smoother for that dim is not compiled!!");
 	   return;
 	 }
@@ -321,6 +341,15 @@ namespace amg
   } // BaseAMGPC::BuildBGSSmoother
 
 
+  shared_ptr<BitArray> BaseAMGPC :: GetFreeDofs (const BaseAMGFactory::AMGLevel & amg_level)
+  {
+    if (amg_level.level == 0)
+      { return finest_freedofs; }
+    else
+      { return amg_level.free_nodes; }
+  } // BaseAMGPC::GetFreeDofs
+
+
   shared_ptr<BaseSmoother> BaseAMGPC :: BuildBGSSmoother (shared_ptr<BaseSparseMatrix> spm, shared_ptr<ParallelDofs> pardofs,
 							  shared_ptr<EQCHierarchy> eqc_h, Table<int> && blocks)
   {
@@ -348,6 +377,13 @@ namespace amg
 
     return smoother;
   } // BaseAMGPC::BuildBGSSmoother
+
+
+  Table<int>&& BaseAMGPC :: GetGSBlocks (const BaseAMGFactory::AMGLevel & amg_level)
+  {
+    throw Exception("BaseAMGPC::GetGSBlocks not overloaded!");
+    return move(Table<int>());
+  } // BaseAMGPC::GetGSBlocks
 
 
   /** END BaseAMGPC **/

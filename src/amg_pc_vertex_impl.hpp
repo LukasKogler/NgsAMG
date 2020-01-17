@@ -826,6 +826,49 @@ namespace amg
     finest_level.free_nodes = free_verts;
   }
 
+
+  template<class FACTORY>
+  Table<int>&& VertexAMGPC<FACTORY> :: GetGSBlocks (const BaseAMGFactory::AMGLevel & amg_level)
+  {
+    if (amg_level.crs_map == nullptr) {
+      throw Exception("Crs Map not saved!!");
+      return move(Table<int>());
+    }
+
+    int NCV = amg_level.crs_map->GetMappedNN<NT_VERTEX>();
+    int n_blocks = NCV;
+    if (amg_level.disc_map != nullptr)
+      { n_blocks += amg_level.disc_map->GetNDroppedNodes<NT_VERTEX>(); }
+    TableCreator<int> cblocks(n_blocks);
+    auto it_blocks = [&](auto NV, auto map_v) {
+      for (auto k : Range(NV)) {
+	auto cv = map_v(k);
+	if (cv != -1)
+	  { cblocks.Add(cv, k); }
+      }
+    };
+    auto vmap = amg_level.crs_map->GetMap<NT_VERTEX>();
+    for (; !cblocks.Done(); cblocks++) {
+      if (amg_level.disc_map == nullptr)
+	{ calc_blocks(vmap.Size(), [&](auto v)->int { return vmap[v]; }); }
+      else {
+	const auto & drop = *amg_level.disc_map->GetDroppedNodes<NT_VERTEX>();
+	auto drop_map = amg_level.disc_map->GetMap<NT_VERTEX>();
+	calc_blocks(drop.Size(), [&](auto v)->int {
+	    auto midv = drop_map[v]; // have to consider drop OR DIRI !!
+	    return (midv == -1) ? midv : vmap[midv];
+	  });
+	int c = NCV;
+	for (auto k : Range(drop.Size())) {
+	  if (drop.Test(k))
+	    { cblocks.Add(c++, k); }
+	}
+      }
+    }
+    return cblocks.MoveTable();
+  } // VertexAMGPC<FACTORY>::GetGSBlocks
+
+
   /** END VertexAMGPC **/
 
 

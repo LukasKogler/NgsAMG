@@ -175,7 +175,7 @@ namespace amg
   }
   
 
-  template<calss TV>
+  template<class TV>
   shared_ptr<BaseDOFMapStep> CtrMap<TV> :: Concatenate (shared_ptr<BaseDOFMapStep> other)
   {
     return nullptr;
@@ -781,7 +781,7 @@ namespace amg
   
   INLINE Timer & timer_hack_gcmc () { static Timer t("GridContractMap constructor"); return t; }
   template<class TMESH> GridContractMap<TMESH> :: GridContractMap (Table<int> && _groups, shared_ptr<TMESH> _mesh)
-    : GridMapStep<TMESH>(_mesh), eqc_h(_mesh->GetEQCHierarchy()), groups(_groups), node_maps(4), annoy_nodes(4)
+    : BaseGridMapStep(_mesh), eqc_h(_mesh->GetEQCHierarchy()), groups(_groups), node_maps(4), annoy_nodes(4)
   {
     RegionTimer rt(timer_hack_gcmc());
     BuildCEQCH();
@@ -827,21 +827,23 @@ namespace amg
 
     // cout << "local mesh: " << endl << *this->mesh << endl;
     
+    auto tm_mesh = static_pointer_cast<TMESH>(this->mesh);
+
     if (!is_gm) {
-      shared_ptr<BlockTM> btm = this->mesh;
+      auto btm = dynamic_pointer_cast<BlockTM>(this->mesh);
       // cout << "send mesh to " << my_group[0] << endl;
       comm.Send(btm, my_group[0], MPI_TAG_AMG);
       // cout << "send mesh done" << endl;
       mapped_mesh = nullptr;
       if constexpr(std::is_same<TMESH, BlockTM>::value == 0) {
-	  this->mesh->MapData(*this);
+	  tm_mesh->MapData(*this);
 	}
       return;
     }
 
     const auto & c_eqc_h(*this->c_eqc_h);
     
-    const TMESH & f_mesh(*this->mesh);
+    const TMESH & f_mesh(*tm_mesh);
     auto p_c_mesh = make_shared<BlockTM>(this->c_eqc_h);
     auto & c_mesh(*p_c_mesh);
 
@@ -853,7 +855,7 @@ namespace amg
     
     int mgs = my_group.Size();
     Array<shared_ptr<BlockTM>> mg_btms(mgs); // (BlockTM on purpose)
-    mg_btms[0] = this->mesh;
+    mg_btms[0] = tm_mesh;
     for (size_t k = 1; k < my_group.Size(); k++) {
       // cout << "get mesh from " << my_group[k] << endl;
       comm.Recv(mg_btms[k], my_group[k], MPI_TAG_AMG);
@@ -1314,7 +1316,7 @@ namespace amg
       }
     else {
       // cout << "MAKE MAPPED ALGMESH!!" << endl;
-      auto scd = mesh->MapData(*this);
+      auto scd = static_pointer_cast<TMESH>(mesh)->MapData(*this);
       this->mapped_mesh = make_shared<TMESH> ( move(*p_c_mesh), scd );
       // cout << "MAPPED ALGMESH: " << endl;
       // cout << *mapped_mesh << endl;
@@ -1478,4 +1480,27 @@ namespace amg
 
 } // namespace amg
 
-#include "amg_tcs.hpp"
+
+// h1 headers need factory/energy headers
+#include "amg_factory.hpp"
+#include "amg_factory_nodal.hpp"
+#include "amg_factory_vertex.hpp"
+#include "amg_energy.hpp"
+#include "amg_energy_impl.hpp"
+
+// need h1 headers for data mapping
+#include "amg_h1.hpp"
+#include "amg_h1_impl.hpp"
+
+namespace amg
+{
+  template class CtrMap<double>;
+  template class CtrMap<Vec<2,double>>;
+  template class CtrMap<Vec<3,double>>;
+
+#ifdef ELASTICITY
+  template class CtrMap<Vec<6,double>>;
+#endif
+
+  template class GridContractMap<H1Mesh>;
+} // namespace amg

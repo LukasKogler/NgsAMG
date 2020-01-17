@@ -187,7 +187,7 @@ namespace amg
 	       { D(i,i) = md[block_dofs[i]]; }
 	   }
 	   if ( (nex > 0) && (nin > 0) ) {
-	     FlatMatrix<double> ee(nex, nex, lh), ei(nex, nin, lh), ee_ei(nex, nin, lh);
+	     FlatMatrix<TM> ee(nex, nex, lh), ei(nex, nin, lh), ee_ei(nex, nin, lh);
 	     for (int i : Range(nex)) {
 	       for (int j : Range(nex))
 		 { ee(i, j) = A(ext_dofs[i], ext_dofs[j]); }

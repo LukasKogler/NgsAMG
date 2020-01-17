@@ -79,14 +79,16 @@ namespace amg
      MIS(2) based agglomeration. Strength of connection is computed on the fly.
   **/
 
-  template<class FACTORY>
-  class Agglomerator : public AgglomerateCoarseMap<typename FACTORY::TMESH> 
+  template<class ATENERGY, class ATMESH, bool AROBUST = true>
+  class Agglomerator : public AgglomerateCoarseMap<ATMESH> 
   {
   public:
 
-    using TMESH = typename FACTORY::TMESH;
-    using TM = typename FACTORY::TM;
-    using TVD = typename FACTORY::T_V_DATA;
+    static constexpr bool ROBUST = AROBUST;
+    using TMESH = ATMESH;
+    using ENERGY = ATENERGY;
+    using TM = typename ENERGY::TM;
+    using TVD = typename ENERGY::TVD;
 
     struct Options
     {
@@ -100,7 +102,7 @@ namespace amg
 
   protected:
     
-    using AgglomerateCoarseMap<typename FACTORY::TMESH>::mesh;
+    using AgglomerateCoarseMap<TMESH>::mesh;
 
     shared_ptr<BitArray> free_verts;
 
@@ -111,7 +113,7 @@ namespace amg
 
   public:
 
-    Agglomerator (shared_ptr<typename FACTORY::TMESH> _mesh, shared_ptr<BitArray> _free_verts, Options && _opts);
+    Agglomerator (shared_ptr<TMESH> _mesh, shared_ptr<BitArray> _free_verts, Options && _opts);
 
   protected:
 
@@ -126,7 +128,7 @@ namespace amg
     template<class TMU> INLINE void CalcQs (const TVD & di, const TVD & dj, TMU & Qij, TMU & Qji)
     {
       if constexpr(std::is_same<TMU, TM>::value)
-	{ FACTORY::CalcQs(di, dj, Qij, Qji); }
+	{ ENERGY::CalcQs(di, dj, Qij, Qji); }
       else
 	{ Qij = Qji = 1; }
     }
@@ -134,7 +136,7 @@ namespace amg
     template<class TMU> INLINE void ModQs (const TVD & di, const TVD & dj, TMU & Qij, TMU & Qji)
     {
       if constexpr(std::is_same<TMU, TM>::value)
-	{ FACTORY::ModQs(di, dj, Qij, Qji); }
+	{ ENERGY::ModQs(di, dj, Qij, Qji); }
       else
 	{ Qij = Qji = 1; }
     }
@@ -142,7 +144,7 @@ namespace amg
     template<class TMU> INLINE void ModQij (const TVD & di, const TVD & dj, TMU & Qij)
     {
       if constexpr(std::is_same<TMU, TM>::value)
-	{ FACTORY::ModQij(di, dj, Qij); }
+	{ ENERGY::ModQij(di, dj, Qij); }
       else
 	{ Qij = 1; }
     }
@@ -150,7 +152,7 @@ namespace amg
     template<class TMU> INLINE void ModQHh (const TVD & di, const TVD & dj, TMU & QHh)
     {
       if constexpr(std::is_same<TMU, TM>::value)
-	{ FACTORY::ModQHh(di, dj, QHh); }
+	{ ENERGY::ModQHh(di, dj, QHh); }
       else
 	{ QHh = 1; }
     }

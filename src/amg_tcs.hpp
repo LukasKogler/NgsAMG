@@ -21,7 +21,6 @@ namespace ngla
      depending on which MAX_SYS_DIM NGSolve has been compiled with, 
      we might not already have SparseMatrix<Mat<K,J>>
    **/
-#ifdef ELASTICITY
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMG_SPMSTUFF_CPP)
 
 #define InstSPMS(N,M)				  \
@@ -31,9 +30,13 @@ namespace ngla
   // this does not work because of Conj(Trans(Mat<1,3>)) * double does not work for some reason...
   // EXTERN template class SparseMatrix<Mat<N,M,double>, typename amg::strip_vec<Vec<M,double>>::type, typename amg::strip_vec<Vec<N,double>>::type>;
   
+#if MAX_SYS_DIM < 2
+  InstSPMS(2,2);
+#endif
 #if MAX_SYS_DIM < 3
   InstSPMS(3,3);
 #endif
+#ifdef ELASTICITY
   InstSPMS(1,3);
   InstSPMS(3,1);
   InstSPMS(2,3);
@@ -45,9 +48,9 @@ namespace ngla
   InstSPMS(6,1);
   InstSPMS(3,6);
   InstSPMS(6,3);
+#endif
+#endif
 #undef InstSPMS
-#endif
-#endif
   
 } // namespace ngla
 
@@ -57,9 +60,9 @@ namespace amg
   
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGSM_CPP)
   EXTERN template class HybridGSS<1>;
-#ifdef ELASTICITY
   EXTERN template class HybridGSS<2>;
   EXTERN template class HybridGSS<3>;
+#ifdef ELASTICITY
   EXTERN template class StabHGSS<3,2,3>;
   // EXTERN template class HybridGSS<4>;
   // EXTERN template class HybridGSS<5>;
@@ -70,18 +73,18 @@ namespace amg
 
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGSM2_CPP)
   EXTERN template class HybridGSS2<double>;
-#ifdef ELASTICITY
   EXTERN template class HybridGSS2<Mat<2,2,double>>;
   EXTERN template class HybridGSS2<Mat<3,3,double>>;
+#ifdef ELASTICITY
   EXTERN template class HybridGSS2<Mat<6,6,double>>;
 #endif
 #endif
 
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGSM3_CPP)
   EXTERN template class HybridGSS3<double>;
-#ifdef ELASTICITY
   EXTERN template class HybridGSS3<Mat<2,2,double>>;
   EXTERN template class HybridGSS3<Mat<3,3,double>>;
+#ifdef ELASTICITY
   EXTERN template class HybridGSS3<Mat<6,6,double>>;
   EXTERN template class RegHybridGSS3<Mat<3,3,double>, 2, 3>;
   EXTERN template class RegHybridGSS3<Mat<6,6,double>, 3, 6>;
@@ -90,18 +93,14 @@ namespace amg
 
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMG_BS_CPP)
   EXTERN template class HybridBS<double>;
-// #ifdef ELASTICITY
-//   EXTERN template class HybridBS<Mat<2,2,double>>;
-//   EXTERN template class HybridBS<Mat<3,3,double>>;
-//   EXTERN template class HybridBS<Mat<6,6,double>>;
-// #endif
+  EXTERN template class HybridBS<Mat<2,2,double>>;
+  EXTERN template class HybridBS<Mat<3,3,double>>;
+#ifdef ELASTICITY
+  EXTERN template class HybridBS<Mat<6,6,double>>;
+#endif
 #endif
 
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGCRS_CPP)
-  EXTERN template class SeqVWC<FlatTM>;
-  EXTERN template class BlockVWC<H1Mesh>;
-  EXTERN template class HierarchicVWC<H1Mesh>;
-  EXTERN template class CoarseMap<H1Mesh>;
 #ifdef ELASTICITY
   EXTERN template class BlockVWC<ElasticityMesh<2>>;
   EXTERN template class HierarchicVWC<ElasticityMesh<2>>;
@@ -121,13 +120,6 @@ namespace amg
 #endif
 
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGCTR_CPP)
-  EXTERN template class CtrMap<double>;
-#ifdef ELASTICITY
-  // EXTERN template class CtrMap<Vec<2,double>>; // why??
-  EXTERN template class CtrMap<Vec<3,double>>;
-  EXTERN template class CtrMap<Vec<6,double>>;
-#endif
-  EXTERN template class GridContractMap<H1Mesh>;
 #ifdef ELASTICITY
   EXTERN template class GridContractMap<ElasticityMesh<2>>;
   EXTERN template class GridContractMap<ElasticityMesh<3>>;

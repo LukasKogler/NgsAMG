@@ -46,6 +46,10 @@ namespace amg
   } // H1EData :: map_data_impl
 
 
+#ifdef FILE_AMGPC_HPP
+
+  /** Need this only if we also include the PC headers **/
+
   template<class FACTORY, class HTVD, class HTED>
   void ElmatVAMG<FACTORY, HTVD, HTED> :: AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
 							   ElementId ei, LocalHeap & lh)
@@ -106,6 +110,7 @@ namespace amg
     }
   } // EmbedWithElmats<H1AMGFactory, double, double>::AddElementMatrix
 
+#endif
 
 } // namespace amg
 

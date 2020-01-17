@@ -197,6 +197,9 @@ namespace amg
   class PairWiseCoarseMap : public BaseCoarseMap// workaround
   {
   public:
+    PairWiseCoarseMap (shared_ptr<TopologicMesh> mesh, shared_ptr<TopologicMesh> mapped_mesh = nullptr)
+      : BaseCoarseMap(mesh, mapped_mesh)
+    { ; }
     template<NODE_TYPE NT> INLINE size_t CN_in_EQC (size_t eqc) const
     { return mapped_eqc_firsti[NT][eqc+1] -  mapped_eqc_firsti[NT][eqc]; }
     template<NODE_TYPE NT> INLINE size_t EQC_of_CN (size_t node_num) const {

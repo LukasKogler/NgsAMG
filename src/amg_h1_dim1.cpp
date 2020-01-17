@@ -5,6 +5,8 @@
 
 #include "amg_factory.hpp"
 #include "amg_factory_impl.hpp"
+#include "amg_factory_nodal.hpp"
+#include "amg_factory_nodal_impl.hpp"
 #include "amg_factory_vertex.hpp"
 #include "amg_factory_vertex_impl.hpp"
 #include "amg_pc.hpp"
@@ -25,8 +27,16 @@ namespace amg
 {
 
   // extern template class Agglomerator<H1AMGFactory>;
+  extern template class SeqVWC<FlatTM>;
+  extern template class BlockVWC<H1Mesh>;
+  extern template class HierarchicVWC<H1Mesh>;
+  extern template class CoarseMap<H1Mesh>;
+  extern template class Agglomerator<H1Energy<1, double, double>, H1Mesh, H1Energy<1, double, double>::NEED_ROBUST>;
+  extern template class CtrMap<double>;
+  extern template class GridContractMap<H1Mesh>;
+  extern template class VDiscardMap<H1Mesh>;
 
-  template class H1Energy<1, double, double>;
+  // template class H1Energy<1, double, double>;
   template class H1AMGFactory<1>;
 
   // using PCC = VertexAMGPC<H1AMGFactory<1>>;

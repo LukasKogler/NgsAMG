@@ -1,6 +1,8 @@
 #ifndef FILE_AMGELAST_IMPL
 #define FILE_AMGELAST_IMPL
 
+#ifdef ELASTICITY
+
 namespace amg
 {
 
@@ -492,5 +494,7 @@ namespace amg
   // } // EmbedWithElmats::AddElementMatrix
 
 } // namespace amg
+
+#endif
 
 #endif

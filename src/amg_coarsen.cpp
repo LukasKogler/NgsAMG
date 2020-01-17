@@ -479,12 +479,12 @@ namespace amg
   {
     auto cmap = make_shared<BaseCoarseMap>(this->mesh, right_map->mapped_mesh);
     for ( NODE_TYPE NT : { NT_VERTEX, NT_EDGE, NT_FACE, NT_CELL } ) {
-      cmap->NN[NT] = GetNN<NT>();
-      cmap->CNN[NT] = right_map->mapped_NN[NT];
-      FlatArray<int> lmap = GetMap<NT>(), rmap = right_map->GetMap<NT>();
+      cmap->NN[NT] = this->NN[NT];
+      cmap->mapped_NN[NT] = right_map->mapped_NN[NT];
+      FlatArray<int> lmap = this->node_maps[NT], rmap = right_map->node_maps[NT];
       Array<int> & cnm = cmap->node_maps[NT];
-      cnm.SetSize(GetNN<NT>());
-      for (auto k : Range(GetNN<NT>()]) {
+      cnm.SetSize(this->NN[NT]);
+      for (auto k : Range(this->NN[NT])) {
 	auto midnum = lmap[k];
 	cnm[k] = (midnum == -1) ? -1 : rmap[midnum];
       }
@@ -495,7 +495,7 @@ namespace amg
 
   template<class TMESH>
   CoarseMap<TMESH> :: CoarseMap (shared_ptr<TMESH> _mesh, VWCoarseningData::CollapseTracker &coll)
-    : PairWiseCoarseMap(), GridMapStep<TMESH>(_mesh)
+    : PairWiseCoarseMap(_mesh)
   {
     static Timer t("CoarseMap"); RegionTimer rt(t);
 
@@ -520,7 +520,7 @@ namespace amg
     static Timer t("CoarseMap - BuildMap<NT_VERTEX>");
     RegionTimer rt(t);
     auto & vmap = node_maps[NT_VERTEX];
-    BlockTM & bmesh(*mesh);
+    BlockTM & bmesh(static_cast<BlockTM&>(*mesh));
     auto & NV = NN[NT_VERTEX];
     NV = bmesh.template GetNN<NT_VERTEX>();
     auto & NVC = mapped_NN[NT_VERTEX];
@@ -738,7 +738,7 @@ namespace amg
 
     static Timer t("CoarseMap - map edges");
     RegionTimer rt(t);
-    const BlockTM & bmesh = *mesh;
+    const BlockTM & bmesh(static_cast<BlockTM&>(*mesh));
     const auto & vmap = node_maps[NT_VERTEX];
     auto & node_map = node_maps[NT_EDGE];
     auto & NNODES = NN[NT_EDGE];
@@ -1060,4 +1060,22 @@ namespace amg
 
 } // namespace amg
 
-#include "amg_tcs.hpp"
+
+// h1 headers need factory/energy headers
+#include "amg_factory.hpp"
+#include "amg_factory_nodal.hpp"
+#include "amg_factory_vertex.hpp"
+#include "amg_energy.hpp"
+#include "amg_energy_impl.hpp"
+
+// need h1 headers for data mapping
+#include "amg_h1.hpp"
+#include "amg_h1_impl.hpp"
+
+namespace amg
+{
+  template class SeqVWC<FlatTM>;
+  template class BlockVWC<H1Mesh>;
+  template class HierarchicVWC<H1Mesh>;
+  template class CoarseMap<H1Mesh>;
+} // namespace amg

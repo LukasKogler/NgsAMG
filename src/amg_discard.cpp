@@ -8,7 +8,7 @@ namespace amg
 
   template<class TMESH>
   VDiscardMap<TMESH> :: VDiscardMap (shared_ptr<TMESH> _mesh, size_t _max_bs)
-    : BaseDiscardMap(_mesh, nullptr), GridMapStep<TMESH>(_mesh), max_bs(_max_bs)
+    : BaseDiscardMap(_mesh, nullptr), max_bs(_max_bs)
   {
     CalcDiscard();
     // SetUpMM();
@@ -60,7 +60,8 @@ namespace amg
 
     /** mark hanging vertices **/
 
-    const auto& M (*mesh);
+    auto tm_mesh = static_pointer_cast<TMESH>(mesh);
+    const auto& M (*tm_mesh);
     const auto NV = M.template GetNN<NT_VERTEX>();
     const auto& ECM = *M.GetEdgeCM();
     const auto& eqc_h = *M.GetEQCHierarchy();
@@ -92,6 +93,7 @@ namespace amg
 
     const size_t MAX_BS = max2(size_t(1), max_bs);
     TableCreator<size_t> cb;
+    auto & dropped_vert = dropped_nodes[NT_VERTEX];
     dropped_vert = make_shared<BitArray>(NV);
     auto & dropv (*dropped_vert);
     size_t block_num = 0;
@@ -150,7 +152,8 @@ namespace amg
   template<class TMESH>
   void VDiscardMap<TMESH> :: SetUpMM ()
   {
-    auto& fmesh (*mesh);
+    auto tm_mesh = static_pointer_cast<TMESH>(mesh);
+    auto& fmesh (*tm_mesh);
     const auto& eqc_h = *fmesh.GetEQCHierarchy();
 
     auto p_cmesh = make_shared<BlockTM>(fmesh.GetEQCHierarchy());
@@ -159,10 +162,9 @@ namespace amg
     auto neqcs = eqc_h.GetNEQCS();
     
     node_maps.SetSize(4);
-    mapped_nnodes.SetSize(4); mapped_nnodes = 0;
 
     for (NODE_TYPE NT : {NT_VERTEX, NT_EDGE, NT_FACE, NT_CELL} ) {
-      mapped_nnodes[NT] = 0;
+      mapped_NN[NT] = 0;
       cmesh.has_nodes[NT] = fmesh.has_nodes[NT];
       cmesh.nnodes_glob[NT] = 0;
       cmesh.nnodes[NT] = 0;
@@ -171,10 +173,10 @@ namespace amg
     /** vertices **/
     const auto NV = fmesh.template GetNN<NT_VERTEX>();
     auto& vblocks (*vertex_blocks);
-    auto& dvert (*dropped_vert);
+    auto& dvert (*dropped_nodes[NT_VERTEX]);
     const size_t n_dropped_v = vblocks.AsArray().Size();
     size_t mapped_nv = fmesh.template GetNN<NT_VERTEX>() - n_dropped_v;
-    mapped_nnodes[NT_VERTEX] = cmesh.nnodes[NT_VERTEX] = mapped_nv;
+    mapped_NN[NT_VERTEX] = cmesh.nnodes[NT_VERTEX] = mapped_nv;
     cmesh.verts.SetSize(mapped_nv); auto & btm_verts = cmesh.verts;
     cmesh.disp_cross[NT_VERTEX].SetSize(neqcs+1); cmesh.disp_cross[NT_VERTEX] = 0;
     cmesh.disp_eqc[NT_VERTEX].SetSize(neqcs+1); auto & vdeq = cmesh.disp_eqc[NT_VERTEX];
@@ -227,7 +229,7 @@ namespace amg
       // if (is_valid(emap[k]))
 	// { emap[k] += cnt_eq; }
 
-    mapped_nnodes[NT_EDGE] = cmesh.nnodes[NT_EDGE] = cnt_eq + cnt_cross;
+    mapped_NN[NT_EDGE] = cmesh.nnodes[NT_EDGE] = cnt_eq + cnt_cross;
     cmesh.nnodes_glob[NT_EDGE] = eqc_h.GetCommunicator().AllReduce(neg, MPI_SUM);
     cmesh.nnodes_eqc[NT_EDGE].SetSize(neqcs);
     cmesh.nnodes_cross[NT_EDGE].SetSize(neqcs);
@@ -264,7 +266,7 @@ namespace amg
 	mapped_mesh = p_cmesh;
       }
     else {
-      auto mapped_data = mesh->MapData(*this);
+      auto mapped_data = fmesh.MapData(*this);
       mapped_mesh = make_shared<TMESH> ( move(*p_cmesh), mapped_data );
     }
 
@@ -276,6 +278,20 @@ namespace amg
 
 } // namespace amg
 
-#include "amg_tcs.hpp"
+// h1 headers need factory/energy headers
+#include "amg_factory.hpp"
+#include "amg_factory_nodal.hpp"
+#include "amg_factory_vertex.hpp"
+#include "amg_energy.hpp"
+#include "amg_energy_impl.hpp"
+
+// need h1 headers for data mapping
+#include "amg_h1.hpp"
+#include "amg_h1_impl.hpp"
+
+namespace amg
+{
+  template class VDiscardMap<H1Mesh>;
+} // namespace amg
 
 #endif

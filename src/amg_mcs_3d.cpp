@@ -1,6 +1,8 @@
 #ifndef FILE_AMG_MCS_3D_CPP
 #define FILE_AMG_MCS_3D_CPP
 
+#ifdef ELASTICITY
+
 #include "amg.hpp"
 #include "amg_elast_impl.hpp"
 #include "amg_factory_impl.hpp"
@@ -93,5 +95,7 @@ namespace amg
   }
 
 } // namespace amg
+
+#endif
 
 #endif

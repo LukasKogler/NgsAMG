@@ -107,12 +107,8 @@ namespace amg
   template<class TMA, class TMB>
   using mult_mat = typename strip_mat<Mat<mat_traits<TMA>::HEIGHT, mat_traits<TMB>::WIDTH,
 					  typename mult_scal<typename mat_traits<TMA>::TSCAL, typename mat_traits<TMB>::TSCAL>::type>>::type;
-#ifdef ELASTICITY // workaround until NGSolve master gets updated
   template<class TMA, class TMB>
   using mult_spm_tm = stripped_spm_tm<mult_mat<typename TMA::TENTRY, typename TMB::TENTRY>>;
-#else
-  template<class TMA, class TMB> using mult_spm_tm = SparseMatrixTM<double>;
-#endif
   template<class TMA, class TMB>
   shared_ptr<mult_spm_tm<TMA, TMB>> MatMultAB (const TMA & mata, const TMB & matb);
     

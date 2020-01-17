@@ -36,14 +36,14 @@ namespace amg
 
 
   template<int ADIM>
-  class H1AMGFactory : public VertexAMGFactory<H1Energy<DIM, double, double>, H1Mesh, ADIM>
+  class H1AMGFactory : public VertexAMGFactory<H1Energy<ADIM, double, double>, H1Mesh, ADIM>
   {
   public:
-    using BASE = VertexAMGFactory<H1AMGFactory<ADIM>, H1Mesh, ADIM>;
     static constexpr int DIM = ADIM;
     using ENERGY = H1Energy<DIM, double, double>;
     using TMESH = H1Mesh;
     static constexpr int BS = ENERGY::DPV;
+    using BASE = VertexAMGFactory<ENERGY, TMESH, BS>;
     using Options = typename BASE::Options;
 
   protected:

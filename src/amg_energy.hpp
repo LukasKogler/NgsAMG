@@ -13,6 +13,7 @@ namespace amg
     // static constexpr int DPV () { return DIM; }
     static constexpr int DIM = ADIM;
     static constexpr int DPV = ADIM;
+    static constexpr bool NEED_ROBUST = false;
     typedef typename strip_mat<Mat<DIM,DIM,double>>::type TM;
 
     static INLINE double GetApproxWeight (const TED & ed) { return ed; }
@@ -39,6 +40,7 @@ namespace amg
     using TVD = T_V_DATA;
     using TED = T_E_DATA;
     static constexpr int DIM = ADIM;
+    static constexpr bool NEED_ROBUST = true;
     static constexpr int dofpv () { return (DIM == 2) ? 3 : 6; }
     static constexpr int disppv () { return DIM; }
     static constexpr int rotpv () { return (DIM == 2) ? 1 : 3; }

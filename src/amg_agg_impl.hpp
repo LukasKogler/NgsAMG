@@ -1,11 +1,10 @@
-
 namespace amg
 {
   /** AgglomerateCoarseMap **/
 
   template<class TMESH>
   AgglomerateCoarseMap<TMESH> :: AgglomerateCoarseMap (shared_ptr<TMESH> _mesh)
-    : BaseCoarseMap(), GridMapStep<TMESH>(_mesh)
+    : BaseCoarseMap(_mesh)
   {
     assert(mesh != nullptr); // obviously this would be bad
     for (NODE_TYPE NT : {NT_VERTEX, NT_EDGE, NT_FACE, NT_CELL} )
@@ -29,7 +28,9 @@ namespace amg
   {
     static Timer t("AgglomerateCoarseMap"); RegionTimer rt(t);
 
-    mesh->CumulateData();
+    auto fmesh = dynamic_pointer_cast<TMESH>(mesh);
+
+    fmesh->CumulateData();
 
     Array<Agglomerate> aggs;
     Array<int> v_to_agg;
@@ -54,9 +55,9 @@ namespace amg
       }
     else {
       // auto scd = mesh->MapData(*this);
-      auto cdata = mesh->AllocMappedData(*this);
+      auto cdata = fmesh->AllocMappedData(*this);
       mapped_mesh = make_shared<TMESH> ( move(*mapped_btm), cdata );
-      mesh->MapDataNoAlloc(*this);
+      fmesh->MapDataNoAlloc(*this);
       // get<0>(mapped_mesh->Data())->Cumulate();
       // get<1>(mapped_mesh->Data())->Cumulate();
     }
@@ -80,7 +81,8 @@ namespace amg
 	     -> each coarse vertex, defined by an agglomerate is in the eqc of the (fine) center vertex v of that agglomerate
      **/
 
-    const auto & M = *mesh;
+    auto tm_mesh = dynamic_pointer_cast<TMESH>(mesh);
+    const auto & M = *tm_mesh;
     const auto & eqc_h = *M.GetEQCHierarchy();
     auto comm = eqc_h.GetCommunicator();
     auto neqcs = eqc_h.GetNEQCS();
@@ -245,7 +247,8 @@ namespace amg
 
     /** This version works only for purely in-eqc aggs (and even then I am not 100% sure that it is bug free) **/
 
-    const auto & M = *mesh;
+    auto tm_mesh = dynamic_pointer_cast<TMESH>(mesh);
+    const auto & M = *tm_mesh;
     const auto & eqc_h = *M.GetEQCHierarchy();
     auto comm = eqc_h.GetCommunicator();
     auto neqcs = eqc_h.GetNEQCS();
@@ -376,7 +379,8 @@ namespace amg
      **/
     static Timer t("MapEdges"); RegionTimer rt(t);
 
-    const auto & M = *mesh;
+    auto tm_mesh = dynamic_pointer_cast<TMESH>(mesh);
+    const auto & M = *tm_mesh;
     const auto FNV = M.template GetNN<NT_VERTEX>();
     const auto FNE = M.template GetNN<NT_EDGE>();
     const auto & fecon = *M.GetEdgeCM();
@@ -742,7 +746,8 @@ namespace amg
 
     static Timer t("MapEdges"); RegionTimer rt(t);
 
-    const auto & M = *mesh;
+    auto tm_mesh = dynamic_pointer_cast<TMESH>(mesh);
+    const auto & M = *tm_mesh;
     const auto & CM = cmesh;
     const auto & fecon = *M.GetEdgeCM();
     const auto & eqc_h = *M.GetEQCHierarchy();
@@ -1066,21 +1071,22 @@ namespace amg
   /** Agglomerator **/
 
 
-  template<class FACTORY>
-  Agglomerator<FACTORY> :: Agglomerator (shared_ptr<typename FACTORY::TMESH> _mesh, shared_ptr<BitArray> _free_verts, Options && _settings)
+  template<class ENERGY, class TMESH, bool ROBUST>
+  Agglomerator<ENERGY, TMESH, ROBUST> :: Agglomerator (shared_ptr<TMESH> _mesh, shared_ptr<BitArray> _free_verts, Options && _settings)
     : AgglomerateCoarseMap<TMESH>(_mesh), free_verts(_free_verts), settings(_settings)
   {
     assert(mesh != nullptr); // obviously this would be bad
   } // Agglomerator(..)
 
 
-  template<class FACTORY> template<class TMU>
-  INLINE FlatArray<TMU> Agglomerator<FACTORY> :: GetEdgeData ()
+  template<class ENERGY, class TMESH, bool ROBUST> template<class TMU>
+  INLINE FlatArray<TMU> Agglomerator<ENERGY, TMESH, ROBUST> :: GetEdgeData ()
   {
+    auto tm_mesh = dynamic_pointer_cast<TMESH>(mesh);
     if constexpr(std::is_same<TMU, TM>::value)
-      { return get<1>(mesh->Data())->Data(); }
+      { return get<1>(tm_mesh->Data())->Data(); }
     else {
-      auto full_edata = get<1>(mesh->Data())->Data();
+      auto full_edata = get<1>(tm_mesh->Data())->Data();
       traces.SetSize(full_edata.Size());
       for (auto k : Range(traces))
 	{ traces[k] = calc_trace(full_edata[k]); }
@@ -1088,8 +1094,8 @@ namespace amg
     }
   }
 
-  template<class FACTORY> template<class TMU>
-  INLINE void Agglomerator<FACTORY> :: FormAgglomerates_impl (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg)
+  template<class ENERGY, class TMESH, bool ROBUST> template<class TMU>
+  INLINE void Agglomerator<ENERGY, TMESH, ROBUST> :: FormAgglomerates_impl (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg)
   {
     static_assert ( (std::is_same<TMU, TM>::value || std::is_same<TMU, double>::value), "Only 2 options make sense!");
 
@@ -1102,7 +1108,8 @@ namespace amg
     static Timer t3("FormAgglomerates - 3"); // second loop
 
     constexpr int N = mat_traits<TMU>::HEIGHT;
-    const auto & M = *mesh; M.CumulateData();
+    auto tm_mesh = dynamic_pointer_cast<TMESH>(mesh);
+    const auto & M = *tm_mesh; M.CumulateData();
     const auto & eqc_h = *M.GetEQCHierarchy();
     auto comm = eqc_h.GetCommunicator();
     const auto NV = M.template GetNN<NT_VERTEX>();
@@ -1113,7 +1120,7 @@ namespace amg
     const bool geom = settings.cw_geom;
     const int MIN_NEW_AGG_SIZE = 2;
 
-    FlatArray<TVD> vdata = get<0>(mesh->Data())->Data();
+    FlatArray<TVD> vdata = get<0>(tm_mesh->Data())->Data();
     FlatArray<TMU> edata = GetEdgeData<TMU>();
 
     // cout << " agg coarsen params: " << endl;
@@ -1217,7 +1224,8 @@ namespace amg
       const auto memsas = memsa.Size();
       const auto memsbs = memsb.Size();
       bool vv_case = (memsas == memsbs) && (memsas == 1);
-      TVD H_data = FACTORY::CalcMPData(vdata[ca], vdata[cb]);
+      // TVD H_data = FACTORY::CalcMPData(vdata[ca], vdata[cb]);
+      TVD H_data = ENERGY::CalcMPData(vdata[ca], vdata[cb]);
       ModQHh(H_data, vdata[ca], Q);
       // Aaa = Trans(Q) * diaga * Q;
       Aaa = AT_B_A(Q, diaga);
@@ -1249,7 +1257,8 @@ namespace amg
 	  intersect_sorted_arrays(econ.GetRowIndices(amem), memsb, common_neibs);
 	  for (auto bmem : common_neibs) {
 	    int eid = int(econ(amem, bmem));
-	    TVD h_data = FACTORY::CalcMPData(vdata[amem], vdata[bmem]);
+	    // TVD h_data = FACTORY::CalcMPData(vdata[amem], vdata[bmem]);
+	    TVD h_data = ENERGY::CalcMPData(vdata[amem], vdata[bmem]);
 	    ModQHh (H_data, h_data, Q);
 	    // emat += Trans(Q) * edata[eid] * Q;
 	    Add_AT_B_A(1.0, emat, Q, edata[eid]);
@@ -1360,7 +1369,8 @@ namespace amg
 	auto pos = find_in_sorted_array(neib, agg.members());
 	if (pos != -1) {
 	  int eid = int(eids[j]);
-	  TVD mid_vd = FACTORY::CalcMPData(vdata[neib], vdata[v]);
+	  // TVD mid_vd = FACTORY::CalcMPData(vdata[neib], vdata[v]);
+	  TVD mid_vd = ENERGY::CalcMPData(vdata[neib], vdata[v]);
 	  ModQHh(vdata[agg.center()], mid_vd, Q); // Qij or QHh??
 	  agg_diag[agg.id] -= fac * Trans(Q) * edata[eid] * Q;
 	  // agg_diag[agg.id] -= 2 * Trans(Q) * edata[eid] * Q;
@@ -1801,18 +1811,22 @@ namespace amg
   } // Agglomerator::FormAgglomerates_impl
 
 
-  template<class FACTORY>
-  void Agglomerator<FACTORY> :: FormAgglomerates (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg)
+  template<class ENERGY, class TMESH, bool ROBUST>
+  void Agglomerator<ENERGY, TMESH, ROBUST> :: FormAgglomerates (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg)
   {
-    if (settings.robust) /** cheap, but not robust for some corner cases **/
-      { FormAgglomerates_impl<TM> (agglomerates, v_to_agg); }
-    else /** (much) more expensive, but also more robust **/
+    if constexpr (ROBUST) {
+      if (settings.robust) /** cheap, but not robust for some corner cases **/
+	{ FormAgglomerates_impl<TM> (agglomerates, v_to_agg); }
+      else /** (much) more expensive, but also more robust **/
+	{ FormAgglomerates_impl<double> (agglomerates, v_to_agg); }
+    }
+    else // do not even compile the robust version - saves a lot of ti
       { FormAgglomerates_impl<double> (agglomerates, v_to_agg); }
   } // Agglomerator::FormAgglomerates
 
 
-  // template<class FACTORY>
-  // void Agglomerator<FACTORY> :: FormAgglomeratesOld (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg)
+  // template<class ENERGY, class TMESH, bool ROBUST>
+  // void Agglomerator<ENERGY, TMESH, ROBUST> :: FormAgglomeratesOld (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg)
   // {
 
   //   static Timer t("FormAgglomerates"); RegionTimer rt(t);

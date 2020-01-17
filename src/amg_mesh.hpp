@@ -54,13 +54,12 @@ namespace amg
   {
   public:
 
-    FlatTM ()
-      : TopologicMesh(nullptr) // TODO: fix this
-    { ; }
+    FlatTM (shared_ptr<EQCHierarchy> eqc_h = nullptr);
 
     FlatTM (FlatArray<AMG_Node<NT_VERTEX>> av, FlatArray<AMG_Node<NT_EDGE>> ae,
 	    FlatArray<AMG_Node<NT_FACE>> af  , FlatArray<AMG_Node<NT_CELL>> ac,
-	    FlatArray<AMG_Node<NT_EDGE>> ace , FlatArray<AMG_Node<NT_FACE>> acf);
+	    FlatArray<AMG_Node<NT_EDGE>> ace , FlatArray<AMG_Node<NT_FACE>> acf,
+	    shared_ptr<EQCHierarchy> eqc_h = nullptr);
     ~FlatTM () { ; }
     template<NODE_TYPE NT, typename T2 = typename std::enable_if<NT!=NT_VERTEX>::type>
     INLINE size_t GetCNN ()
@@ -649,8 +648,9 @@ namespace amg
     INLINE void CumulateData () const { std::apply([&](auto& ...x){ (x->Cumulate(),...); }, node_data); }
     INLINE void DistributeData () const { std::apply([&](auto& ...x){ (x->Distribute(),...); }, node_data); }
 
-    template<class TMAP,
-	     typename T_ENABLE = typename std::enable_if<std::is_base_of<GridMapStep<BlockAlgMesh<T...>>, TMAP>::value==1>::type>
+    // template<class TMAP,
+	     // typename T_ENABLE = typename std::enable_if<std::is_base_of<GridMapStep<BlockAlgMesh<T...>>, TMAP>::value==1>::type>
+    template<class TMAP>
     std::tuple<T*...> MapData (const TMAP & map) const
     {
       static Timer t("BlockAlgMesh::MapData"); RegionTimer rt(t);

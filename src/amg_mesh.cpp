@@ -62,10 +62,17 @@ namespace amg
       { a = Array<T>(b.Size(), nullptr); }
   }
 
+  
+  FlatTM :: FlatTM (shared_ptr<EQCHierarchy> eqc_h)
+    : TopologicMesh(eqc_h)
+  { ; }
+
+
   FlatTM :: FlatTM (FlatArray<AMG_Node<NT_VERTEX>> av, FlatArray<AMG_Node<NT_EDGE>> ae,
 		    FlatArray<AMG_Node<NT_FACE>> af  , FlatArray<AMG_Node<NT_CELL>> ac,
-		    FlatArray<AMG_Node<NT_EDGE>> ace , FlatArray<AMG_Node<NT_FACE>> acf)
-    : TopologicMesh ()
+		    FlatArray<AMG_Node<NT_EDGE>> ace , FlatArray<AMG_Node<NT_FACE>> acf,
+		    shared_ptr<EQCHierarchy> eqc_h)
+    : TopologicMesh (eqc_h)
   {
     for (auto i:Range(4)) nnodes_glob[i] = -1;
     nnodes[NT_VERTEX] = av.Size();
@@ -141,9 +148,11 @@ namespace amg
     cross_faces = MakeFT<AMG_Node<NT_FACE>> (neqcs, disp_cross[NT_FACE], faces, disp_eqc[NT_FACE].Last());
   } // BlockTM (..)
 
+
   BlockTM :: BlockTM ()
-    : TopologicMesh(), eqc_h(nullptr), disp_eqc(4), disp_cross(4)
+    : TopologicMesh(nullptr), disp_eqc(4), disp_cross(4)
   { ; }
+
 
   void NgsAMG_Comm :: Send (shared_ptr<BlockTM> & amesh, int dest, int tag) const
   {
@@ -246,7 +255,7 @@ namespace amg
   {
     return FlatTM(eqc_verts[eqc_num], eqc_edges[eqc_num], eqc_faces[eqc_num],
 		  FlatArray<AMG_Node<NT_CELL>>(0,nullptr) /*eqc_cells[eqc_num]*/, 
-		  cross_edges[eqc_num], cross_faces[eqc_num]);
+		  cross_edges[eqc_num], cross_faces[eqc_num], eqc_h);
   }
 
   BlockTM* BlockTM :: MapBTM (const PairWiseCoarseMap & cmap) const

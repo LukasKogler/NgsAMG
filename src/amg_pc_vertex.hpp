@@ -67,6 +67,9 @@ namespace amg
     virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (shared_ptr<TopologicMesh> mesh) override;
 
     virtual void InitFinestLevel (BaseAMGFactory::AMGLevel & finest_level) override;
+
+    virtual Table<int>&& GetGSBlocks (const BaseAMGFactory::AMGLevel & amg_level) override;
+
   }; // class VertexAMGPC
 
 
