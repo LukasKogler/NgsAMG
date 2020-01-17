@@ -17,6 +17,6 @@
 namespace amg
 {
   template class Agglomerator<H1Energy<1, double, double>, H1Mesh, H1Energy<1, double, double>::NEED_ROBUST>;
-  // template class Agglomerator<H1Energy<1, double, double>, H1Mesh, H1Energy<1, double, double>::NEED_ROBUST>;
-  template class Agglomerator<H1Energy<3, double, double>, H1Mesh, H1Energy<1, double, double>::NEED_ROBUST>;
+  template class Agglomerator<H1Energy<2, double, double>, H1Mesh, H1Energy<2, double, double>::NEED_ROBUST>;
+  template class Agglomerator<H1Energy<3, double, double>, H1Mesh, H1Energy<3, double, double>::NEED_ROBUST>;
 }

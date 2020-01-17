@@ -90,15 +90,10 @@ namespace amg
   //  Matrix Transpose
   template<class TM>
   using trans_mat = typename strip_mat<Mat<mat_traits<TM>::WIDTH, mat_traits<TM>::HEIGHT, typename mat_traits<TM>::TSCAL>>::type;
-#ifdef ELASTICITY // workaround until NGSolve master gets updated
   template<class TM>
   using trans_spm_tm = SparseMatrixTM<trans_mat<typename TM::TENTRY>>;
   template<class TM>
   using trans_spm = SparseMatrix<trans_mat<typename TM::TENTRY>>;
-#else
-  template<class TM> using trans_spm_tm = SparseMatrixTM<double>;
-  template<class TM> using trans_spm = SparseMatrix<double>;
-#endif
   template <class TM> shared_ptr<trans_spm_tm<TM>> TransposeSPM (const TM & mat);
 
   // Matrix Multiplication

@@ -100,6 +100,71 @@ namespace amg
   }; // class EmbedVAMG
 
 
+  /** VertexAMGPCOptions **/
+
+  class VertexAMGPCOptions
+  {
+  public:
+    /** Which subset of DOFs to perform the coarsening on **/
+    enum DOF_SUBSET : char { RANGE_SUBSET = 0,        // use Union { [ranges[i][0], ranges[i][1]) }
+			     SELECTED_SUBSET = 1 };   // given by bitarray
+    DOF_SUBSET subset = RANGE_SUBSET;
+    Array<INT<2, size_t>> ss_ranges; // ranges must be non-overlapping and incresing
+    /** special subsets **/
+    enum SPECIAL_SUBSET : char { SPECSS_NONE = 0,
+				 SPECSS_FREE = 1,            // take free-dofs as subset
+				 SPECSS_NODALP2 = 2 };       // 0..nv, and then first DOF of each edge
+    SPECIAL_SUBSET spec_ss = SPECSS_NONE;
+    shared_ptr<BitArray> ss_select;
+    
+    /** How the DOFs in the subset are mapped to vertices **/
+    enum DOF_ORDERING : char { REGULAR_ORDERING = 0,
+			       VARIABLE_ORDERING = 1 };
+    /**	REGULAR: sum(block_s) DOFs per "vertex", defined by block_s and ss_ranges/ss_select
+	   e.g: block_s = [2,3], then we have NV blocks of 2 vertices, then NV blocks of 3 vertices
+	   each block is increasing and continuous (neither DOFs [12,18] nor DOFs [5,4] are valid blocks) 
+	subset must be consistent for all dofs in each block ( so we cannot have a block of DOFs [12,13], but DOF 13 not in subet
+	   
+	VARIABLE: PLACEHOLDER !! || DOFs for vertex k: v_blocks[k] || ignores subset
+    **/
+    DOF_ORDERING dof_ordering = REGULAR_ORDERING;
+    Array<int> block_s; // we are computing NV from this, so don't put freedofs in here, one BS per given range
+    Table<int> v_blocks;
+
+    /** AMG-Vertex <-> Mesh-Node Identification **/
+    bool store_v_nodes = false;
+    bool has_node_dofs[4] = { false, false, false, false };
+    Array<NodeId> v_nodes;
+
+    /** How do we define the topology ? **/
+    enum TOPO : char { ALG_TOPO = 0,        // by entries of the finest level sparse matrix
+		       MESH_TOPO = 1,       // via the mesh
+		       ELMAT_TOPO = 2 };    // via element matrices
+    TOPO topo = ALG_TOPO;
+
+    /** How do we compute vertex positions (if we need them) (outdated..) **/
+    enum POSITION : char { VERTEX_POS = 0,    // take from mesh vertex-positions
+			   GIVEN_POS = 1 };   // supplied from outside
+    POSITION v_pos = VERTEX_POS;
+    FlatArray<Vec<3>> v_pos_array;
+
+    /** How do we compute the replacement matrix **/
+    enum ENERGY : char { TRIV_ENERGY = 0,     // uniform weights
+			 ALG_ENERGY = 1,      // from the sparse matrix
+			 ELMAT_ENERGY = 2 };  // from element matrices
+    ENERGY energy = ALG_ENERGY;
+
+  public:
+    
+    VertexAMGPCOptions () { ; }
+
+    virtual void SetFromFlags (shared_ptr<FESpace> fes, const Flags & flags, string prefix);
+
+      
+  }; // class VertexAMGPCOptions
+
+  /** END VertexAMGPCOptions **/
+
 } // namespace amg
 
 #endif

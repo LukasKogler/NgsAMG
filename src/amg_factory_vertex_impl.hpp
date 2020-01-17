@@ -41,43 +41,39 @@ namespace amg
       : BaseAMGFactory::Options()
     { ; }
 
-    virtual void SetFromFlags (const Flags & flags, string prefix) override;
+    virtual void SetFromFlags (const Flags & flags, string prefix) override
+    {
+
+      auto set_enum_opt = [&] (auto & opt, string key, Array<string> vals) {
+	string val = flags.GetStringFlag(prefix + key, "");
+	for (auto k : Range(vals)) {
+	  if (val == vals[k])
+	    { opt = decltype(opt)(k); return; }
+	}
+      };
+
+      auto set_bool = [&](auto& v, string key) {
+	if (v) { v = !flags.GetDefineFlagX(prefix + key).IsFalse(); }
+	else { v = flags.GetDefineFlagX(prefix + key).IsTrue(); }
+      };
+
+      auto set_num = [&](auto& v, string key)
+	{ v = flags.GetNumFlag(prefix + key, v); };
+
+      BaseAMGFactory::Options::SetFromFlags(flags, prefix);
+
+      set_enum_opt(crs_alg, "crs_alg", {"ecol", "agg" });
+
+      set_bool(ecw_geom, "ecw_geom");
+      set_bool(ecw_robust, "ecw_robust");
+
+      set_num(min_ecw, "edge_thresh");
+      set_num(min_vcw, "vert_thresh");
+      set_num(min_vcw, "vert_thresh");
+      set_num(n_levels_d2_agg, "n_levels_d2_agg");
+    } // VertexAMGFactoryOptions::SetFromFlags
 
   }; // VertexAMGFactoryOptions
-
-
-  void VertexAMGFactoryOptions :: SetFromFlags (const Flags & flags, string prefix)
-  {
-
-    auto set_enum_opt = [&] (auto & opt, string key, Array<string> vals) {
-      string val = flags.GetStringFlag(prefix + key, "");
-      for (auto k : Range(vals)) {
-	if (val == vals[k])
-	  { opt = decltype(opt)(k); return; }
-      }
-    };
-
-    auto set_bool = [&](auto& v, string key) {
-      if (v) { v = !flags.GetDefineFlagX(prefix + key).IsFalse(); }
-      else { v = flags.GetDefineFlagX(prefix + key).IsTrue(); }
-    };
-
-    auto set_num = [&](auto& v, string key)
-      { v = flags.GetNumFlag(prefix + key, v); };
-
-    BaseAMGFactory::Options::SetFromFlags(flags, prefix);
-
-    set_enum_opt(crs_alg, "crs_alg", {"ecol", "agg" });
-
-    set_bool(ecw_geom, "ecw_geom");
-    set_bool(ecw_robust, "ecw_robust");
-
-    set_num(min_ecw, "edge_thresh");
-    set_num(min_vcw, "vert_thresh");
-    set_num(min_vcw, "vert_thresh");
-    set_num(n_levels_d2_agg, "n_levels_d2_agg");
-  } // VertexAMGFactoryOptions::SetFromFlags
-
     
   /** END Options **/
 

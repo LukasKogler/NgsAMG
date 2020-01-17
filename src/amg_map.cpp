@@ -295,7 +295,8 @@ namespace amg
     //   cout << " prol: " << endl; print_tm_spmat(cout, *prol); cout << endl<< endl;
     // }
 
-    auto spm_tm = RestrictMatrixTM<SPM_TM_F, TMAT> (*prol_trans, *tfmat, *prol);
+    // auto spm_tm = RestrictMatrixTM<SPM_TM_F, TMAT> (*prol_trans, *tfmat, *prol);
+    shared_ptr<SPM_TM_C> spm_tm = RestrictMatrixTM<SPM_TM_F, TMAT> (*prol_trans, *tfmat, *prol);
 
     // cout << " cmat: " << endl; print_tm_spmat(cout, *spm_tm); cout << endl<< endl;
 
@@ -305,3 +306,9 @@ namespace amg
 } // namespace amg
 
 #include "amg_tcs.hpp"
+
+// namespace amg
+// {
+//   template class ProlMap<SparseMatrixTM<double>>;
+//   template class ProlMap<SparseMatrixTM<Mat<2,2,double>>>;
+// } // namespace amg

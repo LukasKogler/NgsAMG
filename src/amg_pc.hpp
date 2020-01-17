@@ -73,6 +73,51 @@ namespace amg
 
   }; // BaseAMGPC
 
+
+  /** Options **/
+
+  class BaseAMGPC :: Options
+  {
+  public:
+
+    /** What we do on the coarsest level **/
+    enum CLEVEL : char { INV_CLEV = 0,       // invert coarsest level
+			 SMOOTH_CLEV = 1,    // smooth coarsest level
+			 NO_CLEV = 2 };
+    CLEVEL clev = INV_CLEV;
+    INVERSETYPE cinv_type = MASTERINVERSE;
+    INVERSETYPE cinv_type_loc = SPARSECHOLESKY;
+    size_t clev_nsteps = 1;                  // if smoothing, how many steps do we do?
+    
+    /** Smoothers **/
+
+    enum SM_TYPE : char /** available smoothers **/
+      { GS = 0,     // (l1/hybrid - ) Gauss-Seidel
+	BGS = 1 };  // Block - (l1/hybrid - ) Gauss-Seidel 
+    SM_TYPE sm_type = SM_TYPE::GS;
+
+    enum GS_VER : char /** different hybrid GS versions (mostly for testing) **/
+      { VER1 = 0,    // old version
+	VER2 = 1,    // newer (maybe a bit faster than ver3 without overlap)
+	VER3 = 2 };  // newest, optional overlap
+    GS_VER gs_ver = GS_VER::VER3;
+
+    bool sm_mpi_overlap = true;          // overlap communication/computation (only VER3)
+    bool sm_mpi_thread = false;          // do MPI-comm in seperate thread (only VER3)
+
+    /** Misc **/
+    bool sync = false;                   // synchronize via MPI-Barrier in places
+    bool do_test = false;                // perform PC-test for amg_mat
+
+  public:
+
+    Options () { ; }
+
+    virtual void SetFromFlags (const Flags & flags, string prefix);
+  }; //BaseAMGPC::Options
+
+  /** END Options **/
+
 } // namespace amg
 
 #endif

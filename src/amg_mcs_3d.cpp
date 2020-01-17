@@ -6,7 +6,6 @@
 #include "amg.hpp"
 #include "amg_elast_impl.hpp"
 #include "amg_factory_impl.hpp"
-#include "amg_pc_impl.hpp"
 #include "amg_facet_aux.hpp"
 #include "amg_hdiv_templates.hpp"
 #include "amg_vfacet_templates.hpp"

@@ -4,13 +4,11 @@
 #include "amg.hpp"
 
 #include "amg_factory.hpp"
-#include "amg_factory_impl.hpp"
 #include "amg_factory_nodal.hpp"
 #include "amg_factory_nodal_impl.hpp"
 #include "amg_factory_vertex.hpp"
 #include "amg_factory_vertex_impl.hpp"
 #include "amg_pc.hpp"
-#include "amg_pc_impl.hpp"
 #include "amg_energy.hpp"
 #include "amg_energy_impl.hpp"
 #include "amg_pc_vertex.hpp"

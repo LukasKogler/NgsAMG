@@ -1,4 +1,3 @@
-#ifndef FILE_AMG_BS_CPP
 #define FILE_AMG_BS_CPP
 
 #include "amg.hpp"
@@ -574,6 +573,13 @@ namespace amg
 
 } // namespace amg
 
-#include "amg_tcs.hpp"
 
+namespace amg
+{
+  template class HybridBS<double>;
+  template class HybridBS<Mat<2,2,double>>;
+  template class HybridBS<Mat<3,3,double>>;
+#ifdef ELASTICITY
+  template class HybridBS<Mat<6,6,double>>;
 #endif
+}

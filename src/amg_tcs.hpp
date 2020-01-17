@@ -144,10 +144,11 @@ namespace amg
   EXTERN template class ProlMap<stripped_spm_tm<Mat<A,B,double>>>;
 
   InstProlMap(1,1);
+  InstProlMap(2,2);
+  InstProlMap(3,3);
 #ifdef ELASTICITY
   InstProlMap(1,3);
   InstProlMap(2,3);
-  InstProlMap(3,3);
   InstProlMap(1,6);
   InstProlMap(3,6);
   InstProlMap(6,6);
@@ -184,23 +185,25 @@ namespace amg
   InstMultMat(M,N,M); /* PT * [A*P] */ 
   
 #if !defined(AMG_EXTERN_TEMPLATES) && defined(FILE_AMG_SPMSTUFF_CPP)
-  /** Transpose **/
+  /** [A \times B] Transpose **/
   InstTransMat(1,1);
+  InstTransMat(2,2);
+  InstTransMat(3,3);
 #ifdef ELASTICITY
   InstTransMat(1,3);
   InstTransMat(2,3);
-  InstTransMat(3,3);
   InstTransMat(1,6);
   InstTransMat(3,6);
   InstTransMat(6,6);
 #endif
 
-  /** A * B **/
+  /** [A \times B] * [B \times C] **/
   InstMultMat(1,1,1);
+  InstMultMat(2,2,2);
+  InstMultMat(3,3,3);
 #ifdef ELASTICITY
   InstEmbedMults(1,3);
   InstEmbedMults(2,3);
-  InstMultMat(3,3,3);
   InstMultMat(6,6,6);
   InstEmbedMults(1,6);
   InstEmbedMults(3,6);
