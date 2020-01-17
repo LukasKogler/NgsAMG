@@ -11,7 +11,8 @@ namespace amg
   public:
     class Options;
 
-    using FACTORY::DIM;
+    static constexpr int DIM = FACTORY::DIM;
+
     using TMESH = typename FACTORY::TMESH;
 
   protected:
@@ -39,6 +40,7 @@ namespace amg
     /** BaseAMGPC overloads **/
 
     virtual void InitLevel (shared_ptr<BitArray> freedofs = nullptr) override;
+    virtual void Update () override { ; } // TODO: what should this do??
 
     virtual shared_ptr<BaseAMGPC::Options> NewOpts () override;
     virtual void SetDefaultOptions (BaseAMGPC::Options& O) override;
@@ -102,7 +104,7 @@ namespace amg
 
   /** VertexAMGPCOptions **/
 
-  class VertexAMGPCOptions
+  class VertexAMGPCOptions : public BaseAMGPC::Options
   {
   public:
     /** Which subset of DOFs to perform the coarsening on **/
@@ -156,7 +158,9 @@ namespace amg
 
   public:
     
-    VertexAMGPCOptions () { ; }
+    VertexAMGPCOptions ()
+      : BaseAMGPC::Options()
+    { ; }
 
     virtual void SetFromFlags (shared_ptr<FESpace> fes, const Flags & flags, string prefix);
 

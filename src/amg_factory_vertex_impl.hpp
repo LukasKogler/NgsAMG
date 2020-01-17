@@ -32,6 +32,9 @@ namespace amg
     double min_ecw = 0.05;
     double min_vcw = 0.3;
 
+    /** Discard **/
+    int disc_max_bs = 5;
+
     /** AGG **/
     int n_levels_d2_agg = 1;                    // do this many levels MIS(2)-like aggregates (afterwards MIS(1)-like)
 
@@ -835,6 +838,56 @@ namespace amg
 
     return make_shared<ProlMap<TSPM_TM>> (sprol, pw_step->GetParDofs(), pw_step->GetMappedParDofs());
   } // VertexAMGFactory::SmoothedProlMap
+
+
+  template<class ENERGY, class TMESH, int BS>
+  bool VertexAMGFactory<ENERGY, TMESH, BS> :: TryDiscardStep (BaseAMGFactory::State & state)
+  {
+    if (!options->enable_disc)
+      { return false; }
+
+    if (state.free_nodes != nullptr)
+      { throw Exception("discard with dirichlet TODO!!"); }
+
+    shared_ptr<BaseDiscardMap> disc_map = BuildDiscardMap(state);
+
+    if (disc_map == nullptr)
+      { return false; }
+
+    auto n_d_v = disc_map->GetNDroppedNodes<NT_VERTEX>();
+    auto any_n_d_v = state.curr_mesh->GetEQCHierarchy()->GetCommunicator().AllReduce(n_d_v, MPI_SUM);
+
+    bool map_ok = any_n_d_v != 0; // someone somewhere eliminated some verices
+
+    if (map_ok) { // a non-negligible amount of vertices was eliminated
+      auto elim_vs = disc_map->GetMesh()->template GetNNGlobal<NT_VERTEX>() - disc_map->GetMappedMesh()->template GetNNGlobal<NT_VERTEX>();
+      auto dv_frac = double(disc_map->GetMappedMesh()->template GetNNGlobal<NT_VERTEX>()) / disc_map->GetMesh()->template GetNNGlobal<NT_VERTEX>();
+      map_ok &= (dv_frac < 0.98);
+    }
+
+    if (!map_ok)
+      { return false; }
+
+    //TODO: disc prol map!!
+
+    state.disc_map = disc_map;
+    state.curr_mesh = disc_map->GetMappedMesh();
+    state.curr_pds = this->BuildParallelDofs(state.curr_mesh);
+    state.free_nodes = nullptr;
+    // state.dof_map = disc_prol_map;
+
+    return true;
+  } // VertexAMGFactory::TryDiscardStep
+
+
+  template<class ENERGY, class TMESH, int BS>
+  shared_ptr<BaseDiscardMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildDiscardMap (BaseAMGFactory::State & state)
+  {
+    auto & O(static_cast<Options&>(*options));
+    auto tm_mesh = dynamic_pointer_cast<TMESH>(state.curr_mesh);
+    auto disc_map = make_shared<VDiscardMap<TMESH>> (tm_mesh, O.disc_max_bs);
+    return disc_map;
+  } // VertexAMGFactory :: BuildDiscardMap
 
   /** END VertexAMGFactory **/
 

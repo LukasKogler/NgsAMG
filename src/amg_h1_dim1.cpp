@@ -34,15 +34,12 @@ namespace amg
   extern template class GridContractMap<H1Mesh>;
   extern template class VDiscardMap<H1Mesh>;
 
-  // template class H1Energy<1, double, double>;
   template class H1AMGFactory<1>;
+  template class ElmatVAMG<H1AMGFactory<1>, double, double>;
 
-  // using PCC = VertexAMGPC<H1AMGFactory<1>>;
-  // using PCC = ElmatVAMG<H1AMGFactory<1>, double, double>;
+  using PCC = ElmatVAMG<H1AMGFactory<1>, double, double>;
 
-  // template class PCC;
-
-  // RegisterPreconditioner<PCC> register_h1amg_1d ("ngs_amg.h1_scal");
+  RegisterPreconditioner<PCC> register_h1amg_1d ("ngs_amg.h1_scal");
 
 } // namespace amg
 

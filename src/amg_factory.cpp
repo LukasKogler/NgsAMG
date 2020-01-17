@@ -45,6 +45,8 @@ namespace amg
     set_num(rd_seq_nv, "rd_seq_nv");
     set_num(rd_loc_gl, "rd_loc_gl");
 
+    set_bool(enable_disc, "enable_disc");
+
     set_bool(enable_sp, "enable_sp");
     set_bool(sp_needs_cmap, "sp_needs_cmap");
     set_num(sp_min_frac, "sp_min_frac");

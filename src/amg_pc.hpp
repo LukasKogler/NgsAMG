@@ -108,6 +108,7 @@ namespace amg
     /** Misc **/
     bool sync = false;                   // synchronize via MPI-Barrier in places
     bool do_test = false;                // perform PC-test for amg_mat
+    bool smooth_lo_only = false;         // smooth only on low order part -> AMG-PC is for the LO part only
 
   public:
 

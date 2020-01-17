@@ -44,10 +44,13 @@ namespace amg
     mesh->Apply<NT_EDGE>(lam_e, master_only);
     ch1e.SetParallelStatus(DISTRIBUTED);
   } // H1EData :: map_data_impl
+} // namespace amg
 
 
 #ifdef FILE_AMGPC_HPP
 
+namespace amg
+{
   /** Need this only if we also include the PC headers **/
 
   template<class FACTORY, class HTVD, class HTED>
@@ -110,8 +113,121 @@ namespace amg
     }
   } // EmbedWithElmats<H1AMGFactory, double, double>::AddElementMatrix
 
+} // namespace amg
+
 #endif
 
+
+#ifdef FILE_AMGH1_CPP
+
+namespace amg {
+  /** Only need these int he h1-pc cpp files **/
+  
+  
+  template<class FCC>
+  void VertexAMGPC<FCC> :: SetDefaultOptions (BaseAMGPC::Options& base_O)
+  {
+    auto & O(static_cast<Options&>(base_O));
+
+    auto ma = bfa->GetFESpace()->GetMeshAccess();
+
+    /** Coarsening Algorithm **/
+    O.crs_alg = Options::CRS_ALG::AGG;
+    O.ecw_geom = false;
+    O.n_levels_d2_agg = 1;
+
+    /** Discard **/
+    O.enable_disc = true;
+    O.disc_max_bs = 5;
+
+    /** Level-control **/
+    O.enable_multistep = true;
+    O.use_static_crs = true;
+    O.first_aaf = (ma->GetDimension() == 3) ? 0.05 : 0.1;
+    O.aaf = 1/pow(2, ma->GetDimension());
+
+    /** Redistribute **/
+    O.enable_redist = true;
+    O.rdaf = 0.05;
+    O.first_rdaf = O.aaf * O.first_aaf;
+    O.rdaf_scale = 1;
+    O.rd_crs_thresh = 0.9;
+    O.rd_min_nv_gl = 5000;
+    O.rd_seq_nv = 5000;
+
+    /** Smoothers **/
+    O.sm_type = Options::SM_TYPE::GS;
+    O.keep_grid_maps = false;
+    O.gs_ver = Options::GS_VER::VER3;
+  } // VertexAMGPC::SetDefaultOptions
+
+
+  template<class FCC>
+  void VertexAMGPC<FCC> :: ModifyOptions (BaseAMGPC::Options & O, const Flags & flags, string prefix)
+  {
+    ;
+  } // VertexAMGPC::ModifyOptions
+
+
+  template<class FCC> template<class TD2V, class TV2D> shared_ptr<typename FCC::TMESH>
+  VertexAMGPC<FCC> :: BuildAlgMesh_ALG_scal (shared_ptr<BlockTM> top_mesh, shared_ptr<BaseSparseMatrix> spmat,
+					     TD2V D2V, TV2D V2D) const
+  {
+    static Timer t("BuildAlgMesh_ALG_scal"); RegionTimer rt(t);
+
+    static_assert(is_same<int, decltype(D2V(0))>::value, "D2V mismatch");
+    static_assert(is_same<int, decltype(V2D(0))>::value, "V2D mismatch");
+
+    auto dspm = dynamic_pointer_cast<SparseMatrix<double>>(spmat);
+    if (dspm == nullptr)
+      { throw Exception("Could not cast sparse matrix!"); }
+
+    // cout << "finest level mat: " << endl << *dspm << endl;
+
+    const auto& cspm = *dspm;
+    auto a = new H1VData(Array<double>(top_mesh->GetNN<NT_VERTEX>()), DISTRIBUTED); auto ad = a->Data(); ad = 0;
+    auto b = new H1EData(Array<double>(top_mesh->GetNN<NT_EDGE>()), DISTRIBUTED); auto bd = b->Data(); bd = 0;
+
+    for (auto k : Range(top_mesh->GetNN<NT_VERTEX>()))
+      { auto d = V2D(k); ad[k] = cspm(d,d); }
+
+    auto edges = top_mesh->GetNodes<NT_EDGE>();
+    auto& fvs = *free_verts;
+    for (auto & e : edges) {
+      auto di = V2D(e.v[0]); auto dj = V2D(e.v[1]);
+      double v = cspm(di, dj);
+      // bd[e.id] = fabs(v) / sqrt(cspm(di,di) * cspm(dj,dj)); ad[e.v[0]] += v; ad[e.v[1]] += v;
+      bd[e.id] = fabs(v); ad[e.v[0]] += v; ad[e.v[1]] += v;
+    }
+    
+    for (auto k : Range(top_mesh->GetNN<NT_VERTEX>())) // -1e-16 can happen, is problematic
+      { ad[k] = fabs(ad[k]); }
+    auto mesh = make_shared<H1Mesh>(move(*top_mesh), a, b);
+    return mesh;
+  } // VertexAMGPC::BuildAlgMesh_ALG_scal
+
+
+  template<class FCC> template<class TD2V, class TV2D> shared_ptr<typename FCC::TMESH>
+  VertexAMGPC<FCC> :: BuildAlgMesh_ALG_blk (shared_ptr<BlockTM> top_mesh, shared_ptr<BaseSparseMatrix> spmat, TD2V D2V, TV2D V2D) const
+  {
+    throw Exception("BuildAlgMesh_ALG_blk for H1 TODO (Comp/Reo-Comp spaces)!");
+    return nullptr;
+  } // VertexAMGPC::BuildAlgMesh_ALG_blk
+
+
+  template<class FCC> shared_ptr<typename FCC::TMESH>
+  VertexAMGPC<FCC> :: BuildAlgMesh_TRIV (shared_ptr<BlockTM> top_mesh) const
+  {
+    static Timer t("BuildAlgMesh_TRIV"); RegionTimer rt(t);
+    /** vertex-weights are 0, edge-weihts are 1 **/
+    auto a = new H1VData(Array<double>(top_mesh->GetNN<NT_VERTEX>()), CUMULATED); a->Data() = 0.0; 
+    auto b = new H1EData(Array<double>(top_mesh->GetNN<NT_EDGE>()), CUMULATED); b->Data() = 1.0;
+    auto mesh = make_shared<H1Mesh>(move(*top_mesh), a, b);
+    return mesh;
+  } // VertexAMGPC::BuildAlgMesh_TRIV
+
 } // namespace amg
+
+#endif
 
 #endif

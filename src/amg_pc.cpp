@@ -58,6 +58,7 @@ namespace amg
 
     set_bool(sync, "sync");
     set_bool(do_test, "do_test");
+    set_bool(smooth_lo_only, "smooth_lo_only");
 
   } // Options::SetFromFlags
 
@@ -379,6 +380,8 @@ namespace amg
 
     auto ma = fes->GetMeshAccess();
     auto pfit = [&](string x) LAMBDA_INLINE { return prefix + x; };
+
+    BaseAMGPC::Options::SetFromFlags(flags, prefix);
 
     set_enum_opt(subset, "on_dofs", {"range", "select"}, RANGE_SUBSET);
 

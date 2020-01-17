@@ -44,10 +44,11 @@ namespace amg
 
     /** Discard **/
     virtual bool TryDiscardStep (State & state) = 0;
+    // virtual shared_ptr<BaseDiscardMap> BuildDiscardMap (State & state);
 
     /** Coarse **/
     virtual size_t ComputeGoal (const AMGLevel & f_lev, State & state) = 0;
-    virtual bool TryCoarseStep (State & state) = 0;
+    virtual bool TryCoarseStep (State & state);
     virtual shared_ptr<BaseCoarseMap> BuildCoarseMap (State & state) = 0;
     virtual shared_ptr<BaseDOFMapStep> PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<ParallelDofs> fpds, shared_ptr<ParallelDofs> cpds) = 0;
     virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<TopologicMesh> fmesh) = 0;
@@ -93,6 +94,9 @@ namespace amg
     size_t rd_min_nv_gl = 500;                  // try to re-distribute such that at least this many NV per proc remain
     size_t rd_seq_nv = 1000;                    // always re-distribute to sequential once NV reaches this threshhold
     double rd_loc_gl = 0.8;                     // always try to redistribute such that at least this fraction will be local
+
+    /** Discard **/
+    bool enable_disc = true;                    // enable discarding of vertices (should eliminate hanging nodes)
 
     /** Smoothed Prolongation **/
     bool enable_sp = true;                      // enable prolongation-smoothing

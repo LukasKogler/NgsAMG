@@ -329,7 +329,8 @@ namespace amg
   template<class FACTORY>
   shared_ptr<BaseAMGFactory> VertexAMGPC<FACTORY> :: BuildFactory ()
   {
-    return make_shared<FACTORY>(options);
+    auto opts = dynamic_pointer_cast<Options>(options);
+    return make_shared<FACTORY>(opts);
   } // VertexAMGPC::BuildFactory
 
 
@@ -606,7 +607,7 @@ namespace amg
     if (amg_level.disc_map != nullptr)
       { n_blocks += amg_level.disc_map->GetNDroppedNodes<NT_VERTEX>(); }
     TableCreator<int> cblocks(n_blocks);
-    auto it_blocks = [&](auto NV, auto map_v) {
+    auto it_blocks = [&](auto NV, auto map_v) LAMBDA_INLINE {
       for (auto k : Range(NV)) {
 	auto cv = map_v(k);
 	if (cv != -1)
@@ -616,11 +617,11 @@ namespace amg
     auto vmap = amg_level.crs_map->GetMap<NT_VERTEX>();
     for (; !cblocks.Done(); cblocks++) {
       if (amg_level.disc_map == nullptr)
-	{ calc_blocks(vmap.Size(), [&](auto v)->int { return vmap[v]; }); }
+	{ it_blocks(vmap.Size(), [&](auto v) -> int LAMBDA_INLINE { return vmap[v]; }); }
       else {
 	const auto & drop = *amg_level.disc_map->GetDroppedNodes<NT_VERTEX>();
 	auto drop_map = amg_level.disc_map->GetMap<NT_VERTEX>();
-	calc_blocks(drop.Size(), [&](auto v)->int {
+	it_blocks(drop.Size(), [&](auto v) -> int LAMBDA_INLINE {
 	    auto midv = drop_map[v]; // have to consider drop OR DIRI !!
 	    return (midv == -1) ? midv : vmap[midv];
 	  });
@@ -631,7 +632,8 @@ namespace amg
 	}
       }
     }
-    return cblocks.MoveTable();
+
+    return move(cblocks.MoveTable());
   } // VertexAMGPC<FACTORY>::GetGSBlocks
 
 
@@ -651,7 +653,10 @@ namespace amg
   ElmatVAMG<FACTORY, HTVD, HTED> :: ElmatVAMG (shared_ptr<BilinearForm> blf, const Flags & flags, const string name, shared_ptr<Options> opts)
     : VertexAMGPC<FACTORY>(blf, flags, name, nullptr)
   {
-    options = (opts == nullptr) ? this->MakeOptionsFromFlags(flags) : opts;
+    if (opts == nullptr)
+      { options = this->MakeOptionsFromFlags(flags); }
+    else
+      { options = opts; }
   } // ElmatVAMG(..)
 
 
@@ -681,6 +686,13 @@ namespace amg
     return top_mesh;
   } // ElmatVAMG::BuildTopMesh
 
+
+  template<class FACTORY, class HTVD, class HTED>
+  shared_ptr<BlockTM> ElmatVAMG<FACTORY, HTVD, HTED> :: BTM_Elmat (shared_ptr<EQCHierarchy> eqc_h)
+  {
+    throw Exception("topo from elmat TODO");
+    return nullptr;
+  } // ElmatVAMG::BTM_Elmat
 
   /** END ElmatVAMG **/
 

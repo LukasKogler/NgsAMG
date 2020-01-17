@@ -45,6 +45,10 @@ namespace amg
     virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap) override;
     // shared_ptr<BaseDOFMapStep> SP_impl (shared_ptr<ProlMap<TSPM_TM>> pw_prol, shared_ptr<TMESH> fmesh, FlatArray<int> vmap);
 
+    /** Discard **/
+    virtual bool TryDiscardStep (BaseAMGFactory::State & state) override;
+    virtual shared_ptr<BaseDiscardMap> BuildDiscardMap(BaseAMGFactory::State & state);
+
   }; // VertexAMGFactory
     
 } // namespace amg
