@@ -1,6 +1,6 @@
 #define FILE_AMG_BS_CPP
 
-#include "amg.hpp"
+#include "amg_blocksmoother.hpp"
 
 namespace amg
 {

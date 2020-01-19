@@ -1,8 +1,11 @@
 #define FILE_AMG_PC_CPP
 
-#include "amg.hpp"
-#include "amg_factory.hpp"
 #include "amg_pc.hpp"
+
+/** Need all smoother headers here, not just BaseSmoother! **/
+#include "amg_smoother2.hpp"
+#include "amg_smoother3.hpp"
+#include "amg_blocksmoother.hpp"
 
 /** Implementing VertexAMGPCOptions SetFromFlags here is easiest **/
 #include "amg_pc_vertex.hpp"
@@ -73,10 +76,9 @@ namespace amg
     
 
   BaseAMGPC :: BaseAMGPC (shared_ptr<BilinearForm> blf, const Flags & flags, const string name, shared_ptr<Options> opts)
-    : Preconditioner(bfa, flags, name), options(opts), bfa(bfa)
+    : Preconditioner(blf, flags, name), options(opts), bfa(blf)
   {
-    if (opts == nullptr)
-      { opts = MakeOptionsFromFlags(flags); }
+    ;
   } // BaseAMGPC(..)
 
 
@@ -88,6 +90,8 @@ namespace amg
 
   void BaseAMGPC :: InitLevel (shared_ptr<BitArray> freedofs)
   {
+    if (options == nullptr) // should never happen
+      { options = MakeOptionsFromFlags(flags); }
   } // BaseAMGPC::InitLevel
 
 
@@ -234,9 +238,10 @@ namespace amg
     finest_level.level = 0;
     finest_level.mesh = finest_mesh; // TODO: get out of factory??
     finest_level.eqc_h = finest_level.mesh->GetEQCHierarchy();
+    finest_level.pardofs = finest_mat->GetParallelDofs();
     auto fpm = dynamic_pointer_cast<ParallelMatrix>(finest_mat)->GetMatrix();
-    finest_level.pardofs = fpm->GetParallelDofs();
-    finest_level.mat = dynamic_pointer_cast<BaseSparseMatrix>(fpm);
+    finest_level.mat = (fpm == nullptr) ? dynamic_pointer_cast<BaseSparseMatrix>(finest_mat)
+      : dynamic_pointer_cast<BaseSparseMatrix>(fpm);
     finest_level.embed_map = BuildEmbedding(finest_mesh);
   } // BaseAMGPC::InitFinestLevel
 

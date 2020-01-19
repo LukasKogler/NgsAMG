@@ -1,6 +1,8 @@
 #ifndef FILE_AMG_FACTORY_VERTEX_IMPL_HPP
 #define FILE_AMG_FACTORY_VERTEX_IMPL_HPP
 
+#include "amg_agg.hpp"
+
 namespace amg
 {
   /** State **/

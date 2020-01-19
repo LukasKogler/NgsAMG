@@ -21,6 +21,7 @@ namespace ngla
      depending on which MAX_SYS_DIM NGSolve has been compiled with, 
      we might not already have SparseMatrix<Mat<K,J>>
    **/
+#ifdef FILE_AMG_SPMSTUFF_HPP // only need these if we include the spmstuff-header (which we almost always do)
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMG_SPMSTUFF_CPP)
 
 #define InstSPMS(N,M)				  \
@@ -32,32 +33,42 @@ namespace ngla
   
 #if MAX_SYS_DIM < 2
   InstSPMS(2,2);
-#endif
+#endif // MAX_SYS_DIM < 2
+  InstSPMS(1,2);
+  InstSPMS(2,1);
+
 #if MAX_SYS_DIM < 3
   InstSPMS(3,3);
-#endif
-#ifdef ELASTICITY
+#endif // MAX_SYS_DIM < 3
   InstSPMS(1,3);
   InstSPMS(3,1);
   InstSPMS(2,3);
   InstSPMS(3,2);
+
+#ifdef ELASTICITY
+
 #if MAX_SYS_DIM < 6
   InstSPMS(6,6);
-#endif
+#endif // MAX_SYS_DIM < 6
   InstSPMS(1,6);
   InstSPMS(6,1);
   InstSPMS(3,6);
   InstSPMS(6,3);
-#endif
-#endif
+
+#endif // ELASTICITY
+
 #undef InstSPMS
+
+#endif
+#endif // FILE_AMG_SPMSTUFF_HPP
   
 } // namespace ngla
 
 
 namespace amg
 {
-  
+#ifdef FILE_AMG_SMOOTHER_HPP // TODO: split this into seperate headers
+
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGSM_CPP)
   EXTERN template class HybridGSS<1>;
   EXTERN template class HybridGSS<2>;
@@ -71,6 +82,7 @@ namespace amg
 #endif
 #endif
 
+#ifdef FILE_AMGSM2
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGSM2_CPP)
   EXTERN template class HybridGSS2<double>;
   EXTERN template class HybridGSS2<Mat<2,2,double>>;
@@ -79,7 +91,9 @@ namespace amg
   EXTERN template class HybridGSS2<Mat<6,6,double>>;
 #endif
 #endif
+#endif // FILE_AMGSM2
 
+#ifdef FILE_AMGSM3
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGSM3_CPP)
   EXTERN template class HybridGSS3<double>;
   EXTERN template class HybridGSS3<Mat<2,2,double>>;
@@ -88,19 +102,33 @@ namespace amg
   EXTERN template class HybridGSS3<Mat<6,6,double>>;
   EXTERN template class RegHybridGSS3<Mat<3,3,double>, 2, 3>;
   EXTERN template class RegHybridGSS3<Mat<6,6,double>, 3, 6>;
+#endif // ELASTICITY
 #endif
-#endif
+#endif // FILE_AMGSM3
 
+#ifdef FILE_AMG_BS_HPP
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMG_BS_CPP)
   EXTERN template class HybridBS<double>;
   EXTERN template class HybridBS<Mat<2,2,double>>;
   EXTERN template class HybridBS<Mat<3,3,double>>;
 #ifdef ELASTICITY
   EXTERN template class HybridBS<Mat<6,6,double>>;
+#endif // ELASTICITY
 #endif
-#endif
+#endif // FILE_AMG_BS_HPP
 
+#endif // FILE_AMG_SMOOTHER_HPP
+
+#ifdef FILE_AMGCRS
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGCRS_CPP)
+
+#ifdef FILE_AMGH1_HPP
+  EXTERN template class SeqVWC<FlatTM>;
+  EXTERN template class BlockVWC<H1Mesh>;
+  EXTERN template class HierarchicVWC<H1Mesh>;
+  EXTERN template class CoarseMap<H1Mesh>;
+#endif //  FILE_AMGH1_HPP
+
 #ifdef ELASTICITY
   EXTERN template class BlockVWC<ElasticityMesh<2>>;
   EXTERN template class HierarchicVWC<ElasticityMesh<2>>;
@@ -110,51 +138,76 @@ namespace amg
   EXTERN template class CoarseMap<ElasticityMesh<3>>;
 #endif
 #endif
+#endif // FILE_AMGCRS
 
+#ifdef FILE_AMGCRS2_HPP
 #if defined(AMG_EXTERN_TEMPLATES)
-  // EXTERN template class Agglomerator<H1AMGFactory>;
+#ifdef FILE_AMGH1_HPP
+  EXTERN template class Agglomerator<H1Energy<1, double, double>, H1Mesh, H1Energy<1, double, double>::NEED_ROBUST>;
+  EXTERN template class Agglomerator<H1Energy<2, double, double>, H1Mesh, H1Energy<2, double, double>::NEED_ROBUST>;
+  EXTERN template class Agglomerator<H1Energy<3, double, double>, H1Mesh, H1Energy<3, double, double>::NEED_ROBUST>;
+#endif // FILE_AMGH1_HPP
 #ifdef ELASTICITY
   EXTERN template class Agglomerator<ElasticityAMGFactory<2>>;
   EXTERN template class Agglomerator<ElasticityAMGFactory<3>>;
 #endif
 #endif
+#endif // FILE_AMGCRS2_HPP
 
+#ifdef FILE_AMGCTR
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGCTR_CPP)
+  EXTERN template class CtrMap<double>;
+  EXTERN template class CtrMap<Vec<2,double>>;
+  EXTERN template class CtrMap<Vec<3,double>>;
+#ifdef FILE_AMGH1_HPP
+  EXTERN template class GridContractMap<H1Mesh>;
+#endif // FILE_AMGH1_HPP
 #ifdef ELASTICITY
   EXTERN template class GridContractMap<ElasticityMesh<2>>;
   EXTERN template class GridContractMap<ElasticityMesh<3>>;
+  EXTERN template class CtrMap<Vec<6,double>>;
+#endif // ELASTICITY
 #endif
-#endif
+#endif // FILE_AMGCTR
 
+#ifdef FILE_AMG_DISCARD_HPP
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMG_DISCARD_CPP)
+#ifdef FILE_AMGH1_HPP
   EXTERN template class VDiscardMap<H1Mesh>;
+#endif // FILE_AMGH1_HPP
 #ifdef ELASTICITY
   EXTERN template class VDiscardMap<ElasticityMesh<2>>;
   EXTERN template class VDiscardMap<ElasticityMesh<3>>;
 #endif
 #endif
+#endif // FILE_AMG_DISCARD_HPP
 
+#ifdef FILE_AMGPC_HPP
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGH1_CPP)
   EXTERN template class EmbedVAMG<H1AMGFactory>;
   EXTERN template class EmbedWithElmats<H1AMGFactory, double, double>;
 #endif
+#endif //  FILE_AMGPC_HPP
 
+#ifdef FILE_AMG_MAP
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGMAP_CPP)
 #define InstProlMap(A,B) \
   EXTERN template class ProlMap<stripped_spm_tm<Mat<A,B,double>>>;
 
   InstProlMap(1,1);
+  InstProlMap(1,2);
   InstProlMap(2,2);
-  InstProlMap(3,3);
-#ifdef ELASTICITY
   InstProlMap(1,3);
   InstProlMap(2,3);
+  InstProlMap(3,3);
+#ifdef ELASTICITY
   InstProlMap(1,6);
   InstProlMap(3,6);
   InstProlMap(6,6);
 #endif
 #undef InstProLMap
 #endif
+#endif //  FILE_AMG_MAP
 
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGELAST_CPP)
 #ifdef ELASTICITY
@@ -171,7 +224,9 @@ namespace amg
 #endif
 #endif
 
-#define InstTransMat(N,M) \
+
+#ifdef FILE_AMG_SPMSTUFF_HPP
+#define InstTransMat(N,M)						\
   template shared_ptr<trans_spm_tm<stripped_spm_tm<Mat<N,M,double>>>>	\
   TransposeSPM<stripped_spm_tm<Mat<N,M,double>>> (const stripped_spm_tm<Mat<N,M,double>> & mat);
 
@@ -187,11 +242,12 @@ namespace amg
 #if !defined(AMG_EXTERN_TEMPLATES) && defined(FILE_AMG_SPMSTUFF_CPP)
   /** [A \times B] Transpose **/
   InstTransMat(1,1);
+  InstTransMat(1,2);
   InstTransMat(2,2);
   InstTransMat(3,3);
-#ifdef ELASTICITY
   InstTransMat(1,3);
   InstTransMat(2,3);
+#ifdef ELASTICITY
   InstTransMat(1,6);
   InstTransMat(3,6);
   InstTransMat(6,6);
@@ -201,16 +257,18 @@ namespace amg
   InstMultMat(1,1,1);
   InstMultMat(2,2,2);
   InstMultMat(3,3,3);
-#ifdef ELASTICITY
+  InstEmbedMults(1,2);
   InstEmbedMults(1,3);
   InstEmbedMults(2,3);
+#ifdef ELASTICITY
   InstMultMat(6,6,6);
   InstEmbedMults(1,6);
+  InstEmbedMults(2,6);
   InstEmbedMults(3,6);
 #endif
 
 #endif
-  
+#endif // FILE_AMG_SPMSTUFF_HPP
 } // namespace amg
 
 #undef EXTERN

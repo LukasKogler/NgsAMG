@@ -1,4 +1,7 @@
-#include "amg.hpp"
+#define FILE_AMG_MESH_CPP
+
+#include "amg_mesh.hpp"
+#include "amg_coarsen.hpp"
 
 namespace amg
 {

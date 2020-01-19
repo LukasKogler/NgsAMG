@@ -1,6 +1,5 @@
 #define FILE_AMG_FACTORY_CPP
 
-#include "amg.hpp"
 #include "amg_factory.hpp"
 
 namespace amg

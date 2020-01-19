@@ -1,6 +1,9 @@
 #ifndef FILE_AMG_DISCARD_HPP
 #define FILE_AMG_DISCARD_HPP
 
+#include "amg_map.hpp"
+#include "amg_coarsen.hpp"
+
 namespace amg
 {
 

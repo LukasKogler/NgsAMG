@@ -1,6 +1,8 @@
 #ifndef FILE_AMG_FACTORY_VERTEX_HPP
 #define FILE_AMG_FACTORY_VERTEX_HPP
 
+#include "amg_factory.hpp"
+
 namespace amg
 {
 

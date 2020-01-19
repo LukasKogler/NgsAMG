@@ -1,6 +1,7 @@
 #ifndef FILE_AMGPC_VERTEX_HPP
 #define FILE_AMGPC_VERTEX_HPP
 
+#include "amg_pc.hpp"
 namespace amg
 {
 
@@ -67,6 +68,9 @@ namespace amg
 
     virtual shared_ptr<BaseAMGFactory> BuildFactory () override;
     virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (shared_ptr<TopologicMesh> mesh) override;
+    template<int BSA> shared_ptr<BaseDOFMapStep> BuildEmbedding_impl (shared_ptr<TopologicMesh> mesh);
+    template<int BSA> shared_ptr<stripped_spm_tm<Mat<BSA, BSA, double>>> BuildES ();
+    template<int BSA> shared_ptr<stripped_spm_tm<Mat<BSA, FACTORY::BS, double>>> BuildED (size_t height, shared_ptr<TopologicMesh> mesh);
 
     virtual void InitFinestLevel (BaseAMGFactory::AMGLevel & finest_level) override;
 

@@ -1,3 +1,6 @@
+#ifndef FILE_AMG_AGG_IMPL_HPP
+#define FILE_AMG_AGG_IMPL_HPP
+
 namespace amg
 {
   /** AgglomerateCoarseMap **/
@@ -2714,3 +2717,4 @@ namespace amg
 
 } // namespace amg
 
+#endif

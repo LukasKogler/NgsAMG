@@ -1,7 +1,11 @@
 #ifndef FILE_AMG_DISCARD_CPP
 #define FILE_AMG_DISCARD_CPP
 
-#include "amg.hpp"
+#include "amg_discard.hpp"
+
+#define AMG_EXTERN_TEMPLATES
+#include "amg_tcs.hpp"
+#undef AMG_EXTERN_TEMPLATES
 
 namespace amg
 {
@@ -278,12 +282,6 @@ namespace amg
 
 } // namespace amg
 
-// h1 headers need factory/energy headers
-#include "amg_factory.hpp"
-#include "amg_factory_nodal.hpp"
-#include "amg_factory_vertex.hpp"
-#include "amg_energy.hpp"
-#include "amg_energy_impl.hpp"
 
 // need h1 headers for data mapping
 #include "amg_h1.hpp"

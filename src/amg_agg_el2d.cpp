@@ -5,6 +5,7 @@
 #include "amg.hpp"
 #include "amg_bla.hpp"
 #include "amg_agg.hpp"
+#include "amg_elast.hpp"
 #include "amg_elast_impl.hpp"
 #include "amg_agg_impl.hpp"
 

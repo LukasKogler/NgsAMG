@@ -3,6 +3,8 @@
 
 #include <condition_variable>
 
+#include "amg_smoother.hpp"
+
 namespace amg
 {
 

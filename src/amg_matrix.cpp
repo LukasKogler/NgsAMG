@@ -1,5 +1,6 @@
 
 #include "amg.hpp"
+#include "amg_matrix.hpp"
 
 namespace amg
 {

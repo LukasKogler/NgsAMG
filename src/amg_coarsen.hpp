@@ -1,6 +1,8 @@
 #ifndef FILE_AMGCRS
 #define FILE_AMGCRS
 
+#include "amg_map.hpp"
+
 namespace amg
 {
 

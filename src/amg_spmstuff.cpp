@@ -2,6 +2,10 @@
 
 #include "amg.hpp"
 
+#define AMG_EXTERN_TEMPLATES
+#include "amg_tcs.hpp"
+#undef AMG_EXTERN_TEMPLATES
+
 namespace amg
 {
   
@@ -193,17 +197,9 @@ namespace ngbla
   }
 }
 
-#ifdef ELASTICITY
 #include "mumpsinverse.hpp"
 #include "umfpackinverse.hpp"
 #include "sparsematrix_impl.hpp"
-#endif
-
-// namespace ngla
-// {
-//   template class SparseMatrixTM<Mat<6,6,double>>;
-//   template class SparseMatrix<Mat<6,6,double>>;
-// } // namespace ngla
 
 #include "amg_tcs.hpp"
 

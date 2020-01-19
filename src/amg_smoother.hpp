@@ -1,5 +1,7 @@
-#ifndef FILE_AMGSM
-#define FILE_AMGSM
+#ifndef FILE_AMG_SMOOTHER_HPP
+#define FILE_AMG_SMOOTHER_HPP
+
+#include "amg.hpp"
 
 namespace amg {
 

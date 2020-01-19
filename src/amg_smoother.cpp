@@ -1,7 +1,6 @@
-
 #define FILE_AMGSM_CPP
 
-#include "amg.hpp"
+#include "amg_smoother.hpp"
 
 namespace amg {
 

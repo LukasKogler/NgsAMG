@@ -1,6 +1,12 @@
 #ifndef FILE_AMGPC_HPP
 #define FILE_AMGPC_HPP
 
+#include "amg.hpp"
+#include "amg_map.hpp"
+#include "amg_factory.hpp"
+#include "amg_smoother.hpp"
+#include "amg_matrix.hpp"
+
 namespace amg
 {
   /**

@@ -1,14 +1,12 @@
-
 #define FILE_AMGSM3_CPP
+
+#include "amg_smoother3.hpp"
+#include "amg_smoother_impl.hpp"
 
 #ifdef USE_TAU
 #include <Profile/Profiler.h>
 // #include "TAU.h"
 #endif
-
-#include "amg.hpp"
-
-#include "amg_smoother_impl.hpp"
 
 namespace amg
 {

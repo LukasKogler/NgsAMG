@@ -1,6 +1,14 @@
 #ifndef FILE_AMG_H1_IMPL_HPP
 #define FILE_AMG_H1_IMPL_HPP
 
+#include "amg_h1.hpp"
+#include "amg_energy_impl.hpp"
+#include "amg_factory_nodal_impl.hpp"
+#include "amg_factory_vertex_impl.hpp"
+#include "amg_pc.hpp"
+#include "amg_pc_vertex.hpp"
+#include "amg_pc_vertex_impl.hpp"
+
 namespace amg
 {
 
@@ -136,6 +144,13 @@ namespace amg {
     O.ecw_geom = false;
     O.n_levels_d2_agg = 1;
 
+    /** Smoothed Prolongation **/
+    O.enable_sp = true;
+    O.sp_needs_cmap = false;
+    O.sp_min_frac = (ma->GetDimension() == 3) ? 0.08 : 0.15;
+    O.sp_max_per_row = 3;
+    O.sp_omega = 1.0;
+
     /** Discard **/
     O.enable_disc = true;
     O.disc_max_bs = 5;
@@ -159,6 +174,12 @@ namespace amg {
     O.sm_type = Options::SM_TYPE::GS;
     O.keep_grid_maps = false;
     O.gs_ver = Options::GS_VER::VER3;
+
+    /** FES-to-AMG Embedding **/
+    O.block_s = { 1 }; // multi-dim / scalar
+    // O.block_s = { 1, 1 (, 1) }; // compound
+    // O.block_s = { 2/3 }; // reordered
+
   } // VertexAMGPC::SetDefaultOptions
 
 
@@ -225,6 +246,16 @@ namespace amg {
     auto mesh = make_shared<H1Mesh>(move(*top_mesh), a, b);
     return mesh;
   } // VertexAMGPC::BuildAlgMesh_TRIV
+
+
+  template<class FCC> template<int BSA> shared_ptr<stripped_spm_tm<Mat<BSA, FCC::BS, double>>>
+  VertexAMGPC<FCC> :: BuildED (size_t height, shared_ptr<TopologicMesh> mesh)
+  {
+    constexpr int BS = FCC::BS;
+    if (BSA != BS)
+      { throw Exception("This should not happen for H1!!"); }
+    return nullptr;
+  } // VertexAMGPC::BuildED
 
 } // namespace amg
 

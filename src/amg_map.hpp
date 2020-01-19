@@ -1,7 +1,8 @@
-
-
 #ifndef FILE_AMG_MAP
 #define FILE_AMG_MAP
+
+#include "amg.hpp"
+#include "amg_mesh.hpp"
 
 namespace amg {
 

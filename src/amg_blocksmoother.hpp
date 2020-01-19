@@ -1,6 +1,9 @@
 #ifndef FILE_AMG_BS_HPP
 #define FILE_AMG_BS_HPP
 
+#include "amg_smoother3.hpp"
+#include "amg_smoother.hpp"
+
 namespace amg
 {
 

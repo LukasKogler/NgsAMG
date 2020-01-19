@@ -1,6 +1,10 @@
 #ifndef FILE_AMGCRS2_HPP
 #define FILE_AMGCRS2_HPP
 
+#include "amg.hpp"
+#include "amg_map.hpp"
+#include "amg_coarsen.hpp"
+
 namespace amg
 {
   

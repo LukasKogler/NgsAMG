@@ -1,6 +1,7 @@
-#ifndef FILE_AMGMESH
-#define FILE_AMGMESH
+#ifndef FILE_AMG_MESH_HPP
+#define FILE_AMG_MESH_HPP
 
+#include "amg.hpp"
 
 namespace amg
 {

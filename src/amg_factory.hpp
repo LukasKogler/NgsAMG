@@ -1,6 +1,13 @@
 #ifndef FILE_AMG_FACTORY_HPP
 #define FILE_AMG_FACTORY_HPP
 
+#include "amg.hpp"
+#include "amg_mesh.hpp"
+#include "amg_map.hpp"
+#include "amg_coarsen.hpp"
+#include "amg_discard.hpp"
+#include "amg_contract.hpp"
+
 namespace amg
 {
 

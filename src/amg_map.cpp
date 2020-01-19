@@ -5,11 +5,14 @@
 #endif
 
 #include "amg.hpp"
+#include "amg_map.hpp"
 
+#define AMG_EXTERN_TEMPLATES
+#include "amg_tcs.hpp"
+#undef AMG_EXTERN_TEMPLATES
 
 namespace amg
 {
-
 
   /** DOFMap **/
 

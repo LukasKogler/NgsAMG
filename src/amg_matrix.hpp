@@ -1,6 +1,10 @@
 #ifndef FILE_AMGMAT
 #define FILE_AMGMAT
 
+#include "amg.hpp"
+#include "amg_map.hpp"
+#include "amg_smoother.hpp"
+
 namespace amg
 {
 

@@ -1,5 +1,6 @@
 #define FILE_AMGCRS_CPP
 #include "amg.hpp"
+#include "amg_coarsen.hpp"
 
 namespace amg
 {
@@ -1061,21 +1062,16 @@ namespace amg
 } // namespace amg
 
 
-// h1 headers need factory/energy headers
-#include "amg_factory.hpp"
-#include "amg_factory_nodal.hpp"
-#include "amg_factory_vertex.hpp"
-#include "amg_energy.hpp"
-#include "amg_energy_impl.hpp"
-
 // need h1 headers for data mapping
 #include "amg_h1.hpp"
 #include "amg_h1_impl.hpp"
 
-namespace amg
-{
-  template class SeqVWC<FlatTM>;
-  template class BlockVWC<H1Mesh>;
-  template class HierarchicVWC<H1Mesh>;
-  template class CoarseMap<H1Mesh>;
-} // namespace amg
+#include "amg_tcs.hpp"
+
+// namespace amg
+// {
+//   template class SeqVWC<FlatTM>;
+//   template class BlockVWC<H1Mesh>;
+//   template class HierarchicVWC<H1Mesh>;
+//   template class CoarseMap<H1Mesh>;
+// } // namespace amg

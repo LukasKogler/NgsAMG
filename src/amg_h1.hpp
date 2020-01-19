@@ -1,6 +1,14 @@
 #ifndef FILE_AMGH1_HPP
 #define FILE_AMGH1_HPP
 
+#include "amg_coarsen.hpp"
+#include "amg_discard.hpp"
+#include "amg_contract.hpp"
+#include "amg_factory.hpp"
+#include "amg_factory_nodal.hpp"
+#include "amg_factory_vertex.hpp"
+#include "amg_energy.hpp"
+
 namespace amg
 {
 

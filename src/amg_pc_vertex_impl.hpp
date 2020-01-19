@@ -338,8 +338,171 @@ namespace amg
   shared_ptr<BaseDOFMapStep> VertexAMGPC<FACTORY> :: BuildEmbedding (shared_ptr<TopologicMesh> mesh)
   {
     static Timer t("BuildEmbedding"); RegionTimer rt(t);
-    return nullptr;
+    auto & O(static_cast<Options&>(*options));
+
+    shared_ptr<BaseMatrix> f_loc_mat;
+    if (auto parmat = dynamic_pointer_cast<ParallelMatrix>(finest_mat))
+      { f_loc_mat = parmat->GetMatrix(); }
+    else
+      { f_loc_mat = finest_mat; }
+
+    shared_ptr<BaseDOFMapStep> E = nullptr;
+
+    constexpr int max_switch = min(MAX_SYS_DIM, FACTORY::BS);
+    Switch<max_switch>
+      (GetEntryDim(f_loc_mat.get()), [&, this] (auto BS) {
+	if constexpr( (BS == 1) || (BS == 2) || (BS == 3) || (BS == 6) )
+	  { E = this->BuildEmbedding_impl<BS>(mesh); }
+	else
+	  { return; }
+      } );
+
+    return E;
   } // VertexAMGPC::BuildEmbedding
+
+
+  template<class FACTORY> template<int BSA>
+  shared_ptr<BaseDOFMapStep> VertexAMGPC<FACTORY> :: BuildEmbedding_impl (shared_ptr<TopologicMesh> mesh)
+  {
+    /**
+       Embedding  = E_S * E_D * P
+       E_S      ... from 0..ndof to subset                              // entries: N x N
+       E_D      ... disp to disp-rot emb or compound-to multidim, etc   // entries: N x dofpv
+       P        ... permutation matrix from re-sorting vertex numbers   // entries: dofpv x dofpv
+    **/
+
+    constexpr int BS = FACTORY::BS;
+    typedef stripped_spm_tm<Mat<BSA, BSA, double>> T_E_S;
+    typedef stripped_spm_tm<Mat<BSA, BS, double>> T_E_D;
+    typedef typename FACTORY::TSPM_TM T_P;
+
+    shared_ptr<T_E_S> E_S;
+    shared_ptr<T_E_D> E_D;
+    shared_ptr<T_P> P;
+
+    
+    shared_ptr<ParallelDofs> fpds = finest_mat->GetParallelDofs();
+    shared_ptr<BaseMatrix> f_loc_mat;
+    if (auto parmat = dynamic_pointer_cast<ParallelMatrix>(finest_mat))
+      { f_loc_mat = parmat->GetMatrix(); }
+    else
+      { f_loc_mat = finest_mat; }
+
+    /** Subset **/
+    E_S = BuildES<BSA>();
+
+    /** DOFs **/
+    size_t subset_count = (E_S == nullptr) ? fpds->GetNDofLocal() : E_S->Width();
+    E_D = BuildED<BSA>(subset_count, mesh);
+
+    /** Permutation **/
+    if ( fpds->GetCommunicator().Size() > 2) {
+      auto & vsort = node_sort[NT_VERTEX];
+      P = BuildPermutationMatrix<typename T_P::TENTRY>(vsort);
+    }
+
+    /** Multiply mats **/
+    auto a_is_b_times_c = [](auto & a, auto & b, auto & c) {
+      if (b != nullptr) {
+    	if (c != nullptr) { a = MatMultAB(*b, *c); }
+    	else { a = b; } }
+      else { a = c; }
+    };
+    shared_ptr<T_E_D> E, EDP;
+
+    if constexpr(BSA == BS) {
+    	if constexpr (BSA == 1) {
+    	    a_is_b_times_c(E, E_S, P);
+    	  }
+    	else {
+    	  if (E_D == nullptr) {
+    	    a_is_b_times_c(E, E_S, P);
+    	  }
+    	  else {
+    	    a_is_b_times_c(EDP, E_D, P);
+    	    a_is_b_times_c(E, E_S, EDP);
+    	  }
+    	}
+      }
+    else {
+      if (E_D == nullptr)
+	{ throw Exception("E_D must not be nullptr here!!"); }
+      if (P != nullptr)
+	{ EDP = MatMultAB(*E_D, *P); }
+      else
+	{ EDP = E_D; }
+      if (E_S != nullptr)
+	{ E = MatMultAB(*E_S, *EDP); }
+      else
+	{ E = EDP; }
+    }
+
+    /** DOF-Map  **/
+    shared_ptr<BaseDOFMapStep> emb_step = nullptr;
+    
+    if (E != nullptr)
+      { emb_step = make_shared<ProlMap<T_E_D>>(E, fpds, nullptr); }
+
+    return emb_step;
+  } // VertexAMGPC::BuildEmbedding_impl
+
+
+  template<class FACTORY> template<int BSA>
+  shared_ptr<stripped_spm_tm<Mat<BSA, BSA, double>>> VertexAMGPC<FACTORY> :: BuildES ()
+  {
+    const auto & O(static_cast<Options&>(*options));
+
+    shared_ptr<ParallelDofs> fpds = finest_mat->GetParallelDofs();
+
+    typedef stripped_spm_tm<Mat<BSA, BSA, double>> TS;
+    shared_ptr<TS> E_S = nullptr;
+    if (O.subset == Options::DOF_SUBSET::RANGE_SUBSET) {
+      INT<2, size_t> notin_ss = {0, fpds->GetNDofLocal() };
+      for (auto pair : O.ss_ranges) {
+	if (notin_ss[0] == pair[0])
+	  { notin_ss[0] = pair[1]; }
+	else if (notin_ss[1] == pair[1])
+	  { notin_ss[1] = pair[0]; }
+      }
+      int is_triv = ( (notin_ss[1] - notin_ss[0]) == 0 ) ? 1 : 0;
+      fpds->GetCommunicator().AllReduce(is_triv, MPI_SUM);
+      if (is_triv == 0) {
+	Array<int> perow(fpds->GetNDofLocal()); perow = 0;
+	int cnt_cols = 0;
+	for (auto pair : O.ss_ranges)
+	  if (pair[1] > pair[0])
+	    { perow.Range(pair[0], pair[1]) = 1; cnt_cols += pair[1] - pair[0]; }
+	E_S = make_shared<TS>(perow, cnt_cols); cnt_cols = 0;
+	for (auto pair : O.ss_ranges)
+	  for (auto c : Range(pair[0], pair[1])) {
+	    SetIdentity(E_S->GetRowValues(c)[0]);
+	    E_S->GetRowIndices(c)[0] = cnt_cols++;
+	  }
+      }
+    }
+    else if (O.subset == Options::DOF_SUBSET::SELECTED_SUBSET) {
+      if (O.ss_select == nullptr)
+	{ throw Exception("SELECTED_SUBSET, but no ss_select!"); }
+      const auto & SS(*O.ss_select);
+      int is_triv = (SS.NumSet() == SS.Size()) ? 1 : 0;
+      fpds->GetCommunicator().AllReduce(is_triv, MPI_SUM);
+      if (is_triv == 0) {
+	int cnt_cols = SS.NumSet();
+	Array<int> perow(fpds->GetNDofLocal());
+	for (auto k : Range(perow))
+	  { perow[k] = SS.Test(k) ? 1 : 0; }
+	E_S = make_shared<TS>(perow, cnt_cols); cnt_cols = 0;
+	for (auto k : Range(fpds->GetNDofLocal())) {
+	  if (SS.Test(k)) {
+	    SetIdentity(E_S->GetRowValues(k)[0]);
+	    E_S->GetRowIndices(k)[0] = cnt_cols++;
+	  }
+	}
+      }
+    }
+
+    return E_S;
+  } // VertexAMGPC::BuildES
 
 
   template<class FACTORY>

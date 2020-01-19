@@ -1,5 +1,5 @@
-#ifndef FILE_AMG_SPMSTUFF
-#define FILE_AMG_SPMSTUFF
+#ifndef FILE_AMG_SPMSTUFF_HPP
+#define FILE_AMG_SPMSTUFF_HPP
 
 /**
    SparseMatrix - Multiplication taken from NGSolve and templated here.

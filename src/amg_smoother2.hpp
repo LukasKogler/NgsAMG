@@ -1,6 +1,8 @@
 #ifndef FILE_AMGSM2
 #define FILE_AMGSM2
 
+#include "amg_smoother.hpp"
+
 namespace amg
 {
 
