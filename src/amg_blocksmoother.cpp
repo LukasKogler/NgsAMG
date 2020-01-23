@@ -452,7 +452,7 @@ namespace amg
 
     const auto & mdofs = *dccm.GetMasterDOFs();
 
-    cout << "filter " << n_blocks << " blocks " << endl;
+    // cout << "filter " << n_blocks << " blocks " << endl;
     // cout << blocks << endl;
     auto iterate_blocks = [&](auto lam_loc, auto lam_ex) LAMBDA_INLINE {
       for (auto block_nr : Range(n_blocks)) {
@@ -481,7 +481,7 @@ namespace amg
     iterate_blocks([&](auto & fb) LAMBDA_INLINE { cnt_loc++; },
 		   [&](auto & fb) LAMBDA_INLINE { cnt_ex++; } );
     int nl1 = cnt_loc/2, nl2 = cnt_loc - nl1;
-    cout << " split into " << nl1 << " " << nl2 << " " << cnt_ex << endl;
+    // cout << " split into " << nl1 << " " << nl2 << " " << cnt_ex << endl;
     TableCreator<int> cl1(nl1), cl2(nl2), cex(cnt_ex);
     int cnt_loc1 = 0, cnt_loc2 = 0; cnt_ex = 0;
     for ( ; !cex.Done(); cl1++, cl2++, cex++ ) {
@@ -496,7 +496,7 @@ namespace amg
 	  cex.Add(cnt_ex++, fb);
 	} );
     }
-    cout << "after filter, there are " << nl1 << " + " << cnt_ex << " + " << nl2 << " = " << nl1+nl2+cnt_ex << " blocks left " << endl;
+    // cout << "after filter, there are " << nl1 << " + " << cnt_ex << " + " << nl2 << " = " << nl1+nl2+cnt_ex << " blocks left " << endl;
 
     Array<Table<int>> fblocks(3);
     fblocks[0] = cl1.MoveTable();
@@ -510,20 +510,20 @@ namespace amg
     // cout << " blocks loc 2 :" << endl;
     // cout << fblocks[2] << endl;
 
-    cout << " orig blocks sz :" << endl;
-    for (auto k : Range(blocks))
-      { cout << "(" << k << "::" << blocks[k].Size() <<") "; }
-    cout << endl;
+    // cout << " orig blocks sz :" << endl;
+    // for (auto k : Range(blocks))
+    //   { cout << "(" << k << "::" << blocks[k].Size() <<") "; }
+    // cout << endl;
 
-    cout << " blocks loc1 sz :" << endl;
-    for (auto k : Range(fblocks[0]))
-      { cout << "(" << k << "::" << fblocks[0][k].Size() <<") "; }
-    cout << endl;
+    // cout << " blocks loc1 sz :" << endl;
+    // for (auto k : Range(fblocks[0]))
+    //   { cout << "(" << k << "::" << fblocks[0][k].Size() <<") "; }
+    // cout << endl;
 
-    cout << " blocks ex :" << endl;
-    for (auto k : Range(fblocks[1]))
-      { cout << "(" << k << "::" << fblocks[1][k].Size() <<") "; }
-    cout << endl;
+    // cout << " blocks ex :" << endl;
+    // for (auto k : Range(fblocks[1]))
+    //   { cout << "(" << k << "::" << fblocks[1][k].Size() <<") "; }
+    // cout << endl;
 
     return fblocks;
   } // HybridBS::FilterBlocks
