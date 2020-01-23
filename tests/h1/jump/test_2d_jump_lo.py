@@ -28,6 +28,7 @@ def do_test_2d_lo_fiber(jump, ms = 25):
     alpha = { "mat_a" : a0, "mat_b" : jump * a0 }
     V, a, f = setup_poisson(mesh, order=1, diri="outer_top|outer_bot", alpha = ngsolve.CoefficientFunction([alpha[name] for name in mesh.GetMaterials()]) )
     pc_opts = { "ngs_amg_max_coarse_size" : 5,
+                "ngs_amg_sm_type" : "bgs",
                 "ngs_amg_log_level" : "extra",
                 "ngs_amg_print_log" : True }
     c = ngsolve.Preconditioner(a, "ngs_amg.h1_scal", **pc_opts)
