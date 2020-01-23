@@ -1246,7 +1246,7 @@ namespace amg
 	intersect_sorted_arrays(econ.GetRowIndices(ca), econ.GetRowIndices(cb), common_neibs);
 	NA = econ.GetRowIndices(ca).Size();
 	NB = econ.GetRowIndices(cb).Size();
-	cout << " edge data " << emat << endl;
+	// cout << " edge data " << emat << endl;
 	// prt_evv<N>(emat, "no boost emat", false);
 	// cout << " boost from neibs: "; prow(common_neibs); cout << endl;
 	// prt_evv<N>(emat, "pure emat");
