@@ -466,8 +466,15 @@ namespace amg
 	last_map_rd = true;
 	cout << "lmrd " << endl; auto c = dof_maps.Last()->GetParDofs()->GetCommunicator();
 	cout << "AR on " << c.Rank() << " " << c.Size() << endl;
-	if (dof_maps.Last()->GetParDofs()->GetCommunicator().AllReduce(do_last_pb, MPI_MAX)) // cannot use mapped pardofs!
-	  { cout << "pull back " << endl; dof_maps.Last()->PullBack(nullptr); }
+	if (dof_maps.Last()->GetParDofs()->GetCommunicator().AllReduce(do_last_pb, MPI_MAX)) { // cannot use mapped pardofs!
+	    cout << "pull back " << endl;
+	    auto ctr_map = dof_maps.Last();
+	    auto pind = dof_maps.Size() - 1;
+	    auto pb_prol = ctr_map->PullBack(nullptr);
+	    dof_maps.Append(ctr_map);
+	    prol_inds.Append(pind);
+	    dof_maps[pind] = pb_prol;
+	  }
       }
 
       cout << " last, non-master PB done " << endl;
