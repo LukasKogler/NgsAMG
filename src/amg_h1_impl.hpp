@@ -185,9 +185,12 @@ namespace amg {
 
 
   template<class FCC>
-  void VertexAMGPC<FCC> :: ModifyOptions (BaseAMGPC::Options & O, const Flags & flags, string prefix)
+  void VertexAMGPC<FCC> :: ModifyOptions (BaseAMGPC::Options & aO, const Flags & flags, string prefix)
   {
-    ;
+    auto & O(static_cast<Options&>(aO));
+    if ( (O.sm_type == Options::SM_TYPE::BGS) ||
+	 (O.spec_sm_types.Pos(Options::SM_TYPE::BGS) != -1) )
+      { O.keep_grid_maps = true; }
   } // VertexAMGPC::ModifyOptions
 
 
