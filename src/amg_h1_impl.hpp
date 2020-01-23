@@ -143,6 +143,7 @@ namespace amg {
     O.crs_alg = Options::CRS_ALG::AGG;
     O.ecw_geom = false;
     O.n_levels_d2_agg = 1;
+    O.agg_neib_boost = false;
 
     /** Smoothed Prolongation **/
     O.enable_sp = true;
@@ -217,13 +218,23 @@ namespace amg {
     for (auto & e : edges) {
       auto di = V2D(e.v[0]); auto dj = V2D(e.v[1]);
       double v = cspm(di, dj);
+      // cout << "edge " << e << " di dj " << di << " " << dj << ", val " << v << endl;
       // bd[e.id] = fabs(v) / sqrt(cspm(di,di) * cspm(dj,dj)); ad[e.v[0]] += v; ad[e.v[1]] += v;
       bd[e.id] = fabs(v); ad[e.v[0]] += v; ad[e.v[1]] += v;
     }
     
     for (auto k : Range(top_mesh->GetNN<NT_VERTEX>())) // -1e-16 can happen, is problematic
       { ad[k] = fabs(ad[k]); }
+
     auto mesh = make_shared<H1Mesh>(move(*top_mesh), a, b);
+
+    // cout << " INIT MESH " << endl << endl << *mesh << endl << endl;
+    // cout << " DiSTR VD " << endl; prow2(get<0>(mesh->Data())->Data()); cout << endl << endl;
+    // cout << " DiSTR ED " << endl; prow2(get<1>(mesh->Data())->Data()); cout << endl << endl;
+    // mesh->CumulateData();
+    // cout << " CMUL VD " << endl; prow2(get<0>(mesh->Data())->Data()); cout << endl << endl;
+    // cout << " CMUL ED " << endl; prow2(get<1>(mesh->Data())->Data()); cout << endl << endl;
+
     return mesh;
   } // VertexAMGPC::BuildAlgMesh_ALG_scal
 

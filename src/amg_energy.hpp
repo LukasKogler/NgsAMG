@@ -48,7 +48,7 @@ namespace amg
     static constexpr int DPV = dofpv() { return (DIM == 2) ? 3 : 6; }
     typedef typename Mat<DPV(DIM), DPV(DIM), double> TM;
 
-    static INLINE double GetApproxWeight (const TED & ed) { return calc_trace(ed); }
+    static INLINE double GetApproxWeight (const TED & ed) { return calc_trace(ed) / DPV(DIM); }
 
     static INLINE void CalcQ  (const Vec<DIM> & t, TM & Q);
     static INLINE void ModQ  (const Vec<DIM> & t, TM & Q);

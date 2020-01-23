@@ -102,6 +102,7 @@ namespace amg
       double dist2 = false;
       int min_new_aggs = 3;
       bool robust = true;
+      bool neib_boost = true;
     };
 
   protected:

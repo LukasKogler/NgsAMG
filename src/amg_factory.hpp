@@ -81,7 +81,7 @@ namespace amg
 
     /** Coarsening **/
     // TODO: deal with multistep/interleave properly
-    bool enable_multistep = true;               // allow chaining multiple coarsening steps
+    bool enable_multistep = false;              // allow chaining multiple coarsening steps
     bool use_static_crs = true;                 // use static coarsening ratio
     double aaf = 0.1;                           // (static crs ratio) chain edge-collapse maps until mesh is decreased by factor aaf
     double first_aaf = 0.05;                    // (static crs ratio) (smaller) factor for first level. -1 for dont use

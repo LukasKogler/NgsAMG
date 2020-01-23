@@ -1122,6 +1122,7 @@ namespace amg
     const bool dist2 = settings.dist2;
     const bool geom = settings.cw_geom;
     const int MIN_NEW_AGG_SIZE = 2;
+    const bool enable_neib_boost = settings.neib_boost;
 
     FlatArray<TVD> vdata = get<0>(tm_mesh->Data())->Data();
     FlatArray<TMU> edata = GetEdgeData<TMU>();
@@ -1132,6 +1133,7 @@ namespace amg
     // cout << "geom = " << geom << endl;
     // cout << " min new agg size = " << MIN_NEW_AGG_SIZE << endl;
     // cout << " neibs per v " << double(2 * M.template GetNN<NT_EDGE>())/NV << endl;
+    // cout << " ECON: " << endl << econ << endl;
 
     /** replacement-matrix diagonals **/
     Array<TMU> repl_diag(M.template GetNN<NT_VERTEX>()); repl_diag = 0;
@@ -1244,10 +1246,11 @@ namespace amg
 	intersect_sorted_arrays(econ.GetRowIndices(ca), econ.GetRowIndices(cb), common_neibs);
 	NA = econ.GetRowIndices(ca).Size();
 	NB = econ.GetRowIndices(cb).Size();
+	cout << " edge data " << emat << endl;
 	// prt_evv<N>(emat, "no boost emat", false);
 	// cout << " boost from neibs: "; prow(common_neibs); cout << endl;
 	// prt_evv<N>(emat, "pure emat");
-	if (common_neib_boost) { // on the finest level, this is porbably 0 in most cases, but still expensive
+	if (enable_neib_boost && common_neib_boost) { // on the finest level, this is porbably 0 in most cases, but still expensive
 	  for (auto v : common_neibs) {
 	    add_neib_edge(H_data, memsa, memsb, v, emat);
 	    // prt_evv<N>(emat, string("emat with boost from") + to_string(v), false);
@@ -1271,7 +1274,7 @@ namespace amg
 	NA = econ.GetRowIndices(ca).Size(); // (!) not really correct, need # of all edges from ca to outside ca
 	NB = econ.GetRowIndices(cb).Size(); // (!) not really correct, need # of all edges from cb to outside cb
 	// prt_evv<N>(emat, "pure emat");
-	if (common_neib_boost) {
+	if (enable_neib_boost && common_neib_boost) {
 	  // if ( (ca != 5) || (cb != 62) ) { // contribs from common neighbors
 	  auto get_all_neibs = [&](auto mems, auto & ntab, auto & out) LAMBDA_INLINE {
 	    ntab.SetSize0(); ntab.SetSize(mems.Size());
@@ -1290,8 +1293,9 @@ namespace amg
 	    if (pos == -1) {
 	      pos = find_in_sorted_array(N, memsb);
 	      if (pos == -1) {
-		// cout << N << " ";
+		// cout << N << " -> " << emat << " // ";
 		add_neib_edge(H_data, memsa, memsb, N, emat);
+		// cout << N << " -> " << emat << " // ";
 	      }
 	    }
 	  }
@@ -1324,8 +1328,8 @@ namespace amg
       double vw1 = get_vwt(cb);
       double maxw = max(vw0, vw1);
       double minw = min(vw0, vw1);
-      // double fac = (fabs(maxw) < 1e-15) ? 1.0 : (0.1+minw)/(0.1+maxw);
-      double fac = (fabs(maxw) < 1e-15) ? 1.0 : (minw)/(maxw);
+      double fac = (fabs(maxw) < 1e-15) ? 1.0 : (0.1+minw)/(0.1+maxw);
+      // double fac = (fabs(maxw) < 1e-15) ? 1.0 : (minw)/(maxw);
       // double fac = 1.0;
       // cout << " mmev fac ret " << mmev << " * " << fac << " = " <<  fac * min2(mmev, max_wt) << endl;
       return fac * min2(mmev, max_wt);

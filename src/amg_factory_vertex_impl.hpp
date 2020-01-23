@@ -39,6 +39,7 @@ namespace amg
 
     /** AGG **/
     int n_levels_d2_agg = 1;                    // do this many levels MIS(2)-like aggregates (afterwards MIS(1)-like)
+    bool agg_neib_boost = false;
 
   public:
 
@@ -76,6 +77,7 @@ namespace amg
       set_num(min_vcw, "vert_thresh");
       set_num(min_vcw, "vert_thresh");
       set_num(n_levels_d2_agg, "n_levels_d2_agg");
+      set_bool(agg_neib_boost, "agg_neib_boost");
     } // VertexAMGFactoryOptions::SetFromFlags
 
   }; // VertexAMGFactoryOptions
@@ -147,6 +149,7 @@ namespace amg
     agg_opts.edge_thresh = O.min_ecw;
     agg_opts.vert_thresh = O.min_vcw;
     agg_opts.cw_geom = O.ecw_geom;
+    agg_opts.neib_boost = O.agg_neib_boost;
     agg_opts.robust = O.ecw_robust;
     agg_opts.dist2 = ( state.level[1] == 0 ) && ( state.level[0] < O.n_levels_d2_agg );
     // auto agglomerator = make_shared<Agglomerator<FACTORY>>(mesh, state.free_nodes, move(agg_opts));
@@ -588,6 +591,10 @@ namespace amg
     const auto & fecon = *FM.GetEdgeCM();
     auto all_fedges = FM.template GetNodes<NT_EDGE>();
 
+    // cout << " FM: " << endl << FM << endl;
+    // cout << " VDATA: " << endl; prow2(vdata); cout << endl << endl;
+    // cout << " EDATA: " << endl; prow2(edata); cout << endl << endl;
+
     Options &O (static_cast<Options&>(*options));
     const double MIN_PROL_FRAC = O.sp_min_frac;
     const int MAX_PER_ROW = O.sp_max_per_row;
@@ -602,6 +609,13 @@ namespace amg
     Array<int> perow(NFV); perow = 0; // 
     Array<INT<2,double>> trow;
     Array<int> tcv, fin_row;
+    Array<double> dg_wt(NFV); dg_wt = 0;
+    FM.template Apply<NT_EDGE>([&](auto & edge) LAMBDA_INLINE {
+	auto approx_wt = ENERGY::GetApproxWeight(edata[edge.id]);
+	dg_wt[edge.v[0]] = max2(dg_wt[edge.v[0]], approx_wt);
+	dg_wt[edge.v[1]] = max2(dg_wt[edge.v[1]], approx_wt);
+      }, false );
+    FM.template AllreduceNodalData<NT_VERTEX>(dg_wt, [](auto & tab){return move(max_table(tab)); }, false);
     FM.template ApplyEQ<NT_VERTEX>([&](auto EQ, auto V) LAMBDA_INLINE  {
 	auto CV = vmap[V];
 	if ( is_invalid(CV) ) // Dirichlet/grounded
@@ -635,41 +649,47 @@ namespace amg
 	}
 	QuickSort(trow, [](const auto & a, const auto & b) LAMBDA_INLINE { return a[1]>b[1]; });
 	double cw_sum = 0.2 * in_wt; // all edges in the same agg are automatically assembled (penalize so we dont pw-ize too many)
+	double dgwt = dg_wt[V];
 	fin_row.Append(CV);
 	size_t max_adds = min2(MAX_PER_ROW-1, int(trow.Size()));
 	for (auto j : Range(max_adds)) {
 	  cw_sum += trow[j][1];
-	  if (trow[j][1] < MIN_PROL_FRAC * cw_sum)
+	  if ( ( !(trow[j][1] > MIN_PROL_FRAC * cw_sum) ) ||
+	       ( trow[j][1] < MIN_PROL_FRAC * dgwt ) )
 	    { break; }
 	  fin_row.Append(trow[j][0]);
 	}
 	QuickSort(fin_row);
 	for (auto j:Range(fin_row.Size()))
 	  { graph[V][j] = fin_row[j]; }
-	int nniscv = 0; // number neibs in same cv
-	// cout << "ovs: ";
-	for (auto v : ovs) {
-	  auto neib_cv = vmap[v];
-	  auto pos = find_in_sorted_array(int(neib_cv), fin_row);
-	  if (pos != -1)
-	    { /* cout << "[" << v << " -> " << neib_cv << "] "; */ perow[V]++; }
-	  // else
-	  //   { cout << "[not " << v << " -> " << neib_cv << "] "; }
-	  if (neib_cv == CV)
-	    { nniscv++; }
-	}
-	// cout << endl;
-	perow[V]++; // V always in!
-	if (nniscv == 0) { // keep this as is (PW prol)
-	  // if (fin_row.Size() > 1) {
-	  //   cout << "reset a V" << endl;
-	  //   cout << V << " " << CV << endl;
-	  //   cout << "graph: "; prow(graph[V]); cout << endl;
-	  // }
-	  graph[V] = -1;
-	  // cout << "" << endl;
-	  graph[V][0] = CV;
-	  perow[V] = 1;
+	if (fin_row.Size() == 1)
+	  { perow[V] = 1; }
+	else {
+	  int nniscv = 0; // number neibs in same cv
+	  // cout << "ovs: ";
+	  for (auto v : ovs) {
+	    auto neib_cv = vmap[v];
+	    auto pos = find_in_sorted_array(int(neib_cv), fin_row);
+	    if (pos != -1)
+	      { /* cout << "[" << v << " -> " << neib_cv << "] "; */ perow[V]++; }
+	    // else
+	    //   { cout << "[not " << v << " -> " << neib_cv << "] "; }
+	    if (neib_cv == CV)
+	      { nniscv++; }
+	  }
+	  // cout << endl;
+	  perow[V]++; // V always in!
+	  if (nniscv == 0) { // keep this as is (PW prol)
+	    // if (fin_row.Size() > 1) {
+	    //   cout << "reset a V" << endl;
+	    //   cout << V << " " << CV << endl;
+	    //   cout << "graph: "; prow(graph[V]); cout << endl;
+	    // }
+	    graph[V] = -1;
+	    // cout << "" << endl;
+	    graph[V][0] = CV;
+	    perow[V] = 1;
+	  }
 	}
       }, true); //
     
@@ -693,6 +713,8 @@ namespace amg
 	auto grow = all_grow.Part(0, grs);
 	auto neibs = fecon.GetRowIndices(V); auto neibeids = fecon.GetRowValues(V);
 	auto ris = RM.GetRowIndices(V); auto rvs = RM.GetRowValues(V);
+	if (ris.Size() == 1)
+	  { SetIdentity(rvs[0]); ris[0] = V; return; }
 	// cout << " grow: "; prow(grow); cout << endl;
 	// cout << " neibs: "; prow(neibs); cout << endl;
 	// cout << " riss " << ris.Size() << endl;
@@ -739,6 +761,8 @@ namespace amg
 		  RegTM<0, mat_traits<TM>::HEIGHT, mat_traits<TM>::HEIGHT>(EMAT);
 		}
 	      }
+	    else
+	      { EMAT = max2(EMAT, 1e-8); }
 	    Q = Trans(Qij) * EMAT;
 	    rvs[l] = Q * Qji;
 	    rvs[MEpos] += Q * Qij;
@@ -779,7 +803,7 @@ namespace amg
       }, true); // for (V)
   
 
-    // cout << endl << "repl mat (I-omega Dinv A): " << endl;
+    // cout << endl << "assembled RM: " << endl;
     // print_tm_spmat(cout, RM); cout << endl;
 
     shared_ptr<TSPM_TM> sprol = prol_map->GetProl();
@@ -788,6 +812,8 @@ namespace amg
     /** Now, unfortunately, we have to distribute matrix entries of sprol. We cannot do this for RM.
 	(we are also using more local fine edges that map to less local coarse edges) **/
     if (eqc_h.GetCommunicator().Size() > 2) {
+      // cout << endl << "un-cumualted sprol: " << endl;
+      // print_tm_spmat(cout, *sprol); cout << endl;
       const auto & SP = *sprol;
       Array<int> perow(sprol->Height()); perow = 0;
       FM.template ApplyEQ<NT_VERTEX>( Range(neqcs), [&](auto EQC, auto V) {

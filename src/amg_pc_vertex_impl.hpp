@@ -393,14 +393,14 @@ namespace amg
     };
     shared_ptr<T_E_D> E, EDP;
 
-    auto prt = [&](auto x, auto name) {
-      cout << name << " " << x << endl;
-      if (x)
-	{ print_tm_spmat(cout, *x); cout << endl << endl; }
-    };
-    prt(E_S, "E_S");
-    prt(E_D, "E_D");
-    prt(P, "P");
+    // auto prt = [&](auto x, auto name) {
+    //   cout << name << " " << x << endl;
+    //   if (x)
+    // 	{ print_tm_spmat(cout, *x); cout << endl << endl; }
+    // };
+    // prt(E_S, "E_S");
+    // prt(E_D, "E_D");
+    // prt(P, "P");
 
     if constexpr(BSA == BS) {
     	if constexpr (BSA == 1) {
@@ -429,7 +429,7 @@ namespace amg
 	{ E = EDP; }
     }
 
-    prt(E, "E");
+    // prt(E, "E");
 
     /** DOF-Map  **/
     shared_ptr<BaseDOFMapStep> emb_step = nullptr;
@@ -598,15 +598,15 @@ namespace amg
       }
       else
 	{ free_verts->Set(); }
-      cout << "diri verts: " << endl;
-      for (auto k : Range(free_verts->Size()))
-	if (!free_verts->Test(k)) { cout << k << " " << endl; }
-      cout << endl;
-      cout << "diri DOFs: " << endl;
-      for (auto k : Range(finest_freedofs->Size()))
-	if (!finest_freedofs->Test(k)) { cout << k << " " << endl; }
-      cout << endl;
-      cout << " VSORT: " << endl; prow2(vert_sort); cout << endl;
+      // cout << "diri verts: " << endl;
+      // for (auto k : Range(free_verts->Size()))
+      // 	if (!free_verts->Test(k)) { cout << k << " " << endl; }
+      // cout << endl;
+      // cout << "diri DOFs: " << endl;
+      // for (auto k : Range(finest_freedofs->Size()))
+      // 	if (!finest_freedofs->Test(k)) { cout << k << " " << endl; }
+      // cout << endl;
+      // cout << " VSORT: " << endl; prow2(vert_sort); cout << endl;
     };
     
     if (use_v2d_tab) {

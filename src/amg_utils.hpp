@@ -281,6 +281,24 @@ namespace amg
     return out;
   }
 
+
+  template<class T> INLINE Array<typename tab_scal_trait<T>::type> max_table (T & tab)
+  {
+    Array<typename tab_scal_trait<T>::type> out;
+    auto nrows = tab.Size();
+    if (nrows == 0) return out;
+    auto row_s = tab[0].Size();
+    if (row_s == 0) return out;
+    out.SetSize(row_s); out = tab[0];
+    if (nrows == 1) { return out; }
+    for (size_t k = 1; k < tab.Size(); k++) {
+      auto row = tab[k];
+      for (auto l : Range(row_s))
+	{ out[l] = max2(out[l], row[l]); }
+    }
+    return out;
+  }
+
   template<typename T> ostream & operator << (ostream &os, const FlatTable<T>& t) {
     if (!t.Size()) return ( os << "empty flattable!!" << endl );
     os << "t.s: " << t.Size() << endl;
