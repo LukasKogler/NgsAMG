@@ -932,7 +932,7 @@ namespace amg
 	    int exds = eq_ex_dofs[k].Size(); int nmems = members[k].Size();
 	    int chunk_size = max2(MIN_CHUNK_SIZE, exds / nmems);
 	    int n_chunks = exds / chunk_size + (exds % chunk_size) ? 1 : 0;
-	    chunk_size = exds / n_chunks;
+	    chunk_size = (exds == 0) ? 1 : exds / n_chunks;
 	    int rest = exds % chunk_size;
 	    // start handing out chunks with an arbitrary member (but no RNG, so it is reproducible)
 	    int start = (1029 * eqc_h->GetEQCID(k) / 7) % nmems;

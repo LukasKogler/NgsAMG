@@ -289,11 +289,11 @@ namespace amg
     self.prol = make_shared<SPM_P>(move(*prol));
     self.prol_trans = make_shared<trans_spm<SPM_P>>(move(*prol_trans));
 
-    // cout << "prolmap assmat, type " << typeid(*this).name() << endl;
-    // cout << "prol dims " << prol->Height() << " x " << prol->Width() << endl;
-    // cout << "fmat dims " << tfmat->Height() << " x " << tfmat->Width() << endl;
+    cout << "prolmap assmat, type " << typeid(*this).name() << endl;
+    cout << "prol dims " << prol->Height() << " x " << prol->Width() << endl;
+    cout << "fmat dims " << tfmat->Height() << " x " << tfmat->Width() << endl;
     
-    // if (prol->Width() == 486) {
+    // if (prol->Width() < 10) {
     //   cout << " fmat: " << endl; print_tm_spmat(cout, *tfmat); cout << endl<< endl;
     //   cout << " prol: " << endl; print_tm_spmat(cout, *prol); cout << endl<< endl;
     // }
@@ -301,7 +301,8 @@ namespace amg
     // auto spm_tm = RestrictMatrixTM<SPM_TM_F, TMAT> (*prol_trans, *tfmat, *prol);
     shared_ptr<SPM_TM_C> spm_tm = RestrictMatrixTM<SPM_TM_F, TMAT> (*prol_trans, *tfmat, *prol);
 
-    // cout << " cmat: " << endl; print_tm_spmat(cout, *spm_tm); cout << endl<< endl;
+    // if (prol->Width() < 10)
+      // { cout << " cmat: " << endl; print_tm_spmat(cout, *spm_tm); cout << endl<< endl; }
 
     return make_shared<SPM_C>(move(*spm_tm));
   }

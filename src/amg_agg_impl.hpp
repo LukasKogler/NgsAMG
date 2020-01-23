@@ -1324,7 +1324,9 @@ namespace amg
       double vw1 = get_vwt(cb);
       double maxw = max(vw0, vw1);
       double minw = min(vw0, vw1);
-      double fac = (fabs(maxw) < 1e-15) ? 1.0 : minw/maxw;
+      // double fac = (fabs(maxw) < 1e-15) ? 1.0 : (0.1+minw)/(0.1+maxw);
+      double fac = (fabs(maxw) < 1e-15) ? 1.0 : (minw)/(maxw);
+      // double fac = 1.0;
       // cout << " mmev fac ret " << mmev << " * " << fac << " = " <<  fac * min2(mmev, max_wt) << endl;
       return fac * min2(mmev, max_wt);
       // return fac * mmev;

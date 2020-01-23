@@ -36,9 +36,9 @@ namespace amg
 
   template<class FACTORY>
   VertexAMGPC<FACTORY> :: VertexAMGPC (shared_ptr<BilinearForm> blf, const Flags & flags, const string name, shared_ptr<Options> opts)
-    : BaseAMGPC(blf, flags, name, nullptr)
+    : BaseAMGPC(blf, flags, name, opts)
   {
-    options = (opts == nullptr) ? MakeOptionsFromFlags(flags) : opts;
+    ;
   } // VertexAMGPC(..)
 
 
@@ -52,32 +52,12 @@ namespace amg
   template<class FACTORY>
   void VertexAMGPC<FACTORY> :: InitLevel (shared_ptr<BitArray> freedofs)
   {
+    BaseAMGPC::InitLevel(freedofs);
+
     auto & O(static_cast<Options&>(*options));
 
     if (freedofs == nullptr) // postpone to FinalizeLevel
       { return; }
-
-    if (bfa->UsesEliminateInternal() || O.smooth_lo_only) {
-      auto fes = bfa->GetFESpace();
-      auto lofes = fes->LowOrderFESpacePtr();
-      finest_freedofs = make_shared<BitArray>(*freedofs);
-      auto& ofd(*finest_freedofs);
-      if (bfa->UsesEliminateInternal() ) { // clear freedofs on eliminated DOFs
-	auto rmax = (O.smooth_lo_only && (lofes != nullptr) ) ? lofes->GetNDof() : freedofs->Size();
-	for (auto k : Range(rmax))
-	  if (ofd.Test(k)) {
-	    COUPLING_TYPE ct = fes->GetDofCouplingType(k);
-	    if ((ct & CONDENSABLE_DOF) != 0)
-	      ofd.Clear(k);
-	  }
-      }
-      if (O.smooth_lo_only && (lofes != nullptr) ) { // clear freedofs on all high-order DOFs
-	for (auto k : Range(lofes->GetNDof(), freedofs->Size()))
-	  { ofd.Clear(k); }
-      }
-    }
-    else
-      { finest_freedofs = freedofs; }
 
     if (O.spec_ss == VertexAMGPCOptions::SPECIAL_SUBSET::SPECSS_FREE) {
       cout << IM(3) << "taking subset for coarsening from freedofs" << endl;
@@ -104,6 +84,8 @@ namespace amg
       { throw Exception("Invalid Opts!"); }
     Options & O(*myO);
 
+    cout << " VertexAMGPC::SetOptionsFromFlags " << endl;
+    
     O.SetFromFlags(bfa->GetFESpace(), flags, prefix);
   } // VertexAMGPC<FACTORY> :: SetOptionsFromFlags
 
@@ -349,8 +331,9 @@ namespace amg
     shared_ptr<BaseDOFMapStep> E = nullptr;
 
     constexpr int max_switch = min(MAX_SYS_DIM, FACTORY::BS);
-    Switch<max_switch>
-      (GetEntryDim(f_loc_mat.get()), [&, this] (auto BS) {
+    Switch<max_switch> // 0-based
+      (GetEntryDim(f_loc_mat.get())-1, [&, this] (auto BSM) {
+	constexpr int BS = BSM + 1;
 	if constexpr( (BS == 1) || (BS == 2) || (BS == 3) || (BS == 6) )
 	  { E = this->BuildEmbedding_impl<BS>(mesh); }
 	else
@@ -410,6 +393,15 @@ namespace amg
     };
     shared_ptr<T_E_D> E, EDP;
 
+    auto prt = [&](auto x, auto name) {
+      cout << name << " " << x << endl;
+      if (x)
+	{ print_tm_spmat(cout, *x); cout << endl << endl; }
+    };
+    prt(E_S, "E_S");
+    prt(E_D, "E_D");
+    prt(P, "P");
+
     if constexpr(BSA == BS) {
     	if constexpr (BSA == 1) {
     	    a_is_b_times_c(E, E_S, P);
@@ -437,11 +429,25 @@ namespace amg
 	{ E = EDP; }
     }
 
+    prt(E, "E");
+
     /** DOF-Map  **/
     shared_ptr<BaseDOFMapStep> emb_step = nullptr;
     
-    if (E != nullptr)
-      { emb_step = make_shared<ProlMap<T_E_D>>(E, fpds, nullptr); }
+    shared_ptr<ParallelDofs> mpds = nullptr;
+    int have_embed = fpds->GetCommunicator().AllReduce((E == nullptr) ? 0 : 1, MPI_SUM);
+    if (have_embed) {
+      mpds = factory->BuildParallelDofs(mesh);
+      if (E == nullptr) { // probably just for rank 0! (ParallelDofs - constructor has to be called by every member of the communicator!)
+	Array<int> perow(fpds->GetNDofLocal()); perow = 1;
+	E = make_shared<T_E_D>(perow, mpds->GetNDofLocal());
+	for (auto k : Range(perow.Size())) {
+	  E->GetRowIndices(k)[0] = k;
+	  SetIdentity(E->GetRowValues(k)[0]);
+	}
+      }
+      emb_step = make_shared<ProlMap<T_E_D>>(E, fpds, mpds);
+    }
 
     return emb_step;
   } // VertexAMGPC::BuildEmbedding_impl
@@ -592,10 +598,15 @@ namespace amg
       }
       else
 	{ free_verts->Set(); }
-      // cout << "diri verts: " << endl;
-      // for (auto k : Range(free_verts->Size()))
-       	// if (!free_verts->Test(k)) { cout << k << " " << endl; }
-      // cout << endl;
+      cout << "diri verts: " << endl;
+      for (auto k : Range(free_verts->Size()))
+	if (!free_verts->Test(k)) { cout << k << " " << endl; }
+      cout << endl;
+      cout << "diri DOFs: " << endl;
+      for (auto k : Range(finest_freedofs->Size()))
+	if (!finest_freedofs->Test(k)) { cout << k << " " << endl; }
+      cout << endl;
+      cout << " VSORT: " << endl; prow2(vert_sort); cout << endl;
     };
     
     if (use_v2d_tab) {
@@ -758,7 +769,7 @@ namespace amg
 
 
   template<class FACTORY>
-  Table<int>&& VertexAMGPC<FACTORY> :: GetGSBlocks (const BaseAMGFactory::AMGLevel & amg_level)
+  Table<int> VertexAMGPC<FACTORY> :: GetGSBlocks (const BaseAMGFactory::AMGLevel & amg_level)
   {
     if (amg_level.crs_map == nullptr) {
       throw Exception("Crs Map not saved!!");
@@ -796,7 +807,9 @@ namespace amg
       }
     }
 
-    return move(cblocks.MoveTable());
+    auto blocks = cblocks.MoveTable();
+
+    return move(blocks);
   } // VertexAMGPC<FACTORY>::GetGSBlocks
 
 
@@ -814,12 +827,8 @@ namespace amg
 
   template<class FACTORY, class HTVD, class HTED>
   ElmatVAMG<FACTORY, HTVD, HTED> :: ElmatVAMG (shared_ptr<BilinearForm> blf, const Flags & flags, const string name, shared_ptr<Options> opts)
-    : VertexAMGPC<FACTORY>(blf, flags, name, nullptr)
+    : VertexAMGPC<FACTORY>(blf, flags, name, opts), ht_vertex(nullptr), ht_edge(nullptr)
   {
-    if (opts == nullptr)
-      { options = this->MakeOptionsFromFlags(flags); }
-    else
-      { options = opts; }
   } // ElmatVAMG(..)
 
 

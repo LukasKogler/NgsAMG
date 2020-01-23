@@ -37,12 +37,18 @@ namespace amg
   INLINE int GetEntryHeight (BaseMatrix* mat)
   {
     if (auto m = dynamic_cast<SparseMatrixTM<double>*>(mat)) { return 1; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<1,2,double>>*>(mat)) { return 1; }
     else if (auto m = dynamic_cast<SparseMatrixTM<Mat<1,3,double>>*>(mat)) { return 1; }
     else if (auto m = dynamic_cast<SparseMatrixTM<Mat<1,6,double>>*>(mat)) { return 1; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<2,1,double>>*>(mat)) { return 2; }
     else if (auto m = dynamic_cast<SparseMatrixTM<Mat<2,2,double>>*>(mat)) { return 2; }
     else if (auto m = dynamic_cast<SparseMatrixTM<Mat<2,3,double>>*>(mat)) { return 2; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<3,1,double>>*>(mat)) { return 3; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<3,2,double>>*>(mat)) { return 3; }
     else if (auto m = dynamic_cast<SparseMatrixTM<Mat<3,3,double>>*>(mat)) { return 3; }
     else if (auto m = dynamic_cast<SparseMatrixTM<Mat<3,6,double>>*>(mat)) { return 3; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<6,1,double>>*>(mat)) { return 6; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<6,3,double>>*>(mat)) { return 6; }
     else if (auto m = dynamic_cast<SparseMatrixTM<Mat<6,6,double>>*>(mat)) { return 6; }
     return -1;
   }
@@ -50,11 +56,16 @@ namespace amg
   INLINE int GetEntryWidth (BaseMatrix* mat)
   {
     if (auto m = dynamic_cast<SparseMatrixTM<double>*>(mat)) { return 1; }
-    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<1,3,double>>*>(mat)) { return 3; }
-    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<1,6,double>>*>(mat)) { return 6; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<2,1,double>>*>(mat)) { return 1; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<3,1,double>>*>(mat)) { return 1; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<6,1,double>>*>(mat)) { return 1; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<1,2,double>>*>(mat)) { return 2; }
     else if (auto m = dynamic_cast<SparseMatrixTM<Mat<2,2,double>>*>(mat)) { return 2; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<3,2,double>>*>(mat)) { return 2; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<1,3,double>>*>(mat)) { return 3; }
     else if (auto m = dynamic_cast<SparseMatrixTM<Mat<2,3,double>>*>(mat)) { return 3; }
     else if (auto m = dynamic_cast<SparseMatrixTM<Mat<3,3,double>>*>(mat)) { return 3; }
+    else if (auto m = dynamic_cast<SparseMatrixTM<Mat<1,6,double>>*>(mat)) { return 6; }
     else if (auto m = dynamic_cast<SparseMatrixTM<Mat<3,6,double>>*>(mat)) { return 6; }
     else if (auto m = dynamic_cast<SparseMatrixTM<Mat<6,6,double>>*>(mat)) { return 6; }
     return -1;

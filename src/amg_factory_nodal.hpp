@@ -18,12 +18,12 @@ namespace amg
 
     NodalAMGFactory (shared_ptr<Options> _opts);
 
+    virtual shared_ptr<ParallelDofs> BuildParallelDofs (shared_ptr<TopologicMesh> amesh) const override;
+
   protected:    
 
     virtual size_t ComputeMeshMeasure (const TopologicMesh & m) const override;
     virtual double ComputeLocFrac (const TopologicMesh & m) const override;
-
-    virtual shared_ptr<ParallelDofs> BuildParallelDofs (shared_ptr<TopologicMesh> amesh) const override;
 
     virtual size_t ComputeGoal (const AMGLevel & f_lev, State & state) override;
 

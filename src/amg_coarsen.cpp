@@ -485,9 +485,15 @@ namespace amg
       FlatArray<int> lmap = this->node_maps[NT], rmap = right_map->node_maps[NT];
       Array<int> & cnm = cmap->node_maps[NT];
       cnm.SetSize(this->NN[NT]);
+      // if (NT == NT_VERTEX) {
+	// cout << "conc, lmap = "; prow2(lmap); cout << endl;
+	// cout << "conc, rmap = "; prow2(rmap); cout << endl;
+      // }
       for (auto k : Range(this->NN[NT])) {
 	auto midnum = lmap[k];
 	cnm[k] = (midnum == -1) ? -1 : rmap[midnum];
+	// if (NT == NT_VERTEX)
+	  // cout << k << "->" << midnum << "->" << cnm[k] << endl;
       }
     }
     return cmap;

@@ -19,7 +19,6 @@ namespace amg
     TopologicMesh (TopologicMesh && other);
     virtual ~TopologicMesh() { ; }
     shared_ptr<EQCHierarchy> GetEQCHierarchy () const { return eqc_h; }
-    INLINE size_t GetNEqcs () const { return (eqc_h == nullptr) ? 0 : eqc_h->GetNEQCS(); }
     template<NODE_TYPE NT> INLINE bool HasNodes () const { return has_nodes[NT]; }
     template<NODE_TYPE NT> INLINE size_t GetNN () const { return nnodes[NT]; }
     template<NODE_TYPE NT> INLINE size_t GetNNGlobal () const  { return nnodes_glob[NT]; }
@@ -133,7 +132,9 @@ namespace amg
     BlockTM* MapBTM (const PairWiseCoarseMap & cmap) const;
     shared_ptr<BlockTM> Map (const PairWiseCoarseMap & cmap) const
     { return shared_ptr<BlockTM>(MapBTM(cmap)); }
+    // INLINE size_t GetNEqcs () const { return (eqc_h == nullptr) ? 0 : eqc_h->GetNEQCS(); }
   protected:
+    using TopologicMesh::eqc_h;
     /** eqc-block-views of data **/
     // Array<shared_ptr<FlatTM>> mesh_blocks;
     /** eqc-wise data **/
@@ -158,6 +159,7 @@ namespace amg
 						bool build_faces, FlatArray<int> face_sort,
 						bool build_cells, FlatArray<int> cell_sort);
   public:
+    INLINE size_t GetNEqcs () const { return eqc_verts.Size(); } // !! ugly, but necessary in contract.cpp, where I dont have eqc for sent mesh OMG
     // Apply a lambda-function to each node
     template<NODE_TYPE NT, class TLAM>
     INLINE void Apply (TLAM lam, bool master_only = false) const {

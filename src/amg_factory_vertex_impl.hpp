@@ -188,6 +188,8 @@ namespace amg
     for (auto vnr : Range(NV))
       { if (vmap[vnr] != -1) perow[vnr] = 1; }
 
+    // cout << "vmap: " << endl; prow2(vmap); cout << endl;
+
     auto prol = make_shared<TSPM_TM>(perow, NCV);
 
     // Fill Matrix
@@ -200,6 +202,9 @@ namespace amg
 	ENERGY::CalcQHh(c_v_data[cvnr], f_v_data[vnr], prol->GetRowValues(vnr)[0]);
       }
     }
+
+    // cout << "PWPROL: " << endl;
+    // print_tm_spmat(cout, *prol); cout << endl;
 
     return make_shared<ProlMap<TSPM_TM>> (prol, fpds, cpds);
   } // VertexAMGFactory::PWProlMap
@@ -858,6 +863,8 @@ namespace amg
 
     auto n_d_v = disc_map->GetNDroppedNodes<NT_VERTEX>();
     auto any_n_d_v = state.curr_mesh->GetEQCHierarchy()->GetCommunicator().AllReduce(n_d_v, MPI_SUM);
+
+    cout << " disc dropped " << n_d_v << endl;
 
     bool map_ok = any_n_d_v != 0; // someone somewhere eliminated some verices
 

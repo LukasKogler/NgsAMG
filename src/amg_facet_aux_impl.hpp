@@ -825,8 +825,10 @@ namespace amg
 	      auto volel_enr = vol_el_edges.Pos(facet_edges[loc_enr]);
 	      IntegrationRule & ir_vol = seg_2_vol(volel_enr, ir_seg, lh); // reference VOL
 	      auto & mir_vol(static_cast<MappedIntegrationRule<DIM,DIM,double>&>(eltrans(ir_vol, lh))); // mapped VOL
+	      // mir_vol.ComputeNormalsAndMeasure(..)!!!
 	      for (auto ip_nr : Range(mir_vol)) {
 		auto mip = mir_vol[ip_nr];
+		//TODO: ComputeNormalsAndMeasure!
 		fec.CalcMappedShape(mip, shc);
 		if (ahas) {
 		  CSDS<SPACEA>(fea, mip, sha, dsha);

@@ -26,7 +26,7 @@ namespace amg
     shared_ptr<BaseAMGFactory> factory;
     shared_ptr<BitArray> finest_freedofs;
     shared_ptr<BaseMatrix> finest_mat;
-    shared_ptr<BaseMatrix> amg_mat;
+    shared_ptr<AMGMatrix> amg_mat;
 
   public:
 
@@ -44,6 +44,7 @@ namespace amg
     virtual const BaseMatrix & GetAMatrix () const override;
     virtual const BaseMatrix & GetMatrix () const override;
     virtual shared_ptr<BaseMatrix> GetMatrixPtr () override;
+    virtual shared_ptr<AMGMatrix> GetAMGMatrix () const;
     virtual void Mult (const BaseVector & b, BaseVector & x) const override;
     virtual void MultTrans (const BaseVector & b, BaseVector & x) const override;
     virtual void MultAdd (double s, const BaseVector & b, BaseVector & x) const override;
@@ -75,7 +76,7 @@ namespace amg
 
     virtual shared_ptr<BaseSmoother> BuildBGSSmoother (shared_ptr<BaseSparseMatrix> spm, shared_ptr<ParallelDofs> pardofs,
 						       shared_ptr<EQCHierarchy> eqc_h, Table<int> && blocks);
-    virtual Table<int>&& GetGSBlocks (const BaseAMGFactory::AMGLevel & amg_level);
+    virtual Table<int> GetGSBlocks (const BaseAMGFactory::AMGLevel & amg_level);
 
   }; // BaseAMGPC
 
@@ -100,7 +101,8 @@ namespace amg
     enum SM_TYPE : char /** available smoothers **/
       { GS = 0,     // (l1/hybrid - ) Gauss-Seidel
 	BGS = 1 };  // Block - (l1/hybrid - ) Gauss-Seidel 
-    SM_TYPE sm_type = SM_TYPE::GS;
+    SM_TYPE sm_type = SM_TYPE::GS;       // the default smoother type
+    Array<SM_TYPE> spec_sm_types;        // specific smoothers for levels
 
     enum GS_VER : char /** different hybrid GS versions (mostly for testing) **/
       { VER1 = 0,    // old version
@@ -108,6 +110,7 @@ namespace amg
 	VER3 = 2 };  // newest, optional overlap
     GS_VER gs_ver = GS_VER::VER3;
 
+    bool sm_symm = false;                // smooth symmetrically
     bool sm_mpi_overlap = true;          // overlap communication/computation (only VER3)
     bool sm_mpi_thread = false;          // do MPI-comm in seperate thread (only VER3)
 

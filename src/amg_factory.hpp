@@ -31,13 +31,13 @@ namespace amg
 
     void SetUpLevels (Array<AMGLevel> & finest_level, shared_ptr<DOFMap> & dmap);
 
+    virtual shared_ptr<ParallelDofs> BuildParallelDofs (shared_ptr<TopologicMesh> amesh) const = 0;
+
   protected:
 
     void RSU (Array<AMGLevel> & amg_levels, shared_ptr<DOFMap> & dof_map, State & state);
 
     static void SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix = "ngs_amg_");
-
-    virtual shared_ptr<ParallelDofs> BuildParallelDofs (shared_ptr<TopologicMesh> amesh) const = 0;
 
     virtual shared_ptr<BaseDOFMapStep> DoStep (AMGLevel & f_lev, AMGLevel & c_lev, State & state);
 

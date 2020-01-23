@@ -36,13 +36,17 @@ namespace amg
       else { v = flags.GetDefineFlagX(prefix + key).IsTrue(); }
     };
 
-    auto set_opt_kv = [&](auto & opt, string name, Array<string> keys, auto vals) {
-      string flag_opt = flags.GetStringFlag(prefix + name, "");
+    auto set_opt_sv = [&](auto & opt, string flag_opt, FlatArray<string> keys, auto & vals) {
       for (auto k : Range(keys))
 	if (flag_opt == keys[k]) {
 	  opt = vals[k];
 	  return;
 	}
+    };
+    
+    auto set_opt_kv = [&](auto & opt, string name, Array<string> keys, auto vals) {
+      string flag_opt = flags.GetStringFlag(prefix + name, "");
+      set_opt_sv(opt, flag_opt, keys, vals);
     };
 
     set_enum_opt(clev, "clev", {"inv", "sm", "none"}, Options::CLEVEL::INV_CLEV);
@@ -52,10 +56,17 @@ namespace amg
     set_opt_kv(cinv_type_loc, "cinv_type_loc", { "pardiso", "pardisospd", "sparsecholesky", "superlu", "superlu_dist", "mumps", "umfpack" },
 	       Array<INVERSETYPE>({ PARDISO, PARDISOSPD, SPARSECHOLESKY, SUPERLU, SUPERLU_DIST, MUMPS, UMFPACK }));
 
-    set_enum_opt(sm_type, "sm_type", {"gs", "bgs"}, Options::SM_TYPE::GS);
+    Array<string> sm_names ( { "gs", "bgs" } );
+    Array<Options::SM_TYPE> sm_types ( { Options::SM_TYPE::GS, Options::SM_TYPE::BGS } );
+    set_enum_opt(sm_type, "sm_type", { "gs", "bgs" }, Options::SM_TYPE::GS);
+    auto & spec_sms = flags.GetStringListFlag(prefix + "spec_sm_types");
+    spec_sm_types.SetSize(spec_sms.Size());
+    for (auto k : Range(spec_sms.Size()))
+      { set_opt_sv(spec_sm_types[k], spec_sms[k], sm_names, sm_types); }
 
-    gs_ver = Options::GS_VER(max(0, min(3, int(flags.GetNumFlag(prefix + "gs_ver", 3)))));
+    gs_ver = Options::GS_VER(max(0, min(3, int(flags.GetNumFlag(prefix + "gs_ver", 3) - 1))));
 
+    set_bool(sm_symm, "sm_symm");
     set_bool(sm_mpi_overlap, "sm_mpi_overlap");
     set_bool(sm_mpi_thread, "sm_mpi_thread");
 
@@ -92,6 +103,31 @@ namespace amg
   {
     if (options == nullptr) // should never happen
       { options = MakeOptionsFromFlags(flags); }
+
+    const auto & O(*options);
+
+    if (bfa->UsesEliminateInternal() || O.smooth_lo_only) {
+      auto fes = bfa->GetFESpace();
+      auto lofes = fes->LowOrderFESpacePtr();
+      finest_freedofs = make_shared<BitArray>(*freedofs);
+      auto& ofd(*finest_freedofs);
+      if (bfa->UsesEliminateInternal() ) { // clear freedofs on eliminated DOFs
+	auto rmax = (O.smooth_lo_only && (lofes != nullptr) ) ? lofes->GetNDof() : freedofs->Size();
+	for (auto k : Range(rmax))
+	  if (ofd.Test(k)) {
+	    COUPLING_TYPE ct = fes->GetDofCouplingType(k);
+	    if ((ct & CONDENSABLE_DOF) != 0)
+	      ofd.Clear(k);
+	  }
+      }
+      if (O.smooth_lo_only && (lofes != nullptr) ) { // clear freedofs on all high-order DOFs
+	for (auto k : Range(lofes->GetNDof(), freedofs->Size()))
+	  { ofd.Clear(k); }
+      }
+    }
+    else
+      { finest_freedofs = freedofs; }
+
   } // BaseAMGPC::InitLevel
 
 
@@ -104,6 +140,12 @@ namespace amg
 
     Finalize();
   } // BaseAMGPC::FinalizeLevel
+
+
+  shared_ptr<AMGMatrix> BaseAMGPC :: GetAMGMatrix () const
+  {
+    return amg_mat;
+  } // BaseAMGPC::GetAMGMatrix
 
 
   const BaseMatrix & BaseAMGPC :: GetAMatrix () const 
@@ -216,17 +258,85 @@ namespace amg
 
   void BaseAMGPC :: BuildAMGMat ()
   {
+    auto & O(*options);
+
     static Timer t("BuildAMGMat"); RegionTimer rt(t);
+    static Timer tsync("BuildAMGMat::sync");
 
     auto dof_map = make_shared<DOFMap>();
 
     Array<BaseAMGFactory::AMGLevel> amg_levels(1); InitFinestLevel(amg_levels[0]);
 
+    if (options->sync)
+      { RegionTimer rt(tsync); dof_map->GetParDofs(0)->GetCommunicator().Barrier(); }
+
     factory->SetUpLevels(amg_levels, dof_map);
 
+    /** Smoothers **/
     Array<shared_ptr<BaseSmoother>> smoothers(amg_levels.Size() - 1);
-    for (auto k : Range(amg_levels))
-      { smoothers[k] = BuildSmoother(amg_levels[k]); }
+    for (int k = 0; k < amg_levels.Size() - 1; k++) {
+      smoothers[k] = BuildSmoother(amg_levels[k]);
+    }
+
+    amg_mat = make_shared<AMGMatrix> (dof_map, smoothers);
+
+    /** Coarsest level inverse **/
+    if (O.sync)
+      { RegionTimer rt(tsync); dof_map->GetParDofs(0)->GetCommunicator().Barrier(); }
+    
+
+    if ( (amg_levels.Size() > 1) && (amg_levels.Last().mat != nullptr) ) { // otherwise, dropped out
+      switch(O.clev) {
+      case(Options::CLEVEL::INV_CLEV) : {
+	static Timer t("CoarseInv"); RegionTimer rt(t);
+
+	auto & c_lev = amg_levels.Last();
+	auto cpds = dof_map->GetMappedParDofs();
+	auto comm = cpds->GetCommunicator();
+	auto cspm = c_lev.mat;
+
+	// cspm = RegularizeMatrix(cspm, cpds); // TODO!!
+
+	shared_ptr<BaseMatrix> coarse_inv = nullptr;
+      
+	if (GetEntryDim(cspm.get()) > MAX_SYS_DIM) // when would this ever happen??
+	  { throw Exception("Cannot inv coarse level, MAX_SYS_DIM insufficient!"); }
+
+	if (comm.Size() > 2) {
+	  auto parmat = make_shared<ParallelMatrix> (cspm, cpds, cpds, C2D);
+	  parmat->SetInverseType(O.cinv_type);
+	  coarse_inv = parmat->InverseMatrix();
+	}
+	else if ( (comm.Size() == 1) ||
+		  ( (comm.Size() == 2) && (comm.Rank() == 1) ) ) { // local inverse
+	  cspm->SetInverseType(O.cinv_type_loc);
+	  auto cinv = cspm->InverseMatrix();
+	  if (comm.Size() > 1)
+	    { coarse_inv = make_shared<ParallelMatrix> (cinv, cpds, cpds, C2C); } // dummy parmat
+	  else
+	    { coarse_inv = cinv; }
+	}
+	else if (comm.Rank() == 0) { // some dummy matrix
+	  Array<int> perow(0);
+	  auto cinv = make_shared<SparseMatrix<double>>(perow);
+	  if (comm.Size() > 1)
+	    { coarse_inv = make_shared<ParallelMatrix> (cinv, cpds, cpds, C2C); } // dummy parmat
+	  else
+	    { coarse_inv = cinv; }
+	}
+	amg_mat->SetCoarseInv(coarse_inv);
+	break;
+      }
+      default : { break; }
+      }
+    }
+
+    if (options->do_test)
+      {
+	printmessage_importance = 1;
+	netgen::printmessage_importance = 1;
+	Test();
+      }
 
   } // BaseAMGPC::BuildAMGMAt
 
@@ -239,9 +349,9 @@ namespace amg
     finest_level.mesh = finest_mesh; // TODO: get out of factory??
     finest_level.eqc_h = finest_level.mesh->GetEQCHierarchy();
     finest_level.pardofs = finest_mat->GetParallelDofs();
-    auto fpm = dynamic_pointer_cast<ParallelMatrix>(finest_mat)->GetMatrix();
+    auto fpm = dynamic_pointer_cast<ParallelMatrix>(finest_mat);
     finest_level.mat = (fpm == nullptr) ? dynamic_pointer_cast<BaseSparseMatrix>(finest_mat)
-      : dynamic_pointer_cast<BaseSparseMatrix>(fpm);
+      : dynamic_pointer_cast<BaseSparseMatrix>(fpm->GetMatrix());
     finest_level.embed_map = BuildEmbedding(finest_mesh);
   } // BaseAMGPC::InitFinestLevel
 
@@ -252,9 +362,17 @@ namespace amg
     
     shared_ptr<BaseSmoother> smoother = nullptr;
 
-    switch(O.sm_type) {
+    cout << " smoother, mat " << amg_level.mat->Height() << " x " << amg_level.mat->Width() << endl;
+    cout << " pds " << amg_level.pardofs->GetNDofLocal() << endl;
+
+    Options::SM_TYPE sm_type = O.sm_type;
+
+    if (O.spec_sm_types.Size() > amg_level.level)
+      { sm_type = O.spec_sm_types[amg_level.level]; }
+
+    switch(sm_type) {
     case(Options::SM_TYPE::GS)  : { smoother = BuildGSSmoother(amg_level.mat, amg_level.pardofs, amg_level.eqc_h, GetFreeDofs(amg_level)); break; }
-    case(Options::SM_TYPE::BGS) : { smoother = BuildBGSSmoother(amg_level.mat, amg_level.pardofs, amg_level.eqc_h, GetGSBlocks(amg_level)); break; }
+    case(Options::SM_TYPE::BGS) : { smoother = BuildBGSSmoother(amg_level.mat, amg_level.pardofs, amg_level.eqc_h, move(GetGSBlocks(amg_level))); break; }
     default : { throw Exception("Invalid Smoother type!"); break; }
     }
 
@@ -274,9 +392,10 @@ namespace amg
 
     shared_ptr<BaseSmoother> smoother = nullptr;
 
-    Switch<MAX_SYS_DIM>
-      (GetEntryDim(spm.get()), [&] (auto BS)
+    Switch<MAX_SYS_DIM> // 
+      (GetEntryDim(spm.get())-1, [&] (auto BSM)
        {
+	 constexpr int BS = BSM + 1;
 	 if constexpr ( (BS == 0) || (BS == 4) || (BS == 5)
 #ifndef ELASTICITY
 			|| (BS == 6)
@@ -289,22 +408,31 @@ namespace amg
 	   switch(O.gs_ver) {
 	   case(Options::GS_VER::VER1) : {
 	     auto spmm = dynamic_pointer_cast<stripped_spm<Mat<BS, BS, double>>>(spm);
-	     smoother = make_shared<HybridGSS<BS>>(spmm, pardofs, freedofs);
+	     auto hgsm = make_shared<HybridGSS<BS>>(spmm, pardofs, freedofs);
+	     hgsm->Finalize();
+	     hgsm->SetSymmetric(O.sm_symm);
+	     smoother = hgsm;
 	     break;
 	   }
 	   case(Options::GS_VER::VER2) : {
 	     auto parmat = make_shared<ParallelMatrix>(spm, pardofs, pardofs, C2D);
-	     smoother = make_shared<HybridGSS2<typename strip_mat<Mat<BS, BS, double>>::type>> (parmat, freedofs);
+	     auto hgsm = make_shared<HybridGSS2<typename strip_mat<Mat<BS, BS, double>>::type>> (parmat, freedofs);
+	     hgsm->Finalize();
+	     hgsm->SetSymmetric(O.sm_symm);
+	     smoother = hgsm;
 	     break;
 	   }
 	   case(Options::GS_VER::VER3) : {
 	     if (eqc_h == nullptr)
-	       { throw Exception("BuildGSSmoother needs eqc_h!"); }
+	       { throw Exception("BuildGSSmoother needs eqc_h!"); break; }
 	     auto parmat = make_shared<ParallelMatrix>(spm, pardofs, pardofs, C2D);
-	     smoother = make_shared<HybridGSS3<typename strip_mat<Mat<BS, BS, double>>::type>> (parmat, eqc_h, freedofs, O.sm_mpi_overlap, O.sm_mpi_thread);
+	     auto hgsm = make_shared<HybridGSS3<typename strip_mat<Mat<BS, BS, double>>::type>> (parmat, eqc_h, freedofs, O.sm_mpi_overlap, O.sm_mpi_thread);
+	     hgsm->Finalize();
+	     hgsm->SetSymmetric(O.sm_symm);
+	     smoother = hgsm;
 	     break;
 	   }
-	   default: { throw Exception("Invalid Smoother type!!"); break; }
+	   default: { throw Exception("Invalid GS version!!"); break; }
 	   }
 	 }
        });
@@ -323,7 +451,7 @@ namespace amg
 
 
   shared_ptr<BaseSmoother> BaseAMGPC :: BuildBGSSmoother (shared_ptr<BaseSparseMatrix> spm, shared_ptr<ParallelDofs> pardofs,
-							  shared_ptr<EQCHierarchy> eqc_h, Table<int> && blocks)
+							  shared_ptr<EQCHierarchy> eqc_h, Table<int> && _blocks)
   {
     if (spm == nullptr)
       { throw Exception("BuildBGSSmoother needs a mat!"); }
@@ -332,13 +460,17 @@ namespace amg
     if (eqc_h == nullptr)
       { throw Exception("BuildBGSSmoother needs eqc_h!"); }
 
+    auto blocks = move(_blocks);
+    cout << " BGSS w. blocks " << blocks << endl;
+
     auto & O (*options);
     shared_ptr<BaseSmoother> smoother = nullptr;
 
-    Switch<MAX_SYS_DIM>
-      (GetEntryDim(spm.get()), [&] (auto BS)
+    Switch<MAX_SYS_DIM> // 0-based
+      (GetEntryDim(spm.get())-1, [&] (auto BSM)
        {
-	 if constexpr( (BS == 0) || (BS == 4) || (BS == 5)
+	 constexpr int BS = BSM + 1;
+	 if constexpr( (BS == 4) || (BS == 5)
 #ifndef ELASTICITY
 		       || (BS == 6)
 #endif
@@ -347,7 +479,12 @@ namespace amg
 	   return;
 	 }
 	 else {
-	   smoother = make_shared<HybridBS<typename strip_mat<Mat<BS, BS, double>>::type>> (spm, eqc_h, move(blocks), O.sm_mpi_overlap, O.sm_mpi_thread);
+	   auto parmat = make_shared<ParallelMatrix>(spm, pardofs);
+	   auto bsm = make_shared<HybridBS<typename strip_mat<Mat<BS, BS, double>>::type>> (parmat, eqc_h, move(blocks),
+											    O.sm_mpi_overlap, O.sm_mpi_thread);
+	   bsm->Finalize();
+	   bsm->SetSymmetric(O.sm_symm);
+	   smoother = bsm;
 	 }
        });
 
@@ -355,7 +492,7 @@ namespace amg
   } // BaseAMGPC::BuildBGSSmoother
 
 
-  Table<int>&& BaseAMGPC :: GetGSBlocks (const BaseAMGFactory::AMGLevel & amg_level)
+  Table<int> BaseAMGPC :: GetGSBlocks (const BaseAMGFactory::AMGLevel & amg_level)
   {
     throw Exception("BaseAMGPC::GetGSBlocks not overloaded!");
     return move(Table<int>());

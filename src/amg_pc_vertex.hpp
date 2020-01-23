@@ -2,6 +2,7 @@
 #define FILE_AMGPC_VERTEX_HPP
 
 #include "amg_pc.hpp"
+
 namespace amg
 {
 
@@ -74,7 +75,7 @@ namespace amg
 
     virtual void InitFinestLevel (BaseAMGFactory::AMGLevel & finest_level) override;
 
-    virtual Table<int>&& GetGSBlocks (const BaseAMGFactory::AMGLevel & amg_level) override;
+    virtual Table<int> GetGSBlocks (const BaseAMGFactory::AMGLevel & amg_level) override;
 
   }; // class VertexAMGPC
 
@@ -101,8 +102,8 @@ namespace amg
 
   protected:
     using BASE::options;
-    HashTable<int, HTVD> * ht_vertex;
-    HashTable<INT<2,int>, HTED> * ht_edge;
+    HashTable<int, HTVD> * ht_vertex = nullptr;
+    HashTable<INT<2,int>, HTED> * ht_edge = nullptr;
   }; // class EmbedVAMG
 
 

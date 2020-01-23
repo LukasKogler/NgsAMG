@@ -103,8 +103,6 @@ namespace amg {
     mutable Array<MPI_Request> rsds;
     Array<TM> diag;
 
-    virtual void Finalize () override { CalcDiag(); }
-    
     void SetUpMat ();
     void CalcDiag ();
 
@@ -121,6 +119,9 @@ namespace amg {
     void smoothfull (int type, BaseVector  &x, const BaseVector &b, BaseVector &res,
 		     bool res_updated = false, bool update_res = true, bool x_zero = false) const;
         
+  public:
+    virtual void Finalize () override { CalcDiag(); }
+    
   }; // end class HybridSmoother
 
   /** 
