@@ -776,6 +776,13 @@ namespace amg
       return move(Table<int>());
     }
 
+    auto & O(static_cast<Options&>(*options));
+
+    // if (amg_level.level == 0 && O.smooth_lo_only) {
+    //   throw Exception("Asked for BGS blocks for HO part!!");
+    //   return move(Table<int>());
+    // }
+
     int NCV = amg_level.crs_map->GetMappedNN<NT_VERTEX>();
     int n_blocks = NCV;
     if (amg_level.disc_map != nullptr)
@@ -788,21 +795,65 @@ namespace amg
 	  { cblocks.Add(cv, k); }
       }
     };
+    auto it_blocks_2 = [&](auto NV, auto map_v) LAMBDA_INLINE {
+      if (use_v2d_tab) {
+	for (auto k : Range(NV)) {
+	  auto cv = map_v(k);
+	  if (cv != -1)
+	    for (auto dof : v2d_table[k])
+	      { cblocks.Add(cv, dof); }
+	}
+      }
+      else {
+	for (auto k : Range(NV)) {
+	  auto cv = map_v(k);
+	  if (cv != -1)
+	    { cblocks.Add(cv, v2d_array[k]); }
+	}
+      }
+    };
     auto vmap = amg_level.crs_map->GetMap<NT_VERTEX>();
     for (; !cblocks.Done(); cblocks++) {
-      if (amg_level.disc_map == nullptr)
-	{ it_blocks(vmap.Size(), [&](auto v) -> int LAMBDA_INLINE { return vmap[v]; }); }
+      if (amg_level.disc_map == nullptr) {
+	auto map_v = [&](auto v) -> int LAMBDA_INLINE { return vmap[v]; };
+	if (amg_level.level == 0)
+	  { it_blocks_2(vmap.Size(), map_v); }
+	else
+	  { it_blocks(vmap.Size(), map_v); }
+	}
       else {
 	const auto & drop = *amg_level.disc_map->GetDroppedNodes<NT_VERTEX>();
 	auto drop_map = amg_level.disc_map->GetMap<NT_VERTEX>();
-	it_blocks(drop.Size(), [&](auto v) -> int LAMBDA_INLINE {
-	    auto midv = drop_map[v]; // have to consider drop OR DIRI !!
-	    return (midv == -1) ? midv : vmap[midv];
-	  });
-	int c = NCV;
-	for (auto k : Range(drop.Size())) {
-	  if (drop.Test(k))
-	    { cblocks.Add(c++, k); }
+	auto map_v =  [&](auto v) -> int LAMBDA_INLINE {
+	  auto midv = drop_map[v]; // have to consider drop OR DIRI !!
+	  return (midv == -1) ? midv : vmap[midv];
+	};
+	if (amg_level.level == 0) {
+	  it_blocks_2(drop.Size(), map_v);
+	  int c = NCV;
+	  if (use_v2d_tab) {
+	    for (auto k : Range(drop.Size())) {
+	      if (drop.Test(k)) {
+		for (auto dof : v2d_table[k])
+		  { cblocks.Add(c, dof); }
+		c++;
+	      }
+	    }
+	  }
+	  else {
+	    for (auto k : Range(drop.Size())) {
+	      if (drop.Test(k))
+		{ cblocks.Add(c++, v2d_array[k]); }
+	    }
+	  }
+	}
+	else {
+	  it_blocks(drop.Size(), map_v);
+	  int c = NCV;
+	  for (auto k : Range(drop.Size())) {
+	    if (drop.Test(k))
+	      { cblocks.Add(c++, k); }
+	  }
 	}
       }
     }
