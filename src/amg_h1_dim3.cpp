@@ -39,12 +39,12 @@ namespace amg
   // template class H1Energy<1, double, double>;
   template class H1AMGFactory<3>;
 
-  // using PCC = VertexAMGPC<H1AMGFactory<1>>;
-  // using PCC = ElmatVAMG<H1AMGFactory<1>, double, double>;
+  // using PCC = VertexAMGPC<H1AMGFactory<3>>;
+  using PCC = ElmatVAMG<H1AMGFactory<3>, double, double>;
 
   // template class PCC;
 
-  // RegisterPreconditioner<PCC> register_h1amg_1d ("ngs_amg.h1_scal");
+  RegisterPreconditioner<PCC> register_h1amg_3d ("ngs_amg.h1_dim3");
 
 } // namespace amg
 
@@ -55,6 +55,6 @@ namespace amg
 {
   void ExportH1Dim3 (py::module & m)
   {
-    // ExportAMGClass<ElmatVAMG<H1AMGFactory<1>, double, double>>(m, "ngs_amg.h1_scal", "", [&](auto & m) { ; } );
-  };
+    ExportAMGClass<ElmatVAMG<H1AMGFactory<3>, double, double>>(m, "h1_dim3", "", [&](auto & m) { ; } );
+  }
 }

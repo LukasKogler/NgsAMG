@@ -49,7 +49,7 @@ namespace amg
 
     /** Discard **/
     virtual bool TryDiscardStep (BaseAMGFactory::State & state) override;
-    virtual shared_ptr<BaseDiscardMap> BuildDiscardMap(BaseAMGFactory::State & state);
+    virtual shared_ptr<BaseDiscardMap> BuildDiscardMap (BaseAMGFactory::State & state);
 
   }; // VertexAMGFactory
     

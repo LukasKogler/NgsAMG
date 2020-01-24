@@ -176,10 +176,20 @@ namespace amg {
     O.keep_grid_maps = false;
     O.gs_ver = Options::GS_VER::VER3;
 
-    /** FES-to-AMG Embedding **/
-    O.block_s = { 1 }; // multi-dim / scalar
-    // O.block_s = { 1, 1 (, 1) }; // compound
-    // O.block_s = { 2/3 }; // reordered
+    /** A guess for block_s. FES-to-AMG Embedding **/
+    auto fes = bfa->GetFESpace();
+
+    if (auto comp_fes = dynamic_pointer_cast<CompoundFESpace>(fes)) // compound
+      { O.block_s.SetSize(FCC::BS); O.block_s = 1; }
+    else if (auto reo_fes = dynamic_pointer_cast<ReorderedFESpace>(fes)) { // reordered
+      auto base_space = reo_fes->GetBaseSpace();
+      if (auto comp_fes = dynamic_pointer_cast<CompoundFESpace>(base_space)) // reordered compound
+	{ O.block_s = { FCC::BS }; }
+      else // reordered muldidim/scalar (why would you do this ??)
+	{ O.block_s = { 1 }; }
+    }
+    else // multi-dim or scalar
+      { O.block_s = { 1 }; }
 
   } // VertexAMGPC::SetDefaultOptions
 
@@ -203,7 +213,8 @@ namespace amg {
     static_assert(is_same<int, decltype(D2V(0))>::value, "D2V mismatch");
     static_assert(is_same<int, decltype(V2D(0))>::value, "V2D mismatch");
 
-    auto dspm = dynamic_pointer_cast<SparseMatrix<double>>(spmat);
+    typedef typename FCC::TM TM;
+    auto dspm = dynamic_pointer_cast<SparseMatrix<TM>>(spmat);
     if (dspm == nullptr)
       { throw Exception("Could not cast sparse matrix!"); }
 
@@ -214,13 +225,13 @@ namespace amg {
     auto b = new H1EData(Array<double>(top_mesh->GetNN<NT_EDGE>()), DISTRIBUTED); auto bd = b->Data(); bd = 0;
 
     for (auto k : Range(top_mesh->GetNN<NT_VERTEX>()))
-      { auto d = V2D(k); ad[k] = cspm(d,d); }
+      { auto d = V2D(k); ad[k] = calc_trace(cspm(d,d)); }
 
     auto edges = top_mesh->GetNodes<NT_EDGE>();
     auto& fvs = *free_verts;
     for (auto & e : edges) {
       auto di = V2D(e.v[0]); auto dj = V2D(e.v[1]);
-      double v = cspm(di, dj);
+      double v = calc_trace(cspm(di, dj));
       // cout << "edge " << e << " di dj " << di << " " << dj << ", val " << v << endl;
       // bd[e.id] = fabs(v) / sqrt(cspm(di,di) * cspm(dj,dj)); ad[e.v[0]] += v; ad[e.v[1]] += v;
       bd[e.id] = fabs(v); ad[e.v[0]] += v; ad[e.v[1]] += v;
@@ -245,8 +256,39 @@ namespace amg {
   template<class FCC> template<class TD2V, class TV2D> shared_ptr<typename FCC::TMESH>
   VertexAMGPC<FCC> :: BuildAlgMesh_ALG_blk (shared_ptr<BlockTM> top_mesh, shared_ptr<BaseSparseMatrix> spmat, TD2V D2V, TV2D V2D) const
   {
-    throw Exception("BuildAlgMesh_ALG_blk for H1 TODO (Comp/Reo-Comp spaces)!");
-    return nullptr;
+    static Timer t("BuildAlgMesh_ALG_blk"); RegionTimer rt(t);
+
+    // throw Exception("BuildAlgMesh_ALG_blk for H1 TODO (Comp/Reo-Comp spaces)!");
+
+    auto dspm = dynamic_pointer_cast<SparseMatrix<double>>(spmat);
+    if (dspm == nullptr)
+      { throw Exception("Could not cast sparse matrix!"); }
+
+    const auto& cspm = *dspm;
+    auto a = new H1VData(Array<double>(top_mesh->GetNN<NT_VERTEX>()), DISTRIBUTED); auto ad = a->Data(); ad = 0;
+    auto b = new H1EData(Array<double>(top_mesh->GetNN<NT_EDGE>()), DISTRIBUTED); auto bd = b->Data(); bd = 0;
+
+    for (auto k : Range(top_mesh->GetNN<NT_VERTEX>()))
+      for (auto d : V2D(k))
+	{ ad[k] += cspm(d,d); }
+
+    auto edges = top_mesh->GetNodes<NT_EDGE>();
+    for (auto & e : edges) {
+      double v = 0;
+      auto dis = V2D(e.v[0]); auto djs = V2D(e.v[1]);
+      for (auto i : Range(dis))
+	{ v += cspm(dis[i], djs[i]); }
+      // cout << "edge " << e << " di dj " << di << " " << dj << ", val " << v << endl;
+      // bd[e.id] = fabs(v) / sqrt(cspm(di,di) * cspm(dj,dj)); ad[e.v[0]] += v; ad[e.v[1]] += v;
+      bd[e.id] = fabs(v); ad[e.v[0]] += v; ad[e.v[1]] += v;
+    }
+
+    for (auto k : Range(top_mesh->GetNN<NT_VERTEX>())) // -1e-16 can happen, is problematic
+      { ad[k] = fabs(ad[k]); }
+
+    auto mesh = make_shared<H1Mesh>(move(*top_mesh), a, b);
+
+    return mesh;
   } // VertexAMGPC::BuildAlgMesh_ALG_blk
 
 
@@ -265,10 +307,38 @@ namespace amg {
   template<class FCC> template<int BSA> shared_ptr<stripped_spm_tm<Mat<BSA, FCC::BS, double>>>
   VertexAMGPC<FCC> :: BuildED (size_t height, shared_ptr<TopologicMesh> mesh)
   {
+    auto & O(static_cast<Options&>(*options));
     constexpr int BS = FCC::BS;
-    if (BSA != BS)
-      { throw Exception("This should not happen for H1!!"); }
-    return nullptr;
+    /** 1 -> BS or BS -> BS are valid **/
+    if constexpr(BS == 1)
+      { return nullptr; }
+    else {
+      if constexpr (BS == BSA)
+	{ return nullptr; }
+      else {
+	if constexpr (BSA == 1) {
+	    typedef Mat<1, BS, double> TM;
+	    auto NV = mesh->GetNN<NT_VERTEX>();
+	    Array<int> perow(height); perow = 1;
+	    auto spm = make_shared<SparseMatrixTM<TM>>(perow, NV);
+	    size_t rownr = 0, os_ri = 0;;
+	    for (auto bs : O.block_s) {
+	      for (auto vnr : Range(NV)) {
+		for (auto j : Range(bs)) {
+		  spm->GetRowIndices(rownr)[0] = vnr;
+		  auto & rv = spm->GetRowValues(rownr)[0];
+		  rv = 0; rv(0, os_ri + j) = 1;
+		  rownr++;
+		}
+	      }
+	      os_ri += bs;
+	    }
+	    return spm;
+	  }
+	else
+	  { throw Exception("Invalid ED for H1!!"); return nullptr; }
+      }
+    }
   } // VertexAMGPC::BuildED
 
 } // namespace amg

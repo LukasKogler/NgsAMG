@@ -95,96 +95,79 @@ namespace amg
   // using EpsEpsStokesMesh = BlockAlgMesh<AttachedEpsEpsSVD<D>, AttachedEpsEpsSED<D>>;
 
 
-  template<int DIM, class ATMESH, class TENERGY>
-  class StokesAMGFactory : public NodalAMGFactory<NT_EDGE, ATMESH, TENERGY::TM>
-  {
-    // static_assert( std::is_same<ENERGY::TVD, StokesEData<DIM>>::value, "stokes factory with wrong vertex data!");
-  public:
-    using TMESH = ATMESH;
-    using ENERGY = TENERGY;
-    using TM = AMG_CLASS::TM;
-  protected:
-  public:
-  protected:
-    template<class TMAP> shared_ptr<TSPM_TM> BuildPWProl_impl (shared_ptr<TMAP> cmap, shared_ptr<ParallelDofs> fpd) const;
-    virtual shared_ptr<TSPM_TM> BuildPWProl (shared_ptr<CoarseMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd) const override
-    { return BuildPWProl_impl(cmap, fpd); }
-    virtual shared_ptr<TSPM_TM> BuildPWProl (shared_ptr<AgglomerateCoarseMap<TMESH>> cmap, shared_ptr<ParallelDofs> fpd) const override
-    { return BuildPWProl_impl(cmap, fpd); }
-  }; // class StokesAMGFactory
 
 
-  /** Stokes AMG Preconditioner for facet-nodal discretizations. E.g. from an auxiliary space.
-      Does not directly work with HDiv spaces. **/
-  template<class TFACTORY>
-  class StokesAMGPC : public BaseAMGPC
-  {
-  public:
-    struct Options; // TODO: this is not entirely consistent
+  // /** Stokes AMG Preconditioner for facet-nodal discretizations. E.g. from an auxiliary space.
+  //     Does not directly work with HDiv spaces. **/
+  // template<class TFACTORY>
+  // class StokesAMGPC : public BaseAMGPC
+  // {
+  // public:
+  //   struct Options; // TODO: this is not entirely consistent
 
-  protected:
+  // protected:
 
-    /** Stuff consistent with other AMG PC classes for facet auxiliary PC **/
-    shared_ptr<Options> options;
+  //   /** Stuff consistent with other AMG PC classes for facet auxiliary PC **/
+  //   shared_ptr<Options> options;
 
-    shared_ptr<BilinearForm> bfa;
+  //   shared_ptr<BilinearForm> bfa;
 
-    shared_ptr<BitArray> finest_freedofs, free_verts;
-    shared_ptr<BaseMatrix> finest_mat;
+  //   shared_ptr<BitArray> finest_freedofs, free_verts;
+  //   shared_ptr<BaseMatrix> finest_mat;
 
-    Array<Array<int>> node_sort;
-    Array<Array<Vec<3,double>>> node_pos;
+  //   Array<Array<int>> node_sort;
+  //   Array<Array<Vec<3,double>>> node_pos;
 
-    bool use_v2d_tab = false;
-    Array<int> d2v_array, v2d_array;
-    //    Table<int> v2d_table; // probably never use this
+  //   bool use_v2d_tab = false;
+  //   Array<int> d2v_array, v2d_array;
+  //   //    Table<int> v2d_table; // probably never use this
 
-    shared_ptr<AMGMatrix> amg_mat;
+  //   shared_ptr<AMGMatrix> amg_mat;
 
-    shared_ptr<FACTORY> factory;
+  //   shared_ptr<FACTORY> factory;
 
-  public:
+  // public:
 
-    /** Constructors **/
+  //   /** Constructors **/
 
-    StokesAMGPC (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string name = "precond");
+  //   StokesAMGPC (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string name = "precond");
 
-    StokesAMGPC (const PDE & apde, const Flags & aflags, const string aname = "precond");
-
-
-    /** New public methods **/
+  //   StokesAMGPC (const PDE & apde, const Flags & aflags, const string aname = "precond");
 
 
-    /** Public methods - consistent with EmbedVAMG **/
-
-    virtual shared_ptr<TMESH> BuildInitialMesh ();
-
-    virtual shared_ptr<FACTORY> BuildFactory (shared_ptr<TMESH> mesh);
-
-    virtual void BuildAMGMat ();
+  //   /** New public methods **/
 
 
-    /** Public methods inherited from Preconditioner **/
+  //   /** Public methods - consistent with EmbedVAMG **/
 
-    virtual void InitLevel (shared_ptr<BitArray> freedofs = nullptr) override;
+  //   virtual shared_ptr<TMESH> BuildInitialMesh ();
 
-    virtual void FinalizeLevel (const BaseMatrix * mat) override;
+  //   virtual shared_ptr<FACTORY> BuildFactory (shared_ptr<TMESH> mesh);
 
-    virtual void Update () override;
-
-
-  protected:
-
-    /** Protected methods inherited from Preconditioner (I think none) **/
-
-    /** New protected methods - internal utility**/
-
-    virtual shared_ptr<TMESH> BuildInitialMesh ();
-
-    virtual shared_ptr<BlockTM> BuildTopMesh (shared_ptr<EQCHierarchy> eqc_h);
+  //   virtual void BuildAMGMat ();
 
 
-  }; // StokesAMGPC
+  //   /** Public methods inherited from Preconditioner **/
+
+  //   virtual void InitLevel (shared_ptr<BitArray> freedofs = nullptr) override;
+
+  //   virtual void FinalizeLevel (const BaseMatrix * mat) override;
+
+  //   virtual void Update () override;
+
+
+  // protected:
+
+  //   /** Protected methods inherited from Preconditioner (I think none) **/
+
+  //   /** New protected methods - internal utility**/
+
+  //   virtual shared_ptr<TMESH> BuildInitialMesh ();
+
+  //   virtual shared_ptr<BlockTM> BuildTopMesh (shared_ptr<EQCHierarchy> eqc_h);
+
+
+  // }; // StokesAMGPC
 
 
 } // namespace amg

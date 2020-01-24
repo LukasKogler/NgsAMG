@@ -37,8 +37,8 @@ namespace amg
   template class H1AMGFactory<2>;
   template class VertexAMGPC<H1AMGFactory<2>>;
 
-  using PCC = VertexAMGPC<H1AMGFactory<2>>;
-  // using PCC = ElmatVAMG<H1AMGFactory<1>, double, double>;
+  // using PCC = VertexAMGPC<H1AMGFactory<2>>;
+  using PCC = ElmatVAMG<H1AMGFactory<2>, double, double>;
 
   // template class PCC;
 
@@ -53,6 +53,6 @@ namespace amg
 {
   void ExportH1Dim2 (py::module & m)
   {
-    // ExportAMGClass<ElmatVAMG<H1AMGFactory<1>, double, double>>(m, "ngs_amg.h1_scal", "", [&](auto & m) { ; } );
-  };
+    ExportAMGClass<ElmatVAMG<H1AMGFactory<2>, double, double>>(m, "h1_dim2", "", [&](auto & m) { ; } );
+  }
 }
