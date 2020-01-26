@@ -46,24 +46,22 @@ namespace amg
     auto prol = make_shared<TSPM_TM> (perow, W);
     auto & P(*prol);
 
-    /** fill agg boundaries **/
+    /** Fill facets **/
     ENERGY::TVD fvd, cvd;
     for (auto fenr : Range(H)) {
       auto & fedge = fedges[fenr];
       auto cenr = emap[fenr];
-      int fv0 = fedge.v[0], fv1 = fedge.v[1];
-      ENERGY::CalcMPData(vdata[fv0], vdata[fv1], cvd);
-      int cv0 = vmap[fv0], cv1 = vmap[fv1];
       if (cenr != -1) {
-	P.GetRowIndices(fenr)[0] = cenr;
+	int fv0 = fedge.v[0], fv1 = fedge.v[1];
+	ENERGY::CalcMPData(vdata[fv0], vdata[fv1], fvd);
+	int cv0 = vmap[fv0], cv1 = vmap[fv1];
 	ENERGY::CalcMPData(vdata[cv0], vdata[cv1], cvd);
+	P.GetRowIndices(fenr)[0] = cenr;
 	ENERGY::CalcPWPBlock(fvd, cvd, P.GetRowValues(fenr)[0]);
       }
-      else if (cv0 == cv1)
-	{ P.GetRowIndices(fenr) = cecon.GetRowIndices(cenr); }
     }
 
-    /** fill agg interiors **/
+    /** Fill agg interiors **/
 
 
   } // StokesAMGFactory::BuildPWProl_impl

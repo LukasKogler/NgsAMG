@@ -18,6 +18,12 @@ namespace amg
   template<int D> using StokesTM = typename StokesTM_TRAIT<D>::type;
 
 
+  // also has dynamic edge-edge mats?
+  template<class TM, class MWD>
+  class StokesMesh : public MWD
+  {
+  };
+
   template<int D>
   struct H1StokesVData
   {
@@ -68,11 +74,20 @@ namespace amg
   }; // class AttachedSVD
 
 
-  template<int D>
+  template<int DIM>
+  struct H1StokesVData
+  {
+    Vec<DIM, double> pos;     // positon of vertex
+    Vec<DIM, double> wt;      // weight for L2-part of the energy
+    double area;              // area of vertex cell
+  };
+
+  template<int DIM>
   struct H1StokesEData
   {
-    H1Energy<D>::TM mat;
-    Vec<D,double> flow; // \int e_1i*n
+    strip_map<Mat<DIM, DIM, double>> emat;    // edge-mat for h1-energy
+    // double surf;                           // \int_F 1
+    Mat<1, D> flow;                           // \int_F grad(\phi_j)\cdot n
   };
 
 
