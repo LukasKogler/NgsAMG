@@ -1491,15 +1491,7 @@ namespace amg
 #include "amg_h1.hpp"
 #include "amg_h1_impl.hpp"
 
-namespace amg
-{
-  template class CtrMap<double>;
-  template class CtrMap<Vec<2,double>>;
-  template class CtrMap<Vec<3,double>>;
+#include "amg_elast.hpp"
+#include "amg_elast_impl.hpp"
 
-#ifdef ELASTICITY
-  template class CtrMap<Vec<6,double>>;
-#endif
-
-  template class GridContractMap<H1Mesh>;
-} // namespace amg
+#include "amg_tcs.hpp"

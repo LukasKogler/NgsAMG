@@ -171,7 +171,7 @@ namespace amg
 
 
   template<int DIM, class TVD, class TED>
-  INLINE EpsEpsEnergy<DIM, TVD, TED>::TVD EpsEpsEnergy<DIM, TVD, TED> :: CalcMPData (const TVD & da, const TVD & db)
+  INLINE typename EpsEpsEnergy<DIM, TVD, TED>::TVD EpsEpsEnergy<DIM, TVD, TED> :: CalcMPData (const TVD & da, const TVD & db)
   {
     TVD o; o.pos = 0.5 * (da.pos + db.pos);
     return move(o);
@@ -179,12 +179,12 @@ namespace amg
 
 
   template<int DIM, class TVD, class TED>
-  INLINE void H1Energy :: EpsEpsEnergy (FlatMatrix<TM> mat, const TED & ed, const TVD & vdi, const TVD & vdj)
+  INLINE void EpsEpsEnergy<DIM, TVD, TED> :: CalcRMBlock (FlatMatrix<TM> mat, const TED & ed, const TVD & vdi, const TVD & vdj)
   {
     static TM Qij, Qji, QiM, QjM;
     CalcQs( vdi, vdj, Qij, Qji);
-    QiM = Trans(Qij) * M;
-    QjM = Trans(Qji) * M;
+    QiM = Trans(Qij) * ed;
+    QjM = Trans(Qji) * ed;
     mat(0,0) =  QiM * Qij;
     mat(0,1) = -QiM * Qji;
     mat(1,0) = -QjM * Qij;

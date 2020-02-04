@@ -4,6 +4,7 @@ project(ngs_amg)
 cmake_minimum_required(VERSION 3.8)
 
 option( ELASTICITY   "Enable Elasticity AMG" OFF)
+option( ENABLE_ELASTICITY_ROBUST_ECW   "Enable robust elasticity coarsening (compiles a long time!)" ON)
 option( USE_TAU   "Enable TAU instrumentation" OFF)
 option( COMPILE_TIMING   "time compiling" OFF)
 
@@ -45,10 +46,18 @@ if (ELASTICITY)
     message(STATUS "NGSolve was built with MAX_SYS_DIM = ${NGSOLVE_MAX_SYS_DIM}. OK, large enough.")
   endif ( "${NGSOLVE_MAX_SYS_DIM}" LESS "6")
 
-  message(STATUS "Turning on elasticity AMG")
+  message(STATUS "Turning N elasticity AMG")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DELASTICITY")
+
+  if (ENABLE_ELASTICITY_ROBUST_ECW)
+    message(STATUS "Turn ON robust elasticity coarsening (warning: takes a long time to compile!)")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DELASTICITY_ROBUST_ECW")
+  else (ENABLE_ELASTICITY_ROBUST_ECW)
+    message(STATUS "Turn OFF robust elasticity coarsening (warning: takes a long time to compile!)")
+  endif (ENABLE_ELASTICITY_ROBUST_ECW)
+
 else (ELASTICITY)
-  message(STATUS "Turning off elasticity AMG")
+  message(STATUS "Turning OFF elasticity AMG")
 endif (ELASTICITY)
 
 

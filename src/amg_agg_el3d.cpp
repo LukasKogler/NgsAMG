@@ -11,7 +11,8 @@
 
 namespace amg
 {
-  template class Agglomerator<ElasticityAMGFactory<3>>;
+  using FCLASS = ElasticityAMGFactory<3>;
+  template class Agglomerator<FCLASS::ENERGY, FCLASS::TMESH, FCLASS::ENERGY::NEED_ROBUST>;
 }
 
 #endif

@@ -9,19 +9,6 @@ namespace amg
   /** StokesAMGFactory **/
 
   template<class TMESH, class ENERGY>
-  void StokesAMGFactory<TMESH, ENERGY> :: AssA (const TMESH & mesh, FlatArray<ENERGY::TED> edata, FlatArray<ENERGY::TVD> vdata,
-						FlatArray<int> vmems, FlatArray<int> emems, FlatMatrix<double> A, LocalHeap & lh)
-  {
-    /** Assemble replacement matrix diagonal for vertices vmems and edges ememes.
-	emems/vmems are assumed to be sorted. **/
-    const auto & cecon = *mesh.GetEdgeCM();
-
-    for (auto kv : Range(vmems)) {
-
-    }
-  } // StokesAMGFactoryAssA
-
-  template<class TMESH, class ENERGY>
   shared_ptr<BaseCoarseMap> StokesAMGFactory<TMESH, ENERGY> :: BuildPWProl_impl (shared_ptr<ParallelDofs> fpds, shared_ptr<ParallelDofs> cpds,
 										 shared_ptr<TMESH> fmesh, shared_ptr<TMESH> cmesh,
 										 FlatArray<int> vmap, FlatArray<int> emap,
@@ -79,15 +66,10 @@ namespace amg
     }
 
 
-    /** Fill Agg interiors by imposing
-	    u_f = P_f U
-	as "Dirichlet" condition on it's boundary. For the interior minimize energy norm,
-	under the restriction that we preserve divergence:
-	\int_A_f \div(u) = |A_f|/|A| \int_A \div(U)    [\forall A_f]
-	Solve the saddle point problem (for u_i, lam):
-	        AA B^T         u_f      0
-	        AA B^T  \cdot  u_i  =   0
-	        BB 0           lam     Cu_c
+    /** Solve:
+	  |A_vv B_v^T|  |u_v|     |-A_vf      0     |  |P_f|
+	  |  ------  |  | - |  =  |  -------------  |  | - | |u_c|
+	  |B_v       |  |lam|     |-B_vf  d(|v|/|A|)|  |B_A| 
      **/
     LocalHeap lh("Jerry", 10 * 1024 * 1024);
     for (auto agg_nr : Range(v_aggs)) {
@@ -96,30 +78,109 @@ namespace amg
 	auto cv = vmap[agg_vs[0]];
 	auto cneibs = cecon.GetRowIndices(cv);
 	auto cfacets = cecon.GetRowValues(cv);
-	int nfef = 0, ncef = 0;     // # fine/crs bnd-facets
-	int nfei = 0;               // # fine int-facets
-	int nfcells = 0;            // # fine cells
-	int H = BS * nfef + BS * nfei + nfc;
-	int Hi = BS * nfei + nfc;
-	/** nfef |  A_BB A_BI B_B^T
-	    nfei |  A_IB A_II B_F^T
-	    nfce |  B_B  B_F   0    **/
-	FlatMatrix<double> M (H, H, lh); M = 0;
-	/** crs -> fine facet pw-prol (from above) **/
-	FlatMatrix<double> P (BS * nfef, BS * ncef, lh); P = 0;
-	/** nfef | 0
-	    nfei | 0
-	    nfce | |A_fi| / |A_c| \int_A_c div(u_c) **/
-	FlatMatrix<double> C(H, BS * ncef, lh); C = 0;
-	/** \int_A_c div(u_c) **/
-	FlatMatrix<double> BC(H, BS * ncef, lh); BC = 0;
-	FlatMatrix<double> inv (hi, hi, lh);
-	inv = M.Rows(BS * nfef, H).Cols(BS * nfef, h);
+	auto it_edges = [&](auto lam) {
+	  for (auto kv : Range(agg_vs)) {
+	    auto v = agg_vs[kv];
+	    auto v_neibs = fecon.GetRowIndices(v);
+	    auto v_es = fecon.GetRowValues(v);
+	    for (auto j : Range(v_neibs)) {
+	      auto neib = v_neibs[j];
+	      auto cneib = vmap[neib]l
+	      if (cneib != -1) {
+		if (cneib != cv)
+		  { lam_ex(v, kv, n, -1, int(v_es[j])); }
+		else if (n > v) // do not count interior edges twice!
+		  { lam_in(v, kv, n, agg_vs.Pos(neib), int(v_es[j])); }
+	      }
+	    }
+	  }
+	};
+	/** get int/ext fine edges **/
+	int nff_f = 0, nfv_f = 0, nf_f = 0
+	it_edges([&](auto v, auto kv, auto n, auto kn, int eid) {
+	    nf_f++;
+	    if (kn == -1)
+	      { nff_f++; }
+	    else
+	      { nfv_f++; }
+	  });
+	FlatArray<int> fenrs(nf_f, lh); nf_f = 0;
+	FlatArray<int> frows(BS*nff_f, lh); nff_f = 0;
+	FlatArray<int> vrows(BS*nfv_f, lh); nfv_f = 0;
+	it_edges([&](auto v, auto kv, auto n, auto kn, int eid) {
+	    const int os = BS*nff_f;
+	    if (kn == -1)
+	      { Iterate<BS>([&](auto i) LAMBDA_INLINE { frows[nff_f++] = os + i.value; }) }
+	    else
+	      { Iterate<BS>([&](auto i) LAMBDA_INLINE { vrows[nfv_f++] = os + i.value; }) }
+	    fenrs[nf_f++] = eid;
+	  });
+	nff_f /= BS; nfv_f /= BS;
+	/** Fine A **/
+	int na = BS * nf_f, nb = nv_f;
+	FlatMatrix<TM> eblock(2, 2, lh);
+	FlatMatrix<double> A(na, na, lh); A = 0;
+	it_edges([&](auto v, auto kv, auto n, auto kn, int eid) {
+	    ENERGY::CalcRMBlock(eblock, fed[eid], fvd[v], fvd[n]);
+	    A.Rows(kv*BS, (1+kv)*BS, kn*BS, (1+kn)*BS) += eblock;
+	  });
+	/** Fine B **/
+	FlatMatrix<double> B(nb, na, lh); B = 0;
+	for (auto kv : Range(agg_vs)) {
+	  auto v = agg_vs[kv];
+	  auto neibs = fecon.GetRowIndices(v);
+	  auto enrs = fecon.GetRowValues(v);
+	  for (auto l : Range(neibs)) {
+	    int enr(enrs[l]);
+	    auto oscol = fenrs.Pos(enr);
+	    const auto & flow = fedata[enr].flow;
+	    Iterate<BS>([&](auto i) LAMBDA_INLINE { B(kv, oscol + i.value) = flow(i.value); });
+	  }
+	}
+	/** P **/
+	FlatMatrix<double> Pf (BS*nff_f, BS*nf_c, lh); Pf = 0;
+	for (auto r : Range(nff_f)) {
+	  int enr = fenrs[frows[BS*r]/BS];
+	  int cenr = emap[enr];
+	  if (cenr != -1) {
+	    int col = cfacets.Pos(double(cenr));
+	    Pf.Rows(r*BS, (1+r)*BS).Cols(col*BS, (1+col)*BS) = P(enr, cenr);
+	  }
+	}
+	/** B coarse **/
+	FlatMatrix<double> Bc(1, BS*nf_c, lh); Bc = 0;
+	for (auto j : Range(cfacets))
+	  { Bc.Row(0).Cols(j*BS, (1+j)*BS) = cedata[cfacets[j]].flow; }
+	FlatMatrix<double> Bc_stack(nv_f, BS*nf_c, lh); Bc_stack = 0;
+	for (auto k : Range(agg_vs))
+	  { Bc_stack.Row(k) = fvdata[agg_vs[k]].vol / cvol * Bc; }
+
+	/** Invert u_v/lam part **/
+	int nfreef = BS*nfv_f, nfreev = nv_f, nfree = nfreef + nfreev;
+	FlatMatrix<double> inv(nfree, nfree, lh);
+	inv.Rows(0, nfreef).Cols(0, nfreef) = A.Rows(vrows).Cols(vrows);
+	inv.Rows(0, nfreef).Cols(nfreef, nfree) = Trans(B.Cols(vrows));
+	inv.Rows(nfreef, nfree).Cols(0, nfreef) = B.Cols(vrows);
+	inv.Rows(nfreef, nfree).Cols(0, nfree) = 0;
 	CalcInverse(inv);
-	FlatMatrix<double> rhs (hi, BS * nced);
-	rhs = C.Rows(BS * nfef, H) - M.Rows(BS * nfef, H).Cols(0, BS * nfef) * P;
-	FlatMatrix<double> pblock (hi, BS * nced);
-	pblock = inv * rhs;
+
+	/** multiply mats **/
+	FlatMatrix<double> rhs(nfree, BS*nf_c, lh); rhs = 0;
+	rhs.Rows(0, nfreef) = -A.Rows(vrows).Cols(frows) * Pf;
+	rhs.Rows(nfreef, nfree).Cols(0, nfreef) = -B.Cols(frows) * Pf;
+	rhs.Rows(nfreef, nfree).Cols(nfreef, nfree) = Bc_stack;
+	FlatMatrix<double> Pv(nfree, BS*nf_c, lh); Pv = inv * rhs;
+	
+	/** fill sprol **/
+	for (auto ki : Range(nfv_f)) {
+	  auto fenr = fenrs[ki];
+	  auto ris = P.GetRowIndices(fenr);
+	  auto rvs = P.GetRowValues(fenr);
+	  for (auto j : Range(cfacets)) {
+	    ris[k] = cfacets[j];
+	    rvs[j] = Pv.Rows(ki*BS, (1+k)*BS).Cols(j*BS, (1+j)*BS);
+	  }
+	}
       }
     }
 

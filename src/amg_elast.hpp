@@ -1,175 +1,216 @@
 #ifdef ELASTICITY
-#ifndef FILE_AMGELAST
-#define FILE_AMGELAST
+
+#ifndef FILE_AMG_ELAST_HPP
+#define FILE_AMG_ELAST_HPP
+
+#include "amg_coarsen.hpp"
+#include "amg_discard.hpp"
+#include "amg_contract.hpp"
+#include "amg_factory.hpp"
+#include "amg_factory_nodal.hpp"
+#include "amg_factory_vertex.hpp"
+#include "amg_energy.hpp"
 
 namespace amg
 {
-  /**
-     Elasticity Preconditioner
 
-     The data we need to attach to the mesh is:
-        - per vertex: one double as l2-weight, Vec<3,double> for vertex postition
-	- per edge: dofpv x dofpv matrix
-   **/
+  /** Vertex Data **/
 
-  struct ElasticityVertexData
-  {
-    Vec<3,double> pos;
-    double wt;
-    ElasticityVertexData (double val) { wt = val; pos = val; }
-    ElasticityVertexData () : ElasticityVertexData (0) { ; }
-    ElasticityVertexData (Vec<3,double> &&_pos, double &&_wt) : pos(_pos), wt(_wt) { ; }
-    ElasticityVertexData (Vec<3,double> _pos, double _wt) : pos(_pos), wt(_wt) { ; }
-    // ElasticityVertexData (ElasticityVertexData && other) : pos(move(other.pos)), wt(move(other.wt)) { ; }
-    ElasticityVertexData (ElasticityVertexData && other) = default;
-    ElasticityVertexData (const ElasticityVertexData & other) = default;
-    INLINE void operator = (double x) { wt = x; pos = x; }; // for Cumulate
-    INLINE void operator = (const ElasticityVertexData & other) { wt = other.wt; pos = other.pos; }; // for Cumulate
-    INLINE void operator += (const ElasticityVertexData & other) { pos += other.pos; wt += other.wt; }; // for Cumulate
-    INLINE bool operator == (const ElasticityVertexData & other)
-    { return wt==other.wt && pos(0)==other.pos(0) && pos(1)==other.pos(1) && pos(2)==other.pos(2); } 
-  }; // struct ElasticityVertexData
-  INLINE std::ostream & operator<<(std::ostream &os, ElasticityVertexData& V)
-  { os << "[" << V.wt << " | " << V.pos << "]"; return os; }
-  INLINE bool is_zero (const ElasticityVertexData & m) { return is_zero(m.wt) && is_zero(m.pos); }
-
-
-  class AttachedEVD : public AttachedNodeData<NT_VERTEX, ElasticityVertexData, AttachedEVD>
+  template<int DIM>
+  class ElastVData
   {
   public:
-    using BASE = AttachedNodeData<NT_VERTEX, ElasticityVertexData, AttachedEVD>;
-    using BASE::map_data;
+    Vec<DIM, double> pos;
+    double wt;
+    ElastVData (double val) : pos(val), wt(val) { ; }
+    ElastVData () : ElastVData(0) { ; }
+    ElastVData (Vec<DIM,double> _pos, double _wt) : pos(_pos), wt(_wt) { ; }
+    ElastVData (Vec<DIM,double> && _pos, double && _wt) : pos(_pos), wt(_wt) { ; }
+    ElastVData (ElastVData<DIM> && other) = default;
+    ElastVData (const ElastVData<DIM> & other) = default;
+    INLINE void operator = (double x) { pos = x; wt = x; }
+    INLINE void operator = (const ElastVData<DIM> & other) { pos = other.pos; wt = other.wt; }
+    INLINE void operator += (const ElastVData<DIM> & other) { pos += other.pos; wt += other.wt; }
+    INLINE bool operator == (const ElastVData<DIM> & other)
+    {
+      if constexpr (DIM == 2)
+	{ return ( wt == other.wt ) && ( pos(0) == other.pos(0) ) && ( pos(1) == other.pos(1) ); }
+      else
+	{ return ( wt == other.wt ) && ( pos(0) == other.pos(0) ) && ( pos(1) == other.pos(1) ) && ( pos(2) == other.pos(2) ); }
+    }
+  }; // class ElastVData
 
-    AttachedEVD (Array<ElasticityVertexData> && _data, PARALLEL_STATUS stat)
+  template<int DIM> INLINE std::ostream & operator << (std::ostream & os, ElastVData<DIM> & V)
+  { os << "[" << V.wt << " | " << V.pos << "]"; return os; }
+
+  template<int DIM> INLINE bool is_zero (const ElastVData<DIM> & m) { return is_zero(m.wt) && is_zero(m.pos); }
+
+
+  template<int DIM>
+  class AttachedEVD : public AttachedNodeData<NT_VERTEX, ElastVData<DIM>, AttachedEVD<DIM>>
+  {
+  public:
+    using BASE = AttachedNodeData<NT_VERTEX, ElastVData<DIM>, AttachedEVD<DIM>>;
+    using BASE::map_data, BASE::Cumulate, BASE::mesh, BASE::data;
+
+    AttachedEVD (Array<ElastVData<DIM>> && _data, PARALLEL_STATUS stat)
       : BASE(move(_data), stat)
     { ; }
 
-    // templated because i cant static_cast basecoarsemap to elasticitymesh (dont have dim)
-    template<class TMESH> INLINE void map_data (const AgglomerateCoarseMap<TMESH> & agg_map, AttachedEVD & cevd) const;
-    template<class TMESH> INLINE void map_data (const CoarseMap<TMESH> & cmap, AttachedEVD & cevd) const
+    template<class TMESH> inline void map_data (const CoarseMap<TMESH> & cmap, AttachedEVD<DIM> & cevd) const
     {
+      /** ECOL coarsening -> set midpoints in edges **/
       static Timer t("AttachedEVD::map_data"); RegionTimer rt(t);
-      auto & cdata = cevd.data;
       Cumulate();
-      // cout << "(cumul) f-pos: " << endl;
-      // for (auto V : Range(data.Size())) cout << V << ": " << data[V].pos << endl;
-      // cout << endl;
-      cdata.SetSize(cmap.template GetMappedNN<NT_VERTEX>()); cdata = 0.0;
-      auto map = cmap.template GetMap<NT_VERTEX>();
-      // cout << "v_map: " << endl; prow2(map); cout << endl << endl;
-      Array<int> touched(map.Size()); touched = 0;
-      mesh->Apply<NT_EDGE>([&](const auto & e) { // set coarse data for all coll. vertices
-	  auto CV = map[e.v[0]];
-	  if ( (CV == -1) || (map[e.v[1]] != CV) ) return;
-	  touched[e.v[0]] = touched[e.v[1]] = 1;
-	  cdata[CV].pos = 0.5 * (data[e.v[0]].pos + data[e.v[1]].pos);
-	  cdata[CV].wt = data[e.v[0]].wt + data[e.v[1]].wt;
+      auto & cdata = cevd.data; cdata.SetSize(cmap.template GetMappedNN<NT_VERTEX>()); cdata = 0;
+      auto vmap = cmap.template GetMap<NT_VERTEX>();
+      Array<int> touched(vmap.Size()); touched = 0;
+      mesh->template Apply<NT_EDGE>([&](const auto & e) { // set coarse data for all coll. vertices
+	  auto CV = vmap[e.v[0]];
+	  if ( (CV != -1) || (vmap[e.v[1]] == CV) ) {
+	    touched[e.v[0]] = touched[e.v[1]] = 1;
+	    cdata[CV].pos = 0.5 * (data[e.v[0]].pos + data[e.v[1]].pos);
+	    cdata[CV].wt = data[e.v[0]].wt + data[e.v[1]].wt;
+	  }
 	}, true); // if stat is CUMULATED, only master of collapsed edge needs to set wt 
-      mesh->AllreduceNodalData<NT_VERTEX>(touched, [](auto & in) { return move(sum_table(in)); } , false);
-      mesh->Apply<NT_VERTEX>([&](auto v) { // set coarse data for all "single" vertices
-	  auto CV = map[v];
+      mesh->template AllreduceNodalData<NT_VERTEX>(touched, [](auto & in) { return move(sum_table(in)); } , false);
+      mesh->template Apply<NT_VERTEX>([&](auto v) { // set coarse data for all "single" vertices
+	  auto CV = vmap[v];
 	  if ( (CV != -1) && (touched[v] == 0) )
 	    { cdata[CV] = data[v]; }
 	}, true);
-      // cout << "(distr) c-pos: " << endl;
-      // for (auto CV : Range(cmap.template GetMappedNN<NT_VERTEX>())) cout << CV << ": " << cdata[CV] << endl;
-      // cout << endl;
       cevd.SetParallelStatus(DISTRIBUTED);
     } // AttachedEVD::map_data
+
+    template<class TMESH> INLINE void map_data (const AgglomerateCoarseMap<TMESH> & cmap, AttachedEVD<DIM> & cevd) const
+    {
+      /** AGG coarsening -> set midpoints in agg centers **/
+      static Timer t("AttachedEVD::map_data"); RegionTimer rt(t);
+      Cumulate();
+      auto & cdata = cevd.data; cdata.SetSize(cmap.template GetMappedNN<NT_VERTEX>()); cdata = 0;
+      auto vmap = cmap.template GetMap<NT_VERTEX>();
+      const auto & M = *mesh;
+      const auto & CM = static_cast<BlockTM&>(*cmap.GetMappedMesh()); // okay, kinda hacky, the coarse mesh already exists, but only as BlockTM i think
+      const auto & ctrs = *cmap.GetAggCenter();
+      M.template ApplyEQ<NT_VERTEX> ([&](auto eqc, auto v) LAMBDA_INLINE {
+	  auto cv = vmap[v];
+	  if (cv != -1) {
+	    if (ctrs.Test(v))
+	      { cdata[cv].pos = data[v].pos; }
+	    cdata[cv].wt += data[v].wt;
+	  }
+	}, true);
+      cevd.SetParallelStatus(DISTRIBUTED);
+    } // AttachedEVD::map_data
+
   }; // class AttachedEVD
 
-  template<int D> struct EED_TRAIT { typedef void type; };
+  /** End Vertex Data **/
+
+
+  /** Edge Data **/
+
+  template<int DIM> struct EED_TRAIT { typedef void type; };
   template<> struct EED_TRAIT<2> { typedef Mat<3, 3, double> type; };
   template<> struct EED_TRAIT<3> { typedef Mat<6, 6, double> type; };
-  template<int D> using ElasticityEdgeData = typename EED_TRAIT<D>::type;
-  
-  template<int D>
-  class AttachedEED : public AttachedNodeData<NT_EDGE, ElasticityEdgeData<D>, AttachedEED<D>>
+  template<int DIM> using ElasticityEdgeData = typename EED_TRAIT<DIM>::type;
+
+  template<int DIM>
+  class AttachedEED : public AttachedNodeData<NT_EDGE, ElasticityEdgeData<DIM>, AttachedEED<DIM>>
   {
   public:
-    using BASE = AttachedNodeData<NT_EDGE, ElasticityEdgeData<D>, AttachedEED<D>>;
-    using BASE::map_data;
+    using BASE = AttachedNodeData<NT_EDGE, ElasticityEdgeData<DIM>, AttachedEED<DIM>>;
+    using BASE::map_data, BASE::Cumulate, BASE::mesh;
+    static constexpr int BS = mat_traits<ElasticityEdgeData<DIM>>::HEIGHT;
 
-    AttachedEED (Array<ElasticityEdgeData<D>> && _data, PARALLEL_STATUS stat)
+    AttachedEED (Array<ElasticityEdgeData<DIM>> && _data, PARALLEL_STATUS stat)
       : BASE(move(_data), stat)
     { ; }
 
-    void map_data (const BaseCoarseMap & cmap, AttachedEED<D> & ceed) const;
+    void map_data (const BaseCoarseMap & cmap, AttachedEED<DIM> & ceed) const; // in impl header beacust I static_cast to elasticity-mesh
+
   }; // class AttachedEED
 
-
-  template<int D>
-  using ElasticityMesh = BlockAlgMesh<AttachedEVD, AttachedEED<D>>;
+  /** End Edge Data **/
 
 
-  template<int D> struct ELTM_TRAIT { typedef void type; };
-  template<> struct ELTM_TRAIT<2> { typedef Mat<3,3,double> type; };
-  template<> struct ELTM_TRAIT<3> { typedef Mat<6,6,double> type; };
-  template<int D> using ELTM = typename ELTM_TRAIT<D>::type;
+  /** Factory **/
 
-  template<int D>
-  class ElasticityAMGFactory : public VertexBasedAMGFactory<ElasticityAMGFactory<D>, ElasticityMesh<D>, ELTM<D>>
+  template<int DIM> using ElasticityMesh = BlockAlgMesh<AttachedEVD<DIM>, AttachedEED<DIM>>;
+
+
+  template<int ADIM>
+  class ElasticityAMGFactory : public VertexAMGFactory<EpsEpsEnergy<ADIM, ElastVData<ADIM>, ElasticityEdgeData<ADIM>>,
+						       ElasticityMesh<ADIM>,
+						       mat_traits<ElasticityEdgeData<ADIM>>::HEIGHT>
   {
   public:
-    constexpr static int DIM = D;
-    using TMESH = ElasticityMesh<D>;
-    using TM = ELTM<D>;
-    using T_V_DATA = ElasticityVertexData;
-    using TEDATA = ElasticityEdgeData<D>;
+    static constexpr int DIM = ADIM;
+    using ENERGY = EpsEpsEnergy<ADIM, ElastVData<ADIM>, ElasticityEdgeData<ADIM>>;
+    using TMESH = ElasticityMesh<DIM>;
+    static constexpr int BS = ENERGY::DPV;
+    using BASE = VertexAMGFactory<EpsEpsEnergy<ADIM, ElastVData<ADIM>, ElasticityEdgeData<ADIM>>,
+				  ElasticityMesh<ADIM>, mat_traits<ElasticityEdgeData<ADIM>>::HEIGHT>;
 
-    using BASE = VertexBasedAMGFactory<ElasticityAMGFactory<D>, ElasticityMesh<D>, ELTM<D>>;
-    struct Options;
-
-    ElasticityAMGFactory (shared_ptr<TMESH> mesh, shared_ptr<Options> options, shared_ptr<BaseDOFMapStep> _embed_step = nullptr);
-
-    static void SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix = "ngs_amg_");
-
-    virtual void SetCoarseningOptions (VWCoarseningData::Options & opts, shared_ptr<TMESH> mesh) const override;
-
-    template<NODE_TYPE NT> INLINE double GetWeight (const TMESH & mesh, const AMG_Node<NT> & node) const;
-
-    INLINE void CalcPWPBlock (const TMESH & fmesh, const TMESH & cmesh,
-			      AMG_Node<NT_VERTEX> v, AMG_Node<NT_VERTEX> cv, TM & mat) const;
-
-    INLINE void CalcRMBlock (const TMESH & fmesh, const AMG_Node<NT_EDGE> & edge, FlatMatrix<TM> mat) const;
-
-    static INLINE void CalcQ  (const Vec<3> & t, TM & Q);
-    static INLINE void ModQ  (const Vec<3> & t, TM & Q);
-    static INLINE void CalcQij (const T_V_DATA & di, const T_V_DATA & dj, TM & Qij);
-    static INLINE void ModQij (const T_V_DATA & di, const T_V_DATA & dj, TM & Qij);
-    static INLINE void CalcQHh (const T_V_DATA & dH, const T_V_DATA & dh, TM & QHh);
-    static INLINE void ModQHh (const T_V_DATA & dH, const T_V_DATA & dh, TM & QHh);
-    static INLINE void CalcQs  (const T_V_DATA & di, const T_V_DATA & dj, TM & Qij, TM & Qji);
-    static INLINE void ModQs  (const T_V_DATA & di, const T_V_DATA & dj, TM & Qij, TM & Qji);
-    static INLINE T_V_DATA CalcMPData (const T_V_DATA & da, const T_V_DATA & db);
+    class Options : public BASE::Options
+    {
+    public:
+      bool with_rots = false;
+    }; // class ElasticityAMGFactory::Options
 
   protected:
-    Array<double> CalcECWSimple (shared_ptr<TMESH> mesh) const;
-    Array<double> CalcECWRobust (shared_ptr<TMESH> mesh) const;
+    using BASE::options;
+
+  public:
+    ElasticityAMGFactory (shared_ptr<Options> _opts)
+      : BASE(_opts)
+    { ; }
   }; // class ElasticityAMGFactory
 
+  /** END Factory **/
 
 } // namespace amg
 
 
 namespace ngcore
 {
-  template<> struct MPI_typetrait<amg::ElasticityVertexData> {
+
+  /** MPI extensions **/
+
+  template<> struct MPI_typetrait<amg::ElastVData<2>> {
     static MPI_Datatype MPIType () {
       static MPI_Datatype MPI_T = 0;
-      if(!MPI_T)
+      if (!MPI_T)
   	{
-  	  int block_len[2] = {1,1};
-  	  MPI_Aint displs[2] = {0, sizeof(ngbla::Vec<3,double>)};
-	  MPI_Datatype types[2] = {GetMPIType<ngbla::Vec<3,double>>(), GetMPIType<double>()};
+  	  int block_len[2] = { 1, 1 };
+  	  MPI_Aint displs[2] = { 0, sizeof(ngbla::Vec<2,double>) };
+	  MPI_Datatype types[2] = { GetMPIType<ngbla::Vec<2,double>>(), GetMPIType<double>() };
   	  MPI_Type_create_struct(2, block_len, displs, types, &MPI_T);
   	  MPI_Type_commit ( &MPI_T );
 	}
       return MPI_T;
     }
   };
-} // namespace ngcore
 
+
+  template<> struct MPI_typetrait<amg::ElastVData<3>> {
+    static MPI_Datatype MPIType () {
+      static MPI_Datatype MPI_T = 0;
+      if (!MPI_T)
+  	{
+  	  int block_len[2] = { 1, 1 };
+  	  MPI_Aint displs[2] = { 0, sizeof(ngbla::Vec<3,double>) };
+	  MPI_Datatype types[2] = { GetMPIType<ngbla::Vec<3,double>>(), GetMPIType<double>() };
+  	  MPI_Type_create_struct(2, block_len, displs, types, &MPI_T);
+  	  MPI_Type_commit ( &MPI_T );
+	}
+      return MPI_T;
+    }
+  };
+
+  /** END MPI extensions **/
+
+}; // namespace ngcore
 
 #endif
 #endif

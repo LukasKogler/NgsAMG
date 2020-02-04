@@ -287,9 +287,9 @@ namespace amg
 #include "amg_h1.hpp"
 #include "amg_h1_impl.hpp"
 
-namespace amg
-{
-  template class VDiscardMap<H1Mesh>;
-} // namespace amg
+#include "amg_elast.hpp"
+#include "amg_elast_impl.hpp"
+
+#include "amg_tcs.hpp"
 
 #endif

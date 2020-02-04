@@ -1068,9 +1068,12 @@ namespace amg
 } // namespace amg
 
 
-// need h1 headers for data mapping
+// need h1/elast headers for data mapping
 #include "amg_h1.hpp"
 #include "amg_h1_impl.hpp"
+
+#include "amg_elast.hpp"
+#include "amg_elast_impl.hpp"
 
 #include "amg_tcs.hpp"
 

@@ -122,36 +122,42 @@ namespace amg
 #ifdef FILE_AMGCRS
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGCRS_CPP)
 
-#ifdef FILE_AMGH1_HPP
   EXTERN template class SeqVWC<FlatTM>;
+
+#ifdef FILE_AMGH1_HPP
   EXTERN template class BlockVWC<H1Mesh>;
   EXTERN template class HierarchicVWC<H1Mesh>;
   EXTERN template class CoarseMap<H1Mesh>;
 #endif //  FILE_AMGH1_HPP
 
-#ifdef ELASTICITY
+#if defined(ELASTICITY) && defined(FILE_AMG_ELAST_HPP)
   EXTERN template class BlockVWC<ElasticityMesh<2>>;
   EXTERN template class HierarchicVWC<ElasticityMesh<2>>;
   EXTERN template class CoarseMap<ElasticityMesh<2>>;
   EXTERN template class BlockVWC<ElasticityMesh<3>>;
   EXTERN template class HierarchicVWC<ElasticityMesh<3>>;
   EXTERN template class CoarseMap<ElasticityMesh<3>>;
-#endif
-#endif
+#endif // ELASTICITY && FILE_AMG_ELAST_HPP
+
+#endif // defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGCRS_CPP)
 #endif // FILE_AMGCRS
 
 #ifdef FILE_AMGCRS2_HPP
-#if defined(AMG_EXTERN_TEMPLATES)
+#ifdef AMG_EXTERN_TEMPLATES
 #ifdef FILE_AMGH1_HPP
   EXTERN template class Agglomerator<H1Energy<1, double, double>, H1Mesh, H1Energy<1, double, double>::NEED_ROBUST>;
   EXTERN template class Agglomerator<H1Energy<2, double, double>, H1Mesh, H1Energy<2, double, double>::NEED_ROBUST>;
   EXTERN template class Agglomerator<H1Energy<3, double, double>, H1Mesh, H1Energy<3, double, double>::NEED_ROBUST>;
 #endif // FILE_AMGH1_HPP
-#ifdef ELASTICITY
-  EXTERN template class Agglomerator<ElasticityAMGFactory<2>>;
-  EXTERN template class Agglomerator<ElasticityAMGFactory<3>>;
-#endif
-#endif
+
+#define InstAgg(FCLASS) \
+  EXTERN template class Agglomerator<FCLASS::ENERGY, FCLASS::TMESH, FCLASS::ENERGY::NEED_ROBUST>;
+
+#if defined(ELASTICITY) && defined(FILE_AMG_ELAST_HPP)
+  InstAgg(ElasticityAMGFactory<2>);
+  InstAgg(ElasticityAMGFactory<3>);
+#endif // defined(ELASTICITY) && defined(FILE_AMG_ELAST_HPP)
+#endif // AMG_EXTERN_TEMPLATES
 #endif // FILE_AMGCRS2_HPP
 
 #ifdef FILE_AMGCTR
@@ -159,14 +165,17 @@ namespace amg
   EXTERN template class CtrMap<double>;
   EXTERN template class CtrMap<Vec<2,double>>;
   EXTERN template class CtrMap<Vec<3,double>>;
+#ifdef ELASTICITY
+  EXTERN template class CtrMap<Vec<6,double>>;
+#endif // ELASTICITY
+
 #ifdef FILE_AMGH1_HPP
   EXTERN template class GridContractMap<H1Mesh>;
 #endif // FILE_AMGH1_HPP
-#ifdef ELASTICITY
+#if defined(ELASTICITY) && defined(FILE_AMG_ELAST_HPP)
   EXTERN template class GridContractMap<ElasticityMesh<2>>;
   EXTERN template class GridContractMap<ElasticityMesh<3>>;
-  EXTERN template class CtrMap<Vec<6,double>>;
-#endif // ELASTICITY
+#endif // defined(ELASTICITY) && defined(FILE_AMG_ELAST_HPP)
 #endif
 #endif // FILE_AMGCTR
 
@@ -175,19 +184,20 @@ namespace amg
 #ifdef FILE_AMGH1_HPP
   EXTERN template class VDiscardMap<H1Mesh>;
 #endif // FILE_AMGH1_HPP
-#ifdef ELASTICITY
+#if defined(ELASTICITY) && defined(FILE_AMG_ELAST_HPP)
   EXTERN template class VDiscardMap<ElasticityMesh<2>>;
   EXTERN template class VDiscardMap<ElasticityMesh<3>>;
-#endif
+#endif // defined(ELASTICITY) && defined(FILE_AMG_ELAST_HPP)
 #endif
 #endif // FILE_AMG_DISCARD_HPP
 
-#ifdef FILE_AMGPC_HPP
-#if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGH1_CPP)
-  EXTERN template class EmbedVAMG<H1AMGFactory>;
-  EXTERN template class EmbedWithElmats<H1AMGFactory, double, double>;
-#endif
-#endif //  FILE_AMGPC_HPP
+// what was this for??
+// #ifdef FILE_AMGH1_HPP
+// #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGH1_CPP)
+//   EXTERN template class EmbedVAMG<H1AMGFactory>;
+//   EXTERN template class EmbedWithElmats<H1AMGFactory, double, double>;
+// #endif
+// #endif //  FILE_AMGPC_HPP
 
 #ifdef FILE_AMG_MAP
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGMAP_CPP)
@@ -209,20 +219,21 @@ namespace amg
 #endif
 #endif //  FILE_AMG_MAP
 
-#if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGELAST_CPP)
-#ifdef ELASTICITY
-  //#ifndef FILE_AMGELAST_CPP
-  EXTERN template class ElasticityAMGFactory<2>;
-  EXTERN template class ElasticityAMGFactory<3>;
-  //#endif
-  EXTERN template class EmbedVAMG<ElasticityAMGFactory<2>>;
-  EXTERN template class EmbedVAMG<ElasticityAMGFactory<3>>;
-  // EXTERN template class EmbedWithElmats<ElasticityAMGFactory<2>, double, ElasticityEdgeData<2>>;
-  // EXTERN template class EmbedWithElmats<ElasticityAMGFactory<3>, double, ElasticityEdgeData<3>>;
-  EXTERN template class EmbedWithElmats<ElasticityAMGFactory<2>, double, double>;
-  EXTERN template class EmbedWithElmats<ElasticityAMGFactory<3>, double, double>;
-#endif
-#endif
+  // what was this for??
+// #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGELAST_CPP)
+// #ifdef ELASTICITY
+//   //#ifndef FILE_AMGELAST_CPP
+//   EXTERN template class ElasticityAMGFactory<2>;
+//   EXTERN template class ElasticityAMGFactory<3>;
+//   //#endif
+//   EXTERN template class EmbedVAMG<ElasticityAMGFactory<2>>;
+//   EXTERN template class EmbedVAMG<ElasticityAMGFactory<3>>;
+//   // EXTERN template class EmbedWithElmats<ElasticityAMGFactory<2>, double, ElasticityEdgeData<2>>;
+//   // EXTERN template class EmbedWithElmats<ElasticityAMGFactory<3>, double, ElasticityEdgeData<3>>;
+//   EXTERN template class EmbedWithElmats<ElasticityAMGFactory<2>, double, double>;
+//   EXTERN template class EmbedWithElmats<ElasticityAMGFactory<3>, double, double>;
+// #endif
+// #endif
 
 
 #ifdef FILE_AMG_SPMSTUFF_HPP

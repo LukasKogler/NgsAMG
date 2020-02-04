@@ -55,7 +55,7 @@ namespace amg
 } // namespace amg
 
 
-#ifdef FILE_AMGPC_HPP
+#ifdef FILE_AMGH1_CPP
 
 namespace amg
 {

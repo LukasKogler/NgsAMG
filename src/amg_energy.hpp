@@ -32,23 +32,26 @@ namespace amg
 
 #ifdef ELASTICITY
 
-  
-  template<int DIM, class T_V_DATA, class T_E_DATA>
+  template<int ADIM, class T_V_DATA, class T_E_DATA>
   class EpsEpsEnergy
   {
   public:
     using TVD = T_V_DATA;
     using TED = T_E_DATA;
     static constexpr int DIM = ADIM;
+#ifdef ELASTICITY_ROBUST_ECW
     static constexpr bool NEED_ROBUST = true;
+#else
+    static constexpr bool NEED_ROBUST = false;
+#endif
     static constexpr int dofpv () { return (DIM == 2) ? 3 : 6; }
     static constexpr int disppv () { return DIM; }
     static constexpr int rotpv () { return (DIM == 2) ? 1 : 3; }
     // static constexpr int DPV () { return (DIM == 2) ? 3 : 6; }
-    static constexpr int DPV = dofpv() { return (DIM == 2) ? 3 : 6; }
-    typedef typename Mat<DPV(DIM), DPV(DIM), double> TM;
+    static constexpr int DPV = dofpv();
+    typedef Mat<DPV, DPV, double> TM;
 
-    static INLINE double GetApproxWeight (const TED & ed) { return calc_trace(ed) / DPV(DIM); }
+    static INLINE double GetApproxWeight (const TED & ed) { return calc_trace(ed) / DPV; }
 
     static INLINE void CalcQ  (const Vec<DIM> & t, TM & Q);
     static INLINE void ModQ  (const Vec<DIM> & t, TM & Q);

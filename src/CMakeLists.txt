@@ -8,10 +8,11 @@ add_ngsolve_python_module(ngs_amg SHARED
   eqchierarchy.cpp amg_mesh.cpp amg_coarsen.cpp
   amg_factory.cpp python_amg.cpp amg_pc.cpp
   amg_h1_dim1.cpp amg_h1_dim2.cpp amg_h1_dim3.cpp
+  amg_elast_2d.cpp amg_elast_3d.cpp
   amg_spmstuff.cpp amg_map.cpp amg_smoother.cpp
-  amg_matrix.cpp amg_contract.cpp amg_elast.cpp
+  amg_matrix.cpp amg_contract.cpp
   boomer.cpp amg_smoother2.cpp amg_smoother3.cpp
-  amg_discard.cpp amg_mcs_3d.cpp amg_blocksmoother.cpp)
+  amg_discard.cpp amg_blocksmoother.cpp)
 
 include_directories(${MPI_CXX_INCLUDE_DIRS})
 
