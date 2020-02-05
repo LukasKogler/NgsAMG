@@ -78,6 +78,8 @@ namespace amg
 						       shared_ptr<EQCHierarchy> eqc_h, Table<int> && blocks);
     virtual Table<int> GetGSBlocks (const BaseAMGFactory::AMGLevel & amg_level);
 
+    virtual void RegularizeMatrix (shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs> & pardofs) const;
+
   }; // BaseAMGPC
 
 
@@ -118,6 +120,7 @@ namespace amg
     bool sync = false;                   // synchronize via MPI-Barrier in places
     bool do_test = false;                // perform PC-test for amg_mat
     bool smooth_lo_only = false;         // smooth only on low order part -> AMG-PC is for the LO part only
+    bool regularize_cmats = false;       // do we need to regularize coarse level matrices ?
 
   public:
 

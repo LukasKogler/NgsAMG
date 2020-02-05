@@ -165,6 +165,7 @@ namespace amg
     ElasticityAMGFactory (shared_ptr<Options> _opts)
       : BASE(_opts)
     { ; }
+
   }; // class ElasticityAMGFactory
 
   /** END Factory **/

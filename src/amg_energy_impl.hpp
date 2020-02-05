@@ -84,7 +84,7 @@ namespace amg
   INLINE void EpsEpsEnergy<DIM, TVD, TED> :: CalcQ  (const Vec<DIM> & t, TM & Q)
   {
     Q = 0;
-    Iterate<DIM>([&] (auto i) LAMBDA_INLINE { Q(i.value, i.value) = 1.0; } );
+    Iterate<DPV>([&] (auto i) LAMBDA_INLINE { Q(i.value, i.value) = 1.0; } );
     if constexpr(DIM == 2) {
 	Q(0,2) = -t(1);
 	Q(1,2) =  t(0);

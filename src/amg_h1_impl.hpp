@@ -133,6 +133,13 @@ namespace amg {
   
   
   template<class FCC>
+  void VertexAMGPC<FCC> :: RegularizeMatrix (shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs> & pardofs) const
+  {
+    ;
+  } // VertexAMGPC<FCC> :: RegularizeMatrix
+
+
+  template<class FCC>
   void VertexAMGPC<FCC> :: SetDefaultOptions (BaseAMGPC::Options& base_O)
   {
     auto & O(static_cast<Options&>(base_O));

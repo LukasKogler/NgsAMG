@@ -77,6 +77,7 @@ namespace amg
 
     virtual Table<int> GetGSBlocks (const BaseAMGFactory::AMGLevel & amg_level) override;
 
+    virtual void RegularizeMatrix (shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs> & pardofs) const;
   }; // class VertexAMGPC
 
 
@@ -97,8 +98,8 @@ namespace amg
     using BASE::BTM_Mesh, BASE::BTM_Alg;
     virtual shared_ptr<BlockTM> BTM_Elmat (shared_ptr<EQCHierarchy> eqc_h);
 
-    void AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
-			   ElementId ei, LocalHeap & lh) override;
+    virtual void AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
+				   ElementId ei, LocalHeap & lh) override;
 
   protected:
     using BASE::options;

@@ -297,13 +297,13 @@ namespace amg
       }
     }
 
-    //cout << " (unsorted) d2v_array: " << endl; prow2(d2v_array); cout << endl << endl;
-    //if (use_v2d_tab) {
+    // cout << " (unsorted) d2v_array: " << endl; prow2(d2v_array); cout << endl << endl;
+    // if (use_v2d_tab) {
     //  cout << " (unsorted) v2d_table: " << endl << v2d_table << endl << endl;
-    //}
-    //else {
+    // }
+    // else {
     //  cout << " (unsorted) v2d_array: " << endl; prow2(v2d_array); cout << endl << endl;
-    //}
+    // }
 
   } // VertexAMGPC::SetUpMaps
 

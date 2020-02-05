@@ -105,6 +105,7 @@ namespace amg
     /** Coarsening Algorithm **/
     O.crs_alg = Options::CRS_ALG::AGG;
     O.ecw_geom = false;
+    O.ecw_robust = false;
     O.n_levels_d2_agg = 1;
     O.agg_neib_boost = false; // might be worth it
 
@@ -120,7 +121,7 @@ namespace amg
     O.disc_max_bs = 1; // TODO: make this work
 
     /** Level-control **/
-    O.enable_multistep = true;
+    O.enable_multistep = false;
     O.use_static_crs = true;
     O.first_aaf = (FCC::DIM == 3) ? 0.025 : 0.05;
     O.aaf = 1/pow(2, FCC::DIM);
@@ -178,6 +179,8 @@ namespace amg
 	{ return Array<size_t>({1}); }
     };
     O.block_s = check_space(bfa->GetFESpace());
+
+    O.regularize_cmats = !O.with_rots; // without rotations on finest level, we can get singular coarse mats !
 
   } // VertexAMGPC::SetDefaultOptions
 
@@ -405,6 +408,62 @@ namespace amg
     }
 
   } // VertexAMGPC<FCC> :: BuildED
+
+#ifdef FILE_AMG_ELAST_2D_CPP
+  template<> void VertexAMGPC<ElasticityAMGFactory<2>> :: RegularizeMatrix (shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs> & pardofs) const
+  {
+    auto& A = static_cast<ElasticityAMGFactory<2>::TSPM_TM&>(*mat);
+    if ( (pardofs != nullptr) && (pardofs->GetDistantProcs().Size() != 0) ) {
+      Array<int> is_zero(A.Height());
+      for(auto k : Range(A.Height()))
+	{ is_zero[k] = (fabs(A(k,k)(2,2)) < 1e-10 ) ?  1 : 0; }
+      AllReduceDofData(is_zero, MPI_SUM, pardofs);
+      for(auto k : Range(A.Height()))
+	if ( (pardofs->IsMasterDof(k)) && (is_zero[k] != 0) )
+	  { A(k,k)(2,2) = 1; }
+    }
+    else {
+      for(auto k : Range(A.Height())) {
+	auto & diag_etr = A(k,k);
+	if (fabs(diag_etr(2,2)) < 1e-8)
+	  { diag_etr(2,2) = 1; }
+      }
+    }
+  } // ElasticityAMGFactory<DIM>::RegularizeMatrix
+#endif // FILE_AMG_ELAST_2D_CPP
+
+#ifdef FILE_AMG_ELAST_3D_CPP
+  template<> void VertexAMGPC<ElasticityAMGFactory<3>> :: RegularizeMatrix (shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs> & pardofs) const
+  {
+    auto& A = static_cast<ElasticityAMGFactory<3>::TSPM_TM&>(*mat);
+    typedef ElasticityAMGFactory<3>::TM TM;
+    if ( (pardofs != nullptr) && (pardofs->GetDistantProcs().Size() != 0) ) {
+      Array<TM> diags(A.Height());
+      for(auto k : Range(A.Height()))
+	{ diags[k] = A(k,k); }
+      MyAllReduceDofData(*pardofs, diags, [](auto & a, const auto & b) LAMBDA_INLINE { a+= b; });
+      for(auto k : Range(A.Height())) {
+	if (pardofs->IsMasterDof(k)) {
+	  auto & dg_etr = A(k,k);
+	  dg_etr = diags[k];
+	  // cout << " REG DIAG " << k << endl;
+	  // RegTM<3,3,6>(dg_etr); // might be buggy !?
+	  RegTM<0,6,6>(dg_etr);
+	  // cout << endl;
+	}
+	else
+	  { A(k,k) = 0; }
+      }
+    }
+    else {
+      for(auto k : Range(A.Height())) {
+	// cout << " REG DIAG " << k << endl;
+	// RegTM<3,3,6>(A(k,k));
+	RegTM<0,6,6>(A(k,k));
+      }
+    }
+  } // ElasticityAMGFactory<DIM>::RegularizeMatrix
+#endif // FILE_AMG_ELAST_3D_CPP
 
 } // namespace amg
 

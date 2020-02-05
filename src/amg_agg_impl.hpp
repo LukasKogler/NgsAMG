@@ -1167,7 +1167,7 @@ namespace amg
     SetIdentity(Esum); SetIdentity(addE); SetIdentity(Q2); SetIdentity(Aaa); SetIdentity(Abb);
     
     /** Add a contribution from a neighbour common to both vertices of an edge to the edge's matrix **/
-    auto add_neib_edge = [&](TVD h_data, const auto & amems, const auto & bmems, auto N, auto & mat) LAMBDA_INLINE {
+    auto add_neib_edge = [&](const TVD & h_data, const auto & amems, const auto & bmems, auto N, auto & mat) LAMBDA_INLINE {
       constexpr int N2 = mat_traits<TMU>::HEIGHT;
       auto rowis = econ.GetRowIndices(N);
       // cout << " add neib " << N << endl;

@@ -73,6 +73,7 @@ namespace amg
     set_bool(sync, "sync");
     set_bool(do_test, "do_test");
     set_bool(smooth_lo_only, "smooth_lo_only");
+    set_bool(regularize_cmats, "regularize_cmats");
 
   } // Options::SetFromFlags
 
@@ -275,6 +276,8 @@ namespace amg
     /** Smoothers **/
     Array<shared_ptr<BaseSmoother>> smoothers(amg_levels.Size() - 1);
     for (int k = 0; k < amg_levels.Size() - 1; k++) {
+      if ( (k > 0) && O.regularize_cmats) // Regularize coarse level matrices
+	{ RegularizeMatrix(amg_levels[k].mat, amg_levels[k].pardofs); }
       smoothers[k] = BuildSmoother(amg_levels[k]);
     }
 
@@ -295,7 +298,12 @@ namespace amg
 	auto comm = cpds->GetCommunicator();
 	auto cspm = c_lev.mat;
 
-	// cspm = RegularizeMatrix(cspm, cpds); // TODO!!
+	// auto cspmtm = dynamic_pointer_cast<SparseMatrixTM<Mat<3,3,double>>>(cspm);
+	// cout << " Coarse mat: " << endl;
+	// print_tm_spmat(cout, *cspmtm);
+
+	if (O.regularize_cmats)
+	  {  RegularizeMatrix(cspm, cpds); }
 
 	shared_ptr<BaseMatrix> coarse_inv = nullptr;
       
@@ -498,6 +506,12 @@ namespace amg
     return move(Table<int>());
   } // BaseAMGPC::GetGSBlocks
 
+
+  void BaseAMGPC :: RegularizeMatrix (shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs> & pardofs) const
+  {
+    ;
+  }
+
   /** END BaseAMGPC **/
 
 
@@ -566,30 +580,37 @@ namespace amg
 	  else
 	    { return fes->GetNDof(); }
 	};
-	std::function<void(shared_ptr<FESpace>, size_t)> set_lo_ranges =
-	  [&](auto afes, auto offset) -> void LAMBDA_INLINE {
+	std::function<void(shared_ptr<FESpace>, size_t, Array<INT<2,size_t>> &)> set_lo_ranges =
+	  [&](auto afes, auto offset, auto & ranges) -> void LAMBDA_INLINE {
 	  if (auto comp_fes = dynamic_pointer_cast<CompoundFESpace>(afes)) {
 	    size_t n_spaces = comp_fes->GetNSpaces();
 	    size_t sub_os = offset;
 	    for (auto space_nr : Range(n_spaces)) {
 	      auto space = (*comp_fes)[space_nr];
-	      set_lo_ranges(space, sub_os);
+	      set_lo_ranges(space, sub_os, ranges);
 	      sub_os += space->GetNDof();
 	    }
 	  }
 	  else if (auto reo_fes = dynamic_pointer_cast<ReorderedFESpace>(afes)) {
 	    // presumably, all vertex-DOFs are low order, and these are still the first ones, so this should be fine
 	    auto base_space = reo_fes->GetBaseSpace();
-	    set_lo_ranges(base_space, offset);
+	    Array<INT<2,size_t>> oranges; // original ranges - not taking reorder into account
+	    set_lo_ranges(base_space, 0, oranges);
+	    size_t orange_sum = 0;
+	    for (auto & r : oranges)
+	      { orange_sum += (r[1] - r[0]); }
+	    INT<2, size_t> r = { offset, offset + orange_sum };
+	    ranges.Append(r);
+	    // set_lo_ranges(base_space, offset, ranges);
 	  }
 	  else {
 	    INT<2, size_t> r = { offset, offset + get_lo_nd(afes) };
-	    ss_ranges.Append(r);
+	    ranges.Append(r);
 	    // ss_ranges.Append( { offset, offset + get_lo_nd(afes) } ); // for some reason does not work ??
 	  }
 	};
 	ss_ranges.SetSize(0);
-	set_lo_ranges(fes, 0);
+	set_lo_ranges(fes, 0, ss_ranges);
 	cout << IM(3) << "subset for coarsening defined by low-order range(s)" << endl;
 	for (auto r : ss_ranges)
 	  { cout << IM(5) << r[0] << " " << r[1] << endl; }

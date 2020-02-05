@@ -112,12 +112,12 @@ namespace amg
   	  { dinv[i] = TM(0.0); }
       });
 
-    // cout << " MY INVS(w. repl): " << endl;
-    // 			    for (auto k : Range(H)) {
-    // 			      if (!freedofs || freedofs->Test(k)) {
-    // 			      cout << k << ": " << endl;
-    // 						   print_tm(cout, dinv[k]); cout << endl;
-    // 			      } }
+    cout << " GSS3, MY INVS(w. repl): " << endl;
+    for (auto k : Range(H)) {
+      if (!freedofs || freedofs->Test(k)) {
+	cout << k << ": " << endl;
+	print_tm(cout, dinv[k]); cout << endl;
+      } }
   }
   
   template<class TM>
@@ -165,12 +165,12 @@ namespace amg
   	else
   	  { dinv[i] = TM(0.0); }
       });
-    // cout << " MY (noadd) INVS(w. repl): " << endl;
-    // 			    for (auto k : Range(H)) {
-    // 			      if (!freedofs || freedofs->Test(k)) {
-    // 			      cout << k << ": " << endl;
-    // 						   print_tm(cout, dinv[k]); cout << endl;
-    // 			      } }
+    cout << " MY (noadd) INVS(w. repl): " << endl;
+    for (auto k : Range(H)) {
+      if (!freedofs || freedofs->Test(k)) {
+	cout << k << ": " << endl;
+	print_tm(cout, dinv[k]); cout << endl;
+      } }
   }
 
   
@@ -352,11 +352,11 @@ namespace amg
       dinv[k] = repl_diag[xdofs[k]];
       CalcInverse(dinv[k]);
     }
-    // cout << " MY (gss4) INVS(w. repl): " << endl;
-    // for (auto k : Range(xdofs)) {
-    //   cout << xdofs[k] << ": " << endl;
-    //   print_tm(cout, dinv[k]); cout << endl;
-    // }
+    cout << " MY (gss4) INVS(w. repl): " << endl;
+    for (auto k : Range(xdofs)) {
+      cout << xdofs[k] << ": " << endl;
+      print_tm(cout, dinv[k]); cout << endl;
+    }
   } // GSS4(..)
 
 
@@ -1852,14 +1852,14 @@ namespace amg
 
     // split_ind = 0; // A->Height();
 
-    // if (subset) {
-      // cout << "rank " << A->GetParallelDofs()->GetCommunicator().Rank() << " numsets " << loc->NumSet() << " " << ex->NumSet() << " " << loc->Size() << " "
-      // 	   << double(loc->NumSet()) / loc->Size() << " " << double(ex->NumSet()) / ex->Size() << endl;
+    if (subset) {
+      cout << "rank " << A->GetParallelDofs()->GetCommunicator().Rank() << " numsets " << loc->NumSet() << " " << ex->NumSet() << " " << loc->Size() << " "
+       	   << double(loc->NumSet()) / loc->Size() << " " << double(ex->NumSet()) / ex->Size() << endl;
       // cout << "split and index " << split_ind << endl;
       // cout << "subset: " << endl << *subset << endl;
       // cout << "loc: " << endl << *loc << endl;
       // cout << "ex: " << endl << *ex << endl;
-    // }
+     }
     
     auto mod_diag = this->CalcModDiag(subset);
 

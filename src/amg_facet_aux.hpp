@@ -18,7 +18,7 @@ namespace amg
 
   /** An Auxiliary-space "Element", consisting of constants on facets **/
   template<int DIM>
-  class FacetH1FE : public FacetAuxFE<H1Energy<DIM>::DPV()>
+  class FacetH1FE : public FacetAuxFE<DIM>
   {
   public:
     FacetH1FE () : FacetAuxFE<H1Energy<DIM>::DPV()> () { ; }
