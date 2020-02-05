@@ -15,7 +15,7 @@ def do_test (rots, reo, ms=50):
         pc_opts["ngs_amg_dof_blocks"] = [6] if rots else [3]
     if rots:
         pc_opts["ngs_amg_rots"] = True
-    c = ngsolve.Preconditioner(a, "ngs_amg.elast3d", **pc_opts)
+    c = ngsolve.Preconditioner(a, "ngs_amg.elast_3d", **pc_opts)
     Solve(a, f, c, ms=ms)
     print('======= completed test 3d, lo, rots =', rots, ', reorder=', reo, '\n\n')
     sys.stdout.flush()

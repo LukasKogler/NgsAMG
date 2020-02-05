@@ -19,7 +19,7 @@ def do_test (rots, reo, ms=50):
         pc_opts["ngs_amg_dof_blocks"] = [3] if rots else [2]
     if rots:
         pc_opts["ngs_amg_rots"] = True
-    c = ngsolve.Preconditioner(a, "ngs_amg.elast2d", **pc_opts)
+    c = ngsolve.Preconditioner(a, "ngs_amg.elast_2d", **pc_opts)
     Solve(a, f, c, ms=ms)
     print('======= completed test 2d, lo, rots =', rots, ', reorder=', reo, '\n\n')
     sys.stdout.flush()

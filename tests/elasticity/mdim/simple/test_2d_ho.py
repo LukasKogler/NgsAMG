@@ -8,7 +8,7 @@ def do_ho_smooth(rots, ms, pc_opts):
     V, a, f = setup_elast(mesh, order = 4, rotations = rots, f_vol = ngsolve.CoefficientFunction( (0, -0.005) ), diri = "left")
     print('V ndof', V.ndof)
     pc_opts["ngs_amg_rots"]  =  rots
-    c  =  ngsolve.Preconditioner(a, "ngs_amg.elast2d", **pc_opts)
+    c  =  ngsolve.Preconditioner(a, "ngs_amg.elast_2d", **pc_opts)
     Solve(a, f, c, ms = ms)
 
 def test_2d_ho():

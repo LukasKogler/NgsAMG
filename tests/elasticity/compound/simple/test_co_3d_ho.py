@@ -62,9 +62,9 @@ def do_test (rots=False, nodalp2 = False, ms=100, order=3, reo = False, use_bddc
     print("pc_opts: ", pc_opts)
     sys.stdout.flush()
     if use_bddc:
-        c = ngsolve.Preconditioner(a, "bddc", coarsetype="ngs_amg.elast3d", **pc_opts)
+        c = ngsolve.Preconditioner(a, "bddc", coarsetype="ngs_amg.elast_3d", **pc_opts)
     else:
-        c = ngsolve.Preconditioner(a, "ngs_amg.elast3d", **pc_opts)
+        c = ngsolve.Preconditioner(a, "ngs_amg.elast_3d", **pc_opts)
     Solve(a, f, c, ms=ms)
     print('======= completed test 3d, ho, rots =', rots, ', reorder=', reo, ', nodalp2=', nodalp2, ', use_bddc=', use_bddc, ', order=', order, 'ho_wb=', ho_wb, "ms=", ms)
     sys.stdout.flush()

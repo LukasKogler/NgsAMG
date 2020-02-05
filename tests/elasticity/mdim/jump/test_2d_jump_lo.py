@@ -13,7 +13,7 @@ def do_test_2d_lo(jump, rots, ms=40):
                 "ngs_amg_print_log" : True }
     if rots:
         pc_opts["ngs_amg_rots"] = True
-    c = ngsolve.Preconditioner(a, "ngs_amg.elast2d", **pc_opts)
+    c = ngsolve.Preconditioner(a, "ngs_amg.elast_2d", **pc_opts)
     Solve(a, f, c, ms=50)
 
 def test_2d_lo_1():
