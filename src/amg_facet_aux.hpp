@@ -7,21 +7,13 @@
 namespace amg
 {
 
-  /** An auxiliary space "Element" with a fixed number of DOFs. **/
-  template<int N>
-  class FacetAuxFE
-  {
-  public:
-    static constexpr int ND () { return N; }
-  };
-
-
   /** An Auxiliary-space "Element", consisting of constants on facets **/
   template<int DIM>
-  class FacetH1FE : public FacetAuxFE<DIM>
+  class FacetH1FE : public
   {
   public:
     FacetH1FE () : FacetAuxFE<H1Energy<DIM>::DPV()> () { ; }
+    static constexpr int ND () { return DIM; }
     INLINE void CalcMappedShape (const BaseMappedIntegrationPoint & mip, 
 				 SliceMatrix<double> shapes) const
     {
@@ -51,6 +43,7 @@ namespace amg
       for (auto pnum : pnums)
 	{ mid += 1.0/pnums.Size() * ma->GetPoint<DIM>(pnum); }
     }
+    static constexpr int ND () { return (DIM == 3) ? 6 : 3; }
     INLINE void CalcMappedShape (const BaseMappedIntegrationPoint & mip, 
 				 SliceMatrix<double> shapes) const
     {
