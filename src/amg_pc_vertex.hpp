@@ -7,11 +7,13 @@ namespace amg
 {
 
   /** **/
-  template<class FACTORY>
+  template<class AFACTORY>
   class VertexAMGPC : public BaseAMGPC
   {
   public:
     class Options;
+
+    using FACTORY = AFACTORY;
 
     static constexpr int DIM = FACTORY::DIM;
 

@@ -1,6 +1,8 @@
 #ifndef FILE_AMG_HDIV_TEMPLATES_HPP
 #define FILE_AMG_HDIV_TEMPLATES_HPP
 
+#include <hdivhofe.hpp>
+
 namespace amg
 {
 

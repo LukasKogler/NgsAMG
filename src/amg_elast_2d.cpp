@@ -26,6 +26,7 @@ namespace amg
 {
   template class ElasticityAMGFactory<2>;
   template class VertexAMGPC<ElasticityAMGFactory<2>>;
+  template class ElmatVAMG<ElasticityAMGFactory<2>, double, double>;
 
   using PCC = ElmatVAMG<ElasticityAMGFactory<2>, double, double>;
 

@@ -1,23 +1,52 @@
+#if defined(AUX_AMG) && defined(ELASTICITY)
+
 #ifndef FILE_AMG_MCS_3D_CPP
 #define FILE_AMG_MCS_3D_CPP
 
 #ifdef ELASTICITY
 
 #include "amg.hpp"
+
+#include "amg_factory.hpp"
+#include "amg_factory_nodal.hpp"
+#include "amg_factory_nodal_impl.hpp"
+#include "amg_factory_vertex.hpp"
+#include "amg_factory_vertex_impl.hpp"
+
+#include "amg_blocksmoother.hpp"
+
+#include "amg_pc.hpp"
+#include "amg_energy.hpp"
+#include "amg_energy_impl.hpp"
+#include "amg_pc_vertex.hpp"
+#include "amg_pc_vertex_impl.hpp"
+
+#include "amg_elast.hpp"
+
+#define FILE_AMG_ELAST_CPP // uargh!
 #include "amg_elast_impl.hpp"
-#include "amg_factory_impl.hpp"
+#undef FILE_AMG_ELAST_CPP
+
 #include "amg_facet_aux.hpp"
 #include "amg_hdiv_templates.hpp"
 #include "amg_vfacet_templates.hpp"
 #include "amg_facet_aux_impl.hpp"
 
+
+#define AMG_EXTERN_TEMPLATES
+#include "amg_tcs.hpp"
+#undef AMG_EXTERN_TEMPLATES
+
 namespace amg
 {
+
+  extern template class ElmatVAMG<ElasticityAMGFactory<3>, double, double>;
 
   using MCS_AMG_PC = FacetWiseAuxiliarySpaceAMG<3,
 						HDivHighOrderFESpace,
 						VectorFacetFESpace,
-						EmbedWithElmats<ElasticityAMGFactory<3>, double, double> >;
+						FacetRBModeFE<3>,
+						ElmatVAMG<ElasticityAMGFactory<3>, double, double>>;
 
 
   template<> INLINE void MCS_AMG_PC :: Add_Vol (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
@@ -86,15 +115,20 @@ namespace amg
   // } // FacetWiseAuxiliarySpaceAMG::BuildFLS
 
 
-  RegisterPreconditioner<MCS_AMG_PC> register_mcs_3d("ngs_amg.mcs3d");
+  RegisterPreconditioner<MCS_AMG_PC> register_mcs_3d("ngs_amg.mcs_3d");
+
+} // namespace amg
 
 
-  void ExportMCS3D (py::module & m) {
-    ExportFacetAux<MCS_AMG_PC> (m, "mcs3d", "3d MCS elasticity auxiliary space AMG", [&](auto & x) { ; } );
+namespace amg
+{
+  void ExportMCS3d (py::module & m) {
+    ExportFacetAux<MCS_AMG_PC> (m, "mcs_3d", "3d MCS elasticity auxiliary space AMG", [&](auto & x) { ; } );
   }
-
 } // namespace amg
 
 #endif
 
 #endif
+
+#endif // defined(AUX_AMG) && defined(ELASTICITY)

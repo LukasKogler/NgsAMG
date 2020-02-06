@@ -7,6 +7,7 @@ option( ELASTICITY   "Enable Elasticity AMG" OFF)
 option( ENABLE_ELASTICITY_ROBUST_ECW   "Enable robust elasticity coarsening (compiles a long time!)" ON)
 option( USE_TAU   "Enable TAU instrumentation" OFF)
 option( COMPILE_TIMING   "time compiling" OFF)
+option( AUX_AMG   "Enable auxiliary space AMG preconditioners." ON)
 
 set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH}" "${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_modules")
 
@@ -46,7 +47,7 @@ if (ELASTICITY)
     message(STATUS "NGSolve was built with MAX_SYS_DIM = ${NGSOLVE_MAX_SYS_DIM}. OK, large enough.")
   endif ( "${NGSOLVE_MAX_SYS_DIM}" LESS "6")
 
-  message(STATUS "Turning N elasticity AMG")
+  message(STATUS "Turning ON elasticity AMG")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DELASTICITY")
 
   if (ENABLE_ELASTICITY_ROBUST_ECW)
@@ -59,6 +60,13 @@ if (ELASTICITY)
 else (ELASTICITY)
   message(STATUS "Turning OFF elasticity AMG")
 endif (ELASTICITY)
+
+if (AUX_AMG)
+  message(STATUS "Turning ON auxiliary space AMG.")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DAUX_AMG")
+else (AUX_AMG)
+  message(STATUS "Turning OFF auxiliary space AMG.")
+endif (AUX_AMG)
 
 
 if (USE_BOOMER)

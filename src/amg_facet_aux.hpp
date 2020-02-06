@@ -1,18 +1,19 @@
+#ifdef AUX_AMG
+
 #ifndef FILE_AMG_FACET_AUX_HPP
 #define FILE_AMG_FACET_AUX_HPP
-
-#include "amg.hpp"
-#include <hdivhofe.hpp> 
 
 namespace amg
 {
 
-  /** An Auxiliary-space "Element", consisting of constants on facets **/
+  /** Auxiliary Elements **/
+
+  /** An H1 Auxiliary Space "Element", consisting of constants as basis functions. **/
   template<int DIM>
-  class FacetH1FE : public
+  class FacetH1FE
   {
   public:
-    FacetH1FE () : FacetAuxFE<H1Energy<DIM>::DPV()> () { ; }
+    FacetH1FE () { ; }
     static constexpr int ND () { return DIM; }
     INLINE void CalcMappedShape (const BaseMappedIntegrationPoint & mip, 
 				 SliceMatrix<double> shapes) const
@@ -23,11 +24,10 @@ namespace amg
     }
   };
 
-
-  /** An Auxiliary-space "Element", consisting of rigid body modes as basis funcitons,
-      for every facet in the mesh. **/
+#ifdef ELASTICITY
+  /** An Elasticity Auxiliary Sspace "Element", consisting of rigid body modes as basis funcitons. **/
   template<int DIM>
-  class FacetRBModeFE : public FacetAuxFE<EpsEpsEnergy<DIM>::DPV()>
+  class FacetRBModeFE
   {
   protected:
     static constexpr int NDS = (DIM == 3) ? 3 : 2;
@@ -67,20 +67,26 @@ namespace amg
     }
   }; // class FacetRBModeFE
 
+  /** END Auxiliary Elements **/
+#endif
+
+
+  /** FacetWiseAuxiliarySpaceAMG **/
 
   /** An Auxiliary Space Elasticty AMG Preconditioner, obtained by facet-wise embedding of
       the rigid body-modes. **/
-  template<int DIM, class SPACEA, class SPACEB, class AMG_CLASS>
-  class FacetWiseAuxiliarySpaceAMG : public AMG_CLASS
+  template<int DIM, class ASPACEA, class ASPACEB, class AAUXFE, class AAMG_CLASS>
+  class FacetWiseAuxiliarySpaceAMG : public AAMG_CLASS
   {
   public:
 
-    static constexpr int DPV () {
-      if constexpr(DIM==3) { return 6; }
-      else { return 3; }
-    }
+    using SPACEA = ASPACEA;
+    using SPACEB = ASPACEB;
+    using AUXFE = AAUXFE;
+    using AMG_CLASS = AAMG_CLASS;
 
-    using TFACTORY = typename AMG_CLASS::TFACTORY;
+    static constexpr int DPV () { return AUXFE::ND(); }
+
     using TM = Mat<DPV(), DPV(), double>;
     using TV = Vec<DPV(), double>;
     // using TPMAT = stripped_spm<Mat<1,DPV(),double>>; // see amg_tcs.hpp
@@ -89,6 +95,8 @@ namespace amg
     using TAUX = SparseMatrix<Mat<DPV(), DPV(), double>>;
     using TAUX_TM = SparseMatrixTM<Mat<DPV(), DPV(), double>>;
     using TMESH = typename AMG_CLASS::TMESH;
+
+    class Options;
 
   protected:
 
@@ -99,6 +107,7 @@ namespace amg
       AMG_CLASS::factory, AMG_CLASS::free_verts;
     using AMG_CLASS::use_v2d_tab, AMG_CLASS::d2v_array, AMG_CLASS::v2d_array, AMG_CLASS::v2d_table, AMG_CLASS::node_sort;
     using AMG_CLASS::amg_mat;
+
     bool __hacky_test = true;                /** hacky **/
 
     /** Compound space stuff **/
@@ -113,10 +122,6 @@ namespace amg
     shared_ptr<SPACEB> spaceb;
 
     /** Auxiliary space stuff **/
-    bool aux_only = false;
-    bool elmat_sc = false;
-    bool el_blocks = true;
-    bool f_blocks_sc = false;
     shared_ptr<ParallelDofs> aux_pardofs;      /** ParallelDofs for auxiliary space **/
     // shared_ptr<BitArray> aux_free_verts;    /** dirichlet-vertices in aux space **/
     shared_ptr<TPMAT> pmat;                    /** aux-to compound-embedding **/
@@ -169,14 +174,16 @@ namespace amg
 
     /** Inherited from AMG_CLASS **/
     virtual void SetUpMaps () override;
-    virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (shared_ptr<TMESH> mesh) override;
-    virtual shared_ptr<BaseSmoother> BuildSmoother (shared_ptr<BaseSparseMatrix> m, shared_ptr<ParallelDofs> pds,
-						    shared_ptr<BitArray> freedofs = nullptr) const override;
+    virtual void BuildAMGMat () override;
+    virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (shared_ptr<TopologicMesh> mesh) override;
+    // virtual shared_ptr<BaseSmoother> BuildSmoother (const BaseAMGFactory::AMGLevel & amg_level) override;
+    virtual shared_ptr<BaseAMGPC::Options> NewOpts () override;
+    virtual void SetDefaultOptions (BaseAMGPC::Options& O) override;
+    virtual void ModifyOptions (BaseAMGPC::Options & O, const Flags & flags, string prefix = "ngs_amg_") override;
+
+    /** Additional stuff **/
     virtual shared_ptr<BaseSmoother> BuildFLS () const;
     virtual shared_ptr<BaseSmoother> BuildFLS2 () const;
-    virtual void SetDefaultOptions (typename AMG_CLASS::Options& O) override;
-    virtual void ModifyOptions (typename AMG_CLASS::Options & O, const Flags & flags, string prefix = "ngs_amg_") override;
-    virtual void BuildAMGMat () override;
     shared_ptr<EmbeddedAMGMatrix> GetEmbAMGMat () const;
 
   protected:
@@ -187,13 +194,6 @@ namespace amg
     void SetUpFacetMats ();
     void SetUpAuxParDofs ();
     void BuildPMat ();
-    // void SetUpAMG ();
-    // shared_ptr<TFACTORY::Options> SetAMGOptions (const Flags & flags);
-    // shared_ptr<TMESH> SetUpAMGMesh ();
-
-    /** Calc shape/dual shape for mip. Some spaces do not have dual-shapes, then call CalcMappedShape. **/
-    // template<class TELEM, class TMIP> INLINE void CSDS_A (const TELEM & fel, const TMIP & mip, FlatMatrix<double> s, FlatMatrix<double> sd);
-    // template<class TELEM, class TMIP> INLINE void CSDS_B (const TELEM & fel, const TMIP & mip, FlatMatrix<double> s, FlatMatrix<double> sd);
 
     /** Pick out low-order DOFs of node_id **/
     template<class TLAM> INLINE void ItLO_A (NodeId node_id, Array<int> & dnums, TLAM lam);
@@ -224,7 +224,35 @@ namespace amg
 
   }; // class FacetWiseAuxiliarySpaceAMG
 
+  /** END FacetWiseAuxiliarySpaceAMG **/
 
+
+  /** Options **/
+
+  class BaseFacetAMGOptions
+  {
+  public:
+    /** General **/
+    bool aux_only = false;            // Is this be a PC for the auxiliary space only
+
+    /** Element matrix **/
+    bool elmat_sc = false;            // Form schur-complements w.r.t aux-dofs on elmats
+
+    /** Finest level Smoother **/
+    // bool smooth_aux_l0 = false;    // TODO: If aux_only is false, also smooth finest level AUX space ??
+    bool el_blocks = true;            // Use element-blocks (default is facet-blocks) [not great with MPI]
+    bool f_blocks_sc = false;         // Use element-blocks with MPI facets removed by SC [GARBAGE!!]
+
+  public:
+    BaseFacetAMGOptions () { ; }    
+
+    virtual void SetFromFlags (const Flags & flags, string prefix);
+  }; // class BaseFacetAMGOptions
+
+  /** END Options **/
+
+
+  /** Really ugly stuff **/
 
   /** Space -> Element **/
   template<class SPACE, ELEMENT_TYPE ET> struct STRUCT_SPACE_EL { typedef void fe_type; };
@@ -266,6 +294,10 @@ namespace amg
     else { return NT_FACE; }
   }
 
+  /** END Really ugly stuff **/
+
 } // namespace amg
 
 #endif
+
+#endif // AUX_AMG

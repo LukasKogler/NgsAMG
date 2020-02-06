@@ -520,18 +520,14 @@ namespace amg
   void VertexAMGPCOptions :: SetFromFlags (shared_ptr<FESpace> fes, const Flags & flags, string prefix)
   {
 
-    auto set_enum_opt = [&] (auto & opt, string key, Array<string> vals, auto default_val) {
+    auto set_enum_opt = [&] (auto & opt, string key, Array<string> vals) {
       string val = flags.GetStringFlag(prefix + key, "");
-      bool found = false;
       for (auto k : Range(vals)) {
 	if (val == vals[k]) {
-	  found = true;
 	  opt = decltype(opt)(k);
 	  break;
 	}
       }
-      if (!found)
-	{ opt = default_val; }
     };
 
     auto ma = fes->GetMeshAccess();
@@ -539,7 +535,7 @@ namespace amg
 
     BaseAMGPC::Options::SetFromFlags(flags, prefix);
 
-    set_enum_opt(subset, "on_dofs", {"range", "select"}, RANGE_SUBSET);
+    set_enum_opt(subset, "on_dofs", {"range", "select"});
 
     switch (subset) {
     case (RANGE_SUBSET) : {
@@ -619,7 +615,7 @@ namespace amg
     }
     case (SELECTED_SUBSET) : {
       set_enum_opt(spec_ss, "subset", {"__DO_NOT_SET_THIS_FROM_FLAGS_PLEASE_I_DO_NOT_THINK_THAT_IS_A_GOOD_IDEA__",
-	    "free", "nodalp2"}, SPECSS_NONE);
+	    "free", "nodalp2"});
       cout << IM(3) << "subset for coarsening defined by bitarray" << endl;
       // NONE - set somewhere else. FREE - set in initlevel 
       if (spec_ss == SPECSS_NODALP2) {
@@ -692,9 +688,9 @@ namespace amg
     default: { throw Exception("Not implemented"); break; }
     }
 
-    set_enum_opt(topo, "edges", {"alg", "mesh", "elmat"}, ALG_TOPO);
-    set_enum_opt(v_pos, "vpos", {"vertex", "given"}, VERTEX_POS);
-    set_enum_opt(energy, "energy", {"triv", "alg", "elmat"}, ALG_ENERGY);
+    set_enum_opt(topo, "edges", { "alg", "mesh", "elmat" });
+    set_enum_opt(v_pos, "vpos", { "vertex", "given" } );
+    set_enum_opt(energy, "energy", { "triv", "alg", "elmat" });
 
   } // VertexAMGPCOptions::SetOptionsFromFlags
 
