@@ -69,6 +69,8 @@ namespace amg
     set_bool(sm_symm, "sm_symm");
     set_bool(sm_mpi_overlap, "sm_mpi_overlap");
     set_bool(sm_mpi_thread, "sm_mpi_thread");
+    set_bool(sm_shm, "sm_shm");
+    set_bool(sm_sl2, "sm_sl2");
 
     set_bool(sync, "sync");
     set_bool(do_test, "do_test");
@@ -209,7 +211,7 @@ namespace amg
 
   void BaseAMGPC :: SetDefaultOptions (Options& O)
   {
-    ;
+    O.sm_shm = !bfa->GetFESpace()->IsParallel();
   } // BaseAMGPC::SetDefaultOptions
 
 
@@ -469,7 +471,7 @@ namespace amg
       { throw Exception("BuildBGSSmoother needs eqc_h!"); }
 
     auto blocks = move(_blocks);
-    cout << " BGSS w. blocks " << blocks << endl;
+    // cout << " BGSS w. blocks " << blocks << endl;
 
     auto & O (*options);
     shared_ptr<BaseSmoother> smoother = nullptr;
@@ -489,7 +491,8 @@ namespace amg
 	 else {
 	   auto parmat = make_shared<ParallelMatrix>(spm, pardofs);
 	   auto bsm = make_shared<HybridBS<typename strip_mat<Mat<BS, BS, double>>::type>> (parmat, eqc_h, move(blocks),
-											    O.sm_mpi_overlap, O.sm_mpi_thread);
+											    O.sm_mpi_overlap, O.sm_mpi_thread,
+											    O.sm_shm, O.sm_sl2);
 	   bsm->Finalize();
 	   bsm->SetSymmetric(O.sm_symm);
 	   smoother = bsm;

@@ -27,13 +27,23 @@ namespace amg
     Array<FlatMatrix<TM>> dinv; /** diag inverse mats **/
     Table<int> block_colors;
     size_t maxbs;
-    // Array<SharedLoop2> loops;
+
+    Array<SharedLoop2> loops;
+    Array<Partitioning> color_balance;
+
+    bool parallel = true;    // use shared memory parallelization
+    bool use_sl2 = false;    // use SharedLoop2
+
   public:
 
-    BSmoother (shared_ptr<SparseMatrix<TM>> _spmat,  Table<int> && _blocks, FlatArray<TM> md = FlatArray<TM>(0, nullptr));
+    BSmoother (shared_ptr<SparseMatrix<TM>> _spmat,  Table<int> && _blocks,
+	       bool _parallel = true, bool _use_sl2 = false,
+	       FlatArray<TM> md = FlatArray<TM>(0, nullptr));
+	       
 
     /** Instead of block diag take schur complement w.r.t block-dofs, block_ext_block dofs **/
     BSmoother (shared_ptr<SparseMatrix<TM>> _spmat,  Table<int> && _blocks, Table<int> && _block_ext_dofs,
+	       bool _parallel = true, bool _use_sl2 = false,
 	       FlatArray<TM> md = FlatArray<TM>(0, nullptr));
 
     /** perform "steps" steps of FW/BW Block-Gauss-Seidel sweeps **/
@@ -44,8 +54,9 @@ namespace amg
     void SmoothBackRES (BaseVector & x, BaseVector & res, int steps = 1) const;
 
   private:
-    template<class TLAM> INLINE void Smooth_impl    (BaseVector & x, const BaseVector & b, TLAM get_col, int steps = 1) const;
-    template<class TLAM> INLINE void SmoothRES_impl (BaseVector & x, BaseVector & res, TLAM get_col, int steps = 1) const;
+    template<class TLAM> INLINE void IterateBlocks (bool reverse, TLAM lam) const; 
+    INLINE void Smooth_impl    (BaseVector & x, const BaseVector & b, int steps, bool reverse) const;
+    INLINE void SmoothRES_impl (BaseVector & x, BaseVector & res, int steps, bool reverse) const;
   }; // class BSmoother
 
 
@@ -65,10 +76,10 @@ namespace amg
 
   public:
     HybridBS (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h, Table<int> && blocks,
-	       bool _overlap, bool _in_thread);
+	      bool _overlap, bool _in_thread, bool _parallel = true, bool _sl2 = false);
 
     HybridBS (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h, Table<int> && blocks,
-	      Table<int> && block_ext_dofs, bool _overlap, bool _in_thread);
+	      Table<int> && block_ext_dofs, bool _overlap, bool _in_thread, bool _parallel = true, bool _sl2 = false);
   protected:
 
     /** Filter blocks:

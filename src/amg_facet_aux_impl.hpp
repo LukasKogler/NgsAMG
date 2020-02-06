@@ -417,7 +417,7 @@ namespace amg
     // auto comp_mat = bfa->GetMatrixPtr();
     auto eqc_h = make_shared<EQCHierarchy>(comp_pds, false); // TODO: get rid of these!
 
-    auto sm = make_shared<HybridBS<double>> (comp_mat, eqc_h, cblocks.MoveTable(), O.sm_mpi_overlap, O.sm_mpi_thread);
+    auto sm = make_shared<HybridBS<double>> (comp_mat, eqc_h, cblocks.MoveTable(), O.sm_mpi_overlap, O.sm_mpi_thread, O.sm_shm, O.sm_sl2);
 
     return sm;
   } // FacetWiseAuxiliarySpaceAMG::BuildFLS
@@ -471,7 +471,7 @@ namespace amg
     }
 
     auto eqc_h = make_shared<EQCHierarchy>(comp_pds, false); // TODO: get rid of these!
-    auto sm = make_shared<HybridBS<double>> (comp_mat, eqc_h, cblocks.MoveTable(), cbex.MoveTable(), O.sm_mpi_overlap, O.sm_mpi_thread);
+    auto sm = make_shared<HybridBS<double>> (comp_mat, eqc_h, cblocks.MoveTable(), cbex.MoveTable(), O.sm_mpi_overlap, O.sm_mpi_thread, O.sm_shm, O.sm_sl2);
 
     return sm;
   } // FacetWiseAuxiliarySpaceAMG::BuildFLS
@@ -488,6 +488,8 @@ namespace amg
   void FacetWiseAuxiliarySpaceAMG<DIM, SPACEA, SPACEB, AUXFE, AMG_CLASS> :: SetDefaultOptions (BaseAMGPC::Options & aO)
   {
     auto & O (static_cast<Options&>(aO));
+
+    O.sm_shm = !bfa->GetFESpace()->IsParallel();
 
     O.with_rots = true;
     O.subset = AMG_CLASS::Options::DOF_SUBSET::RANGE_SUBSET;

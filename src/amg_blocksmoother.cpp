@@ -8,8 +8,9 @@ namespace amg
   /** BSmoother **/
 
   template<class TM>
-  BSmoother<TM> :: BSmoother (shared_ptr<SparseMatrix<TM>> _spmat,  Table<int> && _blocks, FlatArray<TM> md)
-    : spmat(_spmat), blocks(move(_blocks))
+  BSmoother<TM> :: BSmoother (shared_ptr<SparseMatrix<TM>> _spmat,  Table<int> && _blocks, 
+			      bool _parallel, bool _use_sl2, FlatArray<TM> md)
+    : spmat(_spmat), blocks(move(_blocks)), parallel(_parallel), use_sl2(_use_sl2)
   {
     static Timer t("BSmoother"); RegionTimer rt(t);
     
@@ -67,61 +68,82 @@ namespace amg
 
     cout << " have dinvs " << endl;
 
-    /** Do block coloring here for shm parallelization **/
-    Table<int> ext_blocks;
-    { /** For dependencies of blocks, because of resiudal upates, we also need one layer around each block! **/
-      TableCreator<int> ceb(n_blocks);
-      Array<int> dnums(20*maxbs);
-      for (; !ceb.Done(); ceb++) {
-	for (auto block_nr : Range(n_blocks)) {
-	  auto block_dofs = blocks[block_nr];
-	  // ceb.Add(block_nr, block_dofs);
-	  /** I do not care about multiples **/
-	  // for (auto dof : block_dofs)
+    if (parallel) {
+      /** Do block coloring here for shm parallelization **/
+      Table<int> ext_blocks;
+      { /** For dependencies of blocks, because of resiudal upates, we also need one layer around each block! **/
+	TableCreator<int> ceb(n_blocks);
+	Array<int> dnums(20*maxbs);
+	for (; !ceb.Done(); ceb++) {
+	  for (auto block_nr : Range(n_blocks)) {
+	    auto block_dofs = blocks[block_nr];
+	    // ceb.Add(block_nr, block_dofs);
+	    /** I do not care about multiples **/
+	    // for (auto dof : block_dofs)
 	    // for (auto col : A.GetRowIndices(dof))
 	    // { ceb.Add(block_nr, col); }
-	  /** Actually, I think I do **/
-	  dnums.SetSize0();
-	  dnums.Append(block_dofs);
-	  // QuickSort(dnums); // blocks are sorted
-	  int pos;
-	  for (auto dof : block_dofs)
-	    for (auto col : A.GetRowIndices(dof)) {
-	      pos = find_in_sorted_array(col, dnums);
-	      if (pos == -1)
-		{ insert_into_sorted_array(col, dnums); }
-	    }
-	  ceb.Add(block_nr, dnums);
+	    /** Actually, I think I do **/
+	    dnums.SetSize0();
+	    dnums.Append(block_dofs);
+	    // QuickSort(dnums); // blocks are sorted
+	    int pos;
+	    for (auto dof : block_dofs)
+	      for (auto col : A.GetRowIndices(dof)) {
+		pos = find_in_sorted_array(col, dnums);
+		if (pos == -1)
+		  { insert_into_sorted_array(col, dnums); }
+	      }
+	    ceb.Add(block_nr, dnums);
+	  }
+	}
+	ext_blocks = ceb.MoveTable();
+      }
+      // cout << " ext_blocks: " << endl << ext_blocks << endl;
+      Array<int> bcarray(n_blocks);
+
+      int maxcolor = 0;
+      if (n_blocks > 0) /** need coloring even vor 1 thread b.c smooth/smoothback order of blocks **/
+	{ maxcolor = ComputeColoring( bcarray, A.Height(), [&](auto i) { return ext_blocks[i]; }); }
+
+      cout << " blocks colored with " << maxcolor << " colors" << endl;
+      // cout << " blk colors: " << endl; prow2(bcarray); cout << endl;
+
+      TableCreator<int> cbc(maxcolor+1);
+      for (; !cbc.Done(); cbc++) {
+	for (auto k : Range(bcarray))
+	  { cbc.Add(bcarray[k], k); }
+      }
+      block_colors = cbc.MoveTable();
+
+      if (use_sl2) {
+	// loops.SetSize(block_colors.Size()); // no operator= with const reference for sharedloops
+	loops = move(Array<SharedLoop2>(block_colors.Size()));
+      }
+      else {
+	color_balance.SetSize(block_colors.Size());
+	for (auto cnum : Range(block_colors)) {
+	  color_balance[cnum].Calc(block_colors[cnum].Size(),
+				   [&] (auto bi) LAMBDA_INLINE {
+				     int costs = 0;
+				     auto blocknr = block_colors[cnum][bi];
+				     for (auto d : blocks[blocknr])
+				       { costs += A.GetRowIndices(d).Size(); }
+				     return costs;
+				   });
 	}
       }
-      ext_blocks = ceb.MoveTable();
     }
-    // cout << " ext_blocks: " << endl << ext_blocks << endl;
-    Array<int> bcarray(n_blocks);
-
-    int maxcolor = 0;
-    if (n_blocks > 0) /** need coloring even vor 1 thread b.c smooth/smoothback order of blocks **/
-      { maxcolor = ComputeColoring( bcarray, A.Height(), [&](auto i) { return ext_blocks[i]; }); }
-
-    cout << " blocks colored with " << maxcolor << " colors" << endl;
-    // cout << " blk colors: " << endl; prow2(bcarray); cout << endl;
-
-    TableCreator<int> cbc(maxcolor+1);
-    for (; !cbc.Done(); cbc++) {
-      for (auto k : Range(bcarray))
-	{ cbc.Add(bcarray[k], k); }
-    }
-    block_colors = cbc.MoveTable();
-    // loops.SetSize(block_colors.Size());
   } // BSmoother::BSmoother(..)
 
 
   template<class TM>
   BSmoother<TM> :: BSmoother (shared_ptr<SparseMatrix<TM>> _spmat,  Table<int> && _blocks, Table<int> && _block_ext_dofs,
-			      FlatArray<TM> md)
-    : spmat(_spmat), blocks(move(_blocks))
+			      bool _parallel, bool _use_sl2, FlatArray<TM> md)
+    : spmat(_spmat), blocks(move(_blocks)), parallel(_parallel), use_sl2(_use_sl2)
   {
     static Timer t("BSmoother"); RegionTimer rt(t);
+
+    use_sl2 = true; // TODO if this i false !!
     
     const auto & A(*spmat);
     size_t n_blocks = blocks.Size();
@@ -259,133 +281,154 @@ namespace amg
 	{ cbc.Add(bcarray[k], k); }
     }
     block_colors = cbc.MoveTable();
-    // loops.SetSize(block_colors.Size());
+
+    if (parallel && use_sl2) {
+      // loops.SetSize(block_colors.Size()); // no operator= with const reference for sharedloops
+      loops = move(Array<SharedLoop2>(block_colors.Size()));
+    }
   } // BSmoother::BSmoother(..)
 
 
-  INLINE Timer & SRHS_thack () { static Timer t("BSmoother::SmoothRHS(FW/BW)"); return t; }
   template<class TM> template<class TLAM>
-  void BSmoother<TM> :: Smooth_impl (BaseVector & x, const BaseVector & b, TLAM get_col, int steps) const
+  INLINE void BSmoother<TM> :: IterateBlocks (bool reverse, TLAM smooth_block) const
+  {
+    if (parallel) {
+      if (use_sl2) {
+	const int ncolors = block_colors.Size();
+	for (auto k : Range(loops))
+	  { loops[k].Reset(block_colors[k].Range()); }
+	task_manager -> CreateJob
+	  ( [&] (const TaskInfo & ti) 
+	    {
+	      VectorMem<100,TV> hxmax(maxbs);
+	      VectorMem<100,TV> hymax(maxbs);
+	      for (int J : Range(block_colors))
+		{
+		  int color = reverse ? ncolors-1-J : J;
+		  for (auto bcind : loops[color]) {
+		    auto block_nr = block_colors[color][bcind];
+		    smooth_block(block_nr, hxmax, hymax);
+		  }
+		}
+	    } );
+      }
+      else { // use_sl2
+	const int ncolors = block_colors.Size();
+	for (int J : Range(block_colors)) {
+	  int color = reverse ? ncolors-1-J : J;
+	  ParallelForRange(color_balance[color], [&] (IntRange r) LAMBDA_INLINE {
+		VectorMem<100,TV> hxmax(maxbs);
+		VectorMem<100,TV> hymax(maxbs);
+		auto & cblocks = block_colors[color];
+		for (auto block_nr : cblocks.Range(r)) {
+		  smooth_block(block_nr, hxmax, hymax);
+		}
+	    });
+	}
+      }
+    }
+    else { //parallel
+      VectorMem<100,TV> hxmax(maxbs);
+      VectorMem<100,TV> hymax(maxbs);
+      if (reverse) {
+	for (int block_num = blocks.Size() - 1; block_num >= 0; block_num--)
+	  { smooth_block(block_num, hxmax, hymax); }
+      }
+      else {
+	for (auto block_num : Range(blocks.Size()))
+	  { smooth_block(block_num, hxmax, hymax); }
+      }
+    }
+  } // BSmoother::IterateBlocks
+
+
+  INLINE Timer & SRHS_thack () { static Timer t("BSmoother::SmoothRHS(FW/BW)"); return t; }
+  template<class TM>
+  void BSmoother<TM> :: Smooth_impl (BaseVector & x, const BaseVector & b, int steps, bool reverse) const
   {
     RegionTimer rt(SRHS_thack());
     auto fx = x.FV<TV>();
     auto fb = b.FV<TV>();
     const auto & A(*spmat);
-    static Timer tls ("loops");
-    tls.Start();
-    Array<SharedLoop2> loops(block_colors.Size());
-    tls.Stop();
     for (int step_nr : Range(steps)) {
-      tls.Start();
-      for (auto k : Range(loops))
-	{ loops[k].Reset(block_colors[k].Range()); }
-      tls.Stop();
-      task_manager -> CreateJob
-	( [&] (const TaskInfo & ti) 
-	  {
-	    VectorMem<100,TV> hxmax(maxbs);
-	    VectorMem<100,TV> hymax(maxbs);
-	    for (int J : Range(block_colors))
-	      {
-		int color = get_col(J);
-		// cout << "blocks of color " << color << endl;
-		for (auto bcind : loops[color]) {
-		  auto block_nr = block_colors[color][bcind];
-		  auto block_dofs = blocks[block_nr];
-		  int bs = block_dofs.Size();
-		  if ( bs > 0 ) { // avoid range check in debug mode
-		    // cout << " up block " << block_nr << ", bs = " << bs << endl;
-		    // prow(block_dofs); cout << endl;
-		    FlatVector<TV> hup = hxmax.Range(0,bs);
-		    FlatVector<TV> hr = hymax.Range(0,bs);
-		    for (int j = 0; j < bs; j++) {
-		      auto jj = block_dofs[j];
-		      hr(j) = fb(jj) - A.RowTimesVector(jj, fx);
-		    }
-		    // cout << " res " << endl << hr << endl;
-		    hup = dinv[block_nr] * hr;
-		    // cout << " dinv: " << endl << dinv[block_nr] << endl;
-		    // cout << " up " << endl << hup << endl;
-		    fx(block_dofs) += hup;
-		    // cout << " new x " << endl << fx(block_dofs) << endl;
-		  }
-		}
-	      }
-	  });
+      IterateBlocks(reverse, [&](auto block_nr, auto & hxmax, auto & hymax) LAMBDA_INLINE {
+	  auto block_dofs = blocks[block_nr];
+	  int bs = block_dofs.Size();
+	  if ( bs > 0 ) { // avoid range check in debug mode
+	    // cout << " up block " << block_nr << ", bs = " << bs << endl;
+	    // prow(block_dofs); cout << endl;
+	    FlatVector<TV> hup = hxmax.Range(0,bs);
+	    FlatVector<TV> hr = hymax.Range(0,bs);
+	    for (int j = 0; j < bs; j++) {
+	      auto jj = block_dofs[j];
+	      hr(j) = fb(jj) - A.RowTimesVector(jj, fx);
+	    }
+	    // cout << " res " << endl << hr << endl;
+	    hup = dinv[block_nr] * hr;
+	    // cout << " dinv: " << endl << dinv[block_nr] << endl;
+	    // cout << " up " << endl << hup << endl;
+	    fx(block_dofs) += hup;
+	    // cout << " new x " << endl << fx(block_dofs) << endl;
+	  }
+	});
     }
   } //BSmoother::Smooth_impl
 
   template<class TM>
   void BSmoother<TM> :: Smooth (BaseVector & x, const BaseVector & b, int steps) const
   {
-    Smooth_impl(x, b, [&](auto i) { return i; } , steps);
+    Smooth_impl(x, b, steps, false);
   } //BSmoother::Smooth
 
 
   template<class TM>
   void BSmoother<TM> :: SmoothBack (BaseVector & x, const BaseVector & b, int steps) const
   {
-    const auto maxcol = block_colors.Size() - 1;
-    Smooth_impl(x, b, [&](auto i) { return maxcol - i; } , steps);
+    Smooth_impl(x, b, steps, true);
   } //BSmoother::SmoothBack
 
 
   INLINE Timer & SRES_thack () { static Timer t("BSmoother::SmoothRES(FW/BW)"); return t; }
-  template<class TM> template<class TLAM>
-  INLINE void BSmoother<TM> :: SmoothRES_impl (BaseVector & x, BaseVector & res, TLAM get_col, int steps) const
+  template<class TM>
+  INLINE void BSmoother<TM> :: SmoothRES_impl (BaseVector & x, BaseVector & res, int steps, bool reverse) const
   {
     RegionTimer rt(SRES_thack());
     auto fx = x.FV<TV>();
     auto fres = res.FV<TV>();
     const auto & A(*spmat);
-    Array<SharedLoop2> loops(block_colors.Size());
     for (int step_nr : Range(steps)) {
-      for (auto k : Range(loops))
-	{ loops[k].Reset(block_colors[k].Range()); }
-      task_manager -> CreateJob
-	( [&] (const TaskInfo & ti) 
-	  {
-	    VectorMem<100,TV> hxmax(maxbs);
-	    VectorMem<100,TV> hymax(maxbs);
-	    for (int J : Range(block_colors))
-	      {
-		int color = get_col(J);
-		for (auto bcind : loops[color]) {
-		  auto block_nr = block_colors[color][bcind];
-		  auto block_dofs = blocks[block_nr];
-		  int bs = block_dofs.Size();
-		  if ( bs > 0 ) { // avoid range check in debug mode
-		    // cout << " up block " << block_nr << ", bs = " << bs << endl;
-		    FlatVector<TV> hup = hxmax.Range(0,bs);
-		    FlatVector<TV> hr = hymax.Range(0,bs);
-		    hr = fres(block_dofs);
-		    // cout << " res " << endl << hr << endl;
-		    hup = dinv[block_nr] * hr;
-		    // cout << " up " << endl << hup << endl;
-		    for (int j = 0; j < bs; j++)
-		      { A.AddRowTransToVector(block_dofs[j], -hup(j), fres); }
-		    fx(block_dofs) += hup;
-		    // cout << " new x " << endl << fx(block_dofs) << endl;
-		  }
-		}
-	      }
-	  });
+      IterateBlocks(reverse, [&](auto block_nr, auto & hxmax, auto & hymax) {
+	  auto block_dofs = blocks[block_nr];
+	  int bs = block_dofs.Size();
+	  if ( bs > 0 ) { // avoid range check in debug mode
+	    // cout << " up block " << block_nr << ", bs = " << bs << endl;
+	    FlatVector<TV> hup = hxmax.Range(0,bs);
+	    FlatVector<TV> hr = hymax.Range(0,bs);
+	    hr = fres(block_dofs);
+	    // cout << " res " << endl << hr << endl;
+	    hup = dinv[block_nr] * hr;
+	    // cout << " up " << endl << hup << endl;
+	    for (int j = 0; j < bs; j++)
+	      { A.AddRowTransToVector(block_dofs[j], -hup(j), fres); }
+	    fx(block_dofs) += hup;
+	    // cout << " new x " << endl << fx(block_dofs) << endl;
+	  }
+	});
     }
-  }
+  } // BSmoother::SmoothRES_impl
 
 
   template<class TM>
   void BSmoother<TM> :: SmoothRES (BaseVector & x, BaseVector & res, int steps) const
   {
-    SmoothRES_impl(x, res, [&](auto i) { return i; } , steps);
+    SmoothRES_impl(x, res, steps, false);
   } //BSmoother::SmoothRES
 
 
   template<class TM>
   void BSmoother<TM> :: SmoothBackRES (BaseVector & x, BaseVector & res, int steps) const
   {
-    const auto maxcol = block_colors.Size() - 1;
-    SmoothRES_impl(x, res, [&](auto i) { return maxcol - i; } , steps);
+    SmoothRES_impl(x, res, steps, true);
   } //BSmoother::SmoothBackRES
 
   /** END BSmoother **/
@@ -395,7 +438,7 @@ namespace amg
 
   template<class TM>
   HybridBS<TM> :: HybridBS (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h,
-			      Table<int> && blocks, bool _overlap, bool _in_thread)
+			    Table<int> && blocks, bool _overlap, bool _in_thread, bool _parallel, bool _sl2)
     : HybridSmoother2<TM>(_A, eqc_h, _overlap, _in_thread)
   {
     Array<Table<int>> fblocks;
@@ -406,18 +449,18 @@ namespace amg
     Array<TM> mod_diag = this->CalcModDiag(nullptr);
     if(mod_diag.Size()) {
       for (auto k : Range(loc_smoothers))
-	{ loc_smoothers[k] = make_shared<BSmoother<TM>>(A->GetM(), move(fblocks[k]), mod_diag); }
+	{ loc_smoothers[k] = make_shared<BSmoother<TM>>(A->GetM(), move(fblocks[k]), _parallel, _sl2, mod_diag); }
     }
     else {
       for (auto k : Range(loc_smoothers))
-	{ /*cout << " loc SM " << k << endl; cout << " with blocks " << endl << fblocks[k] << endl; */ loc_smoothers[k] = make_shared<BSmoother<TM>>(A->GetM(), move(fblocks[k])); /*cout << " is ok " << endl;*/ }
+	{ loc_smoothers[k] = make_shared<BSmoother<TM>>(A->GetM(), move(fblocks[k]), _parallel, _sl2); }
     }
   } // HybridBS::HybridBS(..)
 
 
   template<class TM>
   HybridBS<TM> :: HybridBS (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h, Table<int> && blocks,
-			    Table<int> && block_ext_dofs, bool _overlap, bool _in_thread)
+			    Table<int> && block_ext_dofs, bool _overlap, bool _in_thread, bool _parallel, bool _sl2)
     : HybridSmoother2<TM>(_A, eqc_h, _overlap, _in_thread)
   {
     Array<Table<int>> fblocks;
@@ -432,9 +475,9 @@ namespace amg
 	// { loc_smoothers[k] = make_shared<BSmoother<TM>>(A->GetM(), move(fblocks[k]), mod_diag); }
     }
     else {
-      loc_smoothers[0] = make_shared<BSmoother<TM>>(A->GetM(), move(fblocks[0]), move(block_ext_dofs));
-      loc_smoothers[1] = make_shared<BSmoother<TM>>(A->GetM(), move(fblocks[1]));
-      loc_smoothers[2] = make_shared<BSmoother<TM>>(A->GetM(), move(fblocks[2]));
+      loc_smoothers[0] = make_shared<BSmoother<TM>>(A->GetM(), move(fblocks[0]), move(block_ext_dofs), _parallel, _sl2);
+      loc_smoothers[1] = make_shared<BSmoother<TM>>(A->GetM(), move(fblocks[1]), _parallel, _sl2);
+      loc_smoothers[2] = make_shared<BSmoother<TM>>(A->GetM(), move(fblocks[2]), _parallel, _sl2);
     }
   } // HybridBS::HybridBS(..)
 
