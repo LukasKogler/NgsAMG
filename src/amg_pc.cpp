@@ -370,8 +370,8 @@ namespace amg
     
     shared_ptr<BaseSmoother> smoother = nullptr;
 
-    cout << " smoother, mat " << amg_level.mat->Height() << " x " << amg_level.mat->Width() << endl;
-    cout << " pds " << amg_level.pardofs->GetNDofLocal() << endl;
+    // cout << " smoother, mat " << amg_level.mat->Height() << " x " << amg_level.mat->Width() << endl;
+    // cout << " pds " << amg_level.pardofs->GetNDofLocal() << endl;
 
     Options::SM_TYPE sm_type = O.sm_type;
 

@@ -452,22 +452,22 @@ namespace amg
 	}
       }
 
-      cout << " sp done " << endl;
+      // cout << " sp done " << endl;
 
       cout << "dof_maps: " << endl;
       for (auto k :Range(dof_maps))
 	{ cout << k << ": " << typeid(*dof_maps[k]).name() << endl; }
-      cout << "prol_inds: " << endl; prow(prol_inds); cout << endl;
+      // cout << "prol_inds: " << endl; prow(prol_inds); cout << endl;
       
       /** Untangle prol/ctr-maps to one prol followed by one ctr map. **/
       int do_last_pb = 0; bool last_map_rd = false;
       if ( ( (prol_inds.Size()>0) && (prol_inds.Last() != dof_maps.Size()-1) ) ||
 	   ( (prol_inds.Size() == 0) && (dof_maps.Size() > 0) ) ) { // last map is redist
 	last_map_rd = true;
-	cout << "lmrd " << endl; auto c = dof_maps.Last()->GetParDofs()->GetCommunicator();
-	cout << "AR on " << c.Rank() << " " << c.Size() << endl;
+	// cout << "lmrd " << endl; auto c = dof_maps.Last()->GetParDofs()->GetCommunicator();
+	// cout << "AR on " << c.Rank() << " " << c.Size() << endl;
 	if (dof_maps.Last()->GetParDofs()->GetCommunicator().AllReduce(do_last_pb, MPI_MAX)) { // cannot use mapped pardofs!
-	    cout << "pull back " << endl;
+	    // cout << "pull back " << endl;
 	    auto ctr_map = dof_maps.Last();
 	    auto pind = dof_maps.Size() - 1;
 	    auto pb_prol = ctr_map->PullBack(nullptr);
@@ -477,13 +477,13 @@ namespace amg
 	  }
       }
 
-      cout << " last, non-master PB done " << endl;
+      // cout << " last, non-master PB done " << endl;
 
       bool first_rd = true;
       int maxmi = dof_maps.Size() - 1 + ( last_map_rd ? -1 : 0 );
       for (int map_ind = maxmi, pii = prol_inds.Size() - 1; map_ind >= 0; map_ind--) {
 	if ( (pii >= 0) && (map_ind == prol_inds[pii]) ) { // prol map
-	  cout << "(prol), mi " << map_ind << " pii " << pii << endl;
+	  // cout << "(prol), mi " << map_ind << " pii " << pii << endl;
 	  if (prol_map == nullptr)
 	    { prol_map = dof_maps[map_ind]; }
 	  else
@@ -491,22 +491,22 @@ namespace amg
 	  pii--;
 	}
 	else { // rd map
-	  cout << "(rd), mi " << map_ind;
+	  // cout << "(rd), mi " << map_ind;
 	  if (first_rd) {
 	    do_last_pb = prol_map != nullptr;
-	    cout << "pb " << do_last_pb << endl;
+	    // cout << "pb " << do_last_pb << endl;
 	    auto comm = dof_maps[map_ind]->GetParDofs()->GetCommunicator(); // cannot use mapped pardofs!
-	    cout << "AR on " << comm.Rank() << " " << comm.Size() << endl;
+	    // cout << "AR on " << comm.Rank() << " " << comm.Size() << endl;
 	    comm.AllReduce(do_last_pb, MPI_MAX);
-	    cout << "pb2 " << do_last_pb << endl;
+	    // cout << "pb2 " << do_last_pb << endl;
 	    first_rd = false;
 	  }
 	  if (prol_map != nullptr)
-	    { cout << "pullback!" << endl; prol_map = dof_maps[map_ind]->PullBack(prol_map); }
+	    { prol_map = dof_maps[map_ind]->PullBack(prol_map); }
 	}
       }
 
-      cout << " concs/pullbacks done " << endl;
+      // cout << " concs/pullbacks done " << endl;
 
       /** If not forced to before, smooth prol here.
 	  TODO: check if other version would be possible here (that one should be better anyways!)  **/
@@ -569,9 +569,7 @@ namespace amg
       c_lev.eqc_h = (c_lev.mesh == nullptr) ? nullptr : c_lev.mesh->GetEQCHierarchy();
       // c_lev.pardofs = final_step->GetMappedParDofs();
       c_lev.pardofs = state.curr_pds;
-      cout << "asmat " << endl;
       c_lev.mat = final_step->AssembleMatrix(f_lev.mat);
-      cout << "asmat dne, ret" << endl;
       return final_step;
     }
     else {
