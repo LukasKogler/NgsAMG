@@ -316,7 +316,8 @@ namespace amg
 	/** mesh0 -(ctr)-> mesh1 -(first_crs)-> mesh2 -(crs/ctr)-> mesh3
 	    mesh0-mesh1, and mesh2-mesh3 can be the same **/
       shared_ptr<TopologicMesh> mesh0 = nullptr, mesh1 = nullptr, mesh2 = nullptr, mesh3 = nullptr;
-      mesh1 = state.curr_mesh; mesh_meas[0] = ComputeMeshMeasure(*mesh1);
+      mesh0 = state.curr_mesh; mesh_meas[0] = ComputeMeshMeasure(*mesh0);
+      
       Array<shared_ptr<BaseDOFMapStep>> dof_maps;
       Array<int> prol_inds;
       shared_ptr<BaseCoarseMap> first_cmap;
@@ -375,7 +376,7 @@ namespace amg
 	for (int l = cm_chunks.Size() - 2; l >= 0; l--)
 	  { c_step = cm_chunks[l]->Concatenate(c_step); }
 
-	cout << " have conc c-step!" << endl;
+	cout << " have conc c-step ? " << c_step << endl;;
 
 	if (f_lev.crs_map == nullptr)
 	  { f_lev.crs_map = c_step; }
@@ -425,24 +426,30 @@ namespace amg
 
       /** Smooth the first prol-step, using the first coarse-map if we need coarse-map for smoothing,
 	  or if it is preferrable to smoothing the concatenated prol with only fine mesh. **/
-      bool sp_done = false;
+      bool sp_done = false, have_pwp = true;
       if ( O.enable_sp ) {
 	cout << " deal with sp!" << endl;
 	/** need cmap || only one coarse map **/
-	auto comm = mesh1->GetEQCHierarchy()->GetCommunicator();
+	auto comm = mesh0->GetEQCHierarchy()->GetCommunicator();
 	int do_sp_now = 0;
 	if (comm.Rank() == 0) {
-	  do_sp_now = O.sp_needs_cmap || (mesh3 == mesh2);
-	  if (do_sp_now == 0) {
-	    double frac21 = (mesh_meas[1] == 0) ? 0.0 : double(mesh_meas[2]) / mesh_meas[1];
-	    double frac32 = (mesh_meas[2] == 0) ? 0.0 : double(mesh_meas[3]) / mesh_meas[2];
-	    /** first cmap is a significant part of coarsening **/
-	    do_sp_now = (frac21 < 1.333 * frac32);
+	  if (mesh2 != nullptr) { // mesh2: first coarse mesh - if this is nullptr, coarsening is stuck!
+	    do_sp_now = O.sp_needs_cmap || (mesh3 == mesh2);
+	    if (do_sp_now == 0) {
+	      double frac21 = (mesh_meas[1] == 0) ? 0.0 : double(mesh_meas[2]) / mesh_meas[1];
+	      double frac32 = (mesh_meas[2] == 0) ? 0.0 : double(mesh_meas[3]) / mesh_meas[2];
+	      /** first cmap is a significant part of coarsening **/
+	      do_sp_now = (frac21 < 1.333 * frac32) ? 1 : 0;
+	    }
 	  }
+	  else
+	    { do_sp_now = -1; have_pwp = false; }
 	}
 	comm.NgMPI_Comm::Bcast(do_sp_now);
 	cout << "do now?" << do_sp_now << endl;
-	if (do_sp_now) {
+	if (do_sp_now < 0) // have no coarse map at all!
+	  { have_pwp = false; }
+	else if (do_sp_now > 0) { // have coarse map and do now!
 	  sp_done = true;
 	  if (prol_inds.Size() > 0) { // might be rded out!
 	    auto pmap = dof_maps[prol_inds[0]];
@@ -450,6 +457,8 @@ namespace amg
 	    first_cmap = nullptr; // no need for this anymore
 	  }
 	}
+	else // have some coarse map, but do later
+	  { ; }
       }
 
       // cout << " sp done " << endl;
@@ -510,8 +519,8 @@ namespace amg
 
       /** If not forced to before, smooth prol here.
 	  TODO: check if other version would be possible here (that one should be better anyways!)  **/
-      if ( O.enable_sp && (!sp_done) )
-	{ prol_map = SmoothedProlMap(prol_map, mesh1); }
+      if ( O.enable_sp && (!sp_done) && (have_pwp) )
+	{ prol_map = SmoothedProlMap(prol_map, mesh0); }
 
       /** pack rd-maps into one step**/
       if (rd_chunks.Size() == 1)
