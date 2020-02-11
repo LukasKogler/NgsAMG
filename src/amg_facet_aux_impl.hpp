@@ -8,14 +8,6 @@ namespace amg
 
   /** Options **/
 
-  void BaseFacetAMGOptions :: SetFromFlags (const Flags & flags, string prefix)
-  {
-    aux_only = flags.GetDefineFlagX("ngs_amg_aux_only").IsTrue();
-    elmat_sc = !flags.GetDefineFlagX("ngs_amg_elmat_sc").IsFalse();
-    el_blocks = !flags.GetDefineFlagX("ngs_amg_el_blocks").IsFalse();
-    f_blocks_sc = flags.GetDefineFlagX("ngs_amg_fsc").IsTrue();
-  } // BaseFacetAMGOptions :: SetFromFlags
-
 
   template<int DIM, class SPACEA, class SPACEB, class AUXFE, class AMG_CLASS>
   class FacetWiseAuxiliarySpaceAMG<DIM, SPACEA, SPACEB, AUXFE, AMG_CLASS> :: Options
@@ -491,7 +483,9 @@ namespace amg
 
     O.sm_shm = !bfa->GetFESpace()->IsParallel();
 
-    O.with_rots = true;
+    if constexpr (is_same<AUXFE, FacetRBModeFE<DIM>>::value) {
+	O.with_rots = true;
+      }
     O.subset = AMG_CLASS::Options::DOF_SUBSET::RANGE_SUBSET;
     O.ss_ranges.SetSize(1);
     O.ss_ranges[0] = { 0, ma->GetNFacets() };
@@ -809,7 +803,8 @@ namespace amg
     auto & feb = static_cast<SPACE_EL<SPACEB, ET>&>(spaceb->GetFE(vol_elid, lh)); const auto ndb = feb.GetNDof();
     Array<int> bdnrs (feb.GetNDof(), lh); spaceb->GetDofNrs(vol_elid, bdnrs);
     // FacetRBModeFE<DIM> fec (mid); constexpr auto ndc = DPV();
-    AUXFE fec (mid); constexpr auto ndc = DPV();
+    // AUXFE fec (mid); constexpr auto ndc = DPV();
+    AUXFE fec (NodeId(FACET_NT(DIM), facet_nr), *ma); constexpr auto ndc = DPV();
 
     /** buffer for shapes **/
     FlatMatrix<double> sha(nda, DIM, lh), shb(ndb, DIM, lh), shc(ndc, DIM, lh), /** shapes **/

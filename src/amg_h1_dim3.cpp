@@ -38,6 +38,8 @@ namespace amg
 
   // template class H1Energy<1, double, double>;
   template class H1AMGFactory<3>;
+  template class VertexAMGPC<H1AMGFactory<3>>;
+  template class ElmatVAMG<H1AMGFactory<3>, double, double>;
 
   // using PCC = VertexAMGPC<H1AMGFactory<3>>;
   using PCC = ElmatVAMG<H1AMGFactory<3>, double, double>;

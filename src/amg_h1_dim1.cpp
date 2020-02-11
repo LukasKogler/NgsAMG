@@ -13,6 +13,7 @@ namespace amg
 {
 
   template class H1AMGFactory<1>;
+  template class VertexAMGPC<H1AMGFactory<1>>;
   template class ElmatVAMG<H1AMGFactory<1>, double, double>;
 
   using PCC = ElmatVAMG<H1AMGFactory<1>, double, double>;

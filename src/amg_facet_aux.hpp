@@ -14,6 +14,7 @@ namespace amg
   {
   public:
     FacetH1FE () { ; }
+    FacetH1FE (NodeId facet_id, MeshAccess & ma) { ; }
     static constexpr int ND () { return DIM; }
     INLINE void CalcMappedShape (const BaseMappedIntegrationPoint & mip, 
 				 SliceMatrix<double> shapes) const
@@ -34,15 +35,18 @@ namespace amg
     static constexpr int NRT = (DIM == 3) ? 3 : 1;
     Vec<DIM> mid;
   public:
-    FacetRBModeFE (Vec<DIM> amid) : mid(amid) { ; }
-    FacetRBModeFE (shared_ptr<MeshAccess> ma, int facetnr)
-    {
-      Array<int> pnums;
-      ma->GetFacetPNums(facetnr, pnums);
-      mid = 0;
-      for (auto pnum : pnums)
-	{ mid += 1.0/pnums.Size() * ma->GetPoint<DIM>(pnum); }
+    FacetRBModeFE (NodeId facet_id, MeshAccess & ma) {
+      Vec<DIM> t;
+      GetNodePos<DIM>(facet_id, ma, mid, t);
     }
+    // FacetRBModeFE (shared_ptr<MeshAccess> ma, int facetnr)
+    // {
+    //   Array<int> pnums;
+    //   ma->GetFacetPNums(facetnr, pnums);
+    //   mid = 0;
+    //   for (auto pnum : pnums)
+    // 	{ mid += 1.0/pnums.Size() * ma->GetPoint<DIM>(pnum); }
+    // }
     static constexpr int ND () { return (DIM == 3) ? 6 : 3; }
     INLINE void CalcMappedShape (const BaseMappedIntegrationPoint & mip, 
 				 SliceMatrix<double> shapes) const
@@ -246,7 +250,14 @@ namespace amg
   public:
     BaseFacetAMGOptions () { ; }    
 
-    virtual void SetFromFlags (const Flags & flags, string prefix);
+    virtual void SetFromFlags (const Flags & flags, string prefix)
+    {
+      aux_only = flags.GetDefineFlagX("ngs_amg_aux_only").IsTrue();
+      elmat_sc = !flags.GetDefineFlagX("ngs_amg_elmat_sc").IsFalse();
+      el_blocks = !flags.GetDefineFlagX("ngs_amg_el_blocks").IsFalse();
+      f_blocks_sc = flags.GetDefineFlagX("ngs_amg_fsc").IsTrue();
+    } // BaseFacetAMGOptions :: SetFromFlags
+
   }; // class BaseFacetAMGOptions
 
   /** END Options **/
