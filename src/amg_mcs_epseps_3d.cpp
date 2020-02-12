@@ -67,22 +67,23 @@ namespace amg
   {
     if (node_id.GetType() == NT_EDGE)
       { return; }
-    // spacea->FESpace::GetDofNrs(node_id, dnums); // might this do the wrong thing in some cases ??
     const FESpace& F(*spacea); F.GetDofNrs(node_id, dnums);
-    // cout << " select A for id " << node_id << ", dnums are "; prow(dnums); cout << endl;
-    // cout << " select " << dnums[0] << " ";
-    lam(0);
-    int p = spacea->GetOrder(node_id);
-    if (p >= 1) {
-      // cout << dnums[1] << " " << dnums[1+(p*(1+p))/2];
-      // cout << 1 << " " << dnums[(1+p)] << endl;
-      lam(1);
-      // lam(1+p);
-      lam(1+(p*(1+p))/2);
+    if (dnums.Size() > 0) { // for unused + compressed (definedon, refined)
+      auto ct0 = F.GetDofCouplingType(dnums[0]);
+      if ( ct0 & EXTERNAL_DOF ) { // for unused (true for interface/wirebasket)
+	lam(0);
+	int p = spacea->GetOrder(node_id);
+	if (p >= 1) {
+	  // cout << dnums[1] << " " << dnums[1+(p*(1+p))/2];
+	  // cout << 1 << " " << dnums[(1+p)] << endl;
+	  lam(1);
+	  // lam(1+p);
+	  lam(1+(p*(1+p))/2);
+	}
+	// cout << endl;
+      }
     }
-    // cout << endl;
-  }
-
+  } // MCS_AMG_PC::ItLO_A
 
   /** 3d VectorFacetFESpace (in python: TangentialFacetFESpace) low order face DOFs are:
        0,1                  .. constant2
@@ -98,16 +99,20 @@ namespace amg
     const FESpace& F(*spaceb); F.GetDofNrs(node_id, dnums);
     // cout << " select B for id " << node_id << ", dnums are "; prow(dnums); cout << endl;
     // cout << " select " << dnums[0] << " " << dnums[1] << " ";
-    lam(0); lam(1);
-    int p = spaceb->GetOrder(node_id);
-    if (p >= 1) {
-      // cout << dnums[2] << " " << dnums[3] << " " << dnums[2*(1+p)] << " " << dnums[2*(1+p)+1];
-      lam(2); lam(3);
-      lam(2*(1+p)); lam(2*(1+p)+1);
+    if (dnums.Size() > 0) { // for unused + compressed (definedon, refined)
+      auto ct0 = F.GetDofCouplingType(dnums[0]);
+      if ( ct0 & EXTERNAL_DOF ) { // for unused (true for interface/wirebasket)
+	lam(0); lam(1);
+	int p = spaceb->GetOrder(node_id);
+	if (p >= 1) {
+	  // cout << dnums[2] << " " << dnums[3] << " " << dnums[2*(1+p)] << " " << dnums[2*(1+p)+1];
+	  lam(2); lam(3);
+	  lam(2*(1+p)); lam(2*(1+p)+1);
+	}
+	// cout << endl;
+      }
     }
-    // cout << endl;
-  }
-
+  } // MCS_AMG_PC::ItLO_B
 
   // template<> shared_ptr<BaseSmoother> MCS_AMG_PC :: BuildFLS () const
   // {

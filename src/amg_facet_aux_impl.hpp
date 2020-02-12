@@ -183,7 +183,8 @@ namespace amg
 	if ( (space_ind == ind_sa) || (space_ind == ind_sb) ) {
 	  for (auto dof : comp_fes->GetRange(space_ind)) {
 	    COUPLING_TYPE ct = comp_fes->GetDofCouplingType(dof);
-	    if ( ( elint && ((ct & CONDENSABLE_DOF) != 0) ) ||
+	    if ( ( ct == UNUSED_DOF) || // definedon or refined mesh
+		 ( elint && ((ct & CONDENSABLE_DOF) != 0) ) ||
 		 ( elhid && ((ct & HIDDEN_DOF) != 0) ) )
 	      { free.Clear(dof); }
 	  }
@@ -206,8 +207,8 @@ namespace amg
     auto & afd = *finest_freedofs; afd.Clear();
     bool has_diri = false, diri_consistent = true;
     for (auto facet_nr : Range(n_facets)) {
-      bool af_diri = (flo_a_f[facet_nr].Size() && !comp_fds->Test(os_sa + flo_a_f[facet_nr][0])) ? true : false;
-      bool bf_diri = (flo_b_f[facet_nr].Size() && !comp_fds->Test(os_sb + flo_b_f[facet_nr][0])) ? true : false;
+      bool af_diri = ( (flo_a_f[facet_nr].Size() == 0) || !comp_fds->Test(os_sa + flo_a_f[facet_nr][0])) ? true : false;
+      bool bf_diri = ( (flo_b_f[facet_nr].Size() == 0) || !comp_fds->Test(os_sb + flo_b_f[facet_nr][0])) ? true : false;
       if (af_diri != bf_diri)
 	{ diri_consistent = false; }
       if (af_diri) {
@@ -215,7 +216,7 @@ namespace amg
 	has_diri = true;
       }
     }
-    if ( !diri_consistent)
+    if ( !diri_consistent )
       { throw Exception("Auxiliary Facet Space AMG needs same dirichlet-conditons for both space components!"); }
     if ( (DIM == 3) && has_diri && (has_a_e || has_b_e) )
       { throw Exception("Auxiliary Facet Space AMG with edge-contribs can not handle dirichlet BCs!"); }
@@ -584,11 +585,13 @@ namespace amg
     Array<int> elnums;
     auto itit = [&](auto lam) LAMBDA_INLINE {
       for (auto fnr : Range(nfacets)) {
-	lam(fnr, fnr);
 	ma->GetFacetElements(fnr, elnums);
-	for (auto elnr : elnums) {
-	  for (auto ofnum : ma->GetElFacets(ElementId(VOL, elnr)))
-	    { if (ofnum != fnr) { lam(fnr, ofnum); } }
+	if (facet_mat[fnr].Height() > 0) { // not fine or unused facet
+	  lam(fnr, fnr);
+	  for (auto elnr : elnums) {
+	    for (auto ofnum : ma->GetElFacets(ElementId(VOL, elnr)))
+	      { if (ofnum != fnr) { lam(fnr, ofnum); } }
+	  }
 	}
       }
     };
@@ -671,6 +674,8 @@ namespace amg
     	 for (int facet_nr : sl_facets) {
 	   HeapReset hr(lh);
 	   ma->GetFacetElements(facet_nr, elnums_of_facet);
+	   if (facet_mat[facet_nr].Height() == 0) // not a fine facet, or not defined on this facet
+	     { continue; }
 	   ElementId vol_elid(VOL, elnums_of_facet[0]);
 	   ElementTransformation & eltrans = ma->GetTrafo (vol_elid, lh);
 	   ELEMENT_TYPE et_vol = eltrans.GetElementType();
