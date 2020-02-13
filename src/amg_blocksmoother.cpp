@@ -20,7 +20,7 @@ namespace amg
     for (auto row : blocks)
       { QuickSort(row); }
 
-    cout << " BSmoother with " << n_blocks << " blocks! " << endl;
+    // cout << " BSmoother with " << n_blocks << " blocks! " << endl;
     // cout << blocks << endl;
 
     /** Diag buffer **/
@@ -29,7 +29,7 @@ namespace amg
                       [&] (size_t i) { return sqr (blocks[i].Size()); },
                       [] (size_t a, size_t b) { return a+b; },
                       size_t(0));
-    cout << " totmem = " << totmem << endl;
+    // cout << " totmem = " << totmem << endl;
     buffer.SetSize(totmem);
     dinv.SetSize(n_blocks);
     auto otm = totmem;
@@ -43,8 +43,8 @@ namespace amg
       maxbs = max2(maxbs, h);
     }
 
-    cout << " maxbs " << maxbs << endl;
-    cout << " alloced, now inv " << endl;
+    // cout << " maxbs " << maxbs << endl;
+    // cout << " alloced, now inv " << endl;
 
     /** Get and invert diagonal blocks **/
     SharedLoop2 sl(n_blocks);
@@ -66,7 +66,7 @@ namespace amg
 	 }
        } );
 
-    cout << " have dinvs " << endl;
+    // cout << " have dinvs " << endl;
 
     if (parallel) {
       /** Do block coloring here for shm parallelization **/
@@ -105,7 +105,7 @@ namespace amg
       if (n_blocks > 0) /** need coloring even vor 1 thread b.c smooth/smoothback order of blocks **/
 	{ maxcolor = ComputeColoring( bcarray, A.Height(), [&](auto i) { return ext_blocks[i]; }); }
 
-      cout << " blocks colored with " << maxcolor << " colors" << endl;
+      // cout << " blocks colored with " << maxcolor << " colors" << endl;
       // cout << " blk colors: " << endl; prow2(bcarray); cout << endl;
 
       TableCreator<int> cbc(maxcolor+1);

@@ -1671,11 +1671,11 @@ namespace amg
       }
     }
 
-    // {
-    //  //   cout << endl << " FIRST loop done " << endl;
-    //  cout << "frac marked: " << double(marked.NumSet()) / marked.Size() << endl;
-    //  cout << " INTERMED agglomerates : " << agglomerates.Size() << endl;
-    //  cout << agglomerates << endl;
+    {
+     //   cout << endl << " FIRST loop done " << endl;
+     cout << "frac marked: " << double(marked.NumSet()) / marked.Size() << endl;
+     cout << " INTERMED agglomerates : " << agglomerates.Size() << endl;
+     cout << agglomerates << endl;
     //  Array<int> naggs;
     //  auto resize_to = [&](auto i) {
     // 	auto olds = naggs.Size();
@@ -1686,12 +1686,12 @@ namespace amg
     // 	}
     //  };
     //  for (const auto & agg : agglomerates) {
-    // 	auto ags = agg.members().Size();
+    // // 	auto ags = agg.members().Size();
     // 	resize_to(1+ags);
     // 	naggs[ags]++ ;
     //  }
     //  cout << " INTERMED agg size distrib: "; prow2(naggs); cout << endl;
-    // }
+    }
 
     t2.Stop(); t3.Start();
 
@@ -1817,6 +1817,11 @@ namespace amg
 
     t3.Stop();
 
+    {
+      cout << " FINAL agglomerates : " << agglomerates.Size() << endl;
+      cout << agglomerates << endl;
+      cout << endl;
+    }
   } // Agglomerator::FormAgglomerates_impl
 
 

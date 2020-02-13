@@ -2,6 +2,7 @@
 #define FILE_AMG_FACTORY_VERTEX_IMPL_HPP
 
 #include "amg_agg.hpp"
+#include "amg_bla.hpp"
 
 namespace amg
 {
@@ -161,17 +162,134 @@ namespace amg
   template<class ENERGY, class TMESH, int BS>
   shared_ptr<BaseCoarseMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildECMap (BaseAMGFactory::State & astate)
   {
-    throw Exception("finish this up ...");
+    // throw Exception("finish this up ...");
+    auto & O = static_cast<Options&>(*options);
     auto & state(static_cast<State&>(astate));
     auto mesh = dynamic_pointer_cast<TMESH>(state.curr_mesh);
     if (mesh == nullptr)
       { throw Exception(string("Invalid mesh type ") + typeid(*state.curr_mesh).name() + string(" for BuildECMap!")); }
-    // SetCoarseningOptions(*state.crs_opts, cmesh);
-    auto calg = make_shared<BlockVWC<TMESH>> (state.crs_opts);
+
+    shared_ptr<typename HierarchicVWC<TMESH>::Options> coarsen_opts;
+
+    coarsen_opts = make_shared<typename HierarchicVWC<TMESH>::Options>();
+    coarsen_opts->free_verts = state.free_nodes;
+    coarsen_opts->min_vcw = O.min_vcw;
+    coarsen_opts->min_ecw = O.min_vcw;
+
+    if (O.ecw_robust)
+      { CalcECOLWeightsRobust (state, coarsen_opts->vcw, coarsen_opts->ecw); }
+    else
+      { CalcECOLWeightsSimple (state, coarsen_opts->vcw, coarsen_opts->ecw); }
+
+    auto calg = make_shared<BlockVWC<TMESH>>(coarsen_opts);
+
     auto grid_step = calg->Coarsen(mesh);
+
     return grid_step;
   } // VertexAMGFactory::BuildCoarseMap
 
+
+  template<class ENERGY, class TMESH, int BS>
+  void VertexAMGFactory<ENERGY, TMESH, BS> :: CalcECOLWeightsSimple (BaseAMGFactory::State & state, Array<double> & vcw, Array<double> & ecw)
+  {
+    const auto & O = static_cast<Options&>(*options);
+
+    auto mesh = dynamic_pointer_cast<TMESH>(state.curr_mesh);
+    const auto & M(*mesh); M.CumulateData();
+
+    auto vdata = get<0>(M.Data())->Data();
+    auto edata = get<1>(M.Data())->Data();
+
+    vcw.SetSize(M.template GetNN<NT_VERTEX>());
+    ecw.SetSize(M.template GetNN<NT_EDGE>());
+
+    // vcw = 0;
+    M.template Apply<NT_VERTEX>([&](auto v) { vcw[v] = ENERGY::GetApproxVWeight(vdata[v]); }, true);
+    M.template Apply<NT_EDGE>([&](const auto & edge) {
+	auto awt = ENERGY::GetApproxWeight(edata[edge.id]);
+	vcw[edge.v[0]] += awt;
+	vcw[edge.v[1]] += awt;
+      }, true);
+    M.template AllreduceNodalData<NT_VERTEX>(vcw, [&](auto & in) { return sum_table(in); });
+
+    M.template Apply<NT_VERTEX>([&](auto v) { vcw[v] = (vcw[v] == 0) ? 1.0 : ENERGY::GetApproxVWeight(vdata[v]) / vcw[v]; }, false);
+    if (O.ecw_geom) {
+      M.template Apply<NT_EDGE>([&](const auto & edge) {
+	  double vw0 = vcw[edge.v[0]], vw1 = vcw[edge.v[1]];
+	  ecw[edge.id] = ENERGY::GetApproxWeight(edata[edge.id]) / sqrt(vw0 * vw1);
+	}, false);
+    }
+    else {
+      M.template Apply<NT_EDGE>([&](const auto & edge) {
+	  double vw0 = vcw[edge.v[0]], vw1 = vcw[edge.v[1]];
+	  ecw[edge.id] = ENERGY::GetApproxWeight(edata[edge.id]) * (vw0 + vw1) / (2 * vw0 * vw1);
+	}, false);
+    }
+  } // VertexAMGFactory::CalcECOLWeightsSimple
+
+
+  template<class ENERGY, class TMESH, int BS>
+  void VertexAMGFactory<ENERGY, TMESH, BS> :: CalcECOLWeightsRobust (BaseAMGFactory::State & state, Array<double> & vcw, Array<double> & ecw)
+  {
+    if constexpr(ENERGY::NEED_ROBUST == false) {
+      CalcECOLWeightsSimple(state, vcw, ecw);
+    }
+    else {
+      // #ifndef ELASTICITY_ROBUST_ECW
+      // CalcECOLWeightsSimple(state, vcw, ecw);
+      // #else
+      const auto & O = static_cast<Options&>(*options);
+
+      auto mesh = dynamic_pointer_cast<TMESH>(state.curr_mesh);
+      const auto & M(*mesh); M.CumulateData();
+
+      auto vdata = get<0>(M.Data())->Data();
+      auto edata = get<1>(M.Data())->Data();
+
+      vcw.SetSize(M.template GetNN<NT_VERTEX>());
+      ecw.SetSize(M.template GetNN<NT_EDGE>());
+
+      Array<typename ENERGY::TM> diag_mats(M.template GetNN<NT_VERTEX>());
+
+      M.template Apply<NT_VERTEX>([&](auto v) { diag_mats[v] = ENERGY::GetVMatrix(vdata[v]); });
+
+      TM Qij, Qji;
+      SetIdentity(Qij); SetIdentity(Qji);
+      M.template Apply<NT_EDGE>([&](const auto & edge) {
+	  typename ENERGY::TVD &vdi = vdata[edge.v[0]], &vdj = vdata[edge.v[1]];
+	  ENERGY::ModQs(vdi, vdj, Qij, Qji);
+	  Add_AT_B_A(1.0, diag_mats[edge.v[0]], Qij, ENERGY::GetEMatrix(edata[edge.id]));
+	  Add_AT_B_A(1.0, diag_mats[edge.v[1]], Qji, ENERGY::GetEMatrix(edata[edge.id]));
+	}, true);
+      M.template AllreduceNodalData<NT_VERTEX>(diag_mats, [&](auto & in) { return sum_table(in); });
+
+      TM A, B;
+      if (O.ecw_geom) {
+	M.template Apply<NT_EDGE>([&](const auto & edge) {
+	    typename ENERGY::TVD &vdi = vdata[edge.v[0]], &vdj = vdata[edge.v[1]];
+	    ENERGY::ModQs(vdi, vdj, Qij, Qji);
+	    A = AT_B_A(Qji, diag_mats[edge.v[0]]);
+	    B = AT_B_A(Qij, diag_mats[edge.v[1]]);
+	    ecw[edge.id] = MIN_EV_FG ( A, B, Qij, Qji, ENERGY::GetEMatrix(edata[edge.id]) );
+	  }, false);
+      }
+      else {
+	M.template Apply<NT_EDGE>([&](const auto & edge) {
+	    typename ENERGY::TVD &vdi = vdata[edge.v[0]], &vdj = vdata[edge.v[1]];
+	    ENERGY::ModQs(vdi, vdj, Qij, Qji);
+	    A = AT_B_A(Qji, diag_mats[edge.v[0]]);
+	    B = AT_B_A(Qij, diag_mats[edge.v[1]]);
+	    ecw[edge.id] = MIN_EV_HARM ( A, B, ENERGY::GetEMatrix(edata[edge.id]) );
+	  }, false);
+      }
+
+      M.template Apply<NT_VERTEX>([&](auto v) {
+	  auto tr = calc_trace(diag_mats[v]);
+	  vcw[v] = (tr == 0) ? 1.0 : BS * ENERGY::GetApproxVWeight(vdata[v]) / tr;
+	}, false);
+      // #endif
+    } // VertexAMGFactory::CalcECOLWeightsSimple
+  }
 
   template<class ENERGY, class TMESH, int BS>
   shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<ParallelDofs> fpds, shared_ptr<ParallelDofs> cpds)

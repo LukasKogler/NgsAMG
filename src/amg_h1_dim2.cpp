@@ -43,7 +43,7 @@ namespace amg
 
   // template class PCC;
 
-  RegisterPreconditioner<PCC> register_h1amg_2d ("ngs_amg.h1_dim2");
+  RegisterPreconditioner<PCC> register_h1amg_2d ("ngs_amg.h1_2d");
 
 } // namespace amg
 
@@ -54,6 +54,6 @@ namespace amg
 {
   void ExportH1Dim2 (py::module & m)
   {
-    ExportAMGClass<ElmatVAMG<H1AMGFactory<2>, double, double>>(m, "h1_dim2", "", [&](auto & m) { ; } );
+    ExportAMGClass<ElmatVAMG<H1AMGFactory<2>, double, double>>(m, "h1_2d", "", [&](auto & m) { ; } );
   }
 }
