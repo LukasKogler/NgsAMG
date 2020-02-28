@@ -1440,6 +1440,9 @@ namespace amg {
 
 } // namespace amg
 
+
+/** 
+
 #include <python_ngstd.hpp>
 
 namespace amg {
@@ -1533,5 +1536,6 @@ namespace amg {
   }
 
 } // namespace amg
+**/
 
 #include "amg_tcs.hpp"

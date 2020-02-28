@@ -42,7 +42,6 @@ namespace amg
   protected:
 
     /** BaseAMGPC overloads **/
-
     virtual void InitLevel (shared_ptr<BitArray> freedofs = nullptr) override;
     virtual void Update () override { ; } // TODO: what should this do??
 
@@ -52,6 +51,14 @@ namespace amg
     virtual void ModifyOptions (BaseAMGPC::Options & O, const Flags & flags, string prefix = "ngs_amg_") override;
 
     virtual shared_ptr<TopologicMesh> BuildInitialMesh () override;
+    virtual void InitFinestLevel (BaseAMGFactory::AMGLevel & finest_level) override;
+    virtual Table<int> GetGSBlocks (const BaseAMGFactory::AMGLevel & amg_level) override;
+    virtual shared_ptr<BaseAMGFactory> BuildFactory () override;
+    virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (shared_ptr<TopologicMesh> mesh) override;
+
+    virtual void RegularizeMatrix (shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs> & pardofs) const override;
+
+    /** New Methods **/
 
     virtual void SetUpMaps ();
     virtual shared_ptr<EQCHierarchy> BuildEQCH ();
@@ -69,17 +76,10 @@ namespace amg
      					    TD2V D2V, TV2D V2D) const; // implemented seperately for all AMG_CLASS
     virtual shared_ptr<TMESH> BuildAlgMesh_TRIV (shared_ptr<BlockTM> top_mesh) const; // implement seperately (but easy)
 
-    virtual shared_ptr<BaseAMGFactory> BuildFactory () override;
-    virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (shared_ptr<TopologicMesh> mesh) override;
     template<int BSA> shared_ptr<BaseDOFMapStep> BuildEmbedding_impl (shared_ptr<TopologicMesh> mesh);
     template<int BSA> shared_ptr<stripped_spm_tm<Mat<BSA, BSA, double>>> BuildES ();
     template<int BSA> shared_ptr<stripped_spm_tm<Mat<BSA, FACTORY::BS, double>>> BuildED (size_t height, shared_ptr<TopologicMesh> mesh);
 
-    virtual void InitFinestLevel (BaseAMGFactory::AMGLevel & finest_level) override;
-
-    virtual Table<int> GetGSBlocks (const BaseAMGFactory::AMGLevel & amg_level) override;
-
-    virtual void RegularizeMatrix (shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs> & pardofs) const;
   }; // class VertexAMGPC
 
 

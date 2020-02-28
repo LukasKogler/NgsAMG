@@ -625,4 +625,5 @@ namespace amg
 #ifdef ELASTICITY
   template class HybridBS<Mat<6,6,double>>;
 #endif
-}
+} // namespace amg
+

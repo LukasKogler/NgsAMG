@@ -41,14 +41,13 @@ namespace amg
 
   extern template class ElmatVAMG<H1AMGFactory<2>, double, double>;
 
-  using MCS_AMG_PC = FacetWiseAuxiliarySpaceAMG<2,
-						HDivHighOrderFESpace,
-						VectorFacetFESpace,
-						FacetH1FE<2>,
-						ElmatVAMG<H1AMGFactory<2>, double, double>>;
+  using MCS_AUX_SYS = FacetAuxSystem<2, HDivHighOrderFESpace, VectorFacetFESpace, FacetH1FE<2>>;
 
+  template class FacetAuxSystem<2, HDivHighOrderFESpace, VectorFacetFESpace, FacetH1FE<2>>;
 
-  template<> INLINE void MCS_AMG_PC :: Add_Vol (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
+  using MCS_AMG_PC = FacetAuxVertexAMGPC<2, MCS_AUX_SYS, ElmatVAMG<H1AMGFactory<2>, double, double>>;
+
+  template<> INLINE void MCS_AUX_SYS :: Add_Vol (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
 						ElementId ei, LocalHeap & lh)
   {
     Add_Vol_simple(dnums, elmat, ei, lh);
@@ -62,7 +61,7 @@ namespace amg
       1 + p*(1+p)/2  .. p1 ODF (??)
   **/
   template<> template<class TLAM> INLINE
-  void MCS_AMG_PC :: ItLO_A (NodeId node_id, Array<int> & dnums, TLAM lam)
+  void MCS_AUX_SYS :: ItLO_A (NodeId node_id, Array<int> & dnums, TLAM lam)
   {
     // spacea->FESpace::GetDofNrs(node_id, dnums); // might this do the wrong thing in some cases ??
     const FESpace& F(*spacea); F.GetDofNrs(node_id, dnums);
@@ -80,7 +79,7 @@ namespace amg
        2*(p+1), 2*(p+1)+1   .. second p1
   **/
   template<> template<class TLAM> INLINE
-  void MCS_AMG_PC :: ItLO_B (NodeId node_id, Array<int> & dnums, TLAM lam)
+  void MCS_AUX_SYS :: ItLO_B (NodeId node_id, Array<int> & dnums, TLAM lam)
   {
     // spaceb->FESpace::GetDofNrs(node_id, dnums);
     const FESpace& F(*spaceb); F.GetDofNrs(node_id, dnums);
@@ -91,12 +90,7 @@ namespace amg
     }
   }
 
-
-  // template<> shared_ptr<BaseSmoother> MCS_AMG_PC :: BuildFLS () const
-  // {
-    // return nullptr;
-  // } // FacetWiseAuxiliarySpaceAMG::BuildFLS
-
+  template class FacetAuxVertexAMGPC<2, MCS_AUX_SYS, ElmatVAMG<H1AMGFactory<2>, double, double>>;
 
   RegisterPreconditioner<MCS_AMG_PC> register_mcs_gg_2d("ngs_amg.mcs_gg_2d");
 

@@ -9,10 +9,73 @@ namespace amg
   /** StokesAMGFactory **/
 
   template<class TMESH, class ENERGY>
+  BaseAMGFactory::State* StokesAMGFactory<TMESH, ENERGY> :: AllocState () const
+  {
+    return new State();
+  } // StokesAMGFactory::AllocState
+
+
+  template<class TMESH, class ENERGY>
+  void StokesAMGFactory<TMESH, ENERGY> :: InitState (BaseAMGFactory::State & state, BaseAMGFactory::AMGLevel & lev) const
+  {
+    BASE_CLASS::InitState(state, lev);
+  } // StokesAMGFactory::InitState
+
+
+  template<class TMESH, class ENERGY>
+  shared_ptr<BaseCoarseMap> StokesAMGFactory<TMESH, ENERGY> :: BuildCoarseMap (BaseAMGFactory::State & state)
+  {
+    auto & O(static_cast<Options&>(*options));
+
+    Options::CRS_ALG calg = O.crs_alg;
+
+    BuildAggMap(state);
+
+  //   switch(calg) {
+  //   case(Options::CRS_ALG::AGG): { return BuildAggMap(state); break; }
+  //   case(Options::CRS_ALG::ECOL): { return BuildECMap(state); break; }
+  //   default: { throw Exception("Invalid coarsen alg!"); break; }
+  //   }
+  } // StokesAMGFactory::InitState
+
+
+  template<class TMESH, class ENERGY>
+  shared_ptr<BaseCoarseMap> StokesAMGFactory<TMESH, ENERGY> :: BuildAggMap (BaseAMGFactory::State & state)
+  {
+  } // StokesAMGFactory::InitState
+
+  template<class TMESH, class ENERGY> shared_ptr<BaseDOFMapStep>
+  StokesAMGFactory<TMESH, ENERGY> :: PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<ParallelDofs> fpds, shared_ptr<ParallelDofs> cpds)
+  {
+    auto fmesh = static_pointer_cast<TMESH>(cmap->GetMesh());
+    auto cmesh = static_pointer_cast<TMESH>(cmap->GetMappedMesh());
+    auto vmap = cmap->GetMap<NT_VERTEX>();
+    auto emap = cmap->GetMap<NT_EDGE>();
+    TableCreator<int> cva(cmesh->template GetNN<NT_VERTEX>());
+    for (; !cva.Done(); cva++) {
+      for (auto k : Range(vmap))
+	if (vmap[k] != -1)
+	  { cva.Add(vmap[k], k); }
+    }
+    auto v_aggs = cva.MoveTable();
+    auto pwprol = BuildPWProl_impl (fpds, cpds, fmesh, cmesh, vmap, emap, v_aggs);
+    return pwprol;
+  } // StokesAMGFactory::PWProlMap
+
+
+  template<class TMESH, class ENERGY> shared_ptr<BaseDOFMapStep>
+  StokesAMGFactory<TMESH, ENERGY> :: SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap) override
+  {
+    throw Exception("Stokes SmoothedProlMap not yet implemented -> TODO !!");
+    return nullptr;
+  } // StokesAMGFactory::SmoothedProlMap
+
+
+  template<class TMESH, class ENERGY>
   shared_ptr<BaseCoarseMap> StokesAMGFactory<TMESH, ENERGY> :: BuildPWProl_impl (shared_ptr<ParallelDofs> fpds, shared_ptr<ParallelDofs> cpds,
 										 shared_ptr<TMESH> fmesh, shared_ptr<TMESH> cmesh,
 										 FlatArray<int> vmap, FlatArray<int> emap,
-										 FlatTable<int> v_aggs, FlatTable<int> c2f_e)
+										 FlatTable<int> v_aggs)//, FlatTable<int> c2f_e)
   {
     const auto & FM(*fmesh); FM.CumulateData();
     const auto & fecon(*FM.GetEdgeCM());
@@ -191,4 +254,5 @@ namespace amg
 
 } // namespace amg
 
-#endif
+#endif // FILE_AMG_FACTORY_STOKES_HPP
+#endif // STOKES

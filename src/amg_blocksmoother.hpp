@@ -12,7 +12,7 @@ namespace amg
      with residual updates.
    **/
   template<class TM>
-  class BSmoother
+  class BSmoother : public BaseSmoother
   {
   public:
     static_assert(mat_traits<TM>::HEIGHT == mat_traits<TM>::WIDTH, "BSmoother cannot do non-square entries (i think)!");
@@ -52,6 +52,33 @@ namespace amg
     /** perform "steps" steps of FW/BW Block-Gauss-Seidel sweeps, keeping res = b - A * x up to date **/
     void SmoothRES     (BaseVector & x, BaseVector & res, int steps = 1) const;
     void SmoothBackRES (BaseVector & x, BaseVector & res, int steps = 1) const;
+
+    virtual void Smooth (BaseVector  &x, const BaseVector &b,
+    			 BaseVector  &res, bool res_updated,
+    			 bool update_res, bool x_zero) const override
+    {
+      if (res_updated)
+	{ SmoothRES(x, res); }
+      else
+	{ Smooth(x, b); }
+    } // BSmoother::Smooth
+
+    virtual void SmoothBack (BaseVector  &x, const BaseVector &b,
+    			     BaseVector &res, bool res_updated,
+    			     bool update_res, bool x_zero) const override
+    {
+      if (res_updated)
+	{ SmoothBackRES(x, res); }
+      else
+	{ SmoothBack(x, b); }
+    } // BSmoother::SmoothBack
+
+    virtual int VHeight () const override { return spmat->Height(); }
+    virtual int VWidth () const override { return spmat->Height(); }
+    virtual AutoVector CreateVector () const override
+    { return make_shared<VVector<TV>>(spmat->Height()); }
+    virtual AutoVector CreateRowVector () const override { return CreateVector(); }
+    virtual AutoVector CreateColVector () const override { return CreateVector(); }
 
   private:
     template<class TLAM> INLINE void IterateBlocks (bool reverse, TLAM lam) const; 

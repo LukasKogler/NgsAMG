@@ -42,15 +42,13 @@ namespace amg
 
   extern template class ElmatVAMG<ElasticityAMGFactory<2>, double, double>;
 
-  using MCS_AMG_PC = FacetWiseAuxiliarySpaceAMG<2,
-						HDivHighOrderFESpace,
-						VectorFacetFESpace,
-						FacetRBModeFE<2>,
-						ElmatVAMG<ElasticityAMGFactory<2>, double, double>>;
+  template class FacetAuxSystem<2, HDivHighOrderFESpace, VectorFacetFESpace, FacetRBModeFE<2>>;
+  using MCS_AUX_SYS = FacetAuxSystem<2, HDivHighOrderFESpace, VectorFacetFESpace, FacetRBModeFE<2>>;
 
+  using MCS_AMG_PC = FacetAuxVertexAMGPC<2, MCS_AUX_SYS, ElmatVAMG<ElasticityAMGFactory<2>, double, double>>;
 
-  template<> INLINE void MCS_AMG_PC :: Add_Vol (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
-						ElementId ei, LocalHeap & lh)
+  template<> INLINE void MCS_AUX_SYS :: Add_Vol (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
+						 ElementId ei, LocalHeap & lh)
   {
     Add_Vol_simple(dnums, elmat, ei, lh);
   }
@@ -63,7 +61,7 @@ namespace amg
       1 + p*(1+p)/2  .. p1 ODF (??)
   **/
   template<> template<class TLAM> INLINE
-  void MCS_AMG_PC :: ItLO_A (NodeId node_id, Array<int> & dnums, TLAM lam)
+  void MCS_AUX_SYS :: ItLO_A (NodeId node_id, Array<int> & dnums, TLAM lam)
   {
     const FESpace& F(*spacea); F.GetDofNrs(node_id, dnums);
     if (dnums.Size() > 0) { // for unused + compressed (definedon, refined)
@@ -84,7 +82,7 @@ namespace amg
        2*(p+1), 2*(p+1)+1   .. second p1
   **/
   template<> template<class TLAM> INLINE
-  void MCS_AMG_PC :: ItLO_B (NodeId node_id, Array<int> & dnums, TLAM lam)
+  void MCS_AUX_SYS :: ItLO_B (NodeId node_id, Array<int> & dnums, TLAM lam)
   {
     const FESpace& F(*spaceb); F.GetDofNrs(node_id, dnums);
     if (dnums.Size() > 0) { // for unused + compressed (definedon, refined)
@@ -94,11 +92,8 @@ namespace amg
     }
   } // MCS_AMG_PC::ItLO_B
 
-  // template<> shared_ptr<BaseSmoother> MCS_AMG_PC :: BuildFLS () const
-  // {
-    // return nullptr;
-  // } // FacetWiseAuxiliarySpaceAMG::BuildFLS
 
+  template class FacetAuxVertexAMGPC<2, MCS_AUX_SYS, ElmatVAMG<ElasticityAMGFactory<2>, double, double>>;
 
   RegisterPreconditioner<MCS_AMG_PC> register_mcs_epseps_2d("ngs_amg.mcs_epseps_2d");
 

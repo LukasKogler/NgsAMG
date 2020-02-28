@@ -29,7 +29,8 @@ namespace amg {
     			     BaseVector &res, bool res_updated = false,
     			     bool update_res = true, bool x_zero = false) const = 0;
 
-    virtual Array<MemoryUsage> GetMemoryUsage() const override = 0;
+    virtual Array<MemoryUsage> GetMemoryUsage() const override { return Array<MemoryUsage>(); }
+    // virtual Array<MemoryUsage> GetMemoryUsage() const override = 0;
 
     virtual void Finalize() { ; }
 

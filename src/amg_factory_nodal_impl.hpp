@@ -54,10 +54,12 @@ namespace amg
       for (; !cdps.Done(); cdps++) {
 	for (auto eq : Range(neqcs)) {
 	  auto dps = eqc_h.GetDistantProcs(eq);
-	  auto verts = mesh.template GetENodes<NT>(eq);
-	  for (auto vnr : verts)
-	    for (auto p : dps)
-	      { cdps.Add(vnr, p); }
+	  auto nodes = mesh.template GetENodes<NT>(eq);
+	  for (const auto & node : nodes)
+	    for (auto p : dps) {
+	      if constexpr(NT == NT_VERTEX) { cdps.Add(node, p); }
+	      else { cdps.Add(node.id, p); }
+	    }
 	}
       }
       auto tab = cdps.MoveTable();

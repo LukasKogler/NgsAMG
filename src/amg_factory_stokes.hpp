@@ -16,10 +16,10 @@ namespace amg
   public:
     using TMESH = ATMESH;
     using ENERGY = AENERGY;
-    static constexpr int BS = ENERGY::DPV
+    static constexpr int BS = ENERGY::DPV;
     static constexpr int DIM = ENERGY::DIM;
-    using BASE = NodalAMGFactory<NT_EDGE, TMESH, ENERGY>;
-    using Options = typename BAE::Options;
+    using BASE = NodalAMGFactory<NT_EDGE, ATMESH, AENERGY::DPV>;
+    using Options = typename BASE::Options;
     using TM = typename ENERGY::TM;
     using TSPM_TM = stripped_spm_tm<TM>;
 
@@ -45,6 +45,10 @@ namespace amg
     virtual shared_ptr<BaseDOFMapStep> PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<ParallelDofs> fpds, shared_ptr<ParallelDofs> cpds) override;
     virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap) override;
     // shared_ptr<BaseDOFMapStep> SP_impl (shared_ptr<ProlMap<TSPM_TM>> pw_prol, shared_ptr<TMESH> fmesh, FlatArray<int> vmap);
+    shared_ptr<BaseCoarseMap> BuildPWProl_impl (shared_ptr<ParallelDofs> fpds, shared_ptr<ParallelDofs> cpds,
+						shared_ptr<TMESH> fmesh, shared_ptr<TMESH> cmesh,
+						FlatArray<int> vmap, FlatArray<int> emap,
+						FlatTable<int> v_aggs);
 
     /** Discard **/
     virtual bool TryDiscardStep (BaseAMGFactory::State & state) override { return false; }
@@ -52,3 +56,6 @@ namespace amg
   };
 
 } // namespace amg
+
+#endif // FILE_AMG_FACTORY_STOKES_HPP
+#endif // STOKES

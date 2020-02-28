@@ -10,7 +10,7 @@ namespace amg
 
   /** Sequential Gauss-Seidel. Can update residual during computation. **/
   template<class TM>
-  class GSS3
+  class GSS3 : public BaseSmoother
   {
   protected:
     size_t H;
@@ -49,9 +49,36 @@ namespace amg
     virtual void SmoothBackRES (size_t first, size_t next, BaseVector &x, BaseVector &res) const
     { SmoothRESInternal(first, next, x, res, true); }
 
+    virtual void Smooth (BaseVector  &x, const BaseVector &b,
+    			 BaseVector  &res, bool res_updated,
+    			 bool update_res, bool x_zero) const override
+    {
+      if (res_updated)
+	{ SmoothRESInternal(size_t(0), H, x, res, false); }
+      else
+	{ SmoothRHSInternal(size_t(0), H, x, b, false); }
+    } // GSS3::Smooth
+
+    virtual void SmoothBack (BaseVector  &x, const BaseVector &b,
+    			     BaseVector &res, bool res_updated,
+    			     bool update_res, bool x_zero) const override
+    {
+      if (res_updated)
+	{ SmoothRESInternal(size_t(0), H, x, res, true); }
+      else
+	{ SmoothRHSInternal(size_t(0), H, x, b, true); }
+    } // GSS3::SmoothBack
+
     shared_ptr<BitArray> GetFreeDofs () const { return freedofs; }
 
     virtual void CalcDiags ();
+
+    virtual int VHeight () const override { return H; }
+    virtual int VWidth () const override { return H; }
+    virtual AutoVector CreateVector () const override
+    { return make_shared<VVector<typename strip_vec<Vec<BS(), double>>::type>>(H); };
+    virtual AutoVector CreateRowVector () const override { return CreateVector(); }
+    virtual AutoVector CreateColVector () const override { return CreateVector(); }
 
   protected:
     void SmoothInternal (int type, BaseVector  &x, const BaseVector &b, BaseVector &res,

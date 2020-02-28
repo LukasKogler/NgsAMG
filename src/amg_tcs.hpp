@@ -95,10 +95,14 @@ namespace amg
 
 #ifdef FILE_AMGSM3
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMGSM3_CPP)
+  EXTERN template class GSS3<double>;
   EXTERN template class HybridGSS3<double>;
+  EXTERN template class GSS3<Mat<2,2,double>>;
   EXTERN template class HybridGSS3<Mat<2,2,double>>;
+  EXTERN template class GSS3<Mat<3,3,double>>;
   EXTERN template class HybridGSS3<Mat<3,3,double>>;
 #ifdef ELASTICITY
+  EXTERN template class GSS3<Mat<6,6,double>>;
   EXTERN template class HybridGSS3<Mat<6,6,double>>;
   EXTERN template class RegHybridGSS3<Mat<3,3,double>, 2, 3>;
   EXTERN template class RegHybridGSS3<Mat<6,6,double>, 3, 6>;
@@ -108,10 +112,14 @@ namespace amg
 
 #ifdef FILE_AMG_BS_HPP
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMG_BS_CPP)
+  EXTERN template class BSmoother<double>;
   EXTERN template class HybridBS<double>;
+  EXTERN template class BSmoother<Mat<2,2,double>>;
   EXTERN template class HybridBS<Mat<2,2,double>>;
+  EXTERN template class BSmoother<Mat<3,3,double>>;
   EXTERN template class HybridBS<Mat<3,3,double>>;
 #ifdef ELASTICITY
+  EXTERN template class BSmoother<Mat<6,6,double>>;
   EXTERN template class HybridBS<Mat<6,6,double>>;
 #endif // ELASTICITY
 #endif

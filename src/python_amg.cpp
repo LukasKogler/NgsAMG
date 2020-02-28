@@ -10,6 +10,9 @@ using namespace ngsolve;
 
 
 namespace amg {
+
+  extern void ExportSmoothers (py::module & m);
+
   extern void ExportH1Scal (py::module & m);
   extern void ExportH1Dim2 (py::module & m);
   extern void ExportH1Dim3 (py::module & m);
@@ -30,6 +33,8 @@ namespace amg {
 PYBIND11_MODULE (ngs_amg, m) {
   m.attr("__name__") = "ngs_amg";
 
+  amg::ExportSmoothers(m);
+  
   amg::ExportH1Scal(m);
   amg::ExportH1Dim2(m);
   amg::ExportH1Dim3(m);

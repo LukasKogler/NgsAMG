@@ -10,11 +10,12 @@ add_ngsolve_python_module(ngs_amg SHARED
   amg_h1_dim1.cpp amg_h1_dim2.cpp amg_h1_dim3.cpp
   amg_elast_2d.cpp amg_elast_3d.cpp
   amg_spmstuff.cpp amg_map.cpp amg_smoother.cpp
-  amg_matrix.cpp amg_contract.cpp
+  amg_matrix.cpp amg_contract.cpp python_smoothers.cpp
   boomer.cpp amg_smoother2.cpp amg_smoother3.cpp
   amg_discard.cpp amg_blocksmoother.cpp
   amg_mcs_gg_2d.cpp amg_mcs_gg_3d.cpp
-  amg_mcs_epseps_2d.cpp amg_mcs_epseps_3d.cpp)
+  amg_mcs_epseps_2d.cpp amg_mcs_epseps_3d.cpp
+  amg_stokes_gg_2d.cpp)
 
 include_directories(${MPI_CXX_INCLUDE_DIRS})
 

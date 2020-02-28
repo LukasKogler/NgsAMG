@@ -75,46 +75,29 @@ namespace amg
 #endif
 
 
-  /** FacetWiseAuxiliarySpaceAMG **/
+  /** FacetAuxSystem **/
 
-  /** An Auxiliary Space Elasticty AMG Preconditioner, obtained by facet-wise embedding of
-      the rigid body-modes. **/
-  template<int DIM, class ASPACEA, class ASPACEB, class AAUXFE, class AAMG_CLASS>
-  class FacetWiseAuxiliarySpaceAMG : public AAMG_CLASS
+  template<int DIM, class ASPACEA, class ASPACEB, class AAUXFE>
+  class FacetAuxSystem
   {
   public:
-
     using SPACEA = ASPACEA;
     using SPACEB = ASPACEB;
     using AUXFE = AAUXFE;
-    using AMG_CLASS = AAMG_CLASS;
 
-    static constexpr int DPV () { return AUXFE::ND(); }
+    static constexpr int DPV = AUXFE::ND();
 
-    using TM = Mat<DPV(), DPV(), double>;
-    using TV = Vec<DPV(), double>;
-    // using TPMAT = stripped_spm<Mat<1,DPV(),double>>; // see amg_tcs.hpp
-    using TPMAT = SparseMatrix<Mat<1,DPV(),double>>;
-    using TPMAT_TM = SparseMatrixTM<Mat<1,DPV(),double>>;
-    using TAUX = SparseMatrix<Mat<DPV(), DPV(), double>>;
-    using TAUX_TM = SparseMatrixTM<Mat<DPV(), DPV(), double>>;
-    using TMESH = typename AMG_CLASS::TMESH;
-
-    class Options;
+    using TM = Mat<DPV, DPV, double>;
+    using TV = Vec<DPV, double>;
+    using TPMAT = SparseMatrix<Mat<1,DPV,double>>;
+    using TPMAT_TM = SparseMatrixTM<Mat<1,DPV,double>>;
+    using TAUX = SparseMatrix<TM>;
+    using TAUX_TM = SparseMatrixTM<TM>;
 
   protected:
-
-    using Preconditioner::ma;
-
-    /** Inherided from AMG_CLASS **/
-    using AMG_CLASS::bfa, AMG_CLASS::options, AMG_CLASS::finest_freedofs, AMG_CLASS::finest_mat,
-      AMG_CLASS::factory, AMG_CLASS::free_verts;
-    using AMG_CLASS::use_v2d_tab, AMG_CLASS::d2v_array, AMG_CLASS::v2d_array, AMG_CLASS::v2d_table, AMG_CLASS::node_sort;
-    using AMG_CLASS::amg_mat;
-
-    bool __hacky_test = true;                /** hacky **/
-
     /** Compound space stuff **/
+    shared_ptr<BilinearForm> bfa;
+    shared_ptr<MeshAccess> ma;
     shared_ptr<CompoundFESpace> comp_fes;
     shared_ptr<ParallelDofs> comp_pds;        /** without MPI these are dummy pardofs **/
     shared_ptr<BitArray> comp_fds;            /** freedofs for the compound space **/
@@ -126,11 +109,11 @@ namespace amg
     shared_ptr<SPACEB> spaceb;
 
     /** Auxiliary space stuff **/
-    shared_ptr<ParallelDofs> aux_pardofs;      /** ParallelDofs for auxiliary space **/
+    shared_ptr<ParallelDofs> aux_pds;      /** ParallelDofs for auxiliary space **/
+    shared_ptr<BitArray> aux_fds;              /** auxiliary space freedofs **/
     // shared_ptr<BitArray> aux_free_verts;    /** dirichlet-vertices in aux space **/
     shared_ptr<TPMAT> pmat;                    /** aux-to compound-embedding **/
     shared_ptr<TAUX> aux_mat;                  /** auxiliary space matrix **/
-    shared_ptr<EmbeddedAMGMatrix> emb_amg_mat; /** as a preconditioner for the compound BLF **/
 
     /** book-keeping **/
     int apf = 0, ape = 0, bpf = 0, bpe = 0; /** A/B-DOFs per facet/edge **/
@@ -140,27 +123,138 @@ namespace amg
     Table<int> flo_b_f, flo_b_e;            /** SpaceB DofNrs for each facet/edge/full facet **/
     Array<double> facet_mat_data;           /** Facet matrix buffer **/
 
+    Array<int> a2f_facet, f2a_facet;        /** all facets <-> fine facets mappings **/
+    shared_ptr<BitArray> fine_facets;       /** is facet a fine facet ? **/
+    
     /** Facet matrices: [a_e, a_f, a_e, a_f]^T \times [aux_f] **/
     Array<FlatMatrix<double>> facet_mat;
+
+    bool elmat_sc = false;  // hacky for now
+
+  public:
+
+    FacetAuxSystem (shared_ptr<BilinearForm> _bfa);
+
+    shared_ptr<CompoundFESpace> GetCompSpace () const { return comp_fes; }
+    shared_ptr<FESpace> GetSpaceA () const { return spacea; }
+    int GetIndA () const { return ind_sa; }
+    int GetOsA () const { return os_sa; }
+    shared_ptr<FESpace> GetSpaceB () const { return spaceb; }
+    int GetIndB () const { return ind_sb; }
+    int GetOsB () const { return os_sb; }
+    shared_ptr<BaseMatrix> GetCompMat () const { return comp_mat; }
+    shared_ptr<ParallelDofs> GetCompParDofs () const { return comp_pds; }
+    shared_ptr<BitArray> GetCompFreeDofs () const { return comp_fds; }
+    shared_ptr<TPMAT> GetPMat () const { return pmat; }
+    shared_ptr<TAUX> GetAuxMat () const { return aux_mat; }
+    shared_ptr<ParallelDofs> GetAuxParDofs () const { return aux_pds; }
+    shared_ptr<BitArray> GetAuxFreeDofs () const { return aux_fds; } // free_verts are after sorting
+    Array<Array<shared_ptr<BaseVector>>> GetRBModes () const;
+
+    virtual shared_ptr<BaseVector> CreateAuxVector () const;
+
+    virtual void Initialize (shared_ptr<BitArray> freedofs);
+    virtual void Finalize (shared_ptr<BaseMatrix> comp_mat);
+
+    virtual void AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
+				   ElementId ei, LocalHeap & lh);
+
+  protected:
+
+    void AllocAuxMat ();
+    void SetUpFacetMats ();
+    void SetUpAuxParDofs ();
+    void BuildPMat ();
+
+    /** Pick out low-order DOFs of node_id **/
+    template<class TLAM> INLINE void ItLO_A (NodeId node_id, Array<int> & dnums, TLAM lam);
+    template<class TLAM> INLINE void ItLO_B (NodeId node_id, Array<int> & dnums, TLAM lam);
+
+    template<ELEMENT_TYPE ET> INLINE
+    void CalcFacetMat (ElementId vol_elid, int facet_nr, FlatMatrix<double> fmat, LocalHeap & lh);
+
+    INLINE void Add_Facet (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
+			   ElementId ei, LocalHeap & lh);
+
+    INLINE void Add_Vol (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
+			 ElementId ei, LocalHeap & lh);
+
+    /** aux_elmat = P * elmat * PT **/
+    INLINE void Add_Vol_simple (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
+				ElementId ei, LocalHeap & lh);
+
+    /** Calc ker(PPT), regularize it. **/
+    INLINE void Add_Vol_rkP (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
+			     ElementId ei, LocalHeap & lh);
+
+    INLINE void Add_Vol_elP (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
+			     ElementId ei, LocalHeap & lh);
+
+  }; // class FacetAuxSystem
+
+
+  /** END FacetAuxSystem **/
+
+
+  /** FacetAuxVertexAMGPC **/
+
+  /** An Auxiliary Space Elasticty AMG Preconditioner, obtained by facet-wise embedding of
+      the rigid body-modes. **/
+  template<int ADIM, class AAUX_SYS, class AAMG_CLASS>
+  class FacetAuxVertexAMGPC : public AAMG_CLASS
+  {
+  public:
+
+    static constexpr int DIM = ADIM;
+
+    using AUX_SYS = AAUX_SYS;
+    using AMG_CLASS = AAMG_CLASS;
+    using TMESH = typename AMG_CLASS::TMESH;
+
+    class Options;
+
+    using TM = typename AUX_SYS::TM;
+    using TV = typename AUX_SYS::TV;
+    using TPMAT = typename AUX_SYS::TPMAT;
+    using TPMAT_TM = typename AUX_SYS::TPMAT_TM;
+    using TAUX = typename AUX_SYS::TAUX;
+    using TAUX_TM = typename AUX_SYS::TAUX_TM;
+
+  protected:
+
+    using Preconditioner::ma;
+
+    /** Inherided from AMG_CLASS **/
+    using AMG_CLASS::bfa, AMG_CLASS::options, AMG_CLASS::finest_freedofs, AMG_CLASS::finest_mat,
+      AMG_CLASS::factory, AMG_CLASS::free_verts;
+    using AMG_CLASS::use_v2d_tab, AMG_CLASS::d2v_array, AMG_CLASS::v2d_array, AMG_CLASS::v2d_table, AMG_CLASS::node_sort;
+    using AMG_CLASS::amg_mat;
+
+    shared_ptr<AUX_SYS> aux_sys;               /** the auxiliary space system **/
+
+    bool __hacky_test = true;                  /** hacky **/
+
+    shared_ptr<EmbeddedAMGMatrix> emb_amg_mat; /** as a preconditioner for the compound BLF **/
 
   public:
 
     /** Constructors **/
 
-    FacetWiseAuxiliarySpaceAMG (const PDE & apde, const Flags & aflags, const string aname = "precond")
+    FacetAuxVertexAMGPC (const PDE & apde, const Flags & aflags, const string aname = "precond")
       : AMG_CLASS (apde, aflags, aname)
     { throw Exception("PDE-Constructor not implemented!"); }
 
-    FacetWiseAuxiliarySpaceAMG (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string name = "precond");
+    FacetAuxVertexAMGPC (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string name = "precond");
 
     /** New methods **/
 
-    shared_ptr<TPMAT> GetPMat () const { return pmat; }
-    shared_ptr<TAUX> GetAuxMat () const { return aux_mat; }
-    shared_ptr<BitArray> GetAuxFreeDofs () const { return finest_freedofs; } // free_verts are after sorting
-    Array<Array<shared_ptr<BaseVector>>> GetRBModes () const;
+    shared_ptr<AUX_SYS> GetAuxSys () const { return aux_sys; }
+    shared_ptr<typename AUX_SYS::TPMAT> GetPMat () const { return aux_sys->GetPMat(); }
+    shared_ptr<typename AUX_SYS::TAUX> GetAuxMat () const { return aux_sys->GetAuxMat(); }
+    shared_ptr<BitArray> GetAuxFreeDofs () const { return aux_sys->GetAuxFreeDofs(); } // free_verts are after sorting
+    Array<Array<shared_ptr<BaseVector>>> GetRBModes () const { return aux_sys->GetRBModes(); }
 
-    virtual shared_ptr<BaseVector> CreateAuxVector () const;
+    virtual shared_ptr<BaseVector> CreateAuxVector () const { return aux_sys->CreateAuxVector(); }
 
     /** Inherited from Preconditioner/BaseMatrix **/
     virtual const BaseMatrix & GetAMatrix () const override;
@@ -190,45 +284,12 @@ namespace amg
     virtual shared_ptr<BaseSmoother> BuildFLS2 () const;
     shared_ptr<EmbeddedAMGMatrix> GetEmbAMGMat () const;
 
-  protected:
-
-    /** utility **/
-
-    void AllocAuxMat ();
-    void SetUpFacetMats ();
-    void SetUpAuxParDofs ();
-    void BuildPMat ();
-
-    /** Pick out low-order DOFs of node_id **/
-    template<class TLAM> INLINE void ItLO_A (NodeId node_id, Array<int> & dnums, TLAM lam);
-    template<class TLAM> INLINE void ItLO_B (NodeId node_id, Array<int> & dnums, TLAM lam);
-
-    template<ELEMENT_TYPE ET> INLINE
-    void CalcFacetMat (ElementId vol_elid, int facet_nr, FlatMatrix<double> fmat, LocalHeap & lh);
-
     virtual void AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
 				   ElementId ei, LocalHeap & lh) override;
 
-    INLINE void Add_Facet (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
-			   ElementId ei, LocalHeap & lh);
-
-    INLINE void Add_Vol (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
-			 ElementId ei, LocalHeap & lh);
-
-    /** aux_elmat = P * elmat * PT **/
-    INLINE void Add_Vol_simple (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
-				 ElementId ei, LocalHeap & lh);
-
-    /** Calc ker(PPT), regularize it. **/
-    INLINE void Add_Vol_rkP (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
-			     ElementId ei, LocalHeap & lh);
-
-    INLINE void Add_Vol_elP (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
-			     ElementId ei, LocalHeap & lh);
-
   }; // class FacetWiseAuxiliarySpaceAMG
 
-  /** END FacetWiseAuxiliarySpaceAMG **/
+  /** END FacetAuxVertexAMGPC **/
 
 
   /** Options **/

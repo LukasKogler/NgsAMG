@@ -8,6 +8,7 @@ option( ENABLE_ELASTICITY_ROBUST_ECW   "Enable robust elasticity coarsening (com
 option( USE_TAU   "Enable TAU instrumentation" OFF)
 option( COMPILE_TIMING   "time compiling" OFF)
 option( AUX_AMG   "Enable auxiliary space AMG preconditioners." ON)
+option( STOKES "Enable AMG preconditioners for divdiv-penalty (Stokes)" OFF)
 
 set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH}" "${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_modules")
 
@@ -67,6 +68,21 @@ if (AUX_AMG)
 else (AUX_AMG)
   message(STATUS "Turning OFF auxiliary space AMG.")
 endif (AUX_AMG)
+
+if (STOKES)
+  # if (NOT AUX_AMG)
+    # message(FATAL_ERROR "Need auxiliary space AMG for Stokes AMG!!")
+  # endif(NOT AUX_AMG)
+  message(STATUS "Turning ON H1 Stokes AMG")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DSTOKES")
+  if (ELASTICITY)
+    message(STATUS "Turning ON Elasticity Stokes AMG")
+  else (ELASTICITY)
+    message(STATUS "Turning OFF Elasticity Stokes AMG")
+  endif (ELASTICITY)
+else(STOKES)
+  message(STATUS "Turning OFF H1/Elasticity Stokes AMG")
+endif(STOKES)
 
 
 if (USE_BOOMER)
