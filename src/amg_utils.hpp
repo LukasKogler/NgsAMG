@@ -107,6 +107,32 @@ namespace amg
     return ind;
   }
 
+
+  template<typename T> INLINE void ApplyPermutation (FlatArray<T> array, FlatArray<int> perm)
+  {
+    for (auto i : Range(array)) {
+      // swap through one circle; use target as buffer as buffer
+      if (perm[i] == -1) continue;
+      int check = i; int from_here;
+      while ( ( from_here = perm[check]) != i ) { // stop when we are back
+	swap(array[check], array[from_here]);
+	perm[check] = -1; // have right ntry for pos. check
+	check = from_here; // check that position next
+      }
+      inds[check] = -1;
+    }
+  } // ApplyPermutation
+
+
+  template<typename T> INLINE void ApplyPermutation (FlatArray<T> array, FlatArray<int> perm, FlatArray<T> buffer)
+  {
+    for (auto k : Range(array))
+      { buffer[k] = array[k]; }
+    for (auto k : Range(array))
+      { array[k] = buffer[perm[k]]; }
+  } // ApplyPermutation
+
+
   template<class T>
   INLINE void print_ft(std::ostream &os, const T& t) {
     if (!t.Size()) {
@@ -689,6 +715,16 @@ namespace amg
     Iterate<A>([&](auto i) {
 	Iterate<B> ([&](auto j) {
 	    a(IMINI+i.value, IMINJ+j.value) += b(i.value, j.value);
+	  });
+      });
+  }
+
+  template<int IMINI, int IMINJ, int A, int B, int C, int D>
+  void AddTMBlock (double val, Mat<C,D> & a, const Mat<A,B> & b) {
+    static_assert( ((IMINI+A<=C) && (IMINJ+B<=D)), "ADD ILLEGAL BLOCK!!");
+    Iterate<A>([&](auto i) {
+	Iterate<B> ([&](auto j) {
+	    a(IMINI+i.value, IMINJ+j.value) += val * b(i.value, j.value);
 	  });
       });
   }

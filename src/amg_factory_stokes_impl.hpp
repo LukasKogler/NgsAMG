@@ -108,6 +108,20 @@ namespace amg
     return nullptr;
   } // StokesAMGFactory::SmoothedProlMap
 
+    /**
+       Stokes prolongation works like this:
+           Step  I) Find a prolongation on agglomerate facets
+	   Step II) Extend prolongation to agglomerate interiors:
+	               Minimize energy. (I) as BC. Additional constraint:
+		          \int_a div(u) = |a|/|A| \int_A div(U)    (note: we maintain constant divergence)
+
+       "Piecewise" Stokes Prolongation.
+           Step I) Normal PW Prolongation as in standard AMG
+
+       "Smoothed" Stokes Prol takes PW Stokes prol and then:
+           Step  I) Take PW prol, then smooth on facets between agglomerates. Additional constraint: 
+	              Maintain flow through facet.
+    **/
 
   template<class TMESH, class ENERGY> shared_ptr<typename StokesAMGFactory<TMESH, ENERGY>::TSPM_TM>
   StokesAMGFactory<TMESH, ENERGY> :: BuildPWProl_impl (shared_ptr<ParallelDofs> fpds, shared_ptr<ParallelDofs> cpds,
@@ -115,76 +129,268 @@ namespace amg
 						       FlatArray<int> vmap, FlatArray<int> emap,
 						       FlatTable<int> v_aggs)//, FlatTable<int> c2f_e)
   {
-    return nullptr;
+
+    static constexpr int BS = mat_traits<TM>::HEIGHT:
+
+    /** fine mesh **/
+    const auto & FM(*fmesh); FM.CumulateData();
+    const auto & fecon(*FM.GetEdgeCM());
+    auto fvd = get<0>(FM.Data())->Data();
+    auto fed = get<1>(FM.Data())->Data();
+    size_t FNV = FM.template GetNN<NT_VERTEX>(), FNE = FM.template GetNN<NT_EDGE>();
+    auto free_fes = CM.GetFreeNodes();
+
+    /** coarse mesh **/
+    const auto & CM(*cmesh); CM.CumulateData();
+    const auto & cecon(*CM.GetEdgeCM());
+    auto cvd = get<0>(CM.Data())->Data();
+    auto ced = get<1>(CM.Data())->Data();
+    size_t CNV = CM.template GetNN<NT_VERTEX>(), CNE = CM.template GetNN<NT_EDGE>();
+
+    /** prol dims **/
+    size_t H = FNE, W = CNE;
+
+    /** Count entries **/
+    Array<int> perow(H); perow = 0;
+    auto fedges = FM.template GetNodes<NT_EDGE>();
+    for (auto fenr : Range(H)) {
+      auto & fedge = fedges[fenr];
+      if ( free_fes && (!free_fes->Test(fenr)) ) // dirichlet
+    	{ perow[fenr] = 0; }
+      else {
+	auto cenr = emap[fenr];
+	if (cenr != -1) // edge connects two agglomerates
+	  { perow[fenr] = 1; }
+	else {
+	  int cv0 = vmap[fedge.v[0]], cv1 = vmap[fedge.v[1]];
+	  if (cv0 == cv1) {
+	    if (cv0 == -1) // I don't think this can happen - per definition emap must be -1
+	      { perow[fenr] = 0; throw Exception("Weird case A!"); }
+	    else // edge is interior to an agglomerate - alloc entries for all facets of the agglomerate
+	      { perow[fenr] = cecon.GetRowIndices(cv0).Size(); }
+	  }
+	  else // I don't think this can happen
+	    { perow[fenr] = 0; throw Exception("Weird case B!"); }
+	}
+      }
+    }
+
+    /** Allocate Matrix  **/
+    auto prol = make_shared<TSPM_TM> (perow, W);
+    auto & P(*prol);
+    P.AsVector() = -42;
+
+    /** Fill facets **/
+    typename ENERGY::TVD tvf, tvc;
+    for (auto fenr : Range(H)) {
+      auto & fedge = fedges[fenr];
+      auto cenr = emap[fenr];
+      if (cenr != -1) {
+    	int fv0 = fedge.v[0], fv1 = fedge.v[1];
+    	ENERGY::CalcMPData(fvd[fv0], fvd[fv1], tvf);
+    	int cv0 = vmap[fv0], cv1 = vmap[fv1];
+    	ENERGY::CalcMPData(cvd[cv0], cvd[cv1], tvc);
+    	P.GetRowIndices(fenr)[0] = cenr;
+    	ENERGY::CalcQHh(tvc, tvf, P.GetRowValues(fenr)[0]);
+      }
+    }
+
+    cout << "stage 1 pwp: " << endl;
+    print_tm_spmat(P, cout << endl);
 
 
-    // /** fine mesh **/
-    // const auto & FM(*fmesh); FM.CumulateData();
-    // const auto & fecon(*FM.GetEdgeCM());
-    // auto fvd = get<0>(FM.Data())->Data();
-    // auto fed = get<1>(FM.Data())->Data();
-    // size_t FNV = FM.template GetNN<NT_VERTEX>(), FNE = FM.template GetNN<NT_EDGE>();
-    // auto free_fes = CM.GetFreeNodes();
+    /** Extend the prolongation - Solve:
+    	  |A_vv B_v^T|  |u_v|     |-A_vf      0     |  |P_f|
+    	  |  ------  |  | - |  =  |  -------------  |  | - | |u_c|
+    	  |B_v       |  |lam|     |-B_vf  d(|v|/|A|)|  |B_A| 
+     **/
+    LocalHeap lh("Jerry", 10 * 1024 * 1024);
+    for (auto agg_nr : Range(v_aggs)) {
+      auto agg_vs = v_aggs[agg_nr];
+      auto cv = vmap[agg_vs[0]];
+      if (agg_vs.Size() > 1) { // for single verts there are no interior edges
+	HeapReset hr(lh);
+	auto cv = vmap[agg_vs[0]];
+	auto cneibs = cecon.GetRowindices(cv);
+	auto cfacets = cecon.GetRowValues(cv);
+	/** count fine facets **/
+	int ncff = cfacets.Size();    // # coarse facets
+	int nff = 0; int nffi = 0, nfff = 0;       // # fine facets (int/facet)
+	auto it_f_facets = [&](auto lam) {
+	  for (auto kv : Range(agg_vs)) {
+	    auto vk = agg_vs[kv];
+    	    auto vk_neibs = fecon.GetRowIndices(v);
+    	    auto vk_fs = fecon.GetRowValues(v);
+	    for (auto j : Range(v_neibs)) {
+	      auto vj = v_neibs[j];
+	      auto cvj = vmap[vj];
+	      if (cvj != -1) {
+		if (cvj == cv) { // neib in same agg
+		  auto kj = find_in_sorted_array(vj, agg_vs);
+		  lam(vk, k, vj, kj, int(vk_fs[j]));
+		}
+		else // neib in different agg
+		  { lam(vk, k, vj, -1, int(vk_fs[j])); }
+	      }
+	    }
+	  }
+	};
+	it_f_facets([&](int vi, int ki, int vj, int kj, int eid) LAMBDA_INLINE {
+	    nff++;
+	    if (kj == -1) // ex-facet
+	      { nfff++; }
+	    else
+	      { nffi++; }
+	  });
+	/** fine facet arrays **/
+	FlatArray<int> index(nff, lh), buffer(nff, lh);
+	FlatArray<int> ffacets(nff, lh), ffiinds(nffi, lh), fffinds(nfff, lh);
+	it_f_facets([&](int vi, int ki, int vj, int kj, int eid) LAMBDA_INLINE {
+	    index[nff] = nff;
+	    if (kj == -1)
+	      { fffinds[nfff++] = nff; }
+	    else
+	      { ffiinds[nffi++] = nff; }
+	    ffacets[nff++] = eid;
+	  });
+	QuickSortI(ffacets, index);
+	for (auto k : Range(nffi))
+	  { ffiinds[k] = index[ffiinds[k]]; }
+	for (auto k : Range(nfff))
+	  { fffinds[k] = index[fffinds[k]]; }
+	ApplyPermutation(ffacets, index);
 
-    // /** coarse mesh **/
-    // const auto & CM(*cmesh); CM.CumulateData();
-    // const auto & cecon(*CM.GetEdgeCM());
-    // auto cvd = get<0>(CM.Data())->Data();
-    // auto ced = get<1>(CM.Data())->Data();
-    // size_t CNV = CM.template GetNN<NT_VERTEX>(), CNE = CM.template GetNN<NT_EDGE>();
+	auto it_f_edges = [&](auto lam) {
+	  for (auto kvi : Range(agg_vs)) {
+	    auto vi = agg_vs[kv];
+    	    auto vi_neibs = fecon.GetRowIndices(vi);
+    	    auto vi_fs = fecon.GetRowValues(vi);
+	    const int nneibs = vk_fs.Size();
+	    for (auto lk : Range(nneibs)) {
+	      auto vk = vi_neibs[lk];
+	      auto fik = int(vk_fs[lk]);
+	      auto kfik = find_in_sorted_array(fik, ffacets);
+	      for (auto lj : Range(kvj)) {
+		auto vj = vi_neibs[lj];
+		auto fij = int(vk_fs[lj]);
+		auto kfij = find_in_sorted_array(fij, ffacets);
+		lam(vi, kvi, vj, vk, fij, kfij, fik, kfik);
+	      }
+	    }
+	  }
+	};
 
-    // /** prol dims **/
-    // size_t H = FNE, W = CNE;
+	int HA = nff * BS, HB = nfv, HM = HA + HB;
 
-    // /** Count entries **/
-    // Array<int> perow(H); perow = 0;
-    // auto fedges = FM.template GetNodes<NT_EDGE>();
-    // for (auto fenr : Range(H)) {
-    //   auto & fedge = fedges[fenr];
-    //   auto cenr = emap[fenr];
-    //   if ( free_fes && (!free_fes->Test(fenr)) ) // dirichlet
-    // 	{ perow[fenr] = 0; }
-    //   else if (cenr == -1) {
-    // 	int cv0 = vmap[fedge.v[0]], cv1 = vmap[fedge.v[1]];
-    // 	if (cv0 == cv1) { // edge is interior to an agglomerate - alloc entries for all facets of the agglomerate
-    // 	  if (cv0 == -1)
-    // 	    { perow[fenr] = 0; }
-    // 	  else
-    // 	    { perow[fenr] = cecon.GetRowIndices(cv0).Size(); }
-    // 	}
-    // 	else // probably some dirichlet-fuckery involved
-    // 	  { perow[fenr] = 0; }
-    //   }
-    //   else // an edge connecting two agglomerates
-    // 	{ perow[fenr] = 1; }
-    // }
+	FlatMatrix<double> M(HM, HM, lh); M = 0;
 
-    // /** Allocate Matrix  **/
-    // auto prol = make_shared<TSPM_TM> (perow, W);
-    // auto & P(*prol);
+	/** A block **/
+	// FlatMatrix<double> A(nff * BS, nff * BS, lh); A = 0;
+	auto a = M.Rows(0, HA).Cols(0, HA);
+	FlatMatrix<TM> eblock(2,2,lh);
+	it_f_edges([&](auto vi, auto kvi, auto vj, auto vk, auto fij, auto kfij, auto fik, auto kfik) {
+	    ENERGY::CalcRMBlock(eblock, fvd[vi], fvd[vj], fvd[vk], fed[fij], (vi > vj), fed[fik], (vi > vk));
+	    Iterate<2>([&](auto i) {
+		int osi = BS * (i.value == 0 ? fij, fik);
+		Iterate<2>([&](auto j) {
+		    int osj = BS * (j.value == 0 ? fij, fik);
+		    A.Rows(osi, osi + BS).Cols(osj, osj + BS) += eblock(i.value, j.value);
+		  });
+	      });
+	  });
 
-    // /** Fill facets **/
-    // typename ENERGY::TVD tvf, tvc;
-    // for (auto fenr : Range(H)) {
-    //   auto & fedge = fedges[fenr];
-    //   auto cenr = emap[fenr];
-    //   if (cenr != -1) {
-    // 	int fv0 = fedge.v[0], fv1 = fedge.v[1];
-    // 	ENERGY::CalcMPData(fvd[fv0], fvd[fv1], tvf);
-    // 	int cv0 = vmap[fv0], cv1 = vmap[fv1];
-    // 	ENERGY::CalcMPData(cvd[cv0], cvd[cv1], tvc);
-    // 	P.GetRowIndices(fenr)[0] = cenr;
-    // 	ENERGY::CalcPWPBlock(tvf, tvc, P.GetRowValues(fenr)[0]);
-    //   }
-    // }
+	/** (fine) B blocks **/
+	auto Bf = M.Rows(HA, HA+HB).Cols(0, HA);
+	auto BfT = M.Rows(0, HA).Cols(HA, HA+HB);
+	for (auto kvi : Range(nfv)) {
+	  auto BfRow = Bf.Row(kvi);
+	  auto vi = agg_vs[kvi];
+	  auto vi_neibs = fecon.GetRowIndices(vi);
+	  auto vi_fs = fecon.GetRowValues(vi);
+	  for (auto j : Range(vi_fs)) {
+	    auto vj = vi_neibs[j];
+	    auto fij = int(vi_fs[j]);
+	    auto kfij = find_in_sorted_array(fij, ffacets);
+	    auto & fijd = fed[fij];
+	    int col = BS * kvj;
+	    for (auto l : Range(BS))
+	      { BfRow(col++) = fed[fij].flow(l); }
+	  }
+	}
 
+	/** (coarse) B **/
+	FlatArray<double> bcbase(BS * ncf);
+	FlatMatrix<double> Bc(nfv, BS * ncf);
+	auto cv_neibs = cecon.GetRowIndices(cv);
+	auto cv_fs = cecon.GetRowValues(cv);
+	int bccol = 0;
+	for (auto j : Range(cv_fs)) {
+	  auto cvj = cv_neibs[j];
+	  auto fij = int(cv_fs[j]);
+	  auto & fijd = ced[fij];
+	  for (auto l : Range(BS))
+	    { bcbase(col++) = fijd.flow(l); }
+	}
+	double cvol = cvd[cv].vol;
+	for (auto kvi : Range(nfv)) {
+	  auto vi = agg_vs[kvi];
+	  auto bcrow = Bc.Row(kvi);
+	  for (auto col : Range(bcbase))
+	    { bcrow(col) = fvd[vi].vol / cvol * bcbcase[col]; }
+	}
 
-    // /** Solve:
-    // 	  |A_vv B_v^T|  |u_v|     |-A_vf      0     |  |P_f|
-    // 	  |  ------  |  | - |  =  |  -------------  |  | - | |u_c|
-    // 	  |B_v       |  |lam|     |-B_vf  d(|v|/|A|)|  |B_A| 
-    //  **/
-    // LocalHeap lh("Jerry", 10 * 1024 * 1024);
+	/** RHS **/
+	int Hi = BS * nffi, Hf = BS * nffc, Hc = BS * ncf;
+	FlatArray<int> colsi(Hi + nfv, lh), colsf(Hf, lh);
+	int ci = 0;
+	for (auto j : Range(nffi)) {
+	  int base = BS * ffiinds[j];
+	  for (auto l : Range(BS))
+	    { colsi[ci++] = base++; }
+	}
+	for (auto kv : Range(nfv))
+	  { colsi[ci++] = HA + kv; }
+	int cf = 0;
+	for (auto j : Range(nfff)) {
+	  int base = BS * fffinds[j];
+	  for (auto l : Range(BS))
+	    { colsf[cf++] = base++; }
+	}
+
+	FlatMatrix<double> Pf(Hf, Hc, lh);
+
+	/** -A_if * P_f **/
+	FlatMatrix<double> rhs(Hi + nfv, Hc, lh);
+	rhs.Rows(0, Hi) = 0;
+	rhs.Rows(Hi, Rhs.Height()) = Bc;
+	rhs -= M.Rows(colsi).Cols(colsf);
+	
+	/** The block to invert **/
+	FlatMatrix<double> Mii(Hi + nfv, Hi + nfv, lh);
+	Mii = M.Rows(colsi).Cols(colsi);
+	CalcInverse(mii);
+
+	/** The final prol **/
+	FlatMatrix<double> Pext(Hi + nfv, Hc, lh);
+	Pext = Mii * rhs;
+
+	/** Write into sprol **/
+	for (auto kfi : Range(nffi)) {
+	    auto ff = ffacets[ffiinds[kfi]];
+	    auto ris = P.GetRowIndices(ff);
+	    auto rvs = P.GetRowValues(ff);
+	    for (auto j : Range(ncf)) {
+	      ris[j] = cfacets[j];
+	      rvs[j] = Pext.Rows(BS*kfi, BS*(kfi+1)).Cols(BS*j, BS*(j+1));
+	    }
+	}
+
+      } // agg_vs.Size() > 1
+    } // agglomerate loop
+
+    cout << " Final Stokes PWP:" << endl;
+    print_tm_spmat(P, cout << endl);
+
     // for (auto agg_nr : Range(v_aggs)) {
     //   auto agg_vs = v_aggs[agg_nr];
     //   if (agg_vs.Size() > 1) {
@@ -300,6 +506,7 @@ namespace amg
     //   }
     // }
 
+    return nullptr;
   } // StokesAMGFactory<TMESH, ENERGY> :: BuildPWProl_impl
 										   
 

@@ -124,7 +124,7 @@ namespace amg
     Array<double> facet_mat_data;           /** Facet matrix buffer **/
 
     Array<int> a2f_facet, f2a_facet;        /** all facets <-> fine facets mappings **/
-    shared_ptr<BitArray> fine_facet;       /** is facet a fine facet ? **/
+    shared_ptr<BitArray> fine_facet;        /** is facet an "active" facet ? [[ definedon and refined can mess with this ]]**/
     
     /** Facet matrices: [a_e, a_f, a_e, a_f]^T \times [aux_f] **/
     Array<FlatMatrix<double>> facet_mat;

@@ -149,7 +149,7 @@ namespace amg
   } // FacetAuxSystem::Finalize
 
 
-    template<int DIM, class SPACEA, class SPACEB, class AUXFE>
+  template<int DIM, class SPACEA, class SPACEB, class AUXFE>
   void FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: AllocAuxMat ()
   {
     auto nfacets = ma->GetNFacets();
@@ -185,6 +185,7 @@ namespace amg
   {
     LocalHeap clh (ngcore::task_manager->GetNumThreads() * 20*1024*1024, "SetUpFacetMats");
     size_t nfacets = ma->GetNFacets(), nedges = ma->GetNEdges();
+
     size_t cnt_buf;
     Array<int> dnums;
     /** Find low-order DOfs for each facet/edge **/
@@ -222,15 +223,29 @@ namespace amg
     /** Alloc facet matrices **/
     facet_mat_data.SetSize(cnt_buf * DPV);
     facet_mat.SetSize(nfacets); cnt_buf = 0;
+
+    int nff = 0;
+    fine_facet = make_shared<BitArray>(nfacets);
+    fine_facet->Clear();
+
     for (auto facet_nr : Range(nfacets)) {
       int c = flo_a_f[facet_nr].Size() + flo_b_f[facet_nr].Size();
       if constexpr(DIM==3) {
 	  for (auto fe : ma->GetFaceEdges(facet_nr))
 	    { c += flo_a_e[fe].Size() + flo_b_e[fe].Size(); }
 	}
+      if (c > 0)
+	{ fine_facet->SetBit(facet_nr); nff++; }
       facet_mat[facet_nr].AssignMemory(c, DPV, facet_mat_data.Addr(cnt_buf));
       cnt_buf += c * DPV;
     }
+
+    f2a_facet.SetSize(nff); nff = 0;
+    a2f_facet.SetSize(nfacets); a2f_facet = -1;
+    for (auto k : Range(nfacets))
+      if (fine_facet->Test(k))
+	{ a2f_facet[k] = nff; f2a_facet[nff++] = k; }
+
     // cout << "have lo-dof tables " << endl;
     // cout << " A F " << endl << flo_a_f << endl;
     // cout << " A e " << endl << flo_a_e << endl;
@@ -246,7 +261,8 @@ namespace amg
     	 for (int facet_nr : sl_facets) {
 	   HeapReset hr(lh);
 	   ma->GetFacetElements(facet_nr, elnums_of_facet);
-	   if (facet_mat[facet_nr].Height() == 0) // not a fine facet, or not defined on this facet
+	   // if (facet_mat[facet_nr].Height() == 0) // not a fine facet, or not defined on this facet
+	   if (!fine_facet->Test(facet_nr))
 	     { continue; }
 	   ElementId vol_elid(VOL, elnums_of_facet[0]);
 	   ElementTransformation & eltrans = ma->GetTrafo (vol_elid, lh);

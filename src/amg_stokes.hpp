@@ -127,8 +127,44 @@ namespace amg
       return dc;
     }
 
-    static INLINE void CalcRMBlock (FlatMatrix<TM> mat, const TED & ed, const TVD & vdi, const TVD & vdj)
-    { ENERGY::CalcRMBlock(mat, GetEMatrix(ed), vdi, vdj); }
+    static INLINE void QtMQ(const TM & Qij, const TM & M)
+    { ENERGY::QtMQ(Qij, M); }
+
+    static INLINE void AddQtMQ(double val, TM & A, const TM & Qij, const TM & M)
+    { ENERGY::AddQtMQ(val, A, Qij, M); }
+
+
+    // I dont think I need this in Agglomerator !
+    // static INLINE void CalcRMBlock (FlatMatrix<TM> mat, const TED & ed, const TVD & vdi, const TVD & vdj)
+    // { ENERGY::CalcRMBlock(mat, GetEMatrix(ed), vdi, vdj); }
+
+    static INLINE void CalcRMBlock (FlatMatrix<double> mat,
+				    const TVD & vi, const TVD & vj, const TVD & vk
+				    const TED & eij, bool revij,
+				    const TED & eik, bool revik)
+    {
+      static TVD::TVD vij, vik;
+      static TED::TED EM, Qij_ik, Qik_ij;
+
+      /** facet mid points **/
+      vij = ENERGY::CalcMPData(vi.vd, vj.vd);
+      vik = ENERGY::CalcMPData(vi.vd, vk.vd);
+
+      /** half-edge mats **/
+      TED::TED & EM_ij = revij ? eij.edj : eij.edi;
+      TED::TED & EM_ik = revik ? eik.edj : eik.edi;
+
+      /** trafo half-edge mats to edge-MP **/
+      ENERGY::CalcQs(vij, vik, Qij_ik, Qik_ij);
+      ENERGY::QtMQ(Qij_ik, EM_ij);
+      ENERGY::QtMQ(Qik_ij, EM_ik);
+
+      /** (fake-) harmonic mean (should 0.5 times harmonic mean) **/
+      EM = ENERGY::HMean(EM_ij, EM_ik);
+
+      /** Calc contrib **/
+      ENERGY::CalcRMBlock(mat, EM, vij, vik);
+    }
 
   }; // class StokesEnergy
 

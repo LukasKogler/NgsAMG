@@ -176,6 +176,63 @@ namespace amg
     return 0.5 * MEV<N>(L,R);
   } // MIN_EV_HARM
 
+
+  template<int IMIN, int H, int JMIN, int W, class TMAT>
+  class FlatMat : public MatExpr<FlatMat<IMIN, H, JMIN, W, CMAT>>
+  {
+  public:
+    TMAT & basemat;
+
+    FlatMat () = default;
+    FlatMat (const FlatMat) = default;
+
+    INLINE FlatMat (const TMAT & m)
+      : basemat(m)
+    { ; }
+
+    template<typename TB>
+    INLINE FlatMat & operator= (const Expr<TB> & m)
+    {
+      Iterate<H>([&](auto i) {
+	  Iterate<W>([&](auto j) {
+	      basemat(IMIN + i.value, JMIN + j.value) = m(i.value, j.value);
+	    });
+	});
+      return *this;
+    }
+
+    template<typename TB>
+    INLINE FlatMat & operator+= (const Expr<TB> & m)
+    {
+      Iterate<H>([&](auto i) {
+	  Iterate<W>([&](auto j) {
+	      basemat(IMIN + i.value, JMIN + j.value) += m(i.value, j.value);
+	    });
+	});
+      return *this;
+    }
+
+    INLINE FlatMat & operator= (TSCAL s) 
+    {
+      Iterate<H>([&](auto i) {
+	  Iterate<W>([&](auto j) {
+	      basemat(IMIN + i.value, JMIN + j.value) = s;
+	    });
+	});
+      return *this;
+    }
+
+    INLINE TELEM & operator() (size_t i, size_t j) { return basemat(IMIN + i, JMIN + j); }
+    INLINE TELEM & operator() (size_t i) { return (*this)(i/H, i%H); }
+
+    INLINE const TELEM & operator() (size_t i, size_t j) const { return basemat(IMIN + i, JMIN + j); }
+    INLINE const TELEM & operator() (size_t i) const { return (*this)(i/H, i%H); }
+
+    INLINE constexpr size_t Height () const { return H; }
+    INLINE constexpr size_t Width () const { return W; }
+  } // class FlatMat
+
+
 } // namespace amg
 
 #endif
