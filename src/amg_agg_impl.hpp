@@ -1091,8 +1091,10 @@ namespace amg
     else {
       auto full_edata = get<1>(tm_mesh->Data())->Data();
       traces.SetSize(full_edata.Size());
+      // for (auto k : Range(traces))
+	// { traces[k] = calc_trace(full_edata[k]); }
       for (auto k : Range(traces))
-	{ traces[k] = calc_trace(full_edata[k]); }
+	{ traces[k] = ENERGY::GetApproxWeight(full_edata[k]); }
       return traces;
     }
   }
@@ -1149,8 +1151,9 @@ namespace amg
     Array<TMU> agg_diag;
 
     auto get_vwt = [&](auto v) {
-      if constexpr(is_same<TVD, double>::value) { return vdata[v]; }
-      else { return vdata[v].wt; }
+      return ENERGY::GetApproxVWeight(vdata[v]);
+      // if constexpr(is_same<TVD, double>::value) { return vdata[v]; }
+      // else { return vdata[v].wt; }
     };
 
     /** Can we add something from eqa to eqb?? **/

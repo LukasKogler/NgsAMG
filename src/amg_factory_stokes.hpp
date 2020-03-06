@@ -18,18 +18,17 @@ namespace amg
     using ENERGY = AENERGY;
     static constexpr int BS = ENERGY::DPV;
     static constexpr int DIM = ENERGY::DIM;
-    using BASE = NodalAMGFactory<NT_EDGE, ATMESH, AENERGY::DPV>;
-    using Options = typename BASE::Options;
+    using BASE_CLASS = NodalAMGFactory<NT_EDGE, ATMESH, AENERGY::DPV>;
+    using Options = typename BASE_CLASS::Options;
     using TM = typename ENERGY::TM;
     using TSPM_TM = stripped_spm_tm<TM>;
 
   protected:
-    using BASE::options;
+    using BASE_CLASS::options;
 
   public:
-    StokesAMGFactory (shared_ptr<Options> _opts)
-      : BASE(_opts)
-    { ; }
+
+    StokesAMGFactory (shared_ptr<Options> _opts);
 
     ~StokesAMGFactory() { ; }
 
@@ -43,17 +42,18 @@ namespace amg
     virtual shared_ptr<BaseCoarseMap> BuildAggMap (BaseAMGFactory::State & state);
     // virtual shared_ptr<BaseCoarseMap> BuildECMap (BaseAMGFactory::State & state);
     virtual shared_ptr<BaseDOFMapStep> PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<ParallelDofs> fpds, shared_ptr<ParallelDofs> cpds) override;
+    virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<TopologicMesh> fmesh) override;
     virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap) override;
     // shared_ptr<BaseDOFMapStep> SP_impl (shared_ptr<ProlMap<TSPM_TM>> pw_prol, shared_ptr<TMESH> fmesh, FlatArray<int> vmap);
-    shared_ptr<BaseCoarseMap> BuildPWProl_impl (shared_ptr<ParallelDofs> fpds, shared_ptr<ParallelDofs> cpds,
-						shared_ptr<TMESH> fmesh, shared_ptr<TMESH> cmesh,
-						FlatArray<int> vmap, FlatArray<int> emap,
-						FlatTable<int> v_aggs);
+    shared_ptr<TSPM_TM> BuildPWProl_impl (shared_ptr<ParallelDofs> fpds, shared_ptr<ParallelDofs> cpds,
+					  shared_ptr<TMESH> fmesh, shared_ptr<TMESH> cmesh,
+					  FlatArray<int> vmap, FlatArray<int> emap,
+					  FlatTable<int> v_aggs);
 
     /** Discard **/
     virtual bool TryDiscardStep (BaseAMGFactory::State & state) override { return false; }
-    virtual shared_ptr<BaseDiscardMap> BuildDiscardMap (BaseAMGFactory::State & state);
-  };
+    virtual shared_ptr<BaseDiscardMap> BuildDiscardMap (BaseAMGFactory::State & state) { return nullptr; }
+  }; // class StokesAMGFactory
 
 } // namespace amg
 

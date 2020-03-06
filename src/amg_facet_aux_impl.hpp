@@ -65,6 +65,7 @@ namespace amg
 
   } // FacetAuxSystem(..)
 
+
   template<int DIM, class SPACEA, class SPACEB, class AUXFE>
   void FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: Initialize (shared_ptr<BitArray> freedofs)
   {
@@ -142,6 +143,13 @@ namespace amg
     
 
   template<int DIM, class SPACEA, class SPACEB, class AUXFE>
+  void FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: Finalize (shared_ptr<BaseMatrix> _comp_mat)
+  {
+    comp_mat = _comp_mat;
+  } // FacetAuxSystem::Finalize
+
+
+    template<int DIM, class SPACEA, class SPACEB, class AUXFE>
   void FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: AllocAuxMat ()
   {
     auto nfacets = ma->GetNFacets();

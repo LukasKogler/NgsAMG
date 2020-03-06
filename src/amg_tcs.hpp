@@ -187,6 +187,10 @@ namespace amg
 #endif
 #endif // FILE_AMGCTR
 
+#if defined (STOKES) && defined(FILE_STOKES_GG_HPP)
+  EXTERN template class GridContractMap<GGStokesMesh<2>>;
+#endif // defined (STOKES) && defined(FILE_STOKES_GG_HPP)
+
 #ifdef FILE_AMG_DISCARD_HPP
 #if defined(AMG_EXTERN_TEMPLATES) ^ defined(FILE_AMG_DISCARD_CPP)
 #ifdef FILE_AMGH1_HPP

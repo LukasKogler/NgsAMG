@@ -1494,4 +1494,8 @@ namespace amg
 #include "amg_elast.hpp"
 #include "amg_elast_impl.hpp"
 
+#include "amg_stokes.hpp"
+#include "amg_stokes_gg.hpp"
+
+
 #include "amg_tcs.hpp"

@@ -14,6 +14,7 @@ namespace amg
     static constexpr int DIM = ADIM;
     static constexpr int DPV = ADIM;
     static constexpr bool NEED_ROBUST = false;
+    // static constexpr bool STM = true; // edge-mat is scal times identity !
     typedef typename strip_mat<Mat<DIM,DIM,double>>::type TM;
 
     static INLINE double GetApproxWeight (const TED & ed) { return ed; }

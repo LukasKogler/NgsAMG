@@ -124,7 +124,7 @@ namespace amg
     Array<double> facet_mat_data;           /** Facet matrix buffer **/
 
     Array<int> a2f_facet, f2a_facet;        /** all facets <-> fine facets mappings **/
-    shared_ptr<BitArray> fine_facets;       /** is facet a fine facet ? **/
+    shared_ptr<BitArray> fine_facet;       /** is facet a fine facet ? **/
     
     /** Facet matrices: [a_e, a_f, a_e, a_f]^T \times [aux_f] **/
     Array<FlatMatrix<double>> facet_mat;
@@ -150,11 +150,14 @@ namespace amg
     shared_ptr<ParallelDofs> GetAuxParDofs () const { return aux_pds; }
     shared_ptr<BitArray> GetAuxFreeDofs () const { return aux_fds; } // free_verts are after sorting
     Array<Array<shared_ptr<BaseVector>>> GetRBModes () const;
+    shared_ptr<BitArray> GetFineFacets () const { return fine_facet; }
+    FlatArray<int> GetFMapA2F () const { return a2f_facet; }
+    FlatArray<int> GetFMapF2A () const { return f2a_facet; }
 
     virtual shared_ptr<BaseVector> CreateAuxVector () const;
 
     virtual void Initialize (shared_ptr<BitArray> freedofs);
-    virtual void Finalize (shared_ptr<BaseMatrix> comp_mat);
+    virtual void Finalize (shared_ptr<BaseMatrix> _comp_mat);
 
     virtual void AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
 				   ElementId ei, LocalHeap & lh);

@@ -36,6 +36,8 @@ namespace amg
     }
     virtual shared_ptr<SparseMatrix<double>> GetEdgeCM () const;
     virtual void ResetEdgeCM () const { econ = nullptr; }
+    void SetFreeNodes (shared_ptr<BitArray> _free_nodes) const { free_nodes = _free_nodes; }
+    shared_ptr<BitArray> GetFreeNodes () const { return free_nodes; }
     friend std::ostream & operator<<(std::ostream &os, const TopologicMesh& p);
   protected:
     shared_ptr<EQCHierarchy> eqc_h;
@@ -47,6 +49,7 @@ namespace amg
     Array<AMG_Node<NT_FACE>> faces;
     Array<AMG_Node<NT_CELL>> cells;
     mutable shared_ptr<SparseMatrix<double>> econ = nullptr;
+    mutable shared_ptr<BitArray> free_nodes = nullptr; // this is kinda hacky ...
   }; // class TopologicMesh
 
   

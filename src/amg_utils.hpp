@@ -42,7 +42,7 @@ namespace amg
     for (auto k : Range(ar.Size())) os << "(" << k << "::" << ar[k] << ") ";
   };
 
-  // like GetPositionTest of ngsovle-SparseMatrix
+  // like GetPositionTest of NGSolve-SparseMatrix
   template<typename T>
   INLINE size_t find_in_sorted_array (const T & elem, FlatArray<T> a)
   {
@@ -58,7 +58,7 @@ namespace amg
     return (typename remove_reference<decltype(a[0])>::type)(-1);
   };
 
-  // like GetPositionTest of ngsovle-SparseMatrix
+  // like GetPositionTest of NGSolve-SparseMatrix
   template<typename T, class TS>
   INLINE size_t find_in_sorted_array (const T & elem, FlatArray<T> a, TS smaller)
   {
@@ -1051,6 +1051,7 @@ namespace amg
     }
     // cout << "m pseudo inv: " << endl; print_tm(cout, m); cout << endl;
   } // CalcPseudoInv
+
 
 
   INLINE bool is_zero (const double & x) { return x == 0; }

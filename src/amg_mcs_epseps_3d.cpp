@@ -46,7 +46,7 @@ namespace amg
 
   template class FacetAuxSystem<3, HDivHighOrderFESpace, VectorFacetFESpace, FacetRBModeFE<3>>;
 
-  using MCS_AMC_PC = FacetAuxVertexAMGPC<3, MCS_AUX_SYS, ElmatVAMG<ElasticityAMGFactory<3>, double, double>>;
+  using MCS_AMG_PC = FacetAuxVertexAMGPC<3, MCS_AUX_SYS, ElmatVAMG<ElasticityAMGFactory<3>, double, double>>;
 
   template<> INLINE void MCS_AUX_SYS :: Add_Vol (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
 						ElementId ei, LocalHeap & lh)
