@@ -178,13 +178,16 @@ namespace amg
 
 
   template<int IMIN, int H, int JMIN, int W, class TMAT>
-  class FlatMat : public MatExpr<FlatMat<IMIN, H, JMIN, W, CMAT>>
+  class FlatMat : public MatExpr<FlatMat<IMIN, H, JMIN, W, TMAT>>
   {
   public:
+    using TSCAL = typename mat_traits<TMAT>::TSCAL;
+    using TELEM = typename mat_traits<TMAT>::TELEM;
+
     TMAT & basemat;
 
-    FlatMat () = default;
-    FlatMat (const FlatMat) = default;
+    FlatMat () = delete;
+    FlatMat (const FlatMat & m) = default;
 
     INLINE FlatMat (const TMAT & m)
       : basemat(m)

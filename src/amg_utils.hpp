@@ -119,7 +119,7 @@ namespace amg
 	perm[check] = -1; // have right ntry for pos. check
 	check = from_here; // check that position next
       }
-      inds[check] = -1;
+      perm[check] = -1;
     }
   } // ApplyPermutation
 
