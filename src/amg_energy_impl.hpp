@@ -73,6 +73,13 @@ namespace amg
     mat(0,1) = -mat(0,0);
   } // H1Energy::CalcRMBlock
 
+
+  template<int DIM, class TVD, class TED>
+  INLINE void H1Energy<DIM, TVD, TED> :: CalcRMBlock2 (FlatMatrix<TM> mat, const TM & em, const TVD & vdi, const TVD & vdj)
+  {
+    CalcRMBlock(mat, em(0,0), vdi, vdj);
+  } // H1Energy::CalcRMBlock2
+
   /** END H1Energy **/
 
 
@@ -190,6 +197,13 @@ namespace amg
     mat(1,0) = -QjM * Qij;
     mat(1,1) =  QjM * Qji;
   } // EpsEpsEnergy::CalcRMBlock
+
+
+  template<int DIM, class TVD, class TED>
+  INLINE void EpsEpsEnergy<DIM, TVD, TED> :: CalcRMBlock2 (FlatMatrix<TM> mat, const TM & ed, const TVD & vdi, const TVD & vdj)
+  {
+    CalcRMBlock(mat, ed, vdi, vdj);
+  } // EpsEpsEnergy::CalcRMBlock2
 
   /** END EpsEpsEnergy **/
 

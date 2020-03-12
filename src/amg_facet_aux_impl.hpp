@@ -538,6 +538,48 @@ namespace amg
   } // FacetAuxSystem::CalcFacetMat
 
 
+  template<int DIM, class SPACEA, class SPACEB, class AUXFE>
+  Array<Vec<FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE>::DPV, double>> FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: CalcFacetFlow ()
+  {
+    Array<Vec<DPV, double>> flow(f2a_facet.Size());
+    LocalHeap lh(10 * 1024 * 1024, "Orrin_Oriscorin_Hiscorin_Sincorin_Alvin_Vladimir_Groolmoplong");
+    Array<int> elnums;
+    int curve_order = 1; // TODO: get this from mesh
+    int ir_order = 1 + DIM * curve_order;
+    auto nv_cf = NormalVectorCF(DIM);
+    for (auto kf : Range(flow)) {
+      auto facet_nr = f2a_facet[kf];
+      AUXFE auxfe (NodeId(FACET_NT(DIM), facet_nr), *ma);
+      ma->GetFacetElements(facet_nr, elnums);
+      ElementId ei(VOL, elnums[0]);
+      auto & trafo = ma->GetTrafo (ei, lh);
+      auto facet_nrs = ma->GetElFacets(ei);
+      int loc_facet_nr = facet_nrs.Pos(facet_nr);
+      ELEMENT_TYPE et_vol = trafo.GetElementType();
+      ELEMENT_TYPE et_facet = ElementTopology::GetFacetType (et_vol, loc_facet_nr);
+      const IntegrationRule & ir_facet = SelectIntegrationRule (et_facet, ir_order); // reference facet
+      Facet2ElementTrafo facet_2_el(et_vol, BND); // reference facet -> reference vol
+      IntegrationRule & ir_vol = facet_2_el(loc_facet_nr, ir_facet, lh); // reference VOL
+      ElementTransformation & eltrans = ma->GetTrafo (ei, lh);
+      BaseMappedIntegrationRule & basemir = eltrans(ir_vol, lh);
+      MappedIntegrationRule<DIM,DIM,double> & mir_vol(static_cast<MappedIntegrationRule<DIM,DIM,double>&>(basemir)); // mapped VOL
+      mir_vol.ComputeNormalsAndMeasure(et_vol, loc_facet_nr);
+      FlatVector<double> facet_flow(DPV, lh); facet_flow = 0;
+      FlatMatrix<double> auxval(DPV, DIM, lh);
+      FlatVector<double> nvval(DIM, lh);
+      for (auto ip_nr : Range(mir_vol)) {
+	auto mip = mir_vol[ip_nr];
+	auxfe.CalcMappedShape(mip, auxval);
+	nv_cf->Evaluate(mip, nvval);
+	for (auto k : Range(DPV))
+	  { facet_flow[k] += mip.GetMeasure() * InnerProduct(auxval.Row(k), nvval); }
+      }
+      flow[kf] = facet_flow;
+    }
+    return flow;
+  } // FacetAuxSystem::CalcFlow
+
+
   /** Not sure what to do about BBND-elements (only relevant for some cases anyways) **/
   template<int DIM, class SPACEA, class SPACEB, class AUXFE>
   void FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,

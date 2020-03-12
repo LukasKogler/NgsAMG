@@ -35,6 +35,8 @@ namespace amg
     INLINE bool operator == (const StokesVData<DIM, TVD> & other) { return (vd == other.vd) && (vol == other.vol); }
   }; // struct StokesVData
 
+  template<int DIM, class TVD> INLINE std::ostream & operator << (std::ostream & os, StokesVData<DIM, TVD> & v)
+  { os << "[" << v.vol << " | " << v.vd << "]"; return os; }
 
   template<int DIM, class TVD> INLINE bool is_zero (const StokesVData<DIM, TVD> & vd) { return is_zero(vd.vd) && is_zero(vd.vol); }
 
@@ -58,6 +60,9 @@ namespace amg
     INLINE void operator += (const StokesEData<DIM, BS, TED> & other) { edi += other.edi; edj += other.edj; flow += other.flow; }
     INLINE void operator == (const StokesEData<DIM, BS, TED> & other) { return (edi == other.edi) && (edj == other.edj) && (flow = other.flow); }
   }; // struct StokesEData
+
+  template<int DIM, int BS, class TED> INLINE std::ostream & operator << (std::ostream & os, StokesEData<DIM, BS, TED> & e)
+  { os << "[" << e.flow << " | " << e.edi << " | " << e.edj << "]"; return os; }
 
   template<int DIM, int BS, class TED> INLINE bool is_zero (const StokesEData<DIM, BS, TED> & ed) { return is_zero(ed.edi) && is_zero(ed.edj) && is_zero(ed.flow); }
 
@@ -138,21 +143,21 @@ namespace amg
     // static INLINE void CalcRMBlock (FlatMatrix<TM> mat, const TED & ed, const TVD & vdi, const TVD & vdj)
     // { ENERGY::CalcRMBlock(mat, GetEMatrix(ed), vdi, vdj); }
 
-    static INLINE void CalcRMBlock (FlatMatrix<double> mat,
-				    const TVD & vi, const TVD & vj, const TVD & vk
+    static INLINE void CalcRMBlock (FlatMatrix<TM> mat,
+				    const TVD & vi, const TVD & vj, const TVD & vk,
 				    const TED & eij, bool revij,
 				    const TED & eik, bool revik)
     {
-      static TVD::TVD vij, vik;
-      static TED::TED EM, Qij_ik, Qik_ij;
+      static typename TVD::TVD vij, vik;
+      static typename ENERGY::TM EM, Qij_ik, Qik_ij;
 
       /** facet mid points **/
       vij = ENERGY::CalcMPData(vi.vd, vj.vd);
       vik = ENERGY::CalcMPData(vi.vd, vk.vd);
 
       /** half-edge mats **/
-      TED::TED & EM_ij = revij ? eij.edj : eij.edi;
-      TED::TED & EM_ik = revik ? eik.edj : eik.edi;
+      const typename ENERGY::TM EM_ij = revij ? ENERGY::GetEMatrix(eij.edj) : ENERGY::GetEMatrix(eij.edi);
+      const typename ENERGY::TM EM_ik = revik ? ENERGY::GetEMatrix(eik.edj) : ENERGY::GetEMatrix(eik.edi);
 
       /** trafo half-edge mats to edge-MP **/
       ENERGY::CalcQs(vij, vik, Qij_ik, Qik_ij);
@@ -163,7 +168,7 @@ namespace amg
       EM = ENERGY::HMean(EM_ij, EM_ik);
 
       /** Calc contrib **/
-      ENERGY::CalcRMBlock(mat, EM, vij, vik);
+      ENERGY::CalcRMBlock2(mat, EM, vij, vik);
     }
 
   }; // class StokesEnergy
@@ -179,6 +184,8 @@ namespace amg
   public:
     using TVD = ATVD;
     using BASE = AttachedNodeData<NT_VERTEX, ATVD, AttachedSVD<ATVD>>;
+    using BASE::mesh;
+    using BASE::data;
     using BASE::map_data;
 
     AttachedSVD (Array<ATVD> && _data, PARALLEL_STATUS stat)
@@ -196,6 +203,8 @@ namespace amg
   public:
     using TED = ATED;
     using BASE = AttachedNodeData<NT_EDGE, ATED, AttachedSED<ATED>>;
+    using BASE::mesh;
+    using BASE::data;
     using BASE::map_data;
 
     AttachedSED (Array<TED> && _data, PARALLEL_STATUS stat)

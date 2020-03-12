@@ -15,7 +15,8 @@ namespace amg {
 #include "mpiwrap_extension.hpp"
 #include "amg_typedefs.hpp"  
 #include "amg_spmstuff.hpp"  
-#include "amg_utils.hpp"  
+#include "amg_utils.hpp"  // needs to come after spmstuff
+#include "amg_bla.hpp" // by now, this is unfortunately used in a bunch of places
 #include "eqchierarchy.hpp"  
 #include "reducetable.hpp"
 #include "amg_mesh.hpp"

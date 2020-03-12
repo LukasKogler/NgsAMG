@@ -4,28 +4,28 @@
 namespace amg
 {
   template<int N>
-  INLINE Mat<N,N,double> TripleProd(const Mat<N,N,double> & A, const Mat<N,N,double> & B, const Mat<N,N,double> & C)
+  INLINE Mat<N,N,double> TripleProd (const Mat<N,N,double> & A, const Mat<N,N,double> & B, const Mat<N,N,double> & C)
   {
     static Mat<N,N,double> X;
     X = B * C;
     return A * X;
   }
-  INLINE double TripleProd(double A, double B, double C)
+  INLINE double TripleProd (double A, double B, double C)
   { return A * B * C; }
 
   template<int N>
-  INLINE void AddTripleProd(double fac, Mat<N,N,double> & out, const Mat<N,N,double> & A, const Mat<N,N,double> & B, const Mat<N,N,double> & C)
+  INLINE void AddTripleProd (double fac, Mat<N,N,double> & out, const Mat<N,N,double> & A, const Mat<N,N,double> & B, const Mat<N,N,double> & C)
   {
     static Mat<N,N,double> X;
     X = B * C;
     out += fac * A * X;
   }
-  INLINE void AddTripleProd(double fac, double out, double A, double B, double C)
+  INLINE void AddTripleProd (double fac, double out, double A, double B, double C)
   { out += fac * A * B * C; }
 
 
   template<int N>
-  INLINE Mat<N,N,double> AT_B_A(const Mat<N,N,double> & A, const Mat<N,N,double> & B)
+  INLINE Mat<N,N,double> AT_B_A (const Mat<N,N,double> & A, const Mat<N,N,double> & B)
   {
     static Mat<N,N,double> X;
     X = B * A;
@@ -35,13 +35,13 @@ namespace amg
   { return A * B * A; }
 
   template<int N>
-  INLINE void Add_AT_B_A(double fac, Mat<N,N,double> & out, const Mat<N,N,double> & A, const Mat<N,N,double> & B)
+  INLINE void Add_AT_B_A (double fac, Mat<N,N,double> & out, const Mat<N,N,double> & A, const Mat<N,N,double> & B)
   {
     static Mat<N,N,double> X;
     X = B * A;
     out += Trans(A) * X;
   }
-  INLINE void Add_AT_B_A(double fac, double & out, double A, double B)
+  INLINE void Add_AT_B_A (double fac, double & out, double A, double B)
   { out += fac * A * B * A; }
 
 
@@ -190,7 +190,7 @@ namespace amg
     FlatMat (const FlatMat & m) = default;
 
     INLINE FlatMat (const TMAT & m)
-      : basemat(m)
+      : basemat(const_cast<TMAT&>(m))
     { ; }
 
     template<typename TB>
@@ -233,7 +233,12 @@ namespace amg
 
     INLINE constexpr size_t Height () const { return H; }
     INLINE constexpr size_t Width () const { return W; }
-  } // class FlatMat
+  }; // class FlatMat
+
+  /** Small workaround so we do not always need to specify "TMAT" **/
+  template<int IMIN, int H, int JMIN, int W, class TMAT>
+  FlatMat<IMIN, H, JMIN, W, TMAT> MakeFlatMat (const TMAT & m)
+  { return FlatMat<IMIN,H,JMIN,W,TMAT>(m); }
 
 
 } // namespace amg

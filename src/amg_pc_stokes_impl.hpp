@@ -118,9 +118,55 @@ namespace amg
   template<class FACTORY, class AUX_SYS>
   shared_ptr<BaseDOFMapStep> StokesAMGPC<FACTORY, AUX_SYS> :: BuildEmbedding (shared_ptr<TopologicMesh> mesh)
   {
-    // consider fine_facet AND edge_sort
-    throw Exception("Embedding TODO!!");
-    return nullptr;
+    /** 2-stage embedding: 
+	  comp_fes -> aux_fes -> mesh-canonic
+	Step 1 is the embedding-matrix from the auxiliary system
+	Step 2 needs to consider:
+	 i) fine_facets
+	ii) edge_sort
+       iii) facet-midpoint -> vertex-midpoint-pos
+       "BND"-vertices do not matter here because their pos is set s.t facet-MP is axactly vertex-MP
+    **/
+
+    /** Step 1 - that was easy! **/
+    shared_ptr<typename AUX_SYS::TPMAT_TM> aux_emb = aux_sys->GetPMat();
+
+    /** Step 2 **/
+    const TMESH & M = static_cast<const TMESH&>(*mesh); M.CumulateData(); // !!
+    auto vdata = get<0>(M.Data())->Data();
+    Array<int> perow(M.template GetNN<NT_EDGE>()); perow = 1;
+    auto mesh_emb = make_shared<typename FACTORY::TSPM_TM>(perow, ma->GetNFacets());
+    auto & edge_sort = node_sort[NT_EDGE];
+    auto f2af = aux_sys->GetFMapF2A();
+    auto edges = M.template GetNodes<NT_EDGE>();
+    typename FACTORY::ENERGY::TM Qij; SetIdentity(Qij);
+    typename FACTORY::ENERGY::TVD tvij, tvfacet;
+    for (auto enr : Range(M.template GetNN<NT_EDGE>())) {
+      auto fnr = f2af[enr];
+      auto senr = edge_sort[enr];
+      const auto & edge = edges[senr];
+      if constexpr(is_same<typename FACTORY::ENERGY::TVD::TVD, double>::value == 0) {
+	GetNodePos<DIM>(NodeId(FACET_NT(DIM), fnr), *ma, tvfacet.vd.pos); // cheating ...
+	tvij = FACTORY::ENERGY::CalcMPData(vdata[edge.v[0]], vdata[edge.v[1]]);
+	FACTORY::ENERGY::ModQHh(tvfacet, tvij, Qij);
+      }
+      (*mesh_emb)(senr, fnr) = Qij;
+    }
+
+    cout << "mesh_emb:" << endl;
+    print_tm_spmat(cout << endl, *mesh_emb);
+
+    /** Combine and build DMS **/
+    auto emb = MatMultAB(*aux_emb, *mesh_emb);
+
+    cout << "embedding:" << endl;
+    print_tm_spmat(cout << endl, *emb);
+
+    auto mesh_pds = factory->BuildParallelDofs(mesh);
+    auto emb_dms = make_shared<ProlMap<typename AUX_SYS::TPMAT_TM>>(emb, aux_sys->GetCompParDofs(), mesh_pds);
+
+
+    return emb_dms;
   } // StokesAMGPC::BuildEmbedding
   
 
@@ -157,8 +203,16 @@ namespace amg
 	     3) offsets for distproc-table  // len = NPV + 1
 	     4) distproc-table data // len = offsets[-1]
 
+
+	 Additionally, we need "fictitious" vertices for every boundary element, so the boundary facets have an edge to be represented by.
+	 SURF-els can have 0, 1 or 2 VOL-elements:
+	   0:  -> ?? WTF ?? [[probably something broken in mesh-partition again]]
+	   1:   i) local facet -> real boundary, needs fict. vertex
+	       ii) ex-facet -> MPI boundary coincides with subdomain boundary
+	   2:  subdomain boundary; no fictitious vertex
+
 	 New local vertex numbering is simple:
-	  [ pub from kp0 |  pub from kp1 | pub from kp2 | ... | local enum ]
+	  [ pub from kp0 |  pub from kp1 | pub from kp2 | ... | local enum | FICTITIOUS vertices ]
      **/
 
     const auto & MA(*ma);
@@ -170,6 +224,18 @@ namespace amg
     // auto& fine_facet = *aux_sys->GetFineFacets();
     auto f2a_facet = aux_sys->GetFMapA2F();
     auto a2f_facet = aux_sys->GetFMapF2A();
+
+    /** We already construct an AlgebraicMesh here, but only set a little data - the rest is set in the next step.
+	What we set here:
+	   i) vertex position (if needed)
+	  ii) vertex vol / vertex surface index
+     **/
+    typedef typename std::remove_pointer<typename std::tuple_element<0, typename TMESH::TTUPLE>::type>::type ATVD;
+    typedef typename ATVD::TDATA TVD;
+    Array<TVD> vdata;
+    typedef typename std::remove_pointer<typename std::tuple_element<1, typename TMESH::TTUPLE>::type>::type ATED;
+    typedef typename ATED::TDATA TED;
+    Array<TED> edata;
 
     TableCreator<int> covdps(ma->GetNE()); // dist-procs for original vertices
     TableCreator<int> cpubels(all_dps.Size()); // published elements
@@ -301,49 +367,109 @@ namespace amg
 
     auto mesh = make_shared<BlockTM>(eqc_h);
 
+    /** fictitious vertices **/
+    Array<int> facet_els(2);
+    auto it_sels = [&](auto lam) {
+      for (auto selnr : Range(ma->GetNSE())) {
+	auto sel_facets = ma->GetElFacets(ElementId(BND, selnr));
+	if (sel_facets.Size() != 1)
+	  { throw Exception("WTF"); }
+	auto afnr = sel_facets[0];
+	auto ffnr = a2f_facet[afnr];
+	ma->GetFacetElements(afnr, facet_els);
+	if (facet_els.Size() == 1) { // not an interior facet
+	  // no idea why, but this crashes!!
+	  // cout << "NFACETS " << ma->GetNFacets() << endl;
+	  // cout << "get dps " << selnr << " " << afnr << " " << facet_els[0] << endl;
+	  // auto fdps = ma->GetDistantProcs(NodeId(NT_FACET, afnr));
+	  // auto fdps = ma->GetDistantProcs(NodeId(FACET_NT(DIM), afnr));
+	  auto fdps = aux_pds->GetDistantProcs(afnr);
+	  if (fdps.Size() == 0) { // also not an MPI facet, so it must be a "real" surface element
+	    lam(selnr, afnr, ffnr);
+	  }
+	}
+      }
+    };
+    size_t nfict = 0;
+    it_sels([&](auto selnr, auto afnr, auto ffnr) {
+	nfict++;
+      });
+    Array<int> facet_to_fict_vertex(f2a_facet.Size()); facet_to_fict_vertex = -1;
+    Array<int> fvselnrs(nfict); nfict = 0;
+    it_sels([&](auto selnr, auto afnr, auto ffnr) {
+	facet_to_fict_vertex[ffnr] = selnr;
+	fvselnrs[nfict++] = selnr;
+      });
+
     /** nr of elements + number of new vertices published from other sources ! **/
     const size_t nxpub = os_pub.Last();
-    const size_t NV = nxpub + ma->GetNE();
-    auto & vert_sort = node_sort[0]; vert_sort.SetSize(ma->GetNE()); // not sure about this one
+    const size_t nvels = ma->GetNE();
+    const size_t NV = nxpub + ma->GetNE() + nfict;
+    auto & vert_sort = node_sort[0]; vert_sort.SetSize(NV); vert_sort = -1; // not sure about this one
+    Array<int> dummy_pds;
+    vdata.SetSize(NV); vdata = 0;
     mesh->SetVs (NV, [&](auto vnr) -> FlatArray<int> {
 	if (vnr < nxpub) {
 	  int kp_orig = merge_pos_in_sorted_array(int(vnr), os_pub);
 	  return (*dptabs[kp_orig])[vnr - os_pub[kp_orig]];
 	}
-	else
+	else if ( (vnr - nxpub) < nvels)
 	  { return ovdps[vnr - nxpub]; }
+	else
+	  { return dummy_pds; }
       },
-      [vert_sort, &nxpub](auto i, auto j) { vert_sort[i - nxpub] = j; } // not sure
+      [&](auto i, auto j) {
+	vert_sort[i] = j;
+	if (i >= nxpub) {
+	  if ( (i-nxpub) < nvels ) {
+	    vdata[j].vol = ma->ElementVolume(i-nxpub);
+	    if constexpr(is_same<typename TVD::TVD, double>::value==0){throw Exception("SET CORRECT POS HERE!!"); }
+	  }
+	  else {
+	    cout << "vertex " << i << " -> " << j << " is surf index " << ma->GetElIndex(ElementId(BND, fvselnrs[i-nxpub-nvels])) << endl;
+	    vdata[j].vol = -1 - ma->GetElIndex(ElementId(BND, fvselnrs[i-nxpub-nvels]));
+	    if constexpr(is_same<typename TVD::TVD, double>::value==0){throw Exception("SET CORRECT POS HERE [mirror vol-pos]!!"); }
+	  }
+	}
+      } // not sure
       // [vert_sort](auto i, auto j) { vert_sort[i] = j; } // not sure
       );
 
+    cout << "vert_sort: " << endl; prow2(vert_sort); cout << endl;
+
+    const size_t osfict = nxpub + nvels;
 
     /** --- EDGES **/
-    size_t n_edges = aux_pds->GetNDofLocal();
-    Array<int> facet_els(2);
-    auto & edge_sort = node_sort[1]; edge_sort.SetSize(ma->GetNFacets());
+    f2a_facet.Size();
+    size_t n_edges = f2a_facet.Size();
+    auto & edge_sort = node_sort[NT_EDGE]; edge_sort.SetSize(n_edges);
     mesh->SetNodes<NT_EDGE> (n_edges, [&](auto edge_num) LAMBDA_INLINE {
 	INT<2> pair;
 	auto fnr = f2a_facet[edge_num];
 	ma->GetFacetElements(fnr, facet_els);
 	if (facet_els.Size() == 1) {
-	  auto p = aux_pds->GetDistantProcs(edge_num)[0];
-	  if (comm.Rank() > p) { // other vertex has been published to me - I have to add this edge
-	    auto kp = find_in_sorted_array(p, all_dps);
-	    auto loc_fnr = find_in_sorted_array(int(edge_num), aux_pds->GetExchangeDofs(p));
-	    pair[0] = os_pub[kp] + ex_data[kp][1 + loc_fnr];
-	    pair[1] = nxpub + facet_els[0];
+	  auto facet_dps = aux_pds->GetDistantProcs(NodeId(NT_FACET, fnr));
+	  if (facet_dps.Size() == 0) {
+	    pair[0] = facet_els[0];
+	    pair[1] = vert_sort[osfict + facet_to_fict_vertex[edge_num]];
+	  }
+	  else { // MPI-facet, possibly involves published vertex!
+	    auto p = facet_dps[0];
+	    if (comm.Rank() > p) { // other vertex has been published to me - I have to add this edge
+	      auto kp = find_in_sorted_array(p, all_dps);
+	      auto loc_fnr = find_in_sorted_array(int(edge_num), aux_pds->GetExchangeDofs(p));
+	      pair[0] = vert_sort[os_pub[kp] + ex_data[kp][1 + loc_fnr]];
+	      pair[1] = vert_sort[nxpub + facet_els[0]];
+	    }
 	  }
 	}
 	else {
-	  if (facet_els[0] < facet_els[1]) {
-	    pair[0] = nxpub + facet_els[0];
-	    pair[1] = nxpub + facet_els[1];
-	  } else {
-	    pair[0] = nxpub + facet_els[1];
-	    pair[1] = nxpub + facet_els[0];
-	  }
+	  pair[0] = vert_sort[nxpub + facet_els[0]];
+	  pair[1] = vert_sort[nxpub + facet_els[1]];
 	}
+	if (pair[1] < pair[0])
+	  { swap(pair[0], pair[1]); }
+	cout << "ret pair " << pair << endl;
 	return pair;
       },
       [&](auto edge_num, auto id) LAMBDA_INLINE {
@@ -352,7 +478,17 @@ namespace amg
       }
       );
 
-    return mesh;
+    edata.SetSize(mesh->GetNN<NT_EDGE>()); edata = 0;
+
+    cout << "final top mesh: " << endl << *mesh << endl;
+
+    auto avd = new ATVD(move(vdata), CUMULATED);
+    auto aed = new ATED(move(edata), CUMULATED);
+    auto alg_mesh = make_shared<TMESH>(move(*mesh), avd, aed);
+
+    cout << "alg mesh with partial data: " << endl << *alg_mesh << endl;
+
+    return alg_mesh;
   } // StokesAMGPC::BuildTopMesh
 
 

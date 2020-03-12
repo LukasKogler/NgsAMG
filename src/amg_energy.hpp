@@ -45,6 +45,7 @@ namespace amg
     static INLINE TVD CalcMPData (const TVD & da, const TVD & db);
 
     static INLINE void CalcRMBlock (FlatMatrix<TM> mat, const TED & ed, const TVD & vdi, const TVD & vdj);
+    static INLINE void CalcRMBlock2 (FlatMatrix<TM> mat, const TM & em, const TVD & vdi, const TVD & vdj);
 
     static INLINE void QtMQ (const TM & Qij, const TM & M)
     { ; }
@@ -52,14 +53,27 @@ namespace amg
     static INLINE void AddQtMQ (double val, TM & A, const TM & _Qij, const TM & M)
     { A += val * M; }
 
-    static INLINE TM HMean (double a, double b)
-    { return (2.0*a*b)/(a+b); }
+    static INLINE TM HMean (const TM & a, const TM & b)
+    {
+      if constexpr(is_same<TM, double>::value)
+	{ return (2.0*a*b)/(a+b); }
+      else
+	{ return (2.0*a(0,0)*b(0,0))/(a(0,0)+b(0,0)); }
+    }
 
-    static INLINE TM GMean (double a, double b)
-    { return sqrt(a*b); }
+    static INLINE TM GMean (const TM & a, const TM & b) {
+      if constexpr(is_same<TM, double>::value)
+	{ return sqrt(a*b); }
+      else
+	{ return sqrt(a(0,0)*b(0,0)); }
+    }
 
-    static INLINE TM AMean (double a, double b)
-    { return (a+b)/2.0; }
+    static INLINE TM AMean (const TM & a, const TM & b) {
+      if constexpr(is_same<TM, double>::value)
+	{ return (a+b)/2.0; }
+      else
+	{ return (a(0,0)+b(0,0))/2.0; }
+    }
 
   };
 
@@ -83,7 +97,7 @@ namespace amg
     static constexpr int rotpv () { return (DIM == 2) ? 1 : 3; }
 
     static constexpr int DISPPV = disppv();
-    static constexpr int rotpv = rotpv();
+    static constexpr int ROTPV = rotpv();
     static constexpr int DPV = dofpv();
     typedef Mat<DPV, DPV, double> TM;
 
@@ -110,8 +124,9 @@ namespace amg
     static INLINE TVD CalcMPData (const TVD & da, const TVD & db);
 
     static INLINE void CalcRMBlock (FlatMatrix<TM> mat, const TED & ed, const TVD & vdi, const TVD & vdj);
+    static INLINE void CalcRMBlock2 (FlatMatrix<TM> mat, const TM & ed, const TVD & vdi, const TVD & vdj);
 
-    static INLINE void QtMQ (const TM & Qij, TM & M)
+    static INLINE void QtMQ (const TM & cQij, TM & M)
     {
       // static Mat<disppv(), rotpv(), double> X;
       // static Mat<disppv(), disppv(), double> M11;
@@ -127,17 +142,17 @@ namespace amg
 
       static Mat<disppv(), rotpv(), double> M11X;
       static Mat<rotpv(), rotpv(), double> M22X;
-      auto & Qij = const_cast<TM&>(Qij); // oh no ...
-      auto X = FlatMat<0, DISPPV, DISPPV, ROTPV>(Qij);
-      auto M11 = FlatMat<0, DISPPV, 0, DISPPV>(M);
-      auto M12 = FlatMat<0, DISPPV, DISPPV, ROTPV>(M);
-      auto M21 = FlatMat<DISPPV, ROTPV, 0, DISPPV>(M);
-      auto M22 = FlatMat<DISPPV, ROTPV, DISPPV, ROTPV>(M);
+      TM & Qij = const_cast<TM&>(cQij); // oh no ...
+      auto X = MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(Qij);
+      auto M11 = MakeFlatMat<0, DISPPV, 0, DISPPV>(M);
+      auto M12 = MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(M);
+      auto M21 = MakeFlatMat<DISPPV, ROTPV, 0, DISPPV>(M);
+      auto M22 = MakeFlatMat<DISPPV, ROTPV, DISPPV, ROTPV>(M);
       M11X = M11 * X;
       M22X = M22 * X;
       M12 += M11X;
       M21 += Trans(M11X);
-      M22 += Trans(x) * M22X;
+      M22 += Trans(X) * M22X;
 
       // static TM MQ;
       // MQ = M * Qij;
@@ -165,17 +180,17 @@ namespace amg
       static Mat<disppv(), rotpv(), double> M11X;
       static Mat<rotpv(), rotpv(), double> M22X;
       auto & Qij = const_cast<TM&>(Qij); // oh no ...
-      auto X = FlatMat<0, DISPPV, DISPPV, ROTPV>(Qij);
-      auto M11 = FlatMat<0, DISPPV, 0, DISPPV>(M);
-      auto M12 = FlatMat<0, DISPPV, DISPPV, ROTPV>(M);
-      auto M21 = FlatMat<DISPPV, ROTPV, 0, DISPPV>(M);
-      auto M22 = FlatMat<DISPPV, ROTPV, DISPPV, ROTPV>(M);
+      auto X = MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(Qij);
+      auto M11 = MakeFlatMat<0, DISPPV, 0, DISPPV>(M);
+      auto M12 = MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(M);
+      auto M21 = MakeFlatMat<DISPPV, ROTPV, 0, DISPPV>(M);
+      auto M22 = MakeFlatMat<DISPPV, ROTPV, DISPPV, ROTPV>(M);
       M11X = M12 + M11 * X;
       M22X = M22 * X;
-      FlatMat<0, DISPPV, 0, DISPPV>(A) += val * M11;
-      FlatMat<0, DISPPV, DISPPV, ROTPV>(A) += M12 + M11X;
-      FlatMat<DISPPV, ROTPV, 0, DISPPV>(A) += M21 + Trans(M11X);
-      FlatMat<DISPPV, ROTPV, DISPPV, ROTPV>(A) += M22 + Trans(X) * M22X;
+      MakeFlatMat<0, DISPPV, 0, DISPPV>(A) += val * M11;
+      MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(A) += M12 + M11X;
+      MakeFlatMat<DISPPV, ROTPV, 0, DISPPV>(A) += M21 + Trans(M11X);
+      MakeFlatMat<DISPPV, ROTPV, DISPPV, ROTPV>(A) += M22 + Trans(X) * M22X;
 
       // static TM MQ;
       // MQ = M * Qij;

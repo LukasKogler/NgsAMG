@@ -15,7 +15,7 @@ namespace amg
   public:
     FacetH1FE () { ; }
     FacetH1FE (NodeId facet_id, MeshAccess & ma) { ; }
-    static constexpr int ND () { return DIM; }
+    static constexpr int ND = DIM;
     INLINE void CalcMappedShape (const BaseMappedIntegrationPoint & mip, 
 				 SliceMatrix<double> shapes) const
     {
@@ -31,10 +31,11 @@ namespace amg
   class FacetRBModeFE
   {
   protected:
-    static constexpr int NDS = (DIM == 3) ? 3 : 2;
-    static constexpr int NRT = (DIM == 3) ? 3 : 1;
     Vec<DIM> mid;
   public:
+    static constexpr int NDS = (DIM == 3) ? 3 : 2;
+    static constexpr int NRT = (DIM == 3) ? 3 : 1;
+    static constexpr int ND = NDS + NRT;
     FacetRBModeFE (NodeId facet_id, MeshAccess & ma) {
       Vec<DIM> t;
       GetNodePos<DIM>(facet_id, ma, mid, t);
@@ -47,7 +48,7 @@ namespace amg
     //   for (auto pnum : pnums)
     // 	{ mid += 1.0/pnums.Size() * ma->GetPoint<DIM>(pnum); }
     // }
-    static constexpr int ND () { return (DIM == 3) ? 6 : 3; }
+    // static constexpr int ND () { return (DIM == 3) ? 6 : 3; }
     INLINE void CalcMappedShape (const BaseMappedIntegrationPoint & mip, 
 				 SliceMatrix<double> shapes) const
     {
@@ -85,7 +86,7 @@ namespace amg
     using SPACEB = ASPACEB;
     using AUXFE = AAUXFE;
 
-    static constexpr int DPV = AUXFE::ND();
+    static constexpr int DPV = AUXFE::ND;
 
     using TM = Mat<DPV, DPV, double>;
     using TV = Vec<DPV, double>;
@@ -153,6 +154,8 @@ namespace amg
     shared_ptr<BitArray> GetFineFacets () const { return fine_facet; }
     FlatArray<int> GetFMapA2F () const { return a2f_facet; }
     FlatArray<int> GetFMapF2A () const { return f2a_facet; }
+
+    Array<Vec<DPV, double>> CalcFacetFlow ();
 
     virtual shared_ptr<BaseVector> CreateAuxVector () const;
 

@@ -640,6 +640,7 @@ namespace amg
   class BlockAlgMesh : public BlockTM
   {
   public:
+    using TTUPLE = std::tuple<T*...>;
     BlockAlgMesh (BlockTM && _mesh, std::tuple<T*...> _data)
       : BlockTM(move(_mesh)), node_data(_data)
     { std::apply([&](auto& ...x){(..., x->SetMesh(this));}, node_data); }

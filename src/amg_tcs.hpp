@@ -33,15 +33,17 @@ namespace ngla
   
 #if MAX_SYS_DIM < 2
   InstSPMS(2,2);
-#endif // MAX_SYS_DIM < 2
+  // if MAX_SYS_DIM>=2, this is now in NGSolve
   InstSPMS(1,2);
   InstSPMS(2,1);
+#endif // MAX_SYS_DIM < 2
 
 #if MAX_SYS_DIM < 3
   InstSPMS(3,3);
-#endif // MAX_SYS_DIM < 3
+  // if MAX_SYS_DIM>=3, this is now in NGSolve
   InstSPMS(1,3);
   InstSPMS(3,1);
+#endif // MAX_SYS_DIM < 3
   InstSPMS(2,3);
   InstSPMS(3,2);
 
@@ -49,9 +51,10 @@ namespace ngla
 
 #if MAX_SYS_DIM < 6
   InstSPMS(6,6);
-#endif // MAX_SYS_DIM < 6
+  // if MAX_SYS_DIM>=6, this is now in NGSolve
   InstSPMS(1,6);
   InstSPMS(6,1);
+#endif // MAX_SYS_DIM < 6
   InstSPMS(3,6);
   InstSPMS(6,3);
 
