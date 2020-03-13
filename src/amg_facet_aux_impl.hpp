@@ -547,6 +547,7 @@ namespace amg
     int curve_order = 1; // TODO: get this from mesh
     int ir_order = 1 + DIM * curve_order;
     auto nv_cf = NormalVectorCF(DIM);
+    auto comm = aux_pds->GetCommunicator();
     for (auto kf : Range(flow)) {
       auto facet_nr = f2a_facet[kf];
       AUXFE auxfe (NodeId(FACET_NT(DIM), facet_nr), *ma);
@@ -567,12 +568,18 @@ namespace amg
       FlatVector<double> facet_flow(DPV, lh); facet_flow = 0;
       FlatMatrix<double> auxval(DPV, DIM, lh);
       FlatVector<double> nvval(DIM, lh);
+      double fac = 1.0;
+      if (facet_nrs.Size() == 1) { // MPI or BND facet
+	auto dps = ma->GetDistantProcs(NodeId(NT_FACET, facet_nr));
+	if (dps.Size()) // MPI facet - orient flow from lower to higher rank
+	  { fac = (dps[0] < comm.Rank()) ? -1.0 : 1.0; }
+      }
       for (auto ip_nr : Range(mir_vol)) {
 	auto mip = mir_vol[ip_nr];
 	auxfe.CalcMappedShape(mip, auxval);
 	nv_cf->Evaluate(mip, nvval);
 	for (auto k : Range(DPV))
-	  { facet_flow[k] += mip.GetMeasure() * InnerProduct(auxval.Row(k), nvval); }
+	  { facet_flow[k] += fac * mip.GetMeasure() * InnerProduct(auxval.Row(k), nvval); }
       }
       flow[kf] = facet_flow;
     }

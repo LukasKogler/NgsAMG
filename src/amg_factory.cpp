@@ -543,7 +543,7 @@ namespace amg
     cout << "embed_map " << embed_map << endl;
     cout << "disc_map " << disc_map << endl;
     cout << "prol_map " << prol_map << endl;
-    cout << rd_map << endl;
+    cout << "rd_map " << rd_map << endl;
     const int iss = init_steps.Size();
     for (int k = 0; k < iss; k++) {
       shared_ptr<BaseDOFMapStep> conc_step = init_steps[k];

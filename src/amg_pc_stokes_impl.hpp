@@ -76,6 +76,7 @@ namespace amg
   template<class FACTORY, class AUX_SYS>
   void StokesAMGPC<FACTORY, AUX_SYS> :: SetOptionsFromFlags (BaseAMGPC::Options& O, const Flags & flags, string prefix)
   {
+    static_cast<Options&>(O).SetFromFlags(bfa->GetFESpace(), flags, prefix);
   } // StokesAMGPC::SetOptionsFromFlags
   
 

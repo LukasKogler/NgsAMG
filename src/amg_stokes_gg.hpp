@@ -113,11 +113,36 @@ namespace amg
     // TODO: PARSTAT is NOT yet correct - we shoudl check wether we are master of facet everywhere
     auto edata = get<1>(alg_mesh->Data())->Data();
     auto flows = aux_sys->CalcFacetFlow();
+    auto edges = alg_mesh->template GetNodes<NT_EDGE>();
+    FlatArray<int> vsort = node_sort[NT_VERTEX];
     FlatArray<int> esort = node_sort[NT_EDGE];
+    Array<int> elnums;
+    auto comm = aux_sys->GetAuxParDofs()->GetCommunicator();
     auto f2a_facet = aux_sys->GetFMapF2A();
     for (auto k : Range(f2a_facet)) {
-      auto enr = esort[f2a_facet[k]];
-      edata[enr].flow = flows[k];
+      auto facet_nr = f2a_facet[k];
+      auto enr = esort[f2a_facet[k]]; // TODO: garbage with MPI
+      const auto & edge = edges[enr];
+      ma->GetFacetElements(facet_nr, elnums);
+      double fac = 1.0;
+      if (elnums.Size() == 2) {
+	if (vsort[elnums[0]] == edge.v[0])
+	  { fac = 1.0; }
+	else if (vsort[elnums[0]] == edge.v[1])
+	  { fac = -1; }
+	else
+	  { throw Exception("ummm .. WTF??"); }
+      }
+      else {
+	// I think GetDistantProcs for non-parallel mesh just segfaults ...
+	if ( ( comm.Size() > 1 ) && ma->GetDistantProcs(NodeId(NT_FACET, facet_nr)).Size() ) {
+	  throw Exception("I dont even know ...");
+	}
+	else {
+	  fac = (vsort[elnums[0]] == edge.v[0]) ? 1.0 : -1.0; // should only flip if surface vertex is sorted before vol vertex - never without MPI??
+	}
+      }
+      edata[enr].flow = fac * flows[k];
       edata[enr].edi = 1;
       edata[enr].edj = 1;
     }

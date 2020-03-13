@@ -480,7 +480,7 @@ namespace amg
     cout << " Final Stokes PWP:" << endl;
     print_tm_spmat(cout << endl, P);
 
-    return nullptr;
+    return prol;
   } // StokesAMGFactory<TMESH, ENERGY> :: BuildPWProl_impl
 										   
 
