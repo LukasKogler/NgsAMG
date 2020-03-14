@@ -1114,32 +1114,6 @@ namespace amg
     auto n_facets = ma->GetNFacets();
     auto n_verts = n_facets;
 
-    /** comp_mat is finest mat **/
-    // use_v2d_tab = true;
-    // TableCreator<int> cv2d(n_verts);
-    // for (; !cv2d.Done(); cv2d++) {
-    //   for (auto k : Range(n_facets)) {
-    // 	if (DIM == 3) {
-    // 	  for (auto enr : ma->GetFaceEdges(k))
-    // 	    { cv2d.Add(k, flo_a_e[enr]); }
-    // 	}
-    // 	cv2d.Add(k, flo_b_f[k]);
-    // 	if (DIM == 3) {
-    // 	  for (auto enr : ma->GetFaceEdges(k))
-    // 	    { cv2d.Add(k, flo_b_e[enr]); }
-    // 	}
-    // 	cv2d.Add(k, flo_b_f[k]);
-    //   }
-    // }
-    // v2d_table = cv2d.MoveTable();
-    // O.v_nodes.SetSize(n_facets);
-    // d2v_array.SetSize(comp_fes->GetNDof()); d2v_array = -1;
-    // for (auto k : Range(n_facets)) {
-    //   for (auto dof : v2d_table[k])
-    // 	{ d2v_array[dof] = k; }
-    //   O.v_nodes[k] = NodeId(FACET_NT(DIM), k);
-    // }
-
     /** aux_mat is finest mat. [Gets re-sorted during TopMesh Setup]  **/
     use_v2d_tab = false;
     O.v_nodes.SetSize(n_facets);

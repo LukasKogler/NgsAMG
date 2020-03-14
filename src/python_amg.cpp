@@ -28,6 +28,10 @@ namespace amg {
   extern void ExportMCS_epseps_3d (py::module & m);
 #endif
 #endif
+
+#ifdef STOKES
+  extern void ExportStokes_gg_2d (py::module & m);
+#endif // STOKES
 }
 
 PYBIND11_MODULE (ngs_amg, m) {

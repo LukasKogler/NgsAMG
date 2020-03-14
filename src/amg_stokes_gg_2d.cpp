@@ -64,4 +64,14 @@ namespace amg
 } // namespace amg
 
 
+namespace amg
+{
+
+  void ExportStokes_gg_2d (py::module & m)
+  {
+    ExportFacetAux<STOKES_PC> (m, "stokes_gg_2d", "Stokes Preconditioner, grad-grad + div-div penalty.", [&](auto & x) { ; } );
+  } // ExportStokes_gg_2d
+
+} // namespace amg
+
 #endif // STOKES

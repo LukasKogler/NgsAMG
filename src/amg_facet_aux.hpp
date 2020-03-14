@@ -202,6 +202,15 @@ namespace amg
   /** END FacetAuxSystem **/
 
 
+  /** AuxiliarySpacePreconditioner **/
+
+  template<class AUX_SYS, class BASE> // just so I don't need to deal with DOD
+  class AuxiliarySpacePreconditioner : public BASE
+  {
+  };
+
+  /** END AuxiliarySpacePreconditioner  **/
+
   /** FacetAuxVertexAMGPC **/
 
   /** An Auxiliary Space Elasticty AMG Preconditioner, obtained by facet-wise embedding of
