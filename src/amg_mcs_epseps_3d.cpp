@@ -123,7 +123,7 @@ namespace amg
 namespace amg
 {
   void ExportMCS_epseps_3d (py::module & m) {
-    ExportFacetAux<MCS_AMG_PC> (m, "mcs_epseps_3d", "3d MCS elasticity auxiliary space AMG", [&](auto & x) { ; } );
+    ExportAuxiliaryAMG<MCS_AMG_PC> (m, "mcs_epseps_3d", "3d MCS elasticity auxiliary space AMG", [&](auto & x) { ; } );
   }
 } // namespace amg
 

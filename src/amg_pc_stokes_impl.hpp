@@ -27,15 +27,14 @@ namespace amg
   
   template<class FACTORY, class AUX_SYS>
   StokesAMGPC<FACTORY, AUX_SYS> :: StokesAMGPC (const PDE & apde, const Flags & aflags, const string aname)
-    : BaseAMGPC(apde, aflags, aname)
+    : AUXPC(apde, aflags, aname)
   { throw Exception("PDE-Constructor not implemented!"); }
 
 
   template<class FACTORY, class AUX_SYS>
   StokesAMGPC<FACTORY, AUX_SYS> :: StokesAMGPC (shared_ptr<BilinearForm> blf, const Flags & flags, const string name, shared_ptr<Options> opts)
-    : BaseAMGPC(blf, flags, name)
+    : AUXPC(blf, flags, name)
   {
-    aux_sys = make_shared<AUX_SYS>(bfa);
   } // StokesAMGPC(..)
 
 
@@ -50,15 +49,14 @@ namespace amg
   void StokesAMGPC<FACTORY, AUX_SYS> :: InitLevel (shared_ptr<BitArray> freedofs)
   {
     if (options == nullptr) // should never happen
-      { options = MakeOptionsFromFlags(flags); }
+      { options = this->MakeOptionsFromFlags(this->flags); }
 
     /** Initialize auxiliary system (filter freedofs / auxiliary freedofs, pardofs / convert-operator / alloc auxiliary matrix ) **/
-    aux_sys->Initialize(finest_freedofs);
+    AUXPC::InitLevel(freedofs);
 
     BaseAMGPC::finest_freedofs = aux_sys->GetAuxFreeDofs();
-
   } // StokesAMGPC::InitLevel
-  
+
 
   template<class FACTORY, class AUX_SYS>
   shared_ptr<BaseAMGPC::Options> StokesAMGPC<FACTORY, AUX_SYS> :: NewOpts ()
@@ -76,13 +74,17 @@ namespace amg
   template<class FACTORY, class AUX_SYS>
   void StokesAMGPC<FACTORY, AUX_SYS> :: SetOptionsFromFlags (BaseAMGPC::Options& O, const Flags & flags, string prefix)
   {
-    static_cast<Options&>(O).SetFromFlags(bfa->GetFESpace(), flags, prefix);
+    static_cast<Options&>(O).SetFromFlags(aux_sys->GetCompSpace(), flags, prefix);
   } // StokesAMGPC::SetOptionsFromFlags
   
 
   template<class FACTORY, class AUX_SYS>
-  void StokesAMGPC<FACTORY, AUX_SYS> :: ModifyOptions (BaseAMGPC::Options & O, const Flags & flags, string prefix)
+  void StokesAMGPC<FACTORY, AUX_SYS> :: ModifyOptions (BaseAMGPC::Options & aO, const Flags & flags, string prefix)
   {
+    auto & O (static_cast<Options&>(aO));
+
+    AUXPC::__hacky_test = O.do_test;
+    O.do_test = false;
   } // StokesAMGPC::ModifyOptions
   
 
@@ -157,15 +159,15 @@ namespace amg
     cout << "mesh_emb:" << endl;
     print_tm_spmat(cout << endl, *mesh_emb);
 
-    /** Combine and build DMS **/
-    auto emb = MatMultAB(*aux_emb, *mesh_emb);
-
-    cout << "embedding:" << endl;
-    print_tm_spmat(cout << endl, *emb);
-
     auto mesh_pds = factory->BuildParallelDofs(mesh);
-    auto emb_dms = make_shared<ProlMap<typename AUX_SYS::TPMAT_TM>>(emb, aux_sys->GetCompParDofs(), mesh_pds);
 
+    /** Combine and build DMS **/
+    // auto emb = MatMultAB(*aux_emb, *mesh_emb);
+    // cout << "embedding:" << endl;
+    // print_tm_spmat(cout << endl, *emb);
+    // auto emb_dms = make_shared<ProlMap<typename AUX_SYS::TPMAT_TM>>(emb, aux_sys->GetCompParDofs(), mesh_pds);
+
+    auto emb_dms = make_shared<ProlMap<typename AUX_SYS::TAUX_TM>>(mesh_emb, aux_sys->GetAuxParDofs(), mesh_pds);
 
     return emb_dms;
   } // StokesAMGPC::BuildEmbedding

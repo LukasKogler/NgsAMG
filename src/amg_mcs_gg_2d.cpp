@@ -100,7 +100,7 @@ namespace amg
 namespace amg
 {
   void ExportMCS_gg_2d (py::module & m) {
-    ExportFacetAux<MCS_AMG_PC> (m, "mcs_gg_2d", "2d MCS H1 auxiliary space AMG", [&](auto & x) { ; } );
+    ExportAuxiliaryAMG<MCS_AMG_PC> (m, "mcs_gg_2d", "2d MCS H1 auxiliary space AMG", [&](auto & x) { ; } );
   }
 } // namespace amg
 

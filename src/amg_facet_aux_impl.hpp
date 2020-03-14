@@ -4,27 +4,6 @@
 namespace amg
 {
 
-  /** Options **/
-
-
-  template<int DIM, class AUX_SYS, class AMG_CLASS>
-  class FacetAuxVertexAMGPC<DIM, AUX_SYS, AMG_CLASS> :: Options
-    : public AMG_CLASS::Options,
-      public BaseFacetAMGOptions
-  {
-  public:
-    Options () { ; }
-
-    virtual void SetFromFlags (shared_ptr<FESpace> fes, const Flags & flags, string prefix) override
-    {
-      AMG_CLASS::Options::SetFromFlags(fes, flags, prefix);
-      BaseFacetAMGOptions::SetFromFlags(flags, prefix);
-    }
-  }; // FacetWiseAuxiliarySpaceAMG::Options
-
-  /** END Options **/
-
-
   /** FacetAuxSystem **/
 
   template<int DIM, class SPACEA, class SPACEB, class AUXFE>
@@ -67,12 +46,24 @@ namespace amg
 
 
   template<int DIM, class SPACEA, class SPACEB, class AUXFE>
+  shared_ptr<trans_spm_tm<typename FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE>::TPMAT>>
+  FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: GetPMatT () const
+  {
+    shared_ptr<TPMAT_TM> pmtm = pmat;
+    auto pmatT_tm = TransposeSPM(*pmtm);
+    auto & pmt = const_cast<shared_ptr<trans_spm<TPMAT>>&>(pmatT);
+    pmt = make_shared<trans_spm<TPMAT>>(move(*pmatT_tm));
+    return pmatT;
+  } // FacetAuxSystem::GetPMatT
+
+
+  template<int DIM, class SPACEA, class SPACEB, class AUXFE>
   void FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: Initialize (shared_ptr<BitArray> freedofs)
   {
     /** There are 3 relevant "freedofs" bitarrays:
 	 i) comp_fds: free DOFs in compound space
 	ii) finest_freedofs/aux_fds: free DOFs in (unsorted) aux-space
-       iii) free_nodes : free nodes in (sorted) aux-space, used for coarsening (done by AMG_CLASS) **/
+       iii) free_nodes : free nodes in (sorted) aux-space, used for coarsening (done by AMG_CLASS based on (ii) when constructing the finest mesh) **/
 
     if (freedofs != nullptr)
       { comp_fds = freedofs; }
@@ -134,7 +125,8 @@ namespace amg
     afd.Invert();
 
     /** Auxiliary space FEM matrix **/
-    AllocAuxMat();
+    if (aux_elmats)
+      { AllocAuxMat(); }
     /** ParallelDofs int he auxiliary space **/
     SetUpAuxParDofs();
     /** Auxiliary space -> Compound space embedding **/
@@ -146,6 +138,19 @@ namespace amg
   void FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: Finalize (shared_ptr<BaseMatrix> _comp_mat)
   {
     comp_mat = _comp_mat;
+
+    if (!aux_elmats) {
+      shared_ptr<SparseMatrixTM<double>> cspm = dynamic_pointer_cast<SparseMatrixTM<double>>(comp_mat);
+      if (auto parmat = dynamic_pointer_cast<ParallelMatrix>(comp_mat)) {
+	cspm = dynamic_pointer_cast<SparseMatrixTM<double>>(parmat->GetMatrix());
+      }
+      if (cspm == nullptr)
+	{ throw Exception("Need SparseMatrix in comp space!!"); }
+      shared_ptr<TPMAT_TM> pm = GetPMat();
+      shared_ptr<trans_spm_tm<TPMAT_TM>> pmt = GetPMatT();
+      auto aux_tm = RestrictMatrixTM<SparseMatrixTM<double>, TPMAT_TM> (*pmt, *cspm, *pm);
+      aux_mat = make_shared<TAUX>(move(*aux_tm));
+    }
   } // FacetAuxSystem::Finalize
 
 
@@ -616,7 +621,7 @@ namespace amg
 
   template<int DIM, class SPACEA, class SPACEB, class AUXFE>
   void FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: Add_Facet (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
-									  ElementId ei, LocalHeap & lh)
+								ElementId ei, LocalHeap & lh)
   {
     /** This should be straightforward **/
     auto facet_nr = ei.Nr();
@@ -911,100 +916,102 @@ namespace amg
   /** END FacetAuxSystem **/
 
 
-  /** FacetAuxVertexAMGPC **/
+  /** AuxiliarySpacePreconditioner **/
 
-  template<int DIM, class AUX_SYS, class AMG_CLASS>
-  FacetAuxVertexAMGPC<DIM, AUX_SYS, AMG_CLASS> :: FacetAuxVertexAMGPC (shared_ptr<BilinearForm> bfa, const Flags & flags, const string name)
-    :  AMG_CLASS(bfa, flags, name)
+  template<class AUX_SYS, class BASE>
+  AuxiliarySpacePreconditioner<AUX_SYS, BASE> :: AuxiliarySpacePreconditioner (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string name)
+    : BASE(bfa, aflags, name)
   {
-    options = this->MakeOptionsFromFlags(flags);
-
     /** Initialize Auxiliary System, set up transfer operators **/
     aux_sys = make_shared<AUX_SYS>(bfa);
-  } // FacetAuxVertexAMGPC(..)
+  } // AuxiliarySpacePreconditioner(..)
 
 
-  template<int DIM, class AUX_SYS, class AMG_CLASS>
-  const BaseMatrix & FacetAuxVertexAMGPC<DIM, AUX_SYS, AMG_CLASS> :: GetAMatrix () const
+  template<class AUX_SYS, class BASE>
+  const BaseMatrix & AuxiliarySpacePreconditioner<AUX_SYS, BASE> :: GetAMatrix () const
   {
     if ( (aux_sys == nullptr) || (aux_sys->GetCompMat() == nullptr) )
       { throw Exception("comp_mat not ready"); }
     return *aux_sys->GetCompMat();
-  } // FacetAuxVertexAMGPC::GetAMatrix
+  } // AuxiliarySpacePreconditioner::GetAMatrix
 
 
-  template<int DIM, class AUX_SYS, class AMG_CLASS>
-  const BaseMatrix & FacetAuxVertexAMGPC<DIM, AUX_SYS, AMG_CLASS> :: GetMatrix () const
+  template<class AUX_SYS, class BASE>
+  const BaseMatrix & AuxiliarySpacePreconditioner<AUX_SYS, BASE> :: GetMatrix () const
   {
     return *emb_amg_mat;
-  } // FacetAuxVertexAMGPC::GetMatrix
+  } // AuxiliarySpacePreconditioner::GetMatrix
 
 
-  template<int DIM, class AUX_SYS, class AMG_CLASS>
-  shared_ptr<BaseMatrix> FacetAuxVertexAMGPC<DIM, AUX_SYS, AMG_CLASS> :: GetMatrixPtr ()
+  template<class AUX_SYS, class BASE>
+  shared_ptr<BaseMatrix> AuxiliarySpacePreconditioner<AUX_SYS, BASE> :: GetMatrixPtr ()
   {
     return emb_amg_mat;
-  } // FacetAuxVertexAMGPC::GetMatrixPtr
+  } // AuxiliarySpacePreconditioner::GetMatrixPtr
 
 
-  template<int DIM, class AUX_SYS, class AMG_CLASS>
-  shared_ptr<EmbeddedAMGMatrix> FacetAuxVertexAMGPC<DIM, AUX_SYS, AMG_CLASS> :: GetEmbAMGMat () const
+  template<class AUX_SYS, class BASE>
+  shared_ptr<EmbeddedAMGMatrix> AuxiliarySpacePreconditioner<AUX_SYS, BASE> :: GetEmbAMGMat () const
   {
     return emb_amg_mat;
-  } // FacetAuxVertexAMGPC::GetEmbAMGMat
+  } // AuxiliarySpacePreconditioner::GetEmbAMGMat
 
 
-  template<int DIM, class AUX_SYS, class AMG_CLASS>
-  void FacetAuxVertexAMGPC<DIM, AUX_SYS, AMG_CLASS> :: Mult (const BaseVector & b, BaseVector & x) const
+  template<class AUX_SYS, class BASE>
+  void AuxiliarySpacePreconditioner<AUX_SYS, BASE> :: Mult (const BaseVector & b, BaseVector & x) const
   {
     GetMatrix().Mult(b, x);
-  } // FacetAuxVertexAMGPC::Mult
+  } // AuxiliarySpacePreconditioner::Mult
 
 
-  template<int DIM, class AUX_SYS, class AMG_CLASS>
-  void FacetAuxVertexAMGPC<DIM, AUX_SYS, AMG_CLASS> :: MultTrans (const BaseVector & b, BaseVector & x) const
+  template<class AUX_SYS, class BASE>
+  void AuxiliarySpacePreconditioner<AUX_SYS, BASE> :: MultTrans (const BaseVector & b, BaseVector & x) const
   {
     GetMatrix().MultTrans(b, x);
-  } // FacetAuxVertexAMGPC::Mult
+  } // AuxiliarySpacePreconditioner::Mult
 
 
-  template<int DIM, class AUX_SYS, class AMG_CLASS>
-  void FacetAuxVertexAMGPC<DIM, AUX_SYS, AMG_CLASS> :: MultAdd (double s, const BaseVector & b, BaseVector & x) const
+  template<class AUX_SYS, class BASE>
+  void AuxiliarySpacePreconditioner<AUX_SYS, BASE> :: MultAdd (double s, const BaseVector & b, BaseVector & x) const
   {
     GetMatrix().MultAdd(s, b, x);
-  } // FacetAuxVertexAMGPC::MultAdd
+  } // AuxiliarySpacePreconditioner::MultAdd
 
 
-  template<int DIM, class AUX_SYS, class AMG_CLASS>
-  void FacetAuxVertexAMGPC<DIM, AUX_SYS, AMG_CLASS> :: MultTransAdd (double s, const BaseVector & b, BaseVector & x) const
+  template<class AUX_SYS, class BASE>
+  void AuxiliarySpacePreconditioner<AUX_SYS, BASE> :: MultTransAdd (double s, const BaseVector & b, BaseVector & x) const
   {
     GetMatrix().MultTransAdd(s, b, x);
-  } // FacetAuxVertexAMGPC::MultTransAdd
+  } // AuxiliarySpacePreconditioner::MultTransAdd
 
 
-  template<int DIM, class AUX_SYS, class AMG_CLASS>
-  AutoVector FacetAuxVertexAMGPC<DIM, AUX_SYS, AMG_CLASS> :: CreateColVector () const
+  template<class AUX_SYS, class BASE>
+  AutoVector AuxiliarySpacePreconditioner<AUX_SYS, BASE> :: CreateColVector () const
   {
     if (auto m = bfa->GetMatrixPtr())
       { return m->CreateColVector(); }
     else
       { throw Exception("BFA mat not ready!"); }
-  } // FacetAuxVertexAMGPC::CreateColVector
+  } // AuxiliarySpacePreconditioner::CreateColVector
 
 
-  template<int DIM, class AUX_SYS, class AMG_CLASS>
-  AutoVector FacetAuxVertexAMGPC<DIM, AUX_SYS, AMG_CLASS> :: CreateRowVector () const
+  template<class AUX_SYS, class BASE>
+  AutoVector AuxiliarySpacePreconditioner<AUX_SYS, BASE> :: CreateRowVector () const
   {
     if (auto m = bfa->GetMatrixPtr())
       { return m->CreateRowVector(); }
     else
       { throw Exception("BFA mat not ready!"); }
-  } // FacetAuxVertexAMGPC::CreateRowVector
+  } // AuxiliarySpacePreconditioner::CreateRowVector
 
 
-  template<int DIM, class AUX_SYS, class AMG_CLASS>
-  void FacetAuxVertexAMGPC<DIM, AUX_SYS, AMG_CLASS> :: InitLevel (shared_ptr<BitArray> freedofs)
+  template<class AUX_SYS, class BASE>
+  void AuxiliarySpacePreconditioner<AUX_SYS, BASE> :: InitLevel (shared_ptr<BitArray> freedofs)
   {
+    const auto & O(static_cast<Options&>(*options));
+
+    aux_sys->SetAuxElmats(O.aux_elmats);
+
     /** Initialize auxiliary system:
 	  - filter freedofs
 	  - set up auxiliary space freedofs
@@ -1012,16 +1019,20 @@ namespace amg
 	  - set up convert operator
 	  - allocate auxiliary space matrix **/
     aux_sys->Initialize(freedofs);
-  } // FacetAuxVertexAMGPC::InitLevel
+
+    finest_freedofs = aux_sys->GetAuxFreeDofs();
+  } // AuxiliarySpacePreconditioner::InitLevel
 
 
-  template<int DIM, class AUX_SYS, class AMG_CLASS>
-  void FacetAuxVertexAMGPC<DIM, AUX_SYS, AMG_CLASS> :: FinalizeLevel (const BaseMatrix * mat)
+  template<class AUX_SYS, class BASE>
+  void AuxiliarySpacePreconditioner<AUX_SYS, BASE> :: FinalizeLevel (const BaseMatrix * mat)
   {
-    // auto aux_tm  = RestrictMatrixTM<SparseMatrixTM<double>, TPMAT_TM> (dynamic_cast<SparseMatrixTM<double>&>(const_cast<BaseMatrix&>(*mat)), *pmat);
-    // aux_mat = make_shared<TAUX>(move(*aux_tm));
-
     aux_sys->Finalize(shared_ptr<BaseMatrix>(const_cast<BaseMatrix*>(mat), NOOP_Deleter));
+
+    cout << "aux mat: " << endl;
+    print_tm_spmat(cout, *aux_sys->GetAuxMat()); cout << endl;
+
+    // BASE::FinalizeLevel(mat);
 
     finest_mat = make_shared<ParallelMatrix> (aux_sys->GetAuxMat(), aux_sys->GetAuxParDofs(), aux_sys->GetAuxParDofs(), PARALLEL_OP::C2D);
 
@@ -1039,98 +1050,20 @@ namespace amg
     factory = this->BuildFactory();
 
     this->BuildAMGMat();
-  } // FacetAuxVertexAMGPC::FinalizeLevel
+  } // AuxiliarySpacePreconditioner::FinalizeLevel
 
 
-  template<int DIM, class AUX_SYS, class AMG_CLASS>
-  void FacetAuxVertexAMGPC<DIM, AUX_SYS, AMG_CLASS> :: BuildAMGMat ()
+  template<class AUX_SYS, class BASE>
+  shared_ptr<BaseSmoother> AuxiliarySpacePreconditioner<AUX_SYS, BASE> :: BuildFLS () const
   {
-    /** If aux_only is false:
-	   If smooth_aux_lo is true:
-	     Block-Smooth for HO, then smooth all AMG-levels
-	   else [ TODO!! ]
-	     Block-Smooth for HO, then smooth all AMG-levels except first
-	If aux_only:
-	   Smooth all AMG-levels
-     **/
-
-    auto & O (static_cast<Options&>(*options));
-
-    AMG_CLASS::BuildAMGMat();
-
-    if (__hacky_test) {
-      /** Aux space AMG as a preconditioner for Auxiliary matrix **/
-      auto i1 = printmessage_importance;
-      auto i2 = netgen::printmessage_importance;
-      printmessage_importance = 1;
-      netgen::printmessage_importance = 1;
-      cout << IM(1) << "Test AMG in auxiliary space " << endl;
-      // EigenSystem eigen(*aux_mat, *amg_mat);
-      EigenSystem eigen(*finest_mat, *amg_mat); // need parallel mat
-      eigen.SetPrecision(1e-12);
-      eigen.SetMaxSteps(1000); 
-      eigen.Calc();
-      cout << IM(1) << " Min Eigenvalue : "  << eigen.EigenValue(1) << endl; 
-      cout << IM(1) << " Max Eigenvalue : " << eigen.MaxEigenValue() << endl; 
-      cout << IM(1) << " Condition   " << eigen.MaxEigenValue()/eigen.EigenValue(1) << endl; 
-      printmessage_importance = i1;
-      netgen::printmessage_importance = i2;
-    }
-
-    /** Create the full preconditioner by adding a finest level smoother as a first step (or not, if aux_only) **/
-    shared_ptr<BaseSmoother> fls = O.aux_only ? nullptr : ( O.f_blocks_sc ? BuildFLS2() : BuildFLS() );
-    /** okay, this is hacky - when we do not use a ProlMap for AssembleMatrix, we have to manually
-	invert prol, and then convert it from SPM_TM to SPM **/
-
-    auto pmat = aux_sys->GetPMat();
-    auto comp_pds = aux_sys->GetCompParDofs();
-    auto aux_pds = aux_sys->GetAuxParDofs();
-    // cout << " fls : " << endl << fls << endl;
-    shared_ptr<trans_spm_tm<TPMAT_TM>> pmatT = TransposeSPM( ((TPMAT_TM&)(*pmat)) );
-    pmatT = make_shared<trans_spm<TPMAT>>(move(*pmatT));
-    auto ds = make_shared<ProlMap<TPMAT_TM>>(pmat, pmatT, comp_pds, aux_pds);
-    emb_amg_mat = make_shared<EmbeddedAMGMatrix> (fls, amg_mat, ds);
-
-    if (__hacky_test) {
-      /** Aux space AMG + finest level smoother as a preconditioner for the bilinear-form **/
-      auto i1 = printmessage_importance;
-      auto i2 = netgen::printmessage_importance;
-      printmessage_importance = 1;
-      netgen::printmessage_importance = 1;
-      cout << IM(1) << "Test full Auxiliary space Preconditioner " << endl;
-      this->Test();
-      printmessage_importance = i1;
-      netgen::printmessage_importance = i2;
-    }
-    
-  } // FacetAuxVertexAMGPC::BuildAMGMat
+    return BuildFLS_EF();
+  }
 
 
-  template<int DIM, class AUX_SYS, class AMG_CLASS>
-  void FacetAuxVertexAMGPC<DIM, AUX_SYS, AMG_CLASS> :: SetUpMaps ()
+  template<class AUX_SYS, class BASE>
+  shared_ptr<BaseSmoother> AuxiliarySpacePreconditioner<AUX_SYS, BASE> :: BuildFLS_EF () const
   {
-    static Timer t("SetUpMaps"); RegionTimer rt(t);
-    auto & O (static_cast<Options&>(*options));
-    auto n_facets = ma->GetNFacets();
-    auto n_verts = n_facets;
-
-    /** aux_mat is finest mat. [Gets re-sorted during TopMesh Setup]  **/
-    use_v2d_tab = false;
-    O.v_nodes.SetSize(n_facets);
-    v2d_array.SetSize(n_facets);
-    d2v_array.SetSize(n_facets);
-    for (auto k : Range(n_facets)) {
-      v2d_array[k] = d2v_array[k] = k;
-      O.v_nodes[k] = NodeId(FACET_NT(DIM), k);
-    }
-
-  } // FacetAuxVertexAMGPC::SetUpMaps
-
-
-  template<int DIM, class AUX_SYS, class AMG_CLASS>
-  shared_ptr<BaseSmoother> FacetAuxVertexAMGPC<DIM, AUX_SYS, AMG_CLASS> :: BuildFLS () const
-  {
-    const auto &O (static_cast<Options&>(*options));
+    const auto & O(static_cast<Options&>(*options));
 
     // cout << "build finest level block smoother " << endl;
 
@@ -1168,9 +1101,9 @@ namespace amg
       else {
 	const FESpace &fesa(*spacea), &fesb(*spaceb);
 	for (auto facet_nr : Range(n_blocks)) {
-	  fesa.GetDofNrs(NodeId(FACET_NT(DIM), facet_nr), dnums);
+	  fesa.GetDofNrs(NodeId(NT_FACET, facet_nr), dnums);
 	  add_dofs(os_sa, facet_nr, dnums);
-	  fesb.GetDofNrs(NodeId(FACET_NT(DIM), facet_nr), dnums);
+	  fesb.GetDofNrs(NodeId(NT_FACET, facet_nr), dnums);
 	  add_dofs(os_sb, facet_nr, dnums);
 	}
       }
@@ -1181,69 +1114,117 @@ namespace amg
     auto sm = make_shared<HybridBS<double>> (comp_mat, eqc_h, cblocks.MoveTable(), O.sm_mpi_overlap, O.sm_mpi_thread, O.sm_shm, O.sm_sl2);
 
     return sm;
-  } // FacetAuxVertexAMGPC::BuildFLS
+  } // AuxiliarySpacePreconditioner::BuildFLS
+
+
+  template<class AUX_SYS, class BASE>
+  void AuxiliarySpacePreconditioner<AUX_SYS, BASE> :: BuildAMGMat ()
+  {
+    /** If aux_only is false:
+	   If smooth_aux_lo is true:
+	     Block-Smooth for HO, then smooth all AMG-levels
+	   else [ TODO!! ]
+	     Block-Smooth for HO, then smooth all AMG-levels except first
+	If aux_only:
+	   Smooth all AMG-levels
+     **/
+
+    auto & O (static_cast<Options&>(*options));
+
+    BASE::BuildAMGMat();
+
+    if (__hacky_test) {
+      /** Aux space AMG as a preconditioner for Auxiliary matrix **/
+      auto i1 = printmessage_importance;
+      auto i2 = netgen::printmessage_importance;
+      printmessage_importance = 1;
+      netgen::printmessage_importance = 1;
+      cout << IM(1) << "Test AMG in auxiliary space " << endl;
+      // EigenSystem eigen(*aux_mat, *amg_mat);
+      EigenSystem eigen(*finest_mat, *amg_mat); // need parallel mat
+      eigen.SetPrecision(1e-12);
+      eigen.SetMaxSteps(1000); 
+      eigen.Calc();
+      cout << IM(1) << " Min Eigenvalue : "  << eigen.EigenValue(1) << endl; 
+      cout << IM(1) << " Max Eigenvalue : " << eigen.MaxEigenValue() << endl; 
+      cout << IM(1) << " Condition   " << eigen.MaxEigenValue()/eigen.EigenValue(1) << endl; 
+      printmessage_importance = i1;
+      netgen::printmessage_importance = i2;
+    }
+
+    /** Create the full preconditioner by adding a finest level smoother as a first step (or not, if aux_only) **/
+    shared_ptr<BaseSmoother> fls = BuildFLS();
+    /** okay, this is hacky - when we do not use a ProlMap for AssembleMatrix, we have to manually
+	invert prol, and then convert it from SPM_TM to SPM **/
+
+    auto pmat = aux_sys->GetPMat();
+    auto comp_pds = aux_sys->GetCompParDofs();
+    auto aux_pds = aux_sys->GetAuxParDofs();
+    // cout << " fls : " << endl << fls << endl;
+    auto pmatT = aux_sys->GetPMatT();
+    auto ds = make_shared<ProlMap<typename AUX_SYS::TPMAT_TM>>(pmat, pmatT, comp_pds, aux_pds);
+    emb_amg_mat = make_shared<EmbeddedAMGMatrix> (fls, amg_mat, ds);
+
+    if (__hacky_test) {
+      /** Aux space AMG + finest level smoother as a preconditioner for the bilinear-form **/
+      auto i1 = printmessage_importance;
+      auto i2 = netgen::printmessage_importance;
+      printmessage_importance = 1;
+      netgen::printmessage_importance = 1;
+      cout << IM(1) << "Test full Auxiliary space Preconditioner " << endl;
+      this->Test();
+      printmessage_importance = i1;
+      netgen::printmessage_importance = i2;
+    }
+    
+  } // AuxiliarySpacePreconditioner::BuildAMGMat
+
+
+  template<class AUX_SYS, class BASE>
+  void AuxiliarySpacePreconditioner<AUX_SYS, BASE> :: Update ()
+  {
+    ;
+  } // AuxiliarySpacePreconditioner::Update
+
+  /** END AuxiliarySpacePreconditioner **/
+
+
+  /** FacetAuxVertexAMGPC **/
+
+  template<int DIM, class AUX_SYS, class AMG_CLASS>
+  FacetAuxVertexAMGPC<DIM, AUX_SYS, AMG_CLASS> :: FacetAuxVertexAMGPC (shared_ptr<BilinearForm> bfa, const Flags & flags, const string name)
+    :  BASE(bfa, flags, name)
+  {
+    options = this->MakeOptionsFromFlags(flags);
+  } // FacetAuxVertexAMGPC(..)
 
 
   template<int DIM, class AUX_SYS, class AMG_CLASS>
-  shared_ptr<BaseSmoother> FacetAuxVertexAMGPC<DIM, AUX_SYS, AMG_CLASS> :: BuildFLS2 () const
+  void FacetAuxVertexAMGPC<DIM, AUX_SYS, AMG_CLASS> :: InitLevel (shared_ptr<BitArray> freedofs)
   {
-    const auto &O(*this->options);
+    BASE::InitLevel(freedofs);
+  } // FacetAuxVertexAMGPC::InitLevel
 
-    auto comp_space = aux_sys->GetCompSpace();
-    auto spacea = aux_sys->GetSpaceA();
-    auto spaceb = aux_sys->GetSpaceB();
-    int os_sa = aux_sys->GetOsA(), os_sb = aux_sys->GetOsB();
-    auto comp_pds = aux_sys->GetCompParDofs();
-    auto comp_mat = aux_sys->GetCompMat();
 
-    auto free1 = aux_sys->GetCompFreeDofs(); // if BDDC this is the correct one
-    auto free2 = comp_space->GetFreeDofs(bfa->UsesEliminateInternal()); // if el_int, this is the one
-    auto is_free = [&](auto x) { return free1->Test(x) && free2->Test(x); };
+  template<int DIM, class AUX_SYS, class AMG_CLASS>
+  void FacetAuxVertexAMGPC<DIM, AUX_SYS, AMG_CLASS> :: SetUpMaps ()
+  {
+    static Timer t("SetUpMaps"); RegionTimer rt(t);
+    auto & O (static_cast<Options&>(*options));
+    auto n_facets = ma->GetNFacets();
+    auto n_verts = n_facets;
 
-    size_t n_blocks = ma->GetNFacets();
-    TableCreator<int> cblocks(n_blocks), cbex(n_blocks);
-    Array<int> elnums;
-    Array<int> dnums_f, dnums_el, dnums_ex;
-    auto add_facet = [&](auto os, const FESpace & fes, int facet_nr) LAMBDA_INLINE {
-      auto add_dofs = [&](auto & tc, auto os, auto block_num, auto & dnums) LAMBDA_INLINE {
-	bool set_any = false;
-	for (auto loc_dof : dnums) {
-	  auto real_dof = os + loc_dof;
-	  if (is_free(real_dof))
-	    { set_any = true; tc.Add(block_num, real_dof); }
-	}
-	return set_any;
-      };
-      fes.GetDofNrs(NodeId(FACET_NT(DIM), facet_nr), dnums_f);
-      auto any_free = add_dofs(cblocks, os, facet_nr, dnums_f);
-      int c = 0, pos = -1;
-      if (any_free) {
-	for (auto el_nr : elnums) {
-	  fes.GetDofNrs(ElementId(VOL, el_nr), dnums_el);
-	  c = 0; dnums_ex.SetSize(dnums_el.Size());
-	  // iterate_anotb(dnums_el, dnums_f, [&](auto i) LAMBDA_INLINE { dnums_ex[c++] = dnums_el[i]; }); // not sorted!
-	  for (auto el_dof : dnums_el)
-	    if ( (pos = dnums_f.Pos(el_dof)) == -1)
-	      { dnums_ex[c++] = el_dof; }
-	  dnums_ex.SetSize(c);
-	  add_dofs(cbex, os, facet_nr, dnums_ex);
-	}
-      }
-    };
-    for (; !cblocks.Done(); cblocks++, cbex++) {
-      for (auto facet_nr : Range(n_blocks)) {
-	ma->GetFacetElements(facet_nr, elnums);
-	add_facet(os_sa, *spacea, facet_nr);
-	add_facet(os_sb, *spaceb, facet_nr);
-      }
+    /** aux_mat is finest mat. [Gets re-sorted during TopMesh Setup]  **/
+    use_v2d_tab = false;
+    O.v_nodes.SetSize(n_facets);
+    v2d_array.SetSize(n_facets);
+    d2v_array.SetSize(n_facets);
+    for (auto k : Range(n_facets)) {
+      v2d_array[k] = d2v_array[k] = k;
+      O.v_nodes[k] = NodeId(FACET_NT(DIM), k);
     }
 
-    auto eqc_h = make_shared<EQCHierarchy>(comp_pds, false); // TODO: get rid of these!
-    // auto sm = make_shared<HybridBS<double>> (comp_mat, eqc_h, cblocks.MoveTable(), cbex.MoveTable(), O.sm_mpi_overlap, O.sm_mpi_thread, O.sm_shm, O.sm_sl2);
-    auto sm = make_shared<HybridBS<double>> (comp_mat, eqc_h, cblocks.MoveTable(), O.sm_mpi_overlap, O.sm_mpi_thread, O.sm_shm, O.sm_sl2);
-
-    return sm;
-  } // FacetAuxVertexAMGPC::BuildFLS
+  } // FacetAuxVertexAMGPC::SetUpMaps
 
 
   template<int DIM, class AUX_SYS, class AMG_CLASS>
@@ -1314,7 +1295,7 @@ namespace amg
   {
     auto & O (static_cast<Options&>(aO));
 
-    __hacky_test = O.do_test;
+    BASE::__hacky_test = O.do_test;
     O.do_test = false;
   } // FacetAuxVertexAMGPC::ModifyOptions
 
@@ -1374,7 +1355,7 @@ namespace amg
 
 namespace amg
 {
-  template<class PCC, class TLAM> void ExportFacetAux (py::module & m, string name, string descr, TLAM lam)
+  template<class PCC, class TLAM> void ExportAuxiliaryAMG (py::module & m, string name, string descr, TLAM lam)
   {
     auto pyclass = py::class_<PCC, shared_ptr<PCC>, Preconditioner>(m, name.c_str(), descr.c_str());
 

@@ -9,27 +9,25 @@ namespace amg
   /** StokesAMGPC **/
 
   template<class AFACTORY, class AAUX_SYS>
-  class StokesAMGPC : public BaseAMGPC
+  class StokesAMGPC : public AuxiliarySpacePreconditioner<AAUX_SYS, BaseAMGPC>
   {
   public:
     using FACTORY = AFACTORY;
     static constexpr int DIM = FACTORY::DIM;
     using TMESH = typename FACTORY::TMESH;
     using AUX_SYS = AAUX_SYS;
-
+    using AUXPC = AuxiliarySpacePreconditioner<AAUX_SYS, BaseAMGPC>;
     class Options;
     
   protected:
 
-    using BaseAMGPC::options;
+    using Preconditioner::ma;
+    using BaseAMGPC::options, BaseAMGPC::factory;
+    using AUXPC::aux_sys, AUXPC::emb_amg_mat;
 
     Array<Array<int>> node_sort;
 
-    shared_ptr<AUX_SYS> aux_sys;
-
     shared_ptr<BitArray> free_facets; // re-sorted aux_sys->GetAuxFreeDofs()
-
-    shared_ptr<EmbeddedAMGMatrix> emb_amg_mat; /** as a preconditioner for the compound BLF **/
 
   public:
 
@@ -43,6 +41,7 @@ namespace amg
 
     /** BaseAMGPC overloads **/
     virtual void InitLevel (shared_ptr<BitArray> freedofs = nullptr) override;
+    // virtual void FinalizeLevel (const BaseMatrix * mat) override;
     virtual void Update () override { ; } // TODO: what should this do??
 
     virtual shared_ptr<BaseAMGPC::Options> NewOpts () override;
@@ -57,15 +56,6 @@ namespace amg
     virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (shared_ptr<TopologicMesh> mesh) override;
 
     virtual void RegularizeMatrix (shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs> & pardofs) const override;
-
-    /** New methods **/
-    shared_ptr<AUX_SYS> GetAuxSys () const { return aux_sys; }
-    shared_ptr<typename AUX_SYS::TPMAT> GetPMat () const { return aux_sys->GetPMat(); }
-    shared_ptr<typename AUX_SYS::TAUX> GetAuxMat () const { return aux_sys->GetAuxMat(); }
-    shared_ptr<BitArray> GetAuxFreeDofs () const { return aux_sys->GetAuxFreeDofs(); } // free_verts are after sorting
-    Array<Array<shared_ptr<BaseVector>>> GetRBModes () const { return aux_sys->GetRBModes(); }
-    virtual shared_ptr<BaseVector> CreateAuxVector () const { return aux_sys->CreateAuxVector(); }
-    shared_ptr<EmbeddedAMGMatrix> GetEmbAMGMat () const;
 
     /** For BuildInitialMesh **/
     virtual shared_ptr<BlockTM> BuildTopMesh ();

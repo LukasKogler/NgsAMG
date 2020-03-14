@@ -114,6 +114,7 @@ namespace amg
     shared_ptr<BitArray> aux_fds;              /** auxiliary space freedofs **/
     // shared_ptr<BitArray> aux_free_verts;    /** dirichlet-vertices in aux space **/
     shared_ptr<TPMAT> pmat;                    /** aux-to compound-embedding **/
+    shared_ptr<trans_spm<TPMAT>> pmatT;        /** transposed pmat **/
     shared_ptr<TAUX> aux_mat;                  /** auxiliary space matrix **/
 
     /** book-keeping **/
@@ -130,11 +131,15 @@ namespace amg
     /** Facet matrices: [a_e, a_f, a_e, a_f]^T \times [aux_f] **/
     Array<FlatMatrix<double>> facet_mat;
 
-    bool elmat_sc = false;  // hacky for now
+    // hacky for now
+    bool aux_elmats = false;
+    bool elmat_sc = false;
 
   public:
 
     FacetAuxSystem (shared_ptr<BilinearForm> _bfa);
+
+    void SetAuxElmats (bool _aux_elmats) { aux_elmats = _aux_elmats; }
 
     shared_ptr<CompoundFESpace> GetCompSpace () const { return comp_fes; }
     shared_ptr<FESpace> GetSpaceA () const { return spacea; }
@@ -147,6 +152,7 @@ namespace amg
     shared_ptr<ParallelDofs> GetCompParDofs () const { return comp_pds; }
     shared_ptr<BitArray> GetCompFreeDofs () const { return comp_fds; }
     shared_ptr<TPMAT> GetPMat () const { return pmat; }
+    shared_ptr<trans_spm_tm<TPMAT>> GetPMatT () const;
     shared_ptr<TAUX> GetAuxMat () const { return aux_mat; }
     shared_ptr<ParallelDofs> GetAuxParDofs () const { return aux_pds; }
     shared_ptr<BitArray> GetAuxFreeDofs () const { return aux_fds; } // free_verts are after sorting
@@ -204,64 +210,58 @@ namespace amg
 
   /** AuxiliarySpacePreconditioner **/
 
-  template<class AUX_SYS, class BASE> // just so I don't need to deal with DOD
-  class AuxiliarySpacePreconditioner : public BASE
-  {
-  };
-
-  /** END AuxiliarySpacePreconditioner  **/
-
-  /** FacetAuxVertexAMGPC **/
-
-  /** An Auxiliary Space Elasticty AMG Preconditioner, obtained by facet-wise embedding of
-      the rigid body-modes. **/
-  template<int ADIM, class AAUX_SYS, class AAMG_CLASS>
-  class FacetAuxVertexAMGPC : public AAMG_CLASS
+  template<class AAUX_SYS, class ABASE> // just so I don't need to deal with DOD
+  class AuxiliarySpacePreconditioner : public ABASE
   {
   public:
+    using BASE = ABASE;
 
-    static constexpr int DIM = ADIM;
+    class Options : public BASE::Options
+    {
+    public:
+
+      /** Element matrix **/
+      bool aux_elmats = true;           // fill aux matrix from element matrices - otherwise, do SPM product
+      bool elmat_sc = false;            // Form schur-complements w.r.t aux-dofs on elmats
+
+      /** Finest level Smoother **/
+      bool el_blocks = true;            // Use element-blocks (default is facet-blocks) [not great with MPI]
+
+    public:
+      Options () : BASE::Options() { ; }    
+
+      virtual void SetFromFlags (shared_ptr<FESpace> fes, const Flags & flags, string prefix)
+      {
+	BASE::Options::SetFromFlags(fes, flags, prefix);
+
+	aux_elmats = !flags.GetDefineFlagX("ngs_amg_aux_elmat_sc").IsFalse();
+	elmat_sc = flags.GetDefineFlagX("ngs_amg_aux_elmat_sc").IsTrue();
+	el_blocks = flags.GetDefineFlagX("ngs_amg_aux_el_blocks").IsTrue();
+      } // BaseFacetAMGOptions :: SetFromFlags
+
+    }; // class BaseAuxiliaryAMGOptions
 
     using AUX_SYS = AAUX_SYS;
-    using AMG_CLASS = AAMG_CLASS;
-    using TMESH = typename AMG_CLASS::TMESH;
-
-    class Options;
-
-    using TM = typename AUX_SYS::TM;
-    using TV = typename AUX_SYS::TV;
-    using TPMAT = typename AUX_SYS::TPMAT;
-    using TPMAT_TM = typename AUX_SYS::TPMAT_TM;
-    using TAUX = typename AUX_SYS::TAUX;
-    using TAUX_TM = typename AUX_SYS::TAUX_TM;
 
   protected:
-
-    using Preconditioner::ma;
-
-    /** Inherided from AMG_CLASS **/
-    using AMG_CLASS::bfa, AMG_CLASS::options, AMG_CLASS::finest_freedofs, AMG_CLASS::finest_mat,
-      AMG_CLASS::factory, AMG_CLASS::free_verts;
-    using AMG_CLASS::use_v2d_tab, AMG_CLASS::d2v_array, AMG_CLASS::v2d_array, AMG_CLASS::v2d_table, AMG_CLASS::node_sort;
-    using AMG_CLASS::amg_mat;
-
-    shared_ptr<AUX_SYS> aux_sys;               /** the auxiliary space system **/
-
-    bool __hacky_test = true;                  /** hacky **/
+    shared_ptr<AUX_SYS> aux_sys;
 
     shared_ptr<EmbeddedAMGMatrix> emb_amg_mat; /** as a preconditioner for the compound BLF **/
 
+    bool __hacky_test = true;                  /** hacky, obvsly **/
+
+    using BASE::bfa, BASE::options, BASE::finest_freedofs, BASE::finest_mat,
+      BASE::factory, BASE::amg_mat;
+
+    using Preconditioner::ma;
+
   public:
 
-    /** Constructors **/
+    AuxiliarySpacePreconditioner (const PDE & apde, const Flags & aflags, const string aname = "precond")
+      : BASE(apde, aflags, aname)
+    { ; }
 
-    FacetAuxVertexAMGPC (const PDE & apde, const Flags & aflags, const string aname = "precond")
-      : AMG_CLASS (apde, aflags, aname)
-    { throw Exception("PDE-Constructor not implemented!"); }
-
-    FacetAuxVertexAMGPC (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string name = "precond");
-
-    /** New methods **/
+    AuxiliarySpacePreconditioner (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string name = "precond");
 
     shared_ptr<AUX_SYS> GetAuxSys () const { return aux_sys; }
     shared_ptr<typename AUX_SYS::TPMAT> GetPMat () const { return aux_sys->GetPMat(); }
@@ -281,23 +281,80 @@ namespace amg
     virtual void MultTransAdd (double s, const BaseVector & b, BaseVector & x) const override;
     virtual AutoVector CreateColVector () const override;
     virtual AutoVector CreateRowVector () const override;
+
+    shared_ptr<EmbeddedAMGMatrix> GetEmbAMGMat () const;
+
     virtual void InitLevel (shared_ptr<BitArray> freedofs = nullptr) override;
     virtual void FinalizeLevel (const BaseMatrix * mat) override;
+    virtual void Update () override;
+    virtual void BuildAMGMat () override;
+
+    /** Additional stuff **/
+    virtual shared_ptr<BaseSmoother> BuildFLS () const;
+    virtual shared_ptr<BaseSmoother> BuildFLS_EF () const;
+  }; // class AuxiliarySpacePreconditioner
+
+  /** END AuxiliarySpacePreconditioner  **/
+
+
+  /** FacetAuxVertexAMGPC **/
+
+  /** An Auxiliary Space Elasticty AMG Preconditioner, obtained by facet-wise embedding of
+      the rigid body-modes. **/
+  template<int ADIM, class AAUX_SYS, class AAMG_CLASS>
+  class FacetAuxVertexAMGPC : public AuxiliarySpacePreconditioner<AAUX_SYS, AAMG_CLASS>
+  {
+  public:
+
+    static constexpr int DIM = ADIM;
+
+    using AUX_SYS = AAUX_SYS;
+    using AMG_CLASS = AAMG_CLASS;
+    using BASE = AuxiliarySpacePreconditioner<AUX_SYS, AMG_CLASS>;
+    using TMESH = typename AMG_CLASS::TMESH;
+    using Options = typename BASE::Options;
+
+    using TM = typename AUX_SYS::TM;
+    using TV = typename AUX_SYS::TV;
+    using TPMAT = typename AUX_SYS::TPMAT;
+    using TPMAT_TM = typename AUX_SYS::TPMAT_TM;
+    using TAUX = typename AUX_SYS::TAUX;
+    using TAUX_TM = typename AUX_SYS::TAUX_TM;
+
+  protected:
+
+    using Preconditioner::ma;
+
+    /** Inherided from AMG_CLASS **/
+    using AMG_CLASS::bfa, AMG_CLASS::options, AMG_CLASS::finest_freedofs, AMG_CLASS::finest_mat,
+      AMG_CLASS::factory, AMG_CLASS::free_verts;
+    using AMG_CLASS::use_v2d_tab, AMG_CLASS::d2v_array, AMG_CLASS::v2d_array, AMG_CLASS::v2d_table, AMG_CLASS::node_sort;
+    using AMG_CLASS::amg_mat;
+    using BASE::aux_sys; 
+
+  public:
+
+    /** Constructors **/
+
+    FacetAuxVertexAMGPC (const PDE & apde, const Flags & aflags, const string aname = "precond")
+      : BASE (apde, aflags, aname)
+    { throw Exception("PDE-Constructor not implemented!"); }
+
+    FacetAuxVertexAMGPC (shared_ptr<BilinearForm> bfa, const Flags & aflags, const string name = "precond");
+
+    /** New methods **/
+
+    virtual void InitLevel (shared_ptr<BitArray> freedofs = nullptr) override;
+    // virtual void FinalizeLevel (const BaseMatrix * mat) override;
     virtual void Update () override;
 
     /** Inherited from AMG_CLASS **/
     virtual void SetUpMaps () override;
-    virtual void BuildAMGMat () override;
     virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (shared_ptr<TopologicMesh> mesh) override;
     // virtual shared_ptr<BaseSmoother> BuildSmoother (const BaseAMGFactory::AMGLevel & amg_level) override;
     virtual shared_ptr<BaseAMGPC::Options> NewOpts () override;
     virtual void SetDefaultOptions (BaseAMGPC::Options& O) override;
     virtual void ModifyOptions (BaseAMGPC::Options & O, const Flags & flags, string prefix = "ngs_amg_") override;
-
-    /** Additional stuff **/
-    virtual shared_ptr<BaseSmoother> BuildFLS () const;
-    virtual shared_ptr<BaseSmoother> BuildFLS2 () const;
-    shared_ptr<EmbeddedAMGMatrix> GetEmbAMGMat () const;
 
     virtual void AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
 				   ElementId ei, LocalHeap & lh) override;
@@ -305,38 +362,6 @@ namespace amg
   }; // class FacetWiseAuxiliarySpaceAMG
 
   /** END FacetAuxVertexAMGPC **/
-
-
-  /** Options **/
-
-  class BaseFacetAMGOptions
-  {
-  public:
-    /** General **/
-    bool aux_only = false;            // Is this be a PC for the auxiliary space only
-
-    /** Element matrix **/
-    bool elmat_sc = false;            // Form schur-complements w.r.t aux-dofs on elmats
-
-    /** Finest level Smoother **/
-    // bool smooth_aux_l0 = false;    // TODO: If aux_only is false, also smooth finest level AUX space ??
-    bool el_blocks = true;            // Use element-blocks (default is facet-blocks) [not great with MPI]
-    bool f_blocks_sc = false;         // Use element-blocks with MPI facets removed by SC [GARBAGE!!]
-
-  public:
-    BaseFacetAMGOptions () { ; }    
-
-    virtual void SetFromFlags (const Flags & flags, string prefix)
-    {
-      aux_only = flags.GetDefineFlagX("ngs_amg_aux_only").IsTrue();
-      elmat_sc = !flags.GetDefineFlagX("ngs_amg_elmat_sc").IsFalse();
-      el_blocks = !flags.GetDefineFlagX("ngs_amg_el_blocks").IsFalse();
-      f_blocks_sc = flags.GetDefineFlagX("ngs_amg_fsc").IsTrue();
-    } // BaseFacetAMGOptions :: SetFromFlags
-
-  }; // class BaseFacetAMGOptions
-
-  /** END Options **/
 
 
   /** Really ugly stuff **/

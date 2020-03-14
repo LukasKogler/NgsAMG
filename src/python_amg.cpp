@@ -43,17 +43,21 @@ PYBIND11_MODULE (ngs_amg, m) {
   amg::ExportH1Dim2(m);
   amg::ExportH1Dim3(m);
 #ifdef AUX_AMG
-  amg::ExportMCS_gg_2d (m);
-  amg::ExportMCS_gg_3d (m);
+  amg::ExportMCS_gg_2d(m);
+  amg::ExportMCS_gg_3d(m);
 #endif
 
 #ifdef ELASTICITY
-  amg::ExportElast2d (m);
-  amg::ExportElast3d (m);
+  amg::ExportElast2d(m);
+  amg::ExportElast3d(m);
 #ifdef AUX_AMG
-  amg::ExportMCS_epseps_2d (m);
-  amg::ExportMCS_epseps_3d (m);
+  amg::ExportMCS_epseps_2d(m);
+  amg::ExportMCS_epseps_3d(m);
 #endif
 #endif
 
-}
+#ifdef STOKES
+  amg::ExportStokes_gg_2d(m);
+#endif // STOKES
+
+} // PYBIND11_MODULE

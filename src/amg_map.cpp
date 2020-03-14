@@ -281,6 +281,13 @@ namespace amg
   shared_ptr<BaseSparseMatrix> ProlMap<TMAT> :: AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const
   {
 
+    cout << "prolmap assmat, type " << typeid(*this).name() << endl;
+    cout << "prol type " << typeid(*prol).name() << endl;
+    cout << "prol dims " << prol->Height() << " x " << prol->Width() << endl;
+    cout << "prol, fmat " << prol << ", " << mat << endl;
+    cout << "fmat type " << typeid(*mat).name() << endl;
+    cout << "fmat dims " << mat->Height() << " x " << mat->Width() << endl;
+
     auto tfmat = dynamic_pointer_cast<SPM_TM_F>(mat);
     if (tfmat == nullptr) {
       throw Exception(string("Cannot cast to ") + typeid(SPM_TM_F).name() + string(", type = ") + typeid(*mat).name() + string("!!") );
@@ -292,10 +299,6 @@ namespace amg
       { self.BuildPT(); }
     self.prol = make_shared<SPM_P>(move(*prol));
     self.prol_trans = make_shared<trans_spm<SPM_P>>(move(*prol_trans));
-
-    cout << "prolmap assmat, type " << typeid(*this).name() << endl;
-    cout << "prol dims " << prol->Height() << " x " << prol->Width() << endl;
-    cout << "fmat dims " << tfmat->Height() << " x " << tfmat->Width() << endl;
     
     if (prol->Width() < 100) {
       cout << " fmat: " << endl; print_tm_spmat(cout, *tfmat); cout << endl<< endl;
