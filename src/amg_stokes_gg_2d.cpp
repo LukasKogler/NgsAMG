@@ -69,7 +69,30 @@ namespace amg
 
   void ExportStokes_gg_2d (py::module & m)
   {
-    ExportAuxiliaryAMG<STOKES_PC> (m, "stokes_gg_2d", "Stokes Preconditioner, grad-grad + div-div penalty.", [&](auto & x) { ; } );
+    ExportAuxiliaryAMG<STOKES_PC> (m, "stokes_gg_2d", "Stokes Preconditioner, grad-grad + div-div penalty.",
+				   [&](auto & pyclass) {
+				     pyclass.def("PoC", [&](shared_ptr<STOKES_PC> spc, int level, int comp, shared_ptr<BaseVector> comp_vec) {
+					 auto eam = spc->GetEmbAMGMat();
+					 auto am = eam->GetAMGMatrix();
+					 auto facet_emb = eam->GetEmbedding();
+					 auto map = am->GetMap();
+					 auto facet_vec = map->CreateVector(0);
+					 int os = (comp == 0) ? 0 : 1;
+					 if (level == 1) {
+					   auto lvec = map->CreateVector(1);
+					   lvec->FVDouble() = 0;
+					   for (int k = os; k < lvec->FVDouble().Size(); k += 2)
+					     { lvec->FVDouble()[k] = 1; }
+					   map->TransferC2F(0, facet_vec.get(), lvec.get());
+					 }
+					 else {
+					   facet_vec->FVDouble() = 0;
+					   for (int k = os; k < facet_vec->FVDouble().Size(); k += 2)
+					     { facet_vec->FVDouble()[k] = 1; }
+					 }
+					 facet_emb->TransferC2F(comp_vec.get(), facet_vec.get());
+				       });
+				   } );
   } // ExportStokes_gg_2d
 
 } // namespace amg

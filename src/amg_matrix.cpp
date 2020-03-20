@@ -470,6 +470,10 @@ namespace amg
   {
     auto & cx = clm->x_level[0];
     clm->GetBF(level, rank, dof, *cx);
+    cout << "aux vec: " << endl;
+    for (auto k : Range(cx->FVDouble().Size()))
+      { if (cx->FVDouble()[k]!=0.0) { cout << "(" << k << ":" << cx->FVDouble()[k] << ") "; } }
+    cout << endl;
     ds->TransferC2F(&vec, cx.get());
   } // EmbeddedAMGMatrix::GetBF
 

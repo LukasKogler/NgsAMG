@@ -156,6 +156,9 @@ namespace amg
       (*mesh_emb)(senr, fnr) = Qij;
     }
 
+    cout << "PMAT:" << endl;
+    print_tm_spmat(cout << endl, *aux_sys->GetPMat());
+
     cout << "mesh_emb:" << endl;
     print_tm_spmat(cout << endl, *mesh_emb);
 

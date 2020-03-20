@@ -267,9 +267,9 @@ namespace amg
 	it_f_facets([&](int vi, int ki, int vj, int kj, int eid) LAMBDA_INLINE {
 	    index[nff] = nff;
 	    if (kj == -1)
-	      { fffinds[nfff++] = nff; }
+	      { cout << nff << " -> to f at " << nfff << endl; fffinds[nfff++] = nff; }
 	    else
-	      { ffiinds[nffi++] = nff; }
+	      { cout << nff << " -> to i at " << nffi << endl; ffiinds[nffi++] = nff; }
 	    ffacets[nff++] = eid;
 	  });
 	QuickSortI(ffacets, index);
@@ -321,7 +321,7 @@ namespace amg
 	it_real_vs([&](auto vi, auto kvi, auto rkvi) {
 	    HB++;
 	  });
-
+	HB++; // one extra constraint for constant pressure (TODO: try to set one pressure component DIRICHLET)
 
 	int HM = HA + HB;
 
@@ -354,6 +354,7 @@ namespace amg
 	/** (fine) B blocks **/
 	auto Bf = M.Rows(HA, HA+HB).Cols(0, HA);
 	auto BfT = M.Rows(0, HA).Cols(HA, HA+HB);
+	double bfsum = 0;
 	it_real_vs([&](auto vi, auto kvi, auto rkvi) {
 	    auto BfRow = Bf.Row(rkvi);
 	    auto vi_neibs = fecon.GetRowIndices(vi);
@@ -361,6 +362,7 @@ namespace amg
 	    cout << "calc b for " << kvi << ", vi " << vi << ", rkvi " << rkvi << endl;
 	    cout << "neibs "; prow(vi_neibs); cout << endl;
 	    cout << "edgs "; prow(vi_fs); cout << endl;
+	    const double fac = 1.0/fvd[vi].vol;
 	    for (auto j : Range(vi_fs)) {
 	      auto vj = vi_neibs[j];
 	      auto fij = int(vi_fs[j]);
@@ -369,8 +371,10 @@ namespace amg
 	      int col = BS * kfij;
 	      cout << "j " << j << ", vj " << vj << ", fij " << fij << ", kfij " << kfij << ", col " << col << endl;
 	      cout << "flow: " << fijd.flow << endl;
-	      for (auto l : Range(BS))
-		{ BfRow(col++) = ( (vi < vj) ? 1.0 : -1.0) * fijd.flow(l); }
+	      for (auto l : Range(BS)) {
+		BfRow(col++) = ( (vi < vj) ? 1.0 : -1.0) * fijd.flow(l);
+		bfsum += fac * abs(fijd.flow(l));
+	      }
 	    }
 	  });
 	BfT = Trans(Bf);
@@ -390,13 +394,12 @@ namespace amg
 	  for (auto l : Range(BS))
 	    { bcbase[bccol++] = ( (cv < cvj) ? 1.0 : -1.0) * fijd.flow(l); }
 	}
-	double cvol = cvd[cv].vol;
-	for (auto kvi : Range(nfv)) {
-	  auto vi = agg_vs[kvi];
-	  auto bcrow = Bc.Row(kvi);
-	  for (auto col : Range(bcbase))
-	    { bcrow(col) = fvd[vi].vol / cvol * bcbase[col]; }
-	}
+	const double cvinv = 1.0 / cvd[cv].vol;
+	it_real_vs([&](auto vi, auto kvi, auto rkvi) {
+	    auto bcrow = Bc.Row(rkvi);
+	    for (auto col : Range(bcbase))
+	      { bcrow(col) = cvinv * bcbase[col]; }
+	  });
 
 	/** RHS **/
 	int Hi = BS * nffi, Hf = BS * nfff, Hc = BS * ncf;
@@ -447,6 +450,25 @@ namespace amg
 
 	cout << "full RHS: " << endl << rhs << endl;
 
+	/** Lock constant pressure **/
+	Bf.Row(HB-1) = bfsum/((HB-1)*(HB-1));
+	BfT.Col(HB-1) = bfsum/((HB-1)*(HB-1));
+
+	{
+	  FlatMatrix<double> Aii(Hi, Hi, lh), S(HB, HB, lh);
+	  auto iii = colsi.Part(0, Hi);
+	  auto bbb = colsi.Part(Hi);
+	  Aii = M.Rows(iii).Cols(iii);
+	  cout << "Aii " << endl << Aii << endl;
+	  CalcInverse(Aii);
+	  cout << "Aii inv " << endl << Aii << endl;
+	  S = M.Rows(bbb).Cols(bbb);
+	  S -= M.Rows(bbb).Cols(iii) * Aii * M.Rows(iii).Cols(bbb);
+	  cout << "S: " << endl << S << endl;
+	  CalcInverse(S);
+	  cout << "Sinv: " << endl << S << endl;
+	}
+
 	/** The block to invert **/
 	FlatMatrix<double> Mii(Hi + HB, Hi + HB, lh);
 	Mii = M.Rows(colsi).Cols(colsi);
@@ -470,6 +492,7 @@ namespace amg
 	    cout << "Pext width = " << Pext.Width() << endl;
 	    for (auto j : Range(ncf)) {
 	      ris[j] = cfacets[j];
+	      // rvs[j] = 0.0;
 	      rvs[j] = Pext.Rows(BS*kfi, BS*(kfi+1)).Cols(BS*j, BS*(j+1));
 	    }
 	}

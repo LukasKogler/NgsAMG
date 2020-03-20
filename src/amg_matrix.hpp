@@ -51,7 +51,12 @@ namespace amg
     virtual size_t GetNDof (size_t level, int rank) const;
     virtual void GetBF (size_t level, int rank, size_t dof, BaseVector & vec) const;
     // virtual void GetEV (size_t level, int rank, size_t k_num, BaseVector & vec) const;
-  };
+
+    shared_ptr<DOFMap> GetMap () const { return map; }
+    FlatArray<shared_ptr<const BaseSmoother>> GetSmoothers () const { return smoothers; }
+    shared_ptr<BaseMatrix> GetCINV () const { return crs_inv; }
+
+  }; // class AMGMatrix
   
 
   class EmbeddedAMGMatrix : public BaseMatrix
@@ -86,6 +91,10 @@ namespace amg
     virtual size_t GetNLevels (int rank) const;
     virtual size_t GetNDof (size_t level, int rank) const;
     virtual void GetBF (size_t level, int rank, size_t dof, BaseVector & vec) const;
+
+    shared_ptr<BaseDOFMapStep> GetEmbedding () const { return ds; }
+    shared_ptr<BaseSmoother> GetFLS () const { return fls; }
+    shared_ptr<AMGMatrix> GetAMGMatrix () const { return clm; }
   };
 
 } // namespace amg

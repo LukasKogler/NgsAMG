@@ -1399,7 +1399,8 @@ namespace amg
 		  pre.GetEmbAMGMat()->CINV(csol, rhs);
 		}, py::arg("sol")=nullptr, py::arg("rhs")=nullptr);
     
-  }
+    lam(pyclass);
+  } // ExportAuxiliary
 
 } // namespace amg
 

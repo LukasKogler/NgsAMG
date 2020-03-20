@@ -78,6 +78,7 @@ namespace amg
 	  // vdh = GGStokesEnergy<C::DIM>::CalcMPData(fvdata[e.v[0]], fvdata[e.v[1]]);
 	  // vdH = GGStokesEnergy<C::DIM>::CalcMPData(cvdata[ce.v[0]], cvdata[ce.v[1]]);
 	  // GGStokesEnergy<C::DIM>::ModQHh(vdH, vdh, QHh);
+	  double fac = 1;
 	  if (vmap[e.v[0]] == ce.v[0]) {
 	    cdata[cenr].edi += data[e.id].edi;
 	    cdata[cenr].edj += data[e.id].edj;
@@ -85,8 +86,9 @@ namespace amg
 	  else {
 	    cdata[cenr].edj += data[e.id].edi;
 	    cdata[cenr].edi += data[e.id].edj;
+	    fac = -1;
 	  }
-	  Iterate<C::DIM>([&](auto i) { cdata[cenr].flow[i.value] += InnerProduct(data[e.id].flow, QHh.Col(i.value)); });
+	  Iterate<C::DIM>([&](auto i) { cdata[cenr].flow[i.value] += fac * InnerProduct(data[e.id].flow, QHh.Col(i.value)); });
 	}
       }, true);
     ceed.SetParallelStatus(CUMULATED);
