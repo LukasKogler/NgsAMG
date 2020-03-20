@@ -355,11 +355,11 @@ namespace amg
   {
     auto finest_mesh = BuildInitialMesh();
 
-    // cout << "init mesh: " << endl << finest_mesh << endl;
-    // if (finest_mesh != nullptr)
-      // cout << *finest_mesh << endl;
-    // else
-      // { throw Exception("HAVE NOT BUILT FINEST MESH CORRECTLY!!!!"); }
+    cout << "init mesh: " << endl << finest_mesh << endl;
+    if (finest_mesh != nullptr)
+      cout << *finest_mesh << endl;
+    else
+      { throw Exception("HAVE NOT BUILT FINEST MESH CORRECTLY!!!!"); }
 
     finest_level.level = 0;
     finest_level.mesh = finest_mesh; // TODO: get out of factory??

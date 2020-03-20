@@ -1029,8 +1029,8 @@ namespace amg
   {
     aux_sys->Finalize(shared_ptr<BaseMatrix>(const_cast<BaseMatrix*>(mat), NOOP_Deleter));
 
-    // cout << "aux mat: " << endl;
-    // print_tm_spmat(cout, *aux_sys->GetAuxMat()); cout << endl;
+    cout << "aux mat: " << endl;
+    print_tm_spmat(cout, *aux_sys->GetAuxMat()); cout << endl;
 
     // BASE::FinalizeLevel(mat);
 
