@@ -1008,7 +1008,7 @@ namespace amg
     auto n_d_v = disc_map->GetNDroppedNodes<NT_VERTEX>();
     auto any_n_d_v = state.curr_mesh->GetEQCHierarchy()->GetCommunicator().AllReduce(n_d_v, MPI_SUM);
 
-    cout << " disc dropped " << n_d_v << endl;
+    // cout << " disc dropped " << n_d_v << endl;
 
     bool map_ok = any_n_d_v != 0; // someone somewhere eliminated some verices
 
