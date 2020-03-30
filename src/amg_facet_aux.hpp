@@ -155,7 +155,7 @@ namespace amg
     shared_ptr<trans_spm_tm<TPMAT>> GetPMatT () const;
     shared_ptr<TAUX> GetAuxMat () const { return aux_mat; }
     shared_ptr<ParallelDofs> GetAuxParDofs () const { return aux_pds; }
-    shared_ptr<BitArray> GetAuxFreeDofs () const { return aux_fds; } // free_verts are after sorting
+    shared_ptr<BitArray> GetAuxFreeDofs () const { return aux_fds; } // after sorting, this becomes free_verts (for vertex-PC)
     Array<Array<shared_ptr<BaseVector>>> GetRBModes () const;
     shared_ptr<BitArray> GetFineFacets () const { return fine_facet; }
     FlatArray<int> GetFMapA2F () const { return a2f_facet; }

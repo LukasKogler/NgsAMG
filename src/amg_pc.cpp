@@ -321,6 +321,7 @@ namespace amg
 		  ( (comm.Size() == 2) && (comm.Rank() == 1) ) ) { // local inverse
 	  cspm->SetInverseType(O.cinv_type_loc);
 	  auto cinv = cspm->InverseMatrix();
+	  cout << " coarse inv: " << endl << *cinv << endl;
 	  if (comm.Size() > 1)
 	    { coarse_inv = make_shared<ParallelMatrix> (cinv, cpds, cpds, C2C); } // dummy parmat
 	  else

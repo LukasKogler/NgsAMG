@@ -27,8 +27,6 @@ namespace amg
 
     Array<Array<int>> node_sort;
 
-    shared_ptr<BitArray> free_facets; // re-sorted aux_sys->GetAuxFreeDofs()
-
   public:
 
     StokesAMGPC (const PDE & apde, const Flags & aflags, const string aname = "precond");

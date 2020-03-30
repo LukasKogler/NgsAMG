@@ -180,11 +180,22 @@ namespace amg
       map->TransferF2C(level, rhs_level[level].get(), rhs_level[level+1].get());
     if (!drops_out) {
       crs_inv->Mult(*rhs_level[n_levels-1], *x_level[n_levels-1]);
+      cout << endl << endl << "CINV --  crs rhs/sol (len = " << rhs_level[n_levels-1]->FVDouble().Size()<< "): " << endl;
+      for (auto k : Range(rhs_level[n_levels-1]->FVDouble().Size())) {
+	cout << k << ": " << rhs_level[n_levels-1]->FVDouble()[k] << " " << x_level[n_levels-1]->FVDouble()[k] << endl;
+      }
+      cout << endl;
     }
     for (int level = n_levels-2; level>=0; level--)
       map->TransferC2F(level, x_level[level].get(), x_level[level+1].get());
     x_level[0] = tmp;
     rhs_level[0] = tmp2;
+
+    cout << endl << endl << "CINV --  finest level rhs/sol (len = " << rhs_level[0]->FVDouble().Size()<< "): " << endl;
+    for (auto k : Range(rhs_level[0]->FVDouble().Size())) {
+      cout << k << ": " << rhs_level[0]->FVDouble()[k] << " " << x_level[0]->FVDouble()[k] << endl;
+    }
+    cout << endl;
   } // AMGMatrix::CINV
 
 
@@ -407,7 +418,7 @@ namespace amg
 
     b.Distribute();
 
-    if (fls != nullptr) {
+    if (false && (fls != nullptr) ) {
       tpre.Start();
       x.FVDouble() = 0;
       x.SetParallelStatus(CUMULATED);
@@ -449,7 +460,7 @@ namespace amg
     auto & cx = clm->x_level[0];
     auto & cr = clm->rhs_level[0];
     ds->TransferF2C(b.get(), cr.get());
-    clm->SmoothV(*cx, *cr);
+    clm->CINV(cx, cr);
     ds->TransferC2F(x.get(), cx.get());
   } // EmbeddedAMGMatrix::CINV
 

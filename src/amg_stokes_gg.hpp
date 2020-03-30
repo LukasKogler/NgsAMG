@@ -49,7 +49,8 @@ namespace amg
     mesh->template Apply<NT_VERTEX>([&](auto v) {
 	auto cv = vmap[v];
 	if (cv != -1) {
-	  cdata[cv].vol += data[v].vol;
+	  if (data[v].vol > 0) // temporary hack for "fake" BND vertices
+	    { cdata[cv].vol += data[v].vol; }
 	  cdata[cv].vd += data[v].vd;
 	}
       }, true);

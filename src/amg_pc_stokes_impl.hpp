@@ -101,6 +101,34 @@ namespace amg
   void StokesAMGPC<FACTORY, AUX_SYS> :: InitFinestLevel (BaseAMGFactory::AMGLevel & finest_level)
   {
     BaseAMGPC::InitFinestLevel(finest_level);
+
+    /** We set BND-verts to dirichlet if their single facet is Dirichlet. **/
+    auto free_facets = aux_sys->GetAuxFreeDofs();
+    if (free_facets != nullptr) {
+      const auto & ff(*free_facets);
+      auto f2a_facet = aux_sys->GetFMapF2A();
+      FlatArray<int> esort = node_sort[NT_EDGE];
+      const auto & fmesh = static_cast<TMESH&>(*finest_level.mesh);
+      auto edges = fmesh.template GetNodes<NT_EDGE>();
+      auto free_verts = make_shared<BitArray>(fmesh.template GetNN<NT_VERTEX>());
+      free_verts->Clear();
+      for (auto ffnr : Range(free_facets->Size())) {
+	auto fnr = f2a_facet[ffnr];
+	auto enr = esort[ffnr]; // NOT SURE 
+	const auto & edge = edges[enr];
+	if (ff.Test(ffnr)) {
+	  free_verts->SetBit(edge.v[0]);
+	  free_verts->SetBit(edge.v[1]);
+	}
+      }
+      {
+	cout << "diri_verts: " << endl;
+	for (auto k : Range(free_verts->Size()))
+	  { if (!free_verts->Test(k)) { cout << k << " "; } }
+	cout << endl << endl;
+      }
+      finest_level.free_nodes = free_verts;
+    }
   } // StokesAMGPC::InitFinestLevel
   
 

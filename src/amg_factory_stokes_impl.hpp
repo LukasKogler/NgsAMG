@@ -67,7 +67,8 @@ namespace amg
     agg_opts.neib_boost = false;
     agg_opts.robust = false;
     // agg_opts.dist2 = state.level[1] == 0;
-    agg_opts.dist2 = true;
+    agg_opts.dist2 = false;
+    // agg_opts.dist2 = true;
 
     auto agglomerator = make_shared<AGG_CLASS>(mesh, state.free_nodes, move(agg_opts));
 
@@ -141,6 +142,9 @@ namespace amg
     size_t FNV = FM.template GetNN<NT_VERTEX>(), FNE = FM.template GetNN<NT_EDGE>();
     auto free_fes = FM.GetFreeNodes();
 
+    if (free_fes)
+    cout << " free_fes: " << endl << *free_fes << endl;
+    
     /** coarse mesh **/
     const auto & CM(*cmesh); CM.CumulateData();
     const auto & cecon(*CM.GetEdgeCM());
@@ -148,6 +152,9 @@ namespace amg
     auto ced = get<1>(CM.Data())->Data();
     size_t CNV = CM.template GetNN<NT_VERTEX>(), CNE = CM.template GetNN<NT_EDGE>();
 
+    cout << "fecon: " << endl << fecon << endl;
+    cout << "cecon: " << endl << cecon << endl;
+    
     /** prol dims **/
     size_t H = FNE, W = CNE;
 
@@ -170,8 +177,10 @@ namespace amg
 	    else // edge is interior to an agglomerate - alloc entries for all facets of the agglomerate
 	      { perow[fenr] = cecon.GetRowIndices(cv0).Size(); }
 	  }
-	  else // I don't think this can happen
-	    { perow[fenr] = 0; throw Exception("Weird case B!"); }
+	  else { // edge between a Dirichlet BND vertex and an interior one
+	    perow[fenr] = 0;
+	    // throw Exception("Weird case B!");
+	  }
 	}
       }
     }
@@ -236,19 +245,14 @@ namespace amg
 	      auto vj = vk_neibs[j];
 	      auto cvj = vmap[vj];
 	      cout << j << " vj " << vj << " cvj " << cvj << endl;
-	      if (cvj != -1) {
-		if (cvj == cv) { // neib in same agg - interior facet!
-		  auto kj = find_in_sorted_array(vj, agg_vs);
-		  if (vj > vk) { // do not count interior facets twice!
-		    cout << "kj = " << kj << endl;
-		    cout << "int facet " << int(vk_fs[j]) << endl;
-		    lam(vk, k, vj, kj, int(vk_fs[j]));
-		  }
+	      if (cvj == cv) { // neib in same agg - interior facet!
+		auto kj = find_in_sorted_array(vj, agg_vs);
+		if (vj > vk) { // do not count interior facets twice!
+		  lam(vk, k, vj, kj, int(vk_fs[j]));
 		}
-		else // neib in different agg
-		  { lam(vk, k, vj, -1, int(vk_fs[j])); 		    cout << "ext facet " << int(vk_fs[j]) << endl;
-}
 	      }
+	      else // neib in different agg (or dirichlet)
+		{ lam(vk, k, vj, -1, int(vk_fs[j])); }
 	    }
 	  }
 	};
@@ -259,7 +263,7 @@ namespace amg
 	    else
 	      { nffi++; }
 	  });
-	cout << "nff/f/i " << nff << " " << nfff << " " << nffi << endl;
+	cout << "nff/f/i " << nff << " " << nfff << " " << nffi << endl << endl;
 	/** fine facet arrays **/
 	FlatArray<int> index(nff, lh), buffer(nff, lh);
 	FlatArray<int> ffacets(nff, lh), ffiinds(nffi, lh), fffinds(nfff, lh);
@@ -267,19 +271,19 @@ namespace amg
 	it_f_facets([&](int vi, int ki, int vj, int kj, int eid) LAMBDA_INLINE {
 	    index[nff] = nff;
 	    if (kj == -1)
-	      { cout << nff << " -> to f at " << nfff << endl; fffinds[nfff++] = nff; }
+	      { fffinds[nfff++] = nff; }
 	    else
-	      { cout << nff << " -> to i at " << nffi << endl; ffiinds[nffi++] = nff; }
+	      { ffiinds[nffi++] = nff; }
 	    ffacets[nff++] = eid;
 	  });
+	cout << "unsorted ffacets " << nff << ": "; prow(ffacets, cout << endl); cout << endl;
+	cout << "unsorted ffiinds " << nffi << ": "; prow(ffiinds, cout << endl); cout << endl;
+	cout << "unsorted fffinds " << nfff << ": "; prow(fffinds, cout << endl); cout << endl;
 	QuickSortI(ffacets, index);
 	for (auto k : Range(nffi))
 	  { ffiinds[k] = index.Pos(ffiinds[k]); }
 	for (auto k : Range(nfff)) // TODO...
 	  { fffinds[k] = index.Pos(fffinds[k]); }
-	cout << "unsorted ffacets " << nff << ": "; prow(ffacets, cout << endl); cout << endl;
-	cout << "unsorted ffiinds " << nffi << ": "; prow(ffiinds, cout << endl); cout << endl;
-	cout << "unsorted fffinds " << nfff << ": "; prow(fffinds, cout << endl); cout << endl;
 	cout << "index " << nff << ": "; prow2(index, cout << endl); cout << endl;
 	ApplyPermutation(ffacets, index);
 	cout << "ffacets " << nff << ": "; prow(ffacets, cout << endl); cout << endl;
@@ -312,7 +316,13 @@ namespace amg
 	  int rkvi = 0;
 	  for (auto kvi : Range(agg_vs)) {
 	    auto vi = agg_vs[kvi];
-	    if (fvd[vi].vol > 0) {
+	    bool is_real = fvd[vi].vol > 0;
+	    /** If there is a dirichlet neighbour, we should not enforce the divergence-constraint for this element **/
+	    auto vi_neibs = fecon.GetRowIndices(vi);
+	    for (auto vj : vi_neibs)
+	      if (vmap[vj] == -1)
+		{ is_real = false; }
+	    if (is_real) {
 	      lam(vi, kvi, rkvi);
 	      rkvi++;
 	    }
@@ -321,7 +331,11 @@ namespace amg
 	it_real_vs([&](auto vi, auto kvi, auto rkvi) {
 	    HB++;
 	  });
-	HB++; // one extra constraint for constant pressure (TODO: try to set one pressure component DIRICHLET)
+	/** One extra constraint for constant pressure (TODO: try to set one pressure component DIRICHLET)
+	    Sometimes, HB == 0, when every single element in the agglomerate has a neighbouring dirichlet facet. Then
+	    we don't need it. **/
+	if (HB > 0)
+	  { HB++; }
 
 	int HM = HA + HB;
 
@@ -335,18 +349,21 @@ namespace amg
 	auto a = M.Rows(0, HA).Cols(0, HA);
 	FlatMatrix<TM> eblock(2,2,lh);
 	it_f_edges([&](auto vi, auto kvi, auto vj, auto vk, auto fij, auto kfij, auto fik, auto kfik) {
-	    ENERGY::CalcRMBlock(eblock, fvd[vi], fvd[vj], fvd[vk], fed[fij], (vi > vj), fed[fik], (vi > vk));
-	    cout << "block verts " << vi << "-" << vj << "-" << vk << endl;
-	    cout << "block faces " << fij << "-" << fik << endl;
-	    cout << "block loc faces " << kfij << "-" << kfik << endl;
-	    cout << "block:" << endl; print_tm_mat(cout, eblock); cout << endl;
-	    Iterate<2>([&](auto i) {
-		int osi = BS * (i.value == 0 ? kfij : kfik);
-		Iterate<2>([&](auto j) {
-		    int osj = BS * (j.value == 0 ? kfij : kfik);
-		    A.Rows(osi, osi + BS).Cols(osj, osj + BS) += eblock(i.value, j.value);
-		  });
-	      });
+	    /** Only an energy-contrib if neither vertex is Dirichlet or grounded. Otherwise kernel vectors are disturbed. **/
+	    if ( (vmap[vj] != -1) && (vmap[vk] != -1) ) {
+	      ENERGY::CalcRMBlock(eblock, fvd[vi], fvd[vj], fvd[vk], fed[fij], (vi > vj), fed[fik], (vi > vk));
+	      cout << "block verts " << vi << "-" << vj << "-" << vk << endl;
+	      cout << "block faces " << fij << "-" << fik << endl;
+	      cout << "block loc faces " << kfij << "-" << kfik << endl;
+	      cout << "block:" << endl; print_tm_mat(cout, eblock); cout << endl;
+	      Iterate<2>([&](auto i) {
+		  int osi = BS * (i.value == 0 ? kfij : kfik);
+		  Iterate<2>([&](auto j) {
+		      int osj = BS * (j.value == 0 ? kfij : kfik);
+		      A.Rows(osi, osi + BS).Cols(osj, osj + BS) += eblock(i.value, j.value);
+		    });
+		});
+	    }
 	  });
 
 	cout << "A block: " << endl << A << endl;
@@ -369,7 +386,8 @@ namespace amg
 	      auto kfij = find_in_sorted_array(fij, ffacets);
 	      auto & fijd = fed[fij];
 	      int col = BS * kfij;
-	      cout << "j " << j << ", vj " << vj << ", fij " << fij << ", kfij " << kfij << ", col " << col << endl;
+	      cout << "j " << j << ", vj " << vj << ", fij " << fij << ", kfij " << kfij << ", col " << col << ", fac " << fac << endl;
+	      cout << "vol volinv: " << fvd[vi].vol << " " << fac << endl;
 	      cout << "flow: " << fijd.flow << endl;
 	      for (auto l : Range(BS)) {
 		BfRow(col++) = ( (vi < vj) ? 1.0 : -1.0) * fijd.flow(l);
@@ -379,11 +397,9 @@ namespace amg
 	  });
 	BfT = Trans(Bf);
 
-	cout << "M mat: " << endl << M << endl;
-
 	/** (coarse) B **/
 	FlatArray<double> bcbase(BS * ncf, lh);
-	FlatMatrix<double> Bc(nfv, BS * ncf, lh);
+	FlatMatrix<double> Bc(HB, BS * ncf, lh);
 	auto cv_neibs = cecon.GetRowIndices(cv);
 	auto cv_fs = cecon.GetRowValues(cv);
 	int bccol = 0;
@@ -391,10 +407,14 @@ namespace amg
 	  auto cvj = cv_neibs[j];
 	  auto fij = int(cv_fs[j]);
 	  auto & fijd = ced[fij];
+	  cout << " c vol " << cvd[cv].vol << " " << 1.0/cvd[cv].vol << endl;
+	  cout << " cvj " << cvj << " cfij " << fij << endl;
+	  cout << " c flow " << fijd.flow << endl;
 	  for (auto l : Range(BS))
 	    { bcbase[bccol++] = ( (cv < cvj) ? 1.0 : -1.0) * fijd.flow(l); }
 	}
 	const double cvinv = 1.0 / cvd[cv].vol;
+	Bc = 0; // last row of Bc is kept 0 for pressure avg. constraint
 	it_real_vs([&](auto vi, auto kvi, auto rkvi) {
 	    auto bcrow = Bc.Row(rkvi);
 	    for (auto col : Range(bcbase))
@@ -440,6 +460,8 @@ namespace amg
 	/** -A_if * P_f **/
 	FlatMatrix<double> rhs(Hi + HB, Hc, lh);
 	rhs = -M.Rows(colsi).Cols(colsf) * Pf;
+
+	cout << "Mif " << endl << M.Rows(colsi).Cols(colsf) << endl;
 	cout << "rhs only homogen. " << endl << rhs << endl;
 	rhs.Rows(Hi, rhs.Height()) += Bc;
 
@@ -451,8 +473,18 @@ namespace amg
 	cout << "full RHS: " << endl << rhs << endl;
 
 	/** Lock constant pressure **/
-	Bf.Row(HB-1) = bfsum/((HB-1)*(HB-1));
-	BfT.Col(HB-1) = bfsum/((HB-1)*(HB-1));
+	// auto Bf = M.Rows(HA, HA+HB).Cols(0, HA);
+	// auto BfT = M.Rows(0, HA).Cols(HA, HA+HB);
+	if (HB > 0) {
+	  for (auto k : Range(HB - 1)) {
+	    M(HA + HB - 1, HA + k) = 1.0;
+	    M(HA + k, HA + HB - 1) = 1.0;
+	  }
+	}
+	// Bf.Row(HB-1) = bfsum/((HB-1)*(HB-1));
+	// BfT.Col(HB-1) = bfsum/((HB-1)*(HB-1));
+	cout << "M mat: " << endl << M << endl;
+
 
 	{
 	  FlatMatrix<double> Aii(Hi, Hi, lh), S(HB, HB, lh);
@@ -490,10 +522,12 @@ namespace amg
 	    cout << "write row " << kfi << " -> " << ff << endl;
 	    cout << "mat space = " << rvs.Size() << " * BS = " << rvs.Size() * BS << endl;
 	    cout << "Pext width = " << Pext.Width() << endl;
+	    for (auto j : Range(ncf)) // TODO??
+	      { ris[j] = cfacets[j]; }
+	    QuickSort(ris);
 	    for (auto j : Range(ncf)) {
-	      ris[j] = cfacets[j];
 	      // rvs[j] = 0.0;
-	      rvs[j] = Pext.Rows(BS*kfi, BS*(kfi+1)).Cols(BS*j, BS*(j+1));
+	      rvs[ris.Pos(cfacets[j])] = Pext.Rows(BS*kfi, BS*(kfi+1)).Cols(BS*j, BS*(j+1));
 	    }
 	}
 
