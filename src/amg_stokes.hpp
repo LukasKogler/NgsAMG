@@ -215,6 +215,128 @@ namespace amg
   }; // class AttachedSED
 
   /** END Stokes Attached Data **/
+
+
+
+  /** StokesMesh **/
+
+
+  /**
+     Extends a Mesh with facet-loops needed for Hiptmair smoother.
+   **/
+  template<class... T>
+  class StokesMesh : public BlockAlgMesh<T...>
+  {
+    using BASE = BlockAlgMesh<T...>;
+    using THIS_CLASS = StokesMesh<T...>;
+
+  protected:
+
+    Table<int> loops;
+
+  public:
+
+    StokesMesh (BlockTM && _mesh, T*... _data)
+      : BASE(move(_mesh), _data...)
+    { ; }
+
+    StokesMesh (BlockTM && _mesh, tuple<T*...> _data)
+      : BASE(move(_mesh), _data)
+    { ; }
+
+    ~StokesMesh () { ; }
+
+    FlatTable<int> GetLoops () const { return loops; }
+    void SetLoops (Table<int> && _loops) { loops = move(_loops); }
+
+    virtual void MapAdditionalData (const BaseGridMapStep & amap) override
+    {
+      // TERRIBLE (!!), but I really don't feel like thinking of something better ...
+      if (auto ctr_map = dynamic_cast<const GridContractMap<THIS_CLASS>*>(&amap))
+	{ MapAdditionalData_impl(*ctr_map); }
+      else if (auto crs_map = dynamic_cast<const BaseCoarseMap*>(&amap))
+	{ MapAdditionalData_impl(*crs_map); }
+      else
+	{ throw Exception(string("Not Map for ") + typeid(amap).name()); }
+    }
+
+    void MapAdditionalData_impl (const GridContractMap<THIS_CLASS> & cmap)
+    { throw Exception("MapAdditionalData contract TODO!"); }
+
+    void MapAdditionalData_impl (const BaseCoarseMap & cmap)
+    {
+      auto & fmesh = *this;
+      fmesh.CumulateData();
+
+      // NOTE: this prooobably does not work ... 
+      auto & cmesh = *static_pointer_cast<THIS_CLASS>(cmap.GetMappedMesh());
+
+      auto fedges = fmesh.template GetNodes<NT_EDGE>();
+      auto cedges = cmesh.template GetNodes<NT_EDGE>();
+
+      auto vmap = cmap.GetMap<NT_VERTEX>();
+      auto emap = cmap.GetMap<NT_EDGE>();
+
+      Array<int> loop_map(loops.Size());
+      Array<int> ucfacets(30); // unique coarse facets
+      Array<int> cloop(30);
+      TableCreator<int> ccl;
+      for (; !ccl.Done(); ccl++) {
+	int cnt_c_loops = 0;
+	for (auto flnr : Range(loops.Size())) {
+	  cout << "map loop " << flnr << " = "; prow(loops[flnr]); cout << endl;
+	  auto floop = loops[flnr];
+	  bool cloop_ok = true;
+	  int c = 0;
+	  ucfacets.SetSize0();
+	  cloop.SetSize(floop.Size());
+	  const int fls = floop.Size();
+	  for (int j = 0; (j < fls) && cloop_ok; j++) {
+	    auto sfenr = floop[j];
+	    bool fflip = (sfenr < 0);
+	    int fenr = abs(sfenr) - 1;
+	    auto cenr = emap[fenr];
+	    cout << " enr " << fenr << " -> " << cenr << endl;
+	    if (cenr != -1) {
+	      auto pos = merge_pos_in_sorted_array(cenr, ucfacets);
+	      cout << " looked for " << cenr << " in ucfacets = "; prow(ucfacets); cout << endl;
+	      cout << " pos is " << pos << endl;
+	      if ( (pos != -1) && (pos > 0) && (ucfacets[pos-1] == cenr) )
+		{ cloop_ok = false; break; }
+	      else if (pos >= 0)
+		{ ucfacets.Insert(pos, cenr); }
+	      cout << " now ucfacets is "; prow(ucfacets); cout << endl;
+	      bool cflip = cedges[cenr].v[0] == vmap[fedges[fenr].v[0]];
+	      cloop[c++] = (fflip ^ cflip) ? -(1 + cenr) : (1 + cenr);
+	    }
+	  }
+	  cloop.SetSize(c);
+	  cout << " maps to cloop "; prow(cloop); cout << endl;
+	  cloop_ok &= (c > 1);
+	  if (cloop_ok) {
+	    loop_map[flnr] = cnt_c_loops;
+	    ccl.Add(cnt_c_loops++, cloop);
+	  }
+	  else
+	    { loop_map[flnr] = -1; }
+	}
+      }
+      cmesh.loops = ccl.MoveTable();
+
+      cout << " c loops: " << endl << cmesh.loops << endl;
+
+    } // StokesMesh::map_loops
+
+
+    // Table<int> map_loops (const GridContractMap<BASE> & cmap);
+
+  protected:
+
+  }; // class StokesMesh
+
+
+  /** END StokesMesh **/
+
 } // namespace amg
 
 #endif

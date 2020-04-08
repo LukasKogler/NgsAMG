@@ -131,6 +131,8 @@ namespace amg {
     INLINE void AddC2F (size_t lev_dest, double fac, BaseVector *x_fine, const BaseVector * x_coarse) const
     { steps[lev_dest]->AddC2F(fac, x_fine, x_coarse);}
 
+    void TransferAtoB (int la, int lb, const BaseVector * vin, BaseVector * vout) const;
+
     shared_ptr<BaseVector> CreateVector (size_t l) const
     { return (l>steps.Size()) ? nullptr : ((l==steps.Size()) ? steps.Last()->CreateMappedVector() : steps[l]->CreateVector()); }
 
@@ -152,7 +154,7 @@ namespace amg {
     Array<BaseVector*> vecs;
 
   public:
-    ConcDMS (Array<shared_ptr<BaseDOFMapStep>> & _sub_steps);
+    ConcDMS (FlatArray<shared_ptr<BaseDOFMapStep>> _sub_steps);
     
     virtual void TransferF2C (const BaseVector * x_fine, BaseVector * x_coarse) const override;
     virtual void AddF2C (double fac, const BaseVector * x_fine, BaseVector * x_coarse) const override;

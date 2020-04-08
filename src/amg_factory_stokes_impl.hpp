@@ -264,6 +264,10 @@ namespace amg
 	      { nffi++; }
 	  });
 	cout << "nff/f/i " << nff << " " << nfff << " " << nffi << endl << endl;
+	/** All vertices (in this connected component) are in one agglomerate - nothing to do!
+	    Sometimes happens on coarsest level. **/
+	if (nfff == 0)
+	  { continue; }
 	/** fine facet arrays **/
 	FlatArray<int> index(nff, lh), buffer(nff, lh);
 	FlatArray<int> ffacets(nff, lh), ffiinds(nffi, lh), fffinds(nfff, lh);
@@ -317,24 +321,26 @@ namespace amg
 	  for (auto kvi : Range(agg_vs)) {
 	    auto vi = agg_vs[kvi];
 	    bool is_real = fvd[vi].vol > 0;
-	    /** If there is a dirichlet neighbour, we should not enforce the divergence-constraint for this element **/
-	    auto vi_neibs = fecon.GetRowIndices(vi);
-	    for (auto vj : vi_neibs)
-	      if (vmap[vj] == -1)
-		{ is_real = false; }
-	    if (is_real) {
-	      lam(vi, kvi, rkvi);
-	      rkvi++;
-	    }
+	    /** This removes div-constraint on els that have a dirichlet facet **/
+	    // for (auto vj : vi_neibs)
+	      // if (vmap[vj] == -1)
+		// { is_real = false; }
+	    lam(is_real, vi, kvi, rkvi);
+	    if (is_real)
+	      { rkvi++; }
 	  }
 	};
-	it_real_vs([&](auto vi, auto kvi, auto rkvi) {
-	    HB++;
+	bool has_outflow = false;
+	it_real_vs([&](auto is_real, auto vi, auto kvi, auto rkvi) {
+	    if (!is_real)
+	      { has_outflow = true; }
+	    else
+	      { HB++; }
 	  });
-	/** One extra constraint for constant pressure (TODO: try to set one pressure component DIRICHLET)
-	    Sometimes, HB == 0, when every single element in the agglomerate has a neighbouring dirichlet facet. Then
-	    we don't need it. **/
-	if (HB > 0)
+	/** If there is more than one element and no outflow facet, we need to lock constant pressure.
+	    If we have only one "real" element, there should always be an outflow, I believe. **/
+	bool lock_const_pressure = (!has_outflow) && (HB > 1);
+	if ( lock_const_pressure )
 	  { HB++; }
 
 	int HM = HA + HB;
@@ -372,7 +378,9 @@ namespace amg
 	auto Bf = M.Rows(HA, HA+HB).Cols(0, HA);
 	auto BfT = M.Rows(0, HA).Cols(HA, HA+HB);
 	double bfsum = 0;
-	it_real_vs([&](auto vi, auto kvi, auto rkvi) {
+	it_real_vs([&](auto is_real, auto vi, auto kvi, auto rkvi) {
+	    if (!is_real)
+	      { return; }
 	    auto BfRow = Bf.Row(rkvi);
 	    auto vi_neibs = fecon.GetRowIndices(vi);
 	    auto vi_fs = fecon.GetRowValues(vi);
@@ -413,9 +421,12 @@ namespace amg
 	  for (auto l : Range(BS))
 	    { bcbase[bccol++] = ( (cv < cvj) ? 1.0 : -1.0) * fijd.flow(l); }
 	}
-	const double cvinv = 1.0 / cvd[cv].vol;
+	/** If we have an outflow, we force 0 divergence, otherwise only constant divergence **/
+	const double cvinv = (has_outflow) ? 0.0 : 1.0 / cvd[cv].vol;
 	Bc = 0; // last row of Bc is kept 0 for pressure avg. constraint
-	it_real_vs([&](auto vi, auto kvi, auto rkvi) {
+	it_real_vs([&](auto is_real, auto vi, auto kvi, auto rkvi) {
+	    if (!is_real)
+	      { return; }
 	    auto bcrow = Bc.Row(rkvi);
 	    for (auto col : Range(bcbase))
 	      { bcrow(col) = cvinv * bcbase[col]; }
@@ -475,7 +486,7 @@ namespace amg
 	/** Lock constant pressure **/
 	// auto Bf = M.Rows(HA, HA+HB).Cols(0, HA);
 	// auto BfT = M.Rows(0, HA).Cols(HA, HA+HB);
-	if (HB > 0) {
+	if ( lock_const_pressure ) {
 	  for (auto k : Range(HB - 1)) {
 	    M(HA + HB - 1, HA + k) = 1.0;
 	    M(HA + k, HA + HB - 1) = 1.0;

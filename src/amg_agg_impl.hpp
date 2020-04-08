@@ -65,6 +65,8 @@ namespace amg
       // get<1>(mapped_mesh->Data())->Cumulate();
     }
 
+    /** Ugliest workaround yet ... **/
+    fmesh->MapAdditionalData(*this);
 
   } // AgglomerateCoarseMap::BuildMappedMesh
 

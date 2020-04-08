@@ -15,7 +15,7 @@ namespace amg
 
   /** Options **/
 
-  void BaseAMGPC::Options :: SetFromFlags (const Flags & flags, string prefix)
+  void BaseAMGPC::Options :: SetFromFlags (shared_ptr<FESpace> fes, const Flags & flags, string prefix)
   {
     auto set_enum_opt = [&] (auto & opt, string key, Array<string> vals, auto default_val) {
       string val = flags.GetStringFlag(prefix + key, "");
@@ -217,7 +217,7 @@ namespace amg
 
   void BaseAMGPC :: SetOptionsFromFlags (Options& O, const Flags & flags, string prefix)
   {
-    O.SetFromFlags(flags, prefix);
+    O.SetFromFlags(bfa->GetFESpace(), flags, prefix);
   } //BaseAMGPC::SetOptionsFromFlags
 
 
@@ -281,6 +281,7 @@ namespace amg
       if ( (k > 0) && O.regularize_cmats) // Regularize coarse level matrices
 	{ RegularizeMatrix(amg_levels[k].mat, amg_levels[k].pardofs); }
       smoothers[k] = BuildSmoother(amg_levels[k]);
+      cout << "type k sm " << typeid(*smoothers[k]).name() << endl;
     }
 
     amg_mat = make_shared<AMGMatrix> (dof_map, smoothers);
@@ -379,8 +380,8 @@ namespace amg
     
     shared_ptr<BaseSmoother> smoother = nullptr;
 
-    // cout << " smoother, mat " << amg_level.mat->Height() << " x " << amg_level.mat->Width() << endl;
-    // cout << " pds " << amg_level.pardofs->GetNDofLocal() << endl;
+    cout << " smoother, mat " << amg_level.mat->Height() << " x " << amg_level.mat->Width() << endl;
+    cout << " pds " << amg_level.pardofs->GetNDofLocal() << endl;
 
     Options::SM_TYPE sm_type = O.sm_type;
 
@@ -543,7 +544,7 @@ namespace amg
     auto ma = fes->GetMeshAccess();
     auto pfit = [&](string x) LAMBDA_INLINE { return prefix + x; };
 
-    BaseAMGPC::Options::SetFromFlags(flags, prefix);
+    BaseAMGPC::Options::SetFromFlags(fes, flags, prefix);
 
     set_enum_opt(subset, "on_dofs", {"range", "select"});
 

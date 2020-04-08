@@ -139,6 +139,8 @@ namespace amg
   {
     comp_mat = _comp_mat;
 
+    cout << " aux_elmats " << &aux_elmats << " " << aux_elmats << endl;
+    
     if (!aux_elmats) {
       shared_ptr<SparseMatrixTM<double>> cspm = dynamic_pointer_cast<SparseMatrixTM<double>>(comp_mat);
       if (auto parmat = dynamic_pointer_cast<ParallelMatrix>(comp_mat)) {
@@ -370,8 +372,9 @@ namespace amg
 	}
       });
 
-    // cout << "pmat: " << endl;
-    // print_tm_spmat(cout, *pmat); cout << endl;
+    cout << "pmat: " << endl;
+    print_tm_spmat(cout, *pmat); cout << endl;
+
   } // FacetAuxSystem::BuildPMat
 
 
@@ -592,11 +595,125 @@ namespace amg
   } // FacetAuxSystem::CalcFlow
 
 
+  template<int DIM, class SPACEA, class SPACEB, class AUXFE>
+  Table<int> FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: CalcFacetLoops ()
+  {
+    if constexpr(DIM == 2) {
+	return CalcFacetLoops2d();
+      }
+    else {
+      return CalcFacetLoops3d();
+    }
+  } // FacetAuxSystem::CalcFacetLoops
+
+
+  template<int DIM, class SPACEA, class SPACEB, class AUXFE>
+  Table<int> FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: CalcFacetLoops3d ()
+  {
+    return Table<int>();
+  } // FacetAuxSystem::CalcFacetLoops3d
+
+
+  template<int DIM, class SPACEA, class SPACEB, class AUXFE>
+  Table<int> FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: CalcFacetLoops2d ()
+  {
+    auto NV = ma->GetNV();
+    Array<int> vels, vsels, edgels, selels;
+    Array<int> loop_sizes(NV);
+    for (auto vnr : Range(NV)) {
+      ma->GetVertexElements(vnr, vels);
+      ma->GetVertexSurfaceElements(vnr, vsels);
+      loop_sizes[vnr] = vels.Size();
+      if (vsels.Size()) {
+	// TODO: not true for SELs between two domains, MPI BNDs...
+	loop_sizes[vnr]++;
+      }
+    }
+    Table<int> loops(loop_sizes);
+    // Vec<2> vpos, epos, tvec;
+    for (auto vnr : Range(NV)) {
+      cout << "loop for vertex " << vnr << endl;
+      /** Find initial element **/
+      int el0 = -1, e0 = -1, orient = -1;
+      /** If we are at the mesh boundary, we should start with an element at the boundary,
+	  so we can iterate through the loop in one go. **/
+      ma->GetVertexSurfaceElements(vnr, vsels);
+      if (vsels.Size()) {
+	auto selfacets = ma->GetElFacets(ElementId(BND, vsels[0]));
+	ma->GetFacetElements(selfacets[0], selels);
+	el0 = selels[0];
+	e0 = selfacets[0];
+	orient = -1;
+      }
+      else { /** Otherwise, for now, pick an arbitrary element **/
+	ma->GetVertexElements(vnr, vels);
+	if (el0 == -1)
+	  { el0 = vels[0]; }
+	/** Now locate the initial edge - it is the one of el0 that contains vnr**/
+	auto el0edges = ma->GetElEdges(ElementId(VOL, el0)); const int elos = el0edges.Size();
+	for (int j = 0; (j < elos) && (e0 == -1); j++) {
+	  auto enr = el0edges[j];
+	  auto edverts = ma->GetEdgePNums(enr);
+	  // for a "true" surf-facet orientation has to be -1
+	  if ( (edverts[0] == vnr) || (edverts[1] == vnr) )
+	    { e0 = enr; orient = -1; }
+	}
+      }
+      cout << " loop len " << loop_sizes[vnr] << endl;
+      cout << " start with el " << el0 << endl;
+      cout << " first edge "  << e0 << endl;
+      /** Set loop start **/
+      auto & loop = loops[vnr];
+      const int loop_len = loop.Size();
+      ma->GetFacetElements(e0, edgels);
+      loop[0] = (edgels[0] == el0) ? -(1 + e0) : (1 + e0); // first edge should enter first el
+      // loop[0] = (ma->GetEdgePNums(e0)[1] == el0) ? (1 + e0) : -(1 + e0); // this way no problem with orientation of facet 0...
+      /** Iterate through the loop. **/
+      int curr_edg = e0, next_el = el0;
+      for (int k : Range(int(1), int(loop_len))) {
+	// find next edge: the one that contains the vertex vnr and is not curr_edg!
+	auto eledges = ma->GetElEdges(ElementId(VOL, next_el));
+	const int neles = eledges.Size();
+	int next_edg = -1;
+	cout << " k = " << k << ", el " << next_el << ", edges = "; prow(eledges); cout << endl;
+	for (int j = 0; (j < neles) && (next_edg == -1); j++) {
+	  auto enr = eledges[j];
+	  if (enr != curr_edg) {
+	    auto everts = ma->GetEdgePNums(enr);
+	    if ( (everts[0] == vnr) || (everts[1] == vnr) ) {
+	      cout << "  new edge " << enr << endl;
+	      next_edg = curr_edg = enr;
+	      ma->GetFacetElements(enr, edgels);
+	      cout << "  els "; prow(edgels); cout << endl;
+	      loop[k] = (edgels[0] == next_el) ? (1 + enr) : -(1 + enr);
+	      if (edgels.Size() > 1)
+		{ next_el = (edgels[0] == next_el) ? edgels[1] : edgels[0]; }
+	      else {
+		cout << " no more els! " << endl;
+		next_el = -1;
+	      }
+	    }
+	  }
+	}
+	cout << "  okay, next el/edge: " << next_el << ", " << next_edg << endl;
+      }
+      cout << "loop: "; prow(loop); cout << endl;
+    } // Range(NV)
+
+    cout << "loops: " << endl << loops << endl;
+
+    return loops;
+  } // FacetAuxSystem::CalcFacetLoops2d
+
+
   /** Not sure what to do about BBND-elements (only relevant for some cases anyways) **/
   template<int DIM, class SPACEA, class SPACEB, class AUXFE>
   void FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
 								       ElementId ei, LocalHeap & lh)
   {
+    if (!aux_elmats)
+      { return; }
+
     ElementTransformation & eltrans = ma->GetTrafo (ei, lh);
     ELEMENT_TYPE et_vol = eltrans.GetElementType();
     if (DIM == 2) {
@@ -1186,6 +1303,14 @@ namespace amg
     ;
   } // AuxiliarySpacePreconditioner::Update
 
+  template<class AUX_SYS, class BASE>
+  void AuxiliarySpacePreconditioner<AUX_SYS, BASE> :: AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
+									ElementId ei, LocalHeap & lh)
+  {
+    aux_sys->AddElementMatrix(dnums, elmat, ei, lh);
+  } // FacetAuxVertexAMGPC::AddElementMatrix
+
+
   /** END AuxiliarySpacePreconditioner **/
 
 
@@ -1336,13 +1461,6 @@ namespace amg
     ;
   } // FacetAuxVertexAMGPC::Update
 
-
-  template<int DIM, class AUX_SYS, class AMG_CLASS>
-  void FacetAuxVertexAMGPC<DIM, AUX_SYS, AMG_CLASS> :: AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
-									 ElementId ei, LocalHeap & lh)
-  {
-    aux_sys->AddElementMatrix(dnums, elmat, ei, lh);
-  } // FacetAuxVertexAMGPC::AddElementMatrix
 
   /** END FacetAuxVertexAMGPC **/
 

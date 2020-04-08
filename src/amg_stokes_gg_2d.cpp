@@ -92,6 +92,39 @@ namespace amg
 					 }
 					 facet_emb->TransferC2F(comp_vec.get(), facet_vec.get());
 				       });
+				     pyclass.def("GetLoop", [&](shared_ptr<STOKES_PC> spc, int level, int comp, shared_ptr<BaseVector> comp_vec) {
+					 auto eam = spc->GetEmbAMGMat();
+					 auto am = eam->GetAMGMatrix();
+					 auto facet_emb = eam->GetEmbedding();
+					 auto map = am->GetMap();
+					 auto facet_vec = map->CreateVector(0);
+					 auto smoothers = am->GetSmoothers();
+					 cout << " smoothers level " << smoothers.Size() << " " << level << " " << comp << endl;
+					 if (level < smoothers.Size()) {
+					   auto hsm = dynamic_pointer_cast<const HiptMairSmoother>(smoothers[level]);
+					   if (hsm == nullptr)
+					     { cout << " GARBAGE1!" << endl; return; }
+					   auto & sm = const_cast<HiptMairSmoother&>(*hsm);
+					   auto C = sm.GetD();
+					   auto v = C->CreateRowVector();
+					   if (comp >= v.FVDouble().Size())
+					     { cout << " GARBAGE2!" << endl; return; }
+					   v.FVDouble() = 0; v.FVDouble()[comp] = 1;
+					   cout << " v: " << endl << *v << endl;
+					   if (level > 0)  {
+					     auto w = map->CreateVector(level);
+					     C->Mult(*v, *w);
+					     cout << " w: " << endl << *w << endl;
+					     map->TransferAtoB(level, 0, w.get(), facet_vec.get());
+					     cout << " facet_vec " << endl << *facet_vec << endl;
+					   }
+					   else
+					     { C->Mult(*v, *facet_vec); }
+					   facet_emb->TransferC2F(comp_vec.get(), facet_vec.get());
+					 }
+					 else
+					   { cout << " GARBAGE3!" << endl; return; }
+				       });
 				   } );
   } // ExportStokes_gg_2d
 

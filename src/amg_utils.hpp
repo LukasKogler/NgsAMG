@@ -82,7 +82,7 @@ namespace amg
     size_t first(0), last(a.Size());
     if (last==0) return 0; // handle special cases so we still get -1 if garbage
     else if (elem<a[0]) return 0;
-    else if (elem>a.Last()) return last; 
+    else if (elem>=a.Last()) return last; 
     while (last > first+5) {
       size_t mid = (last+first)/2; // mid>0!
       if ( a[mid] <= elem ) { first = mid; } // search right

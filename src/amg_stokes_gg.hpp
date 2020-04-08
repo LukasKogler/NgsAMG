@@ -25,8 +25,13 @@ namespace amg
 
   /** StokesMesh **/
 
-  template<int DIM> using GGStokesMesh = BlockAlgMesh<AttachedSVD<GGSVD<DIM>>,
-						      AttachedSED<GGSED<DIM>> >;
+  // template<int DIM> using GGStokesMesh = BlockAlgMesh<AttachedSVD<GGSVD<DIM>>, AttachedSED<GGSED<DIM>> >;
+
+  // template<int DIM> using GGStokesMesh = StokesMesh<BlockAlgMesh<AttachedSVD<GGSVD<DIM>>,
+								 // AttachedSED<GGSED<DIM>>> >;
+
+  template<int DIM> using GGStokesMesh = StokesMesh<AttachedSVD<GGSVD<DIM>>,
+						    AttachedSED<GGSED<DIM>>>;
 
   /** END StokesMesh **/
 
@@ -46,11 +51,16 @@ namespace amg
     cdata.SetSize(cmap.template GetMappedNN<NT_VERTEX>()); cdata = 0.0;
     static_cast<TMESH*>(mesh)->CumulateData(); // lmao ...
     auto vmap = cmap.template GetMap<NT_VERTEX>();
+    const auto fecon = *mesh->GetEdgeCM();
     mesh->template Apply<NT_VERTEX>([&](auto v) {
 	auto cv = vmap[v];
 	if (cv != -1) {
-	  if (data[v].vol > 0) // temporary hack for "fake" BND vertices
-	    { cdata[cv].vol += data[v].vol; }
+	  if (cdata[cv].vol >= 0) {
+	    if (data[v].vol > 0)
+	      { cdata[cv].vol += data[v].vol; }
+	    else
+	      { cdata[cv].vol = -1; }
+	  }
 	  cdata[cv].vd += data[v].vd;
 	}
       }, true);

@@ -162,6 +162,10 @@ namespace amg
     FlatArray<int> GetFMapF2A () const { return f2a_facet; }
 
     Array<Vec<DPV, double>> CalcFacetFlow ();
+    Table<int> CalcFacetLoops ();
+
+    Table<int> CalcFacetLoops2d ();
+    Table<int> CalcFacetLoops3d ();
 
     virtual shared_ptr<BaseVector> CreateAuxVector () const;
 
@@ -234,7 +238,7 @@ namespace amg
       {
 	BASE::Options::SetFromFlags(fes, flags, prefix);
 
-	aux_elmats = !flags.GetDefineFlagX("ngs_amg_aux_elmat_sc").IsFalse();
+	aux_elmats = !flags.GetDefineFlagX("ngs_amg_aux_elmats").IsFalse();
 	elmat_sc = flags.GetDefineFlagX("ngs_amg_aux_elmat_sc").IsTrue();
 	el_blocks = flags.GetDefineFlagX("ngs_amg_aux_el_blocks").IsTrue();
       } // BaseFacetAMGOptions :: SetFromFlags
@@ -281,6 +285,8 @@ namespace amg
     virtual void MultTransAdd (double s, const BaseVector & b, BaseVector & x) const override;
     virtual AutoVector CreateColVector () const override;
     virtual AutoVector CreateRowVector () const override;
+    virtual void AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
+				   ElementId ei, LocalHeap & lh) override;
 
     shared_ptr<EmbeddedAMGMatrix> GetEmbAMGMat () const;
 
@@ -356,10 +362,7 @@ namespace amg
     virtual void SetDefaultOptions (BaseAMGPC::Options& O) override;
     virtual void ModifyOptions (BaseAMGPC::Options & O, const Flags & flags, string prefix = "ngs_amg_") override;
 
-    virtual void AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
-				   ElementId ei, LocalHeap & lh) override;
-
-  }; // class FacetWiseAuxiliarySpaceAMG
+  }; // class FacetAuxVertexAMGPC
 
   /** END FacetAuxVertexAMGPC **/
 

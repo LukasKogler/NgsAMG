@@ -251,6 +251,8 @@ namespace amg
 
     if ( (step == nullptr) || (c_lev.mesh == f_lev.mesh) || (c_lev.mat == f_lev.mat) )
       { return; } // step not performed correctly - coarsening is probably stuck
+    else if (ComputeMeshMeasure(*c_lev.mesh) == 0)
+      { return; } // e.g stokes: when coarsening down to 1 vertex, no more edges left!
     else
       { dof_map->AddStep(step); }
 

@@ -128,7 +128,7 @@ namespace amg
 
     Options () { ; }
 
-    virtual void SetFromFlags (const Flags & flags, string prefix);
+    virtual void SetFromFlags (shared_ptr<FESpace> fes, const Flags & flags, string prefix);
   }; //BaseAMGPC::Options
 
   /** END Options **/

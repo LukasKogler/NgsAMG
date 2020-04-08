@@ -34,13 +34,24 @@ namespace amg
   }
 
 
+  void DOFMap :: TransferAtoB (int la, int lb, const BaseVector * vin, BaseVector * vout) const
+  {
+    if (la > lb)
+      { ConcDMS(steps.Range(lb, la)).TransferC2F(vout, vin); }
+    else if (la < lb)
+      { ConcDMS(steps.Range(la, lb)).TransferF2C(vin, vout); }
+    else
+      { *vout = *vin; }
+  } // DOFMap::TransferAtoB
+
 
   /** ConcDMS **/
 
-  ConcDMS :: ConcDMS (Array<shared_ptr<BaseDOFMapStep>> & _sub_steps)
+  ConcDMS :: ConcDMS (FlatArray<shared_ptr<BaseDOFMapStep>> _sub_steps)
     : BaseDOFMapStep(_sub_steps[0]->GetParDofs(), _sub_steps.Last()->GetMappedParDofs()),
-      sub_steps(_sub_steps)
+      sub_steps(_sub_steps.Size())
   {
+    sub_steps = _sub_steps;
     spvecs.SetSize(sub_steps.Size()-1);
     if(sub_steps.Size()>1) // TODO: test this out -> i think Range(1,0) is broken??
       for(auto k : Range(size_t(1),sub_steps.Size()))

@@ -1438,6 +1438,52 @@ namespace amg {
     tpost.Stop();
   } // smoothfull
 
+
+  void HiptMairSmoother :: Smooth (BaseVector &x, const BaseVector &b, BaseVector  &res,
+				   bool res_updated, bool update_res, bool x_zero) const
+  {
+    // cout << " smrange " << typeid(*smrange).name() << endl;
+    // cout << " smpot " << typeid(*smpot).name() << endl;
+    // cout << " FW b " << endl << b << endl;
+    // cout << " FW res " << endl << res << endl;
+    // cout << " FW x " << endl << x << endl;
+    smrange->Smooth(x, b, res, res_updated, true, x_zero);
+    // cout << " FW x smoothed " << endl << x << endl;
+    DT->Mult(res, *rhspot);
+    // cout << " FW rhs-pot " << endl << *rhspot << endl;
+    *solpot = 0;
+    smpot->Smooth(*solpot, *rhspot, *respot, false, false, true);
+    // cout << " FW sol-pot " << endl << *solpot << endl;
+    D->MultAdd(1.0, *solpot, x);
+    // cout << " FW x incl pot " << endl << x << endl;
+    if (update_res)
+      { res = b - (*Arange) * x; }
+  }
+
+
+  void HiptMairSmoother :: SmoothBack (BaseVector &x, const BaseVector &b, BaseVector &res,
+				       bool res_updated, bool update_res, bool x_zero) const
+  {
+    if (!res_updated) {
+      if (x_zero) {
+	DT->Mult(b, *rhspot);
+      }
+      else {
+	res = b - (*Arange) * x;
+	DT->Mult(res, *rhspot);
+      }
+    }
+    // cout << " BW rhs-pot " << endl << *rhspot << endl;
+    *solpot = 0;
+    smpot->SmoothBack(*solpot, *rhspot, *respot, false, false, true);
+    // cout << " BW sol-pot " << endl << *solpot << endl;
+    D->MultAdd(1.0, *solpot, x);
+    // cout << " BW x " << endl << *solpot << endl;
+    smrange->SmoothBack(x, b, res, false, update_res, false);
+    // cout << " BW x fin " << endl << x << endl;
+  }
+
+
 } // namespace amg
 
 

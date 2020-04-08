@@ -10,13 +10,16 @@ namespace amg
 
   template<class FACTORY, class AUX_SYS>
   class StokesAMGPC<FACTORY, AUX_SYS> :: Options : public FACTORY::Options,
-						   public BaseAMGPC::Options
+						   public AUXPC::Options
   {
   public:
+    bool hiptmair = true;    // Use Hiptmair Smoother
+
     virtual void SetFromFlags (shared_ptr<FESpace> fes, const Flags & flags, string prefix)
     {
       FACTORY::Options::SetFromFlags(flags, prefix);
-      BaseAMGPC::Options::SetFromFlags(flags, prefix);
+      AUXPC::Options::SetFromFlags(fes, flags, prefix);
+      hiptmair = !flags.GetDefineFlagX(prefix + "hpt_sm").IsFalse();
     }
   }; // StokesAMGPC::Options
 
@@ -93,7 +96,9 @@ namespace amg
   {
     static Timer t("BuildInitialMesh");
     RegionTimer rt(t);
-    return BuildAlgMesh(BuildTopMesh());
+    auto alg_mesh = BuildAlgMesh(BuildTopMesh());
+    SetLoops(alg_mesh);
+    return alg_mesh;
   } // StokesAMGPC::BuildInitialMesh
   
 
@@ -527,10 +532,199 @@ namespace amg
 
 
   template<class FACTORY, class AUX_SYS>
+  void StokesAMGPC<FACTORY, AUX_SYS> :: SetLoops (shared_ptr<typename StokesAMGPC<FACTORY, AUX_SYS>::TMESH> mesh)
+  {
+    /** Set the topological loops for Hiptmair Smoother **/
+    auto loops = aux_sys->CalcFacetLoops();
+    auto free_facets = aux_sys->GetAuxFreeDofs();
+    int cntrl = 0;
+    for (auto k : Range(loops)) {
+      bool takeloop = true;
+      for (auto j : loops[k]) {
+	auto fnr = abs(j) - 1;
+	if (!free_facets->Test(fnr))
+	  { takeloop = false; cout << " discard loop " << k << endl; }
+      }
+      if (takeloop)
+	{ cntrl++; }
+    }
+    auto a2f_facet = aux_sys->GetFMapA2F();
+    FlatArray<int> vsort = node_sort[0];
+    FlatArray<int> fsort = node_sort[1];
+    auto edges = mesh->template GetNodes<NT_EDGE>();
+    Array<int> elnums;
+    TableCreator<int> crl(cntrl);
+    for (; !crl.Done(); crl++) {
+      int c = 0;
+      for (auto loop_nr : Range(loops)) {
+	auto loop = loops[loop_nr];
+	bool takeloop = true;
+	for(auto j : Range(loop)) {
+	  int fnr = abs(loop[j])-1;
+	  int enr = fsort[a2f_facet[fnr]];
+	  const auto & edge = edges[enr];
+	  double fac = 1;
+	  ma->GetFacetElements(fnr, elnums);
+	  if (vsort[elnums[0]] == edge.v[0])
+	    { fac = 1.0; }
+	  else if (vsort[elnums[0]] == edge.v[1])
+	    { fac = -1; }
+	  else
+	    { fac = 1; } // doesnt matter - should remove these loops anyways (?)
+	  // if (enr != -1) { // let's say this cannot happen ??
+	  // actually, I think we should throw out loops that touch the Dirichlet BND
+	  loop[j] = (loop[j] > 0) ? fac * (1 + enr) : -fac * (1 + enr);
+	  if (!free_facets->Test(fnr))
+	    { takeloop = false; cout << " discard loop " << loop_nr << endl; break; }
+	  // }
+	}
+	if (takeloop)
+	  { crl.Add(c++, loop); }
+      }
+    }
+    auto edata = get<1>(mesh->Data())->Data();
+    cout << " edges/flows: " << endl;
+    for (auto k : Range(edges.Size())) {
+      cout << edges[k] << ", flow " << edata[k].flow << endl;
+    }
+    auto mod_loops = crl.MoveTable();
+    cout << " modded loops: " << endl << mod_loops << endl;
+    // mesh->SetLoops(move(loops));
+    mesh->SetLoops(move(mod_loops));
+  } // StokesAMGPC::SetLoops
+
+
+  template<class FACTORY, class AUX_SYS>
   shared_ptr<typename StokesAMGPC<FACTORY, AUX_SYS>::TMESH> StokesAMGPC<FACTORY, AUX_SYS> :: BuildAlgMesh (shared_ptr<BlockTM> top_mesh)
   {
     return BuildAlgMesh_TRIV(top_mesh);
   } // StokesAMGPC::BuildAlgMesh
+
+
+  template<class FACTORY, class AUX_SYS>
+  shared_ptr<BaseSmoother> StokesAMGPC<FACTORY, AUX_SYS> :: BuildSmoother (const BaseAMGFactory::AMGLevel & amg_level)
+  {
+    const auto & O = static_cast<Options&>(*options);
+
+    auto sm = BaseAMGPC::BuildSmoother(amg_level);
+
+    if (O.hiptmair)
+      { sm = BuildHiptMairSmoother(amg_level, sm); }
+
+    return sm;
+  } // StokesAMGPC<FACTORY, AUX_SYS>::BuildSmoother
+
+
+  template<class FACTORY, class AUX_SYS>
+  shared_ptr<BaseSmoother> StokesAMGPC<FACTORY, AUX_SYS> :: BuildHiptMairSmoother (const BaseAMGFactory::AMGLevel & amg_level, shared_ptr<BaseSmoother> sm)
+  {
+
+    const auto & M = *static_pointer_cast<TMESH>(amg_level.mesh);
+    M.CumulateData();
+
+    const auto & eqc_h = *M.GetEQCHierarchy();
+    auto loops = M.GetLoops();
+    auto vdata = get<0>(M.Data())->Data();
+    auto edata = get<1>(M.Data())->Data();
+
+    /** ParallelDofs for (fake) HCurl-like space **/
+    Array<int> dps(50);
+    TableCreator<int> cdps(loops.Size());
+    for (; !cdps.Done(); cdps++) {
+      for (auto loop_nr : Range(loops)) {
+	auto loop = loops[loop_nr];
+	dps.SetSize0();
+	for (auto etr : loop) {
+	  int enr = abs(etr) - 1;
+	  auto eqc = M.template GetEqcOfNode<NT_EDGE>(enr);
+	  auto edps = eqc_h.GetDistantProcs(eqc);
+	  for (auto p : edps) {
+	    auto pos = merge_pos_in_sorted_array(p, dps);
+	    if ( (pos == 0) || (dps[pos] < p) )
+	      { dps.Insert(pos, p); }
+	  }
+	}
+	cdps.Add(loop_nr, dps);
+      }
+    }
+    auto loop_pds = cdps.MoveTable();
+
+    /** Discrete curl matrix **/
+    typedef stripped_spm_tm<Mat<1, FACTORY::BS, double>> TM_CT;
+    Array<int> perow(loops.Size()); perow = 0;
+    for (auto k : Range(loops.Size())) {
+      perow[k] = loops[k].Size();
+    }
+    auto curlT_mat = make_shared<TM_CT>(perow, M.template GetNN<NT_EDGE>());
+    for (auto k : Range(loops.Size())) {
+      auto loop = loops[k];
+      auto ris = curlT_mat->GetRowIndices(k);
+      auto rvs = curlT_mat->GetRowValues(k);
+      for (auto j : Range(ris))
+	{ ris[j] = abs(loop[j]) - 1; }
+      QuickSort(ris);
+      for (auto j : Range(ris)) {
+	int enr = abs(loop[j]) - 1;
+	int col = ris.Pos(enr);
+	int fac = (loop[j] < 0) ? -1 : 1;
+	auto flow = edata[enr].flow;
+	double fsum = 0;
+	for (auto l : Range(FACTORY::BS))
+	  { fsum += sqr(flow[l]); }
+	for (auto l : Range(FACTORY::BS)) {
+	  rvs[col](0, l) = fac * flow[l]/fsum;
+	}
+      }
+    }
+
+    cout << " A DIMS " << amg_level.mat->Height() << " x " << amg_level.mat->Width() << endl;
+    cout << " curlT_mat dims " << curlT_mat->Height() << " x " << curlT_mat->Width() << endl;    
+    cout << " discrete curl mat" << endl;
+    print_tm_spmat(cout, *curlT_mat);
+    cout << endl;
+    
+	    
+    /** Project matrix to HCurl-like space **/
+    auto & CT_TM = curlT_mat;
+    auto A_TM = dynamic_pointer_cast<typename FACTORY::TSPM_TM>(amg_level.mat);
+    auto C_TM = TransposeSPM(*CT_TM);
+    cout << " CT_TM " << endl;
+    print_tm_spmat(cout, *CT_TM); cout << endl;
+    auto AC_TM = MatMultAB(*A_TM, *C_TM);
+    cout << " AC_TM " << endl;
+    print_tm_spmat(cout, *AC_TM); cout << endl;
+    auto CTAC_TM = MatMultAB(*CT_TM, *AC_TM);
+
+    cout << " curl space mat " << endl;
+    print_tm_spmat(cout, *CTAC_TM);
+    cout << endl;
+
+    typedef SparseMatrix<Mat<FACTORY::BS, 1, double>> T_C;
+    typedef SparseMatrix<Mat<1, FACTORY::BS, double>> T_CT;
+    typedef SparseMatrix<Mat<FACTORY::BS, FACTORY::BS, double>> T_A;
+
+    auto A = dynamic_pointer_cast<T_A>(amg_level.mat);
+    auto C = make_shared<T_C>(move(*C_TM));
+    auto CT = make_shared<T_CT>(move(*CT_TM));
+    auto CTAC = make_shared<SparseMatrix<double>>(move(*CTAC_TM));    
+
+    /** HC-like space is scalar ! **/
+    auto hc_pds = make_shared<ParallelDofs>(eqc_h.GetCommunicator(), move(loop_pds), 1, false);
+
+    /** Smoother in HCurl-like space (not sure about EQCH!!) **/
+    auto csm = BaseAMGPC::BuildGSSmoother(CTAC, hc_pds, M.GetEQCHierarchy());
+
+    /** Wrap parallel matrices **/
+    auto A_p = make_shared<ParallelMatrix>(A, amg_level.pardofs, PARALLEL_OP::C2D);
+    auto CTAC_p = make_shared<ParallelMatrix>(CTAC, hc_pds, PARALLEL_OP::C2D);
+    auto C_p = make_shared<ParallelMatrix>(C, hc_pds, amg_level.pardofs, PARALLEL_OP::C2C);
+    auto CT_p = make_shared<ParallelMatrix>(CT, amg_level.pardofs, hc_pds, PARALLEL_OP::D2D);
+
+    /** Construct Huptmair Smother **/
+    auto hsm = make_shared<HiptMairSmoother>(csm, sm, CTAC_p, A_p, C_p, CT_p);
+
+    return hsm;
+  } // StokesAMGPC<FACTORY, AUX_SYS>::BuildHiptMairSmoother
 
 
   /** END StokesAMGPC **/
