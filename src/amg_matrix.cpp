@@ -418,7 +418,7 @@ namespace amg
 
     b.Distribute();
 
-    if (false && (fls != nullptr) ) {
+    if ( (fls != nullptr) ) {
       tpre.Start();
       x.FVDouble() = 0;
       x.SetParallelStatus(CUMULATED);
