@@ -26,6 +26,7 @@ namespace amg
     using AUXPC::aux_sys, AUXPC::emb_amg_mat;
 
     Array<Array<int>> node_sort;
+    bool forced_fds = false;
 
   public:
 
@@ -34,6 +35,8 @@ namespace amg
     StokesAMGPC (shared_ptr<BilinearForm> blf, const Flags & flags, const string name, shared_ptr<Options> opts = nullptr);
 
     ~StokesAMGPC ();
+
+    virtual void InitLevelForced (shared_ptr<BitArray> freedofs = nullptr);
 
   protected:
 

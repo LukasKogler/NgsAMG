@@ -77,6 +77,7 @@ namespace amg
   public:
     /** General Level-Control **/
     size_t max_n_levels = 10;                   // maximun number of multigrid levels (counts first level, so at least 2)
+    size_t min_meas = 0;                        // minimum measure of coarsest mesh
     size_t max_meas = 50;                       // maximal maesure of coarsest mesh
 
     /** Coarsening **/

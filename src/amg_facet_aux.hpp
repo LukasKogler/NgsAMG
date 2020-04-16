@@ -110,7 +110,7 @@ namespace amg
     shared_ptr<SPACEB> spaceb;
 
     /** Auxiliary space stuff **/
-    shared_ptr<ParallelDofs> aux_pds;      /** ParallelDofs for auxiliary space **/
+    shared_ptr<ParallelDofs> aux_pds;          /** ParallelDofs for auxiliary space **/
     shared_ptr<BitArray> aux_fds;              /** auxiliary space freedofs **/
     // shared_ptr<BitArray> aux_free_verts;    /** dirichlet-vertices in aux space **/
     shared_ptr<TPMAT> pmat;                    /** aux-to compound-embedding **/
@@ -118,15 +118,15 @@ namespace amg
     shared_ptr<TAUX> aux_mat;                  /** auxiliary space matrix **/
 
     /** book-keeping **/
-    int apf = 0, ape = 0, bpf = 0, bpe = 0; /** A/B-DOFs per facet/edge **/
+    int apf = 0, ape = 0, bpf = 0, bpe = 0;    /** A/B-DOFs per facet/edge **/
     bool has_e_ctrbs = false;
     bool has_a_e = false, has_b_e = false;
-    Table<int> flo_a_f, flo_a_e;            /** SpaceA DofNrs for each facet/edge/full facet **/
-    Table<int> flo_b_f, flo_b_e;            /** SpaceB DofNrs for each facet/edge/full facet **/
-    Array<double> facet_mat_data;           /** Facet matrix buffer **/
+    Table<int> flo_a_f, flo_a_e;               /** SpaceA DofNrs for each facet/edge/full facet **/
+    Table<int> flo_b_f, flo_b_e;               /** SpaceB DofNrs for each facet/edge/full facet **/
+    Array<double> facet_mat_data;              /** Facet matrix buffer **/
 
-    Array<int> a2f_facet, f2a_facet;        /** all facets <-> fine facets mappings **/
-    shared_ptr<BitArray> fine_facet;        /** is facet an "active" facet ? [[ definedon and refined can mess with this ]]**/
+    Array<int> a2f_facet, f2a_facet;           /** all facets <-> fine facets mappings **/
+    shared_ptr<BitArray> fine_facet;           /** is facet an "active" facet ? [[ definedon and refined can mess with this ]]**/
     
     /** Facet matrices: [a_e, a_f, a_e, a_f]^T \times [aux_f] **/
     Array<FlatMatrix<double>> facet_mat;
@@ -229,7 +229,9 @@ namespace amg
       bool elmat_sc = false;            // Form schur-complements w.r.t aux-dofs on elmats
 
       /** Finest level Smoother **/
-      bool el_blocks = true;            // Use element-blocks (default is facet-blocks) [not great with MPI]
+      bool comp_sm = true;              // Also Smooth in Compound space
+      bool comp_sm_blocks = true;       // Use Block-Smoother in Compound space
+      bool comp_sm_blocks_el = false;   // Use element-blocks in Compound space (otherwise facet-blocks) [no benefit with MPI]
 
     public:
       Options () : BASE::Options() { ; }    
@@ -238,9 +240,14 @@ namespace amg
       {
 	BASE::Options::SetFromFlags(fes, flags, prefix);
 
-	aux_elmats = !flags.GetDefineFlagX("ngs_amg_aux_elmats").IsFalse();
-	elmat_sc = flags.GetDefineFlagX("ngs_amg_aux_elmat_sc").IsTrue();
-	el_blocks = flags.GetDefineFlagX("ngs_amg_aux_el_blocks").IsTrue();
+	auto pfit = [&](string str) { return prefix + str; };
+
+	aux_elmats = !flags.GetDefineFlagX(pfit("aux_elmats")).IsFalse();
+	elmat_sc = flags.GetDefineFlagX(pfit("aux_elmat_sc")).IsTrue();
+
+	comp_sm           = !flags.GetDefineFlagX(pfit("comp_sm")).IsFalse();
+	comp_sm_blocks    = !flags.GetDefineFlagX(pfit("comp_sm_blocks")).IsFalse();
+	comp_sm_blocks_el =  flags.GetDefineFlagX(pfit("comp_sm_blocks_el")).IsTrue();
       } // BaseFacetAMGOptions :: SetFromFlags
 
     }; // class BaseAuxiliaryAMGOptions

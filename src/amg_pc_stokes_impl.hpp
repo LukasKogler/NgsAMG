@@ -51,6 +51,9 @@ namespace amg
   template<class FACTORY, class AUX_SYS>
   void StokesAMGPC<FACTORY, AUX_SYS> :: InitLevel (shared_ptr<BitArray> freedofs)
   {
+    if (forced_fds)
+      { return; }
+    
     if (options == nullptr) // should never happen
       { options = this->MakeOptionsFromFlags(this->flags); }
 
@@ -60,6 +63,13 @@ namespace amg
     BaseAMGPC::finest_freedofs = aux_sys->GetAuxFreeDofs();
   } // StokesAMGPC::InitLevel
 
+
+  template<class FACTORY, class AUX_SYS>
+  void StokesAMGPC<FACTORY, AUX_SYS> :: InitLevelForced (shared_ptr<BitArray> freedofs)
+  {
+    InitLevel(freedofs);
+    forced_fds = true;
+  }
 
   template<class FACTORY, class AUX_SYS>
   shared_ptr<BaseAMGPC::Options> StokesAMGPC<FACTORY, AUX_SYS> :: NewOpts ()
@@ -461,6 +471,9 @@ namespace amg
 	vert_sort[i] = j;
 	if (i >= nxpub) {
 	  if ( (i-nxpub) < nvels ) {
+	    cout << " calc vol for vertex " << j << " = element " << i-nxpub << " = " << ma->ElementVolume(i-nxpub) << endl;
+
+	    // cout << " calc vol for vertex " << j << ", el+1 " << i-nxpub+1 << " = " << ma->ElementVolume(1+i-nxpub) << endl;
 	    vdata[j].vol = ma->ElementVolume(i-nxpub);
 	    if constexpr(is_same<typename TVD::TVD, double>::value==0){throw Exception("SET CORRECT POS HERE!!"); }
 	  }

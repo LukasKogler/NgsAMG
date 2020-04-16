@@ -116,9 +116,13 @@ namespace amg
     /** Used for simplified coarse weights **/
     Array<double> traces;
 
+    Table<int> fixed_aggs; // hacky for a test
+
   public:
 
     Agglomerator (shared_ptr<TMESH> _mesh, shared_ptr<BitArray> _free_verts, Options && _opts);
+
+    void SetFixedAggs (Table<int> && _fixed_aggs);
 
   protected:
 

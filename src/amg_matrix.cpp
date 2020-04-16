@@ -439,6 +439,9 @@ namespace amg
       clm->SmoothV(*cx, *cr);
       ds->TransferC2F(&x, cx.get());
     }
+
+    // x *= 4.4;
+
   } // EmbeddedAMGMatrix::MultTrans
 
 

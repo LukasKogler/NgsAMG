@@ -25,6 +25,7 @@ namespace amg
     
     set_num(max_n_levels, "max_levels");
     set_num(max_meas, "max_coarse_size");
+    set_num(min_meas, "min_coarse_size");
 
     set_bool(enable_multistep, "enable_multistep");
     set_bool(enable_dyn_crs, "enable_dyn_crs");
@@ -253,6 +254,8 @@ namespace amg
       { return; } // step not performed correctly - coarsening is probably stuck
     else if (ComputeMeshMeasure(*c_lev.mesh) == 0)
       { return; } // e.g stokes: when coarsening down to 1 vertex, no more edges left!
+    else if (ComputeMeshMeasure(*c_lev.mesh) < O.min_meas)
+      { return; } // coarse grid is too small
     else
       { dof_map->AddStep(step); }
 

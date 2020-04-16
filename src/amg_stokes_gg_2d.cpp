@@ -125,6 +125,9 @@ namespace amg
 					 else
 					   { cout << " GARBAGE3!" << endl; return; }
 				       });
+				     pyclass.def("SetFreeDofs", [&](shared_ptr<STOKES_PC> pc, shared_ptr<BitArray> fds) {
+					 pc->InitLevelForced(fds);
+				       });
 				   } );
   } // ExportStokes_gg_2d
 

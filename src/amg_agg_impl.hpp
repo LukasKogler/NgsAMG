@@ -1084,6 +1084,13 @@ namespace amg
   } // Agglomerator(..)
 
 
+  template<class ENERGY, class TMESH, bool ROBUST>
+  void Agglomerator<ENERGY, TMESH, ROBUST> :: SetFixedAggs (Table<int> && _fixed_aggs)
+  {
+    fixed_aggs = move(_fixed_aggs);
+  } // Agglomerator::SetFixedAggs
+
+
   template<class ENERGY, class TMESH, bool ROBUST> template<class TMU>
   INLINE FlatArray<TMU> Agglomerator<ENERGY, TMESH, ROBUST> :: GetEdgeData ()
   {
@@ -1149,6 +1156,13 @@ namespace amg
     BitArray marked(M.template GetNN<NT_VERTEX>()); marked.Clear();
     Array<int> dist2agg(M.template GetNN<NT_VERTEX>()); dist2agg = -1;
     v_to_agg.SetSize(M.template GetNN<NT_VERTEX>()); v_to_agg = -1;
+
+    if (fixed_aggs.Size()) {
+      for (auto k : Range(fixed_aggs.Size())) {
+	for (auto v : fixed_aggs[k])
+	  { marked.SetBit(v); }
+      }
+    }
 
     Array<TMU> agg_diag;
 
@@ -1821,6 +1835,24 @@ namespace amg
       }, true); // also only master verts!
 
     t3.Stop();
+
+
+    if (fixed_aggs.Size()) {
+      auto ags = agglomerates.Size();
+      agglomerates.SetSize(ags + fixed_aggs.Size());
+      agglomerates.SetSize(ags);
+      for (auto k : Range(fixed_aggs.Size())) {
+	auto fagg = fixed_aggs[k];
+	auto agg_nr = agglomerates.Size();
+	agglomerates.Append(Agglomerate(fagg[0], agg_nr)); // TODO: does this do an allocation??
+	v_to_agg[fagg[0]] = agg_nr;
+	auto& agg = agglomerates.Last();
+      	for (auto k : Range(size_t(1), fagg.Size())) {
+	  v_to_agg[fagg[k]] = agg_nr;
+	  agg.AddSort(fagg[k]);
+	}
+      }
+    }
 
     {
       cout << " FINAL agglomerates : " << agglomerates.Size() << endl;

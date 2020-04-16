@@ -61,19 +61,69 @@ namespace amg
     if (mesh == nullptr)
       { throw Exception(string("Invalid mesh type ") + typeid(*state.curr_mesh).name() + string(" for BuildAggMap!")); }
 
+    auto edges = mesh->template GetNodes<NT_EDGE>();
+    Array<INT<2,double>> olded(edges.Size());
+    auto vdata = get<0>(mesh->Data())->Data();
+    auto edata = get<1>(mesh->Data())->Data();
+
+    auto fnodes = state.free_nodes;
+    int max_surf = 0;
+    Array<int> free_surfs;
+    for (auto v : Range(vdata.Size()))
+      if ( (vdata[v].vol < 0) && ( (!fnodes || fnodes->Test(v)) ) ) {
+	int surfnr = -(vdata[v].vol + 1);
+	max_surf = max2(max_surf, surfnr);
+	auto pos = merge_pos_in_sorted_array(surfnr, free_surfs);
+	if ( (pos != -1) && (pos > 0) && (free_surfs[pos-1] == surfnr) )
+	  { ; }
+	else if (pos >= 0)
+	  { free_surfs.Insert(pos, surfnr); }
+      }
+    Array<int> surf2row(1+max_surf); surf2row = -1;
+    for (auto k : Range(free_surfs))
+      { surf2row[free_surfs[k]] = k; }
+    TableCreator<int> cfas(free_surfs.Size());
+    for (; !cfas.Done(); cfas++) {
+      for (auto v : Range(vdata.Size()))
+	if ( (vdata[v].vol < 0) && ( (!fnodes || fnodes->Test(v)) ) ) {
+	  int surfnr = -(vdata[v].vol + 1);
+	  cfas.Add(surf2row[surfnr], v);
+	}
+    }
+
+    // for (const auto & edge : edges) {
+    //   if ( (vdata[edge.v[0]].vol < 0) || (vdata[edge.v[1]].vol < 0) ) {
+    // 	olded[edge.id][0] = edata[edge.id].edi;//(0,0);
+    // 	edata[edge.id].edi = 0;
+    // 	olded[edge.id][1] = edata[edge.id].edj;//(0,0);
+    // 	edata[edge.id].edj = 0;
+    //   }
+    // }
+
     agg_opts.edge_thresh = 0.05;
     agg_opts.vert_thresh = 0;
     agg_opts.cw_geom = false;
     agg_opts.neib_boost = false;
     agg_opts.robust = false;
-    // agg_opts.dist2 = state.level[1] == 0;
-    agg_opts.dist2 = false;
+    agg_opts.dist2 = state.level[1] == 0;
+    // agg_opts.dist2 = false;
     // agg_opts.dist2 = true;
 
     auto agglomerator = make_shared<AGG_CLASS>(mesh, state.free_nodes, move(agg_opts));
 
+    auto faggs = cfas.MoveTable();
+    cout << " Fixed Aggs:" << endl << faggs << endl;
+    agglomerator->SetFixedAggs(move(faggs));
+
+    // for (const auto & edge : edges) {
+    //   if ( (vdata[edge.v[0]].vol < 0) || (vdata[edge.v[1]].vol < 0) ) {
+    // 	SetScalIdentity(olded[edge.id][0], edata[edge.id].edi);
+    // 	SetScalIdentity(olded[edge.id][1], edata[edge.id].edj);
+    //   }
+    // }
+
     return agglomerator;
-  } // StokesAMGFactory::InitState
+  } // StokesAMGFactory::BuildAggMap
 
 
   template<class TMESH, class ENERGY> shared_ptr<BaseDOFMapStep>
@@ -217,6 +267,7 @@ namespace amg
      **/
     LocalHeap lh(10 * 1024 * 1024, "Jerry");
     for (auto agg_nr : Range(v_aggs)) {
+      HeapReset hr(lh);
       auto agg_vs = v_aggs[agg_nr];
       auto cv = vmap[agg_vs[0]];
       if (agg_vs.Size() > 1) { // for single verts there are no interior edges
@@ -226,7 +277,6 @@ namespace amg
 	for (auto v : agg_vs)
 	  { cout << fvd[v].vol << " "; }
 	cout << endl;
-	HeapReset hr(lh);
 	auto cv = vmap[agg_vs[0]];
 	auto cneibs = cecon.GetRowIndices(cv);
 	auto cfacets = cecon.GetRowValues(cv);
@@ -267,6 +317,10 @@ namespace amg
 	/** All vertices (in this connected component) are in one agglomerate - nothing to do!
 	    Sometimes happens on coarsest level. **/
 	if (nfff == 0)
+	  { continue; }
+
+	/** I think this can only happen for my special test case with virtual vertex aggs ! **/
+	if (nffi == 0)
 	  { continue; }
 	/** fine facet arrays **/
 	FlatArray<int> index(nff, lh), buffer(nff, lh);
@@ -399,6 +453,7 @@ namespace amg
 	      cout << "flow: " << fijd.flow << endl;
 	      for (auto l : Range(BS)) {
 		BfRow(col++) = ( (vi < vj) ? 1.0 : -1.0) * fijd.flow(l);
+		// BfRow(col++) = ( (vi < vj) ? fac : -fac) * fijd.flow(l);
 		bfsum += fac * abs(fijd.flow(l));
 	      }
 	    }
@@ -421,6 +476,9 @@ namespace amg
 	  for (auto l : Range(BS))
 	    { bcbase[bccol++] = ( (cv < cvj) ? 1.0 : -1.0) * fijd.flow(l); }
 	}
+
+	cout << " bcbase " << endl; prow(bcbase); cout << endl;
+	
 	/** If we have an outflow, we force 0 divergence, otherwise only constant divergence **/
 	const double cvinv = (has_outflow) ? 0.0 : 1.0 / cvd[cv].vol;
 	Bc = 0; // last row of Bc is kept 0 for pressure avg. constraint
@@ -429,7 +487,9 @@ namespace amg
 	      { return; }
 	    auto bcrow = Bc.Row(rkvi);
 	    for (auto col : Range(bcbase))
-	      { bcrow(col) = cvinv * bcbase[col]; }
+	      { bcrow(col) = cvinv * fvd[vi].vol * bcbase[col]; }
+	    // for (auto col : Range(bcbase))
+	      // { bcrow(col) = cvinv * bcbase[col]; }
 	  });
 
 	/** RHS **/
@@ -464,7 +524,7 @@ namespace amg
 	    { Pf.Rows(j*BS, (j+1)*BS).Cols(l*BS, (l+1)*BS) = const_P(fnr, cfacets[l]); }
 	}
 
-	cout << "Pf: " << endl << Pf << endl;
+ 	cout << "Pf: " << endl << Pf << endl;
 
 	cout << "Bc: " << endl << Bc << endl;
 
@@ -487,6 +547,7 @@ namespace amg
 	// auto Bf = M.Rows(HA, HA+HB).Cols(0, HA);
 	// auto BfT = M.Rows(0, HA).Cols(HA, HA+HB);
 	if ( lock_const_pressure ) {
+	  // for (auto k : Range(1)) {
 	  for (auto k : Range(HB - 1)) {
 	    M(HA + HB - 1, HA + k) = 1.0;
 	    M(HA + k, HA + HB - 1) = 1.0;

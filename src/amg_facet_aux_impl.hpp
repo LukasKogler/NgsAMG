@@ -557,6 +557,7 @@ namespace amg
     auto nv_cf = NormalVectorCF(DIM);
     auto comm = aux_pds->GetCommunicator();
     for (auto kf : Range(flow)) {
+      HeapReset hr(lh);
       auto facet_nr = f2a_facet[kf];
       AUXFE auxfe (NodeId(FACET_NT(DIM), facet_nr), *ma);
       ma->GetFacetElements(facet_nr, elnums);
@@ -587,7 +588,7 @@ namespace amg
 	auxfe.CalcMappedShape(mip, auxval);
 	nv_cf->Evaluate(mip, nvval);
 	for (auto k : Range(DPV))
-	  { facet_flow[k] += fac * mip.GetMeasure() * InnerProduct(auxval.Row(k), nvval); }
+	  { facet_flow[k] += fac * mip.GetWeight() * InnerProduct(auxval.Row(k), nvval); }
       }
       flow[kf] = facet_flow;
     }
@@ -1173,7 +1174,33 @@ namespace amg
   template<class AUX_SYS, class BASE>
   shared_ptr<BaseSmoother> AuxiliarySpacePreconditioner<AUX_SYS, BASE> :: BuildFLS () const
   {
-    return BuildFLS_EF();
+    const auto & O(static_cast<Options&>(*options));
+
+    shared_ptr<BaseSmoother> sm = nullptr;
+
+    cout << " comp_sm           = " << O.comp_sm << endl;
+    cout << " comp_sm_blocks    = " << O.comp_sm_blocks  << endl;
+    cout << " comp_sm_blocks_el = " << O.comp_sm_blocks_el  << endl;
+
+
+    if (O.comp_sm) {
+      if (O.comp_sm_blocks)
+	{ sm = BuildFLS_EF(); }
+      else {
+	auto comp_mat = aux_sys->GetCompMat();
+	shared_ptr<BaseSparseMatrix> comp_spmat;
+	if (auto parmat = dynamic_pointer_cast<ParallelMatrix>(comp_mat))
+	  { comp_spmat = dynamic_pointer_cast<SparseMatrix<double>>(parmat->GetMatrix()); }
+	else
+	  { comp_spmat = dynamic_pointer_cast<SparseMatrix<double>>(comp_mat); }
+	auto comp_pds = aux_sys->GetCompParDofs();
+	auto comp_fds = aux_sys->GetCompFreeDofs();
+	auto eqc_h = make_shared<EQCHierarchy>(comp_pds, false);
+	sm = const_cast<AuxiliarySpacePreconditioner<AUX_SYS, BASE>*>(this)->BuildGSSmoother(comp_spmat, comp_pds, eqc_h, comp_fds);
+      }
+    }
+
+    return sm;
   }
 
 
@@ -1195,7 +1222,7 @@ namespace amg
     auto free1 = aux_sys->GetCompFreeDofs(); // if BDDC this is the correct one
     auto free2 = comp_space->GetFreeDofs(bfa->UsesEliminateInternal()); // if el_int, this is the one
     auto is_free = [&](auto x) { return free1->Test(x) && free2->Test(x); };
-    size_t n_blocks = O.el_blocks ? ma->GetNE() : ma->GetNFacets();
+    size_t n_blocks = O.comp_sm_blocks_el ? ma->GetNE() : ma->GetNFacets();
     TableCreator<int> cblocks(n_blocks);
     Array<int> dnums;
     auto add_dofs = [&](auto os, auto block_num, auto & dnums) LAMBDA_INLINE {
@@ -1207,7 +1234,7 @@ namespace amg
       }
     };
     for (; !cblocks.Done(); cblocks++) {
-      if (O.el_blocks) {
+      if (O.comp_sm_blocks_el) {
 	for (auto el_nr : Range(n_blocks)) {
 	  spacea->GetDofNrs(ElementId(VOL, el_nr), dnums);
 	  add_dofs(os_sa, el_nr, dnums);
