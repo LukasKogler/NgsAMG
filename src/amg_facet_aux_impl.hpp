@@ -546,7 +546,13 @@ namespace amg
   } // FacetAuxSystem::CalcFacetMat
 
 
-  template<int DIM, class SPACEA, class SPACEB, class AUXFE>
+  template<int DIM, class SPACEA, class SPACEB, class AUXFE> template<ELEMENT_TYPE ET> INLINE
+  void FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: CalcElTrafoMat (ElementId vol_elid, FlatMatrix<double> elmat, LocalHeap & lh)
+  {
+  } // FacetAuxSystem::CalcElTrafoMat
+
+
+    template<int DIM, class SPACEA, class SPACEB, class AUXFE>
   Array<Vec<FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE>::DPV, double>> FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: CalcFacetFlow ()
   {
     Array<Vec<DPV, double>> flow(f2a_facet.Size());
@@ -1029,6 +1035,49 @@ namespace amg
     else
       { return make_shared<VVector<TV>> (pmat->Width()); }
   } // FacetAuxSystem::CreateAuxVector
+
+
+  template<int DIM, class SPACEA, class SPACEB, class AUXFE>
+  void FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: __hacky__set__Pmat ( shared_ptr<BaseMatrix> embA, shared_ptr<BaseMatrix> embB )
+  {
+    /** merge mats (!! project out dirichlet dofs !!) **/
+    auto mA = dynamic_pointer_cast<TPMAT_TM>(embA);
+    auto mB = dynamic_pointer_cast<TPMAT_TM>(embA);
+    if ( (mA == nullptr) || (mB == nullptr) )
+      { throw Exception(" invalid mats!"); }
+    Array<int> perow(comp_fes->GetNDof()); perow = 0;
+    auto comp_free = comp_fes->GetFreeDofs(true); // ... oh well
+    for (auto k : Range(mA->Height())) {
+      if (comp_free->Test(os_sa + k))
+	{ perow[os_sa + k] = mA->GetRowIndices(k).Size(); }
+    }
+    for (auto k : Range(mB->Height())) {
+      if (comp_free->Test(os_sb + k))
+	{ perow[os_sb + k] = mB->GetRowIndices(k).Size(); }
+    }
+    auto newP = make_shared<TPMAT>(perow);
+    for (auto k : Range(mA->Height())) {
+      int row = os_sa + k;
+      if (comp_free->Test(row)) {
+	auto ri = newP->GetRowIndices(row); auto ri2 = mA->GetRowIndices(k);
+	auto rv = newP->GetRowValues(row); auto rv2 = mA->GetRowValues(k);
+	ri = ri2;
+	rv = rv2;
+      }
+    }
+    for (auto k : Range(mA->Height())) {
+      int row = os_sb + k;
+      if (comp_free->Test(row)) {
+	auto ri = newP->GetRowIndices(row); auto ri2 = mA->GetRowIndices(k);
+	auto rv = newP->GetRowValues(row); auto rv2 = mA->GetRowValues(k);
+	ri = ri2;
+	rv = rv2;
+      }
+    }
+    cout << " new P mat: " << endl;
+    print_tm_spmat(cout, *newP); cout << endl;
+    pmat = newP;
+  } // FacetAuxSystem::__hacky__set__Pmat
 
 
   /** END FacetAuxSystem **/

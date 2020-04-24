@@ -128,6 +128,10 @@ namespace amg
 				     pyclass.def("SetFreeDofs", [&](shared_ptr<STOKES_PC> pc, shared_ptr<BitArray> fds) {
 					 pc->InitLevelForced(fds);
 				       });
+				     pyclass.def("set_hacked_emb", [&](shared_ptr<STOKES_PC> pc, shared_ptr<BaseMatrix> emb1, shared_ptr<BaseMatrix> emb2) {
+					 pc->GetAuxSys()->__hacky__set__Pmat(emb1, emb2);
+				       }, py::arg("emb1") = nullptr, py::arg("emb2") = nullptr);
+
 				   } );
   } // ExportStokes_gg_2d
 

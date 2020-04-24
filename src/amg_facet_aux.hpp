@@ -167,6 +167,8 @@ namespace amg
     Table<int> CalcFacetLoops2d ();
     Table<int> CalcFacetLoops3d ();
 
+    void __hacky__set__Pmat ( shared_ptr<BaseMatrix> embA, shared_ptr<BaseMatrix> embB);
+
     virtual shared_ptr<BaseVector> CreateAuxVector () const;
 
     virtual void Initialize (shared_ptr<BitArray> freedofs);
@@ -188,6 +190,9 @@ namespace amg
 
     template<ELEMENT_TYPE ET> INLINE
     void CalcFacetMat (ElementId vol_elid, int facet_nr, FlatMatrix<double> fmat, LocalHeap & lh);
+
+    template<ELEMENT_TYPE ET> INLINE
+    void CalcElTrafoMat (ElementId vol_elid, FlatMatrix<double> elmat, LocalHeap & lh);
 
     INLINE void Add_Facet (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
 			   ElementId ei, LocalHeap & lh);
@@ -392,7 +397,7 @@ namespace amg
 
   template<class TSPACE, class TELEM, class TMIP> INLINE void CSDS (const TELEM & fel, const TMIP & mip, FlatMatrix<double> s, FlatMatrix<double> sd)
   {
-    fel.CalcMappedShape(mip, s);
+    fel.CalcMappedShape(mip, s); // why ??
     if constexpr (SPACE_DS_TRAIT<TSPACE>::value) {
 	fel.CalcDualShape(mip, sd);
       }
