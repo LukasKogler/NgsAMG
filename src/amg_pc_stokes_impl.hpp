@@ -150,7 +150,61 @@ namespace amg
   template<class FACTORY, class AUX_SYS>
   Table<int> StokesAMGPC<FACTORY, AUX_SYS> :: GetGSBlocks (const BaseAMGFactory::AMGLevel & amg_level)
   {
-    return Table<int>();
+    if (amg_level.crs_map == nullptr) {
+      throw Exception("Crs Map not saved!!");
+      return move(Table<int>());
+    }
+
+    /** Blocks: 1 per agg, consisting of all "internal" edges, maybe also 1 per coarse facet **/
+
+    auto & O(static_cast<Options&>(*options));
+
+    const auto & map = *amg_level.crs_map;
+
+    size_t cnv = map.GetMappedNN<NT_VERTEX>(), cne = map.GetMappedNN<NT_EDGE>();
+    auto vmap = map.GetMap<NT_VERTEX>();
+    auto emap = map.GetMap<NT_EDGE>();
+
+    const auto & fmesh = *map.GetMesh();
+    
+    Array<int> cnt(cnv);
+    cnt = 0;
+    for (const auto & edge : fmesh.GetNodes<NT_EDGE>()) {
+      if (emap[edge.id] == -1) {
+	auto cv = vmap[edge.v[0]];
+	if ( (cv != -1) && (vmap[edge.v[1]] == cv) )
+	  { cnt[cv]++; }
+      }
+    }
+    Array<int> cv2bnr(cnv); cv2bnr = -1;
+    size_t n_blocks = 0;
+    for (auto k : Range(cnv))
+      if (cnt[k] > 0)
+	{ cv2bnr[k] = n_blocks++; }
+    size_t ebos = n_blocks; // edge block offset
+    n_blocks += cne;
+
+    TableCreator<int> cblocks(n_blocks);
+    for (; !cblocks.Done(); cblocks++) {
+      for (const auto & edge : fmesh.GetNodes<NT_EDGE>()) {
+	auto ceid = emap[edge.id];
+	if (ceid == -1) {
+	  auto cv = vmap[edge.v[0]];
+	  if ( (cv != -1) && (vmap[edge.v[1]] == cv) ) {
+	    cblocks.Add(cv2bnr[cv], edge.id);
+	  }
+	}
+	else
+	  { cblocks.Add(ebos + ceid, edge.id); }
+      }
+    }
+
+    auto blocks = cblocks.MoveTable();
+
+    // cout << " BLOCKS ARE: " << endl;
+    // cout << blocks << endl;
+    
+    return move(blocks);
   } // StokesAMGPC::GetGSBlocks
   
 
@@ -690,27 +744,27 @@ namespace amg
       }
     }
 
-    cout << " A DIMS " << amg_level.mat->Height() << " x " << amg_level.mat->Width() << endl;
-    cout << " curlT_mat dims " << curlT_mat->Height() << " x " << curlT_mat->Width() << endl;    
-    cout << " discrete curl mat" << endl;
-    print_tm_spmat(cout, *curlT_mat);
-    cout << endl;
+    // cout << " A DIMS " << amg_level.mat->Height() << " x " << amg_level.mat->Width() << endl;
+    // cout << " curlT_mat dims " << curlT_mat->Height() << " x " << curlT_mat->Width() << endl;    
+    // cout << " discrete curl mat" << endl;
+    // print_tm_spmat(cout, *curlT_mat);
+    // cout << endl;
     
 	    
     /** Project matrix to HCurl-like space **/
     auto & CT_TM = curlT_mat;
     auto A_TM = dynamic_pointer_cast<typename FACTORY::TSPM_TM>(amg_level.mat);
     auto C_TM = TransposeSPM(*CT_TM);
-    cout << " CT_TM " << endl;
-    print_tm_spmat(cout, *CT_TM); cout << endl;
+    // cout << " CT_TM " << endl;
+    // print_tm_spmat(cout, *CT_TM); cout << endl;
     auto AC_TM = MatMultAB(*A_TM, *C_TM);
-    cout << " AC_TM " << endl;
-    print_tm_spmat(cout, *AC_TM); cout << endl;
+    // cout << " AC_TM " << endl;
+    // print_tm_spmat(cout, *AC_TM); cout << endl;
     auto CTAC_TM = MatMultAB(*CT_TM, *AC_TM);
 
-    cout << " curl space mat " << endl;
-    print_tm_spmat(cout, *CTAC_TM);
-    cout << endl;
+    // cout << " curl space mat " << endl;
+    // print_tm_spmat(cout, *CTAC_TM);
+    // cout << endl;
 
     typedef SparseMatrix<Mat<FACTORY::BS, 1, double>> T_C;
     typedef SparseMatrix<Mat<1, FACTORY::BS, double>> T_CT;

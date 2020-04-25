@@ -325,6 +325,10 @@ namespace amg
     return out;
   }
 
+  template<typename TA, typename TB> INLINE ostream & operator << (ostream &os, const tuple<TA, TB>& t)
+  { return os << "t<" << get<0>(t) << ", " << get<1>(t) << ">" ; }
+    
+
   template<typename T> ostream & operator << (ostream &os, const FlatTable<T>& t) {
     if (!t.Size()) return ( os << "empty flattable!!" << endl );
     os << "t.s: " << t.Size() << endl;

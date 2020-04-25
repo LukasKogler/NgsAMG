@@ -183,7 +183,7 @@ namespace amg
 
     // cout << " smooth size " << x.Size() << ", subset " << first << " " << next << endl;
 
-    static Timer t(string("GSS2<bs=")+to_string(BS())+">::SmoothRHS");
+    static Timer t(string("GSS3<bs=")+to_string(BS())+">::SmoothRHS");
     RegionTimer rt(t);
 
     const auto& A(*spmat);
@@ -254,7 +254,7 @@ namespace amg
     TAU_PROFILE("SmoothRESInternal", TAU_CT(*this), TAU_DEFAULT);
 #endif
 
-    static Timer t(string("GSS2<bs=")+to_string(BS())+">::SmoothRES");
+    static Timer t(string("GSS3<bs=")+to_string(BS())+">::SmoothRES");
     RegionTimer rt(t);
 
     const auto& A(*spmat);

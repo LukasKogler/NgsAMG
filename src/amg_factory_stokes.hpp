@@ -49,6 +49,8 @@ namespace amg
 					  shared_ptr<TMESH> fmesh, shared_ptr<TMESH> cmesh,
 					  FlatArray<int> vmap, FlatArray<int> emap,
 					  FlatTable<int> v_aggs);
+    shared_ptr<TSPM_TM> SmoothProlMap_impl (shared_ptr<ProlMap<TSPM_TM>> pwprol, shared_ptr<TMESH> fmesh, shared_ptr<TMESH> cmesh,
+					    FlatArray<int> vmap, FlatArray<int> emap, FlatTable<int> v_aggs);
 
     /** Discard **/
     virtual bool TryDiscardStep (BaseAMGFactory::State & state) override { return false; }

@@ -317,9 +317,11 @@ namespace amg
   template<int DIM, class SPACEA, class SPACEB, class AUXFE>
   void FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: BuildPMat ()
   {
+    if (pmat != nullptr)
+      { cout << " ALREADY HAVE PMAT!" << endl; return; }
     auto H = comp_fes->GetNDof();
     auto nfacets = ma->GetNFacets(); // ...
-    auto W = nfacets;
+    auto W = nfacets; // TODO: is this right ?? should I consider free facets etc. ??
     Array<int> perow_f(H), perow_d(H);
     perow_f = 0; perow_d = 0;
     const auto & free_facets = *comp_fds;
@@ -1042,7 +1044,7 @@ namespace amg
   {
     /** merge mats (!! project out dirichlet dofs !!) **/
     auto mA = dynamic_pointer_cast<TPMAT_TM>(embA);
-    auto mB = dynamic_pointer_cast<TPMAT_TM>(embA);
+    auto mB = dynamic_pointer_cast<TPMAT_TM>(embB);
     if ( (mA == nullptr) || (mB == nullptr) )
       { throw Exception(" invalid mats!"); }
     Array<int> perow(comp_fes->GetNDof()); perow = 0;
@@ -1055,7 +1057,7 @@ namespace amg
       if (comp_free->Test(os_sb + k))
 	{ perow[os_sb + k] = mB->GetRowIndices(k).Size(); }
     }
-    auto newP = make_shared<TPMAT>(perow);
+    auto newP = make_shared<TPMAT>(perow, mA->Width());
     for (auto k : Range(mA->Height())) {
       int row = os_sa + k;
       if (comp_free->Test(row)) {
@@ -1065,11 +1067,11 @@ namespace amg
 	rv = rv2;
       }
     }
-    for (auto k : Range(mA->Height())) {
+    for (auto k : Range(mB->Height())) {
       int row = os_sb + k;
       if (comp_free->Test(row)) {
-	auto ri = newP->GetRowIndices(row); auto ri2 = mA->GetRowIndices(k);
-	auto rv = newP->GetRowValues(row); auto rv2 = mA->GetRowValues(k);
+	auto ri = newP->GetRowIndices(row); auto ri2 = mB->GetRowIndices(k);
+	auto rv = newP->GetRowValues(row); auto rv2 = mB->GetRowValues(k);
 	ri = ri2;
 	rv = rv2;
       }

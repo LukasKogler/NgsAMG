@@ -90,7 +90,8 @@ namespace amg
 
     static INLINE double GetApproxWeight (const TED & ed) {
       double wi = ENERGY::GetApproxWeight(ed.edi), wj = ENERGY::GetApproxWeight(ed.edj);
-      return ( (wi>0) && (wj>0) ) ? (wi + wj) : 0;
+      // return ( (wi>0) && (wj>0) ) ? (wi + wj) : 0;
+      return ( (wi > 1e-12) && (wj > 1e-12) ) ? (2 * wi * wj) / (wi + wj) : 0;
     }
 
     static INLINE double GetApproxVWeight (const TVD & vd) {
@@ -143,6 +144,16 @@ namespace amg
     // static INLINE void CalcRMBlock (FlatMatrix<TM> mat, const TED & ed, const TVD & vdi, const TVD & vdj)
     // { ENERGY::CalcRMBlock(mat, GetEMatrix(ed), vdi, vdj); }
 
+    static INLINE double GetApproxWtDualEdge (const TED & eij, bool revij,
+					      const TED & eik, bool revik)
+    {
+      const typename ENERGY::TM EM_ij = revij ? ENERGY::GetEMatrix(eij.edj) : ENERGY::GetEMatrix(eij.edi);
+      const typename ENERGY::TM EM_ik = revik ? ENERGY::GetEMatrix(eik.edj) : ENERGY::GetEMatrix(eik.edi);
+      // double aw1 = ENERGY::GetApproxWeight(EM_ij), aw2 = ENERGY::GetApproxWeight(EM_ik);
+      double aw1 = fabs(calc_trace(EM_ij)), aw2 = fabs(calc_trace(EM_ik));
+      return (2 * aw1 * aw2) / (aw1 + aw2);
+    }
+      
     static INLINE void CalcRMBlock (FlatMatrix<TM> mat,
 				    const TVD & vi, const TVD & vj, const TVD & vk,
 				    const TED & eij, bool revij,
