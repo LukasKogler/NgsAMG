@@ -77,6 +77,8 @@ namespace amg
     set_bool(smooth_lo_only, "smooth_lo_only");
     set_bool(regularize_cmats, "regularize_cmats");
 
+    set_enum_opt(energy, "energy", { "triv", "alg", "elmat" }, Options::ENERGY::ALG_ENERGY);
+
   } // Options::SetFromFlags
 
   /** END Options**/
@@ -701,8 +703,6 @@ namespace amg
 
     set_enum_opt(topo, "edges", { "alg", "mesh", "elmat" });
     set_enum_opt(v_pos, "vpos", { "vertex", "given" } );
-    set_enum_opt(energy, "energy", { "triv", "alg", "elmat" });
-
   } // VertexAMGPCOptions::SetOptionsFromFlags
 
   /** END VertexAMGPCOptions **/

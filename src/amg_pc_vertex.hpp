@@ -158,12 +158,6 @@ namespace amg
     POSITION v_pos = VERTEX_POS;
     FlatArray<Vec<3>> v_pos_array;
 
-    /** How do we compute the replacement matrix **/
-    enum ENERGY : char { TRIV_ENERGY = 0,     // uniform weights
-			 ALG_ENERGY = 1,      // from the sparse matrix
-			 ELMAT_ENERGY = 2 };  // from element matrices
-    ENERGY energy = ALG_ENERGY;
-
   public:
     
     VertexAMGPCOptions ()

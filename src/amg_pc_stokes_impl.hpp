@@ -664,7 +664,18 @@ namespace amg
   template<class FACTORY, class AUX_SYS>
   shared_ptr<typename StokesAMGPC<FACTORY, AUX_SYS>::TMESH> StokesAMGPC<FACTORY, AUX_SYS> :: BuildAlgMesh (shared_ptr<BlockTM> top_mesh)
   {
-    return BuildAlgMesh_TRIV(top_mesh);
+    const auto & O = static_cast<Options&>(*options);
+
+    shared_ptr<TMESH> alg_mesh;
+
+    switch(O.energy) {
+    case(Options::TRIV_ENERGY): { alg_mesh = BuildAlgMesh_TRIV(top_mesh); break; }
+    case(Options::ALG_ENERGY): { alg_mesh = BuildAlgMesh_ALG(top_mesh); break; }
+    case(Options::ELMAT_ENERGY): { throw Exception("Cannot do elmat energy!"); }
+    default: { throw Exception("Invalid Energy!"); break; }
+    }
+
+    return alg_mesh;
   } // StokesAMGPC::BuildAlgMesh
 
 

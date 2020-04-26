@@ -339,7 +339,23 @@ namespace amg
     } // StokesMesh::map_loops
 
 
-    // Table<int> map_loops (const GridContractMap<BASE> & cmap);
+    // Table<int> LoopBlocks (const BaseCoarseMap & cmap)
+    // {
+    //   auto & fmesh = *this;
+    //   fmesh.CumulateData();
+
+    //   // NOTE: this prooobably does not work ... 
+    //   auto & cmesh = *static_pointer_cast<THIS_CLASS>(cmap.GetMappedMesh());
+
+    //   auto fedges = fmesh.template GetNodes<NT_EDGE>();
+    //   auto cedges = cmesh.template GetNodes<NT_EDGE>();
+
+    //   auto vmap = cmap.GetMap<NT_VERTEX>();
+    //   auto emap = cmap.GetMap<NT_EDGE>();
+
+    //   Array<int> ce2block(cedges.Size()); ce2block = -1;
+      
+    // }
 
   protected:
 

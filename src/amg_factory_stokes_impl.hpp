@@ -291,20 +291,23 @@ namespace amg
 	}
 	cneibs.SetSize(cnt); // maybe a couple fewer is BND verts
 	cout << "  all cneibs " << endl; prow(cneibs); cout << endl;
-	QuickSort(cneibs, [&](auto i, auto j) { return get<1>(i) > get<1>(j); });
-	cout << "  sorted cneibs " << endl; prow2(cneibs); cout << endl;
-	double sum_wt = get<1>(cneibs[0]); int tnn = 1;
-	for (int k : Range(1, min(MAX_NEIBS, int(cneibs.Size())))) {
-	  auto wt =  get<1>(cneibs[k]);
-	  if (wt > 0) {
-	    sum_wt += wt;
-	    if (wt < MIN_PROL_FRAC * sum_wt)
-	      { break; }
+	int tnn = 0;
+	if (cnt) {
+	  QuickSort(cneibs, [&](auto i, auto j) { return get<1>(i) > get<1>(j); });
+	  cout << "  sorted cneibs " << endl; prow2(cneibs); cout << endl;
+	  double sum_wt = get<1>(cneibs[0]); tnn = 1;
+	  for (int k : Range(1, min(MAX_NEIBS, int(cneibs.Size())))) {
+	    auto wt =  get<1>(cneibs[k]);
+	    if (wt > 0) {
+	      sum_wt += wt;
+	      if (wt < MIN_PROL_FRAC * sum_wt)
+		{ break; }
+	      else
+		{ tnn++; }
+	    }
 	    else
-	      { tnn++; }
+	      { break; }
 	  }
-	  else
-	    { break; }
 	}
 	cols.SetSize(1 + tnn);
 	for (auto j : Range(tnn))
@@ -358,10 +361,14 @@ namespace amg
 		cols.SetSize0();
 		mcs.SetSize0(); mcs.SetSize(ceids.Size());
 		int maxcols = 0;
+		cout << " for edge " << fenr << " merge cols for coarse facets "; prow(ceids); cout << endl;
 		for (auto j : Range(mcs))
 		  { mcs[j].Assign(cfgraph[int(ceids[j])]); maxcols += mcs[j].Size(); }
+		for (auto j : Range(mcs))
+		  { prow(mcs[j]); cout << endl; }
 		cols.SetSize0(); cols.SetSize(maxcols);
 		merge_arrays(mcs, cols, [&](auto i, auto j) LAMBDA_INLINE { return i < j; });
+		cout << " all cols: "; prow(cols); cout << endl;
 		lam(fenr, cols);
 	      }
 	    }
@@ -466,7 +473,7 @@ namespace amg
 	it_f_facets([&](int vi, int li, int ki, int vj, int lj, int kj, int eid) LAMBDA_INLINE {
 	    if (lj == -1) // facet neib
 	      if ( (vmap[vi] == -1) || (vmap[vj] == -1) ) // dirichlet - assemble but treat as interior? [[does not matter for flow here]]
-		{ ffiinds[nfff++] = eid; }
+		{ ffiinds[nffi++] = eid; }
 	      else
 		{ fffinds[nfff++] = fffninds[nfffn++] = eid; }
 	    else if (lj == li)
@@ -569,12 +576,13 @@ namespace amg
 	for (auto k : Range(nfffp)) {
 	  int ind = fffpinds[k];
 	  int col = BS * k;
-	  int fenr = ffacets[ind];
+	  int fenr = ffacets[fffinds[ind]];
 	  auto & edge = fedges[fenr];
 	  double fac = (vmap[edge.v[0]] == cv0) ? 1.0 : -1.0;
 	  auto & flow = fed[fenr].flow;
+	  cout << " flow facet " << fenr << ": " << flow << endl;
 	  for (auto l : Range(BS))
-	    { B(0, col + l) = flow(l); }
+	    { B(0, col + l) = fac * flow(l); }
 	}
 	BT = Trans(B);
 
@@ -630,22 +638,28 @@ namespace amg
 	/** Solve **/
 	FlatMatrix<double> prolvals(HM, pcs*BS, lh);
 	CalcInverse(M);
+
+	cout << "  Minv: " << endl << M << endl;
+
 	prolvals = M * rhs;
 
 	cout << " prolvals: " << endl << prolvals << endl;
 
-	cout << " write to rows : ";
+	// cout << " write to rows : ";
 	/** write into sprol **/
 	for (auto k : Range(fffpinds)) {
 	  auto ff = ffacets[fffinds[fffpinds[k]]];
-	  cout << ff << " ";
+	  // cout << ff << " ";
 	  auto ris = sprol->GetRowIndices(ff);
 	  auto rvs = sprol->GetRowValues(ff);
 	  ris = graph[ff];
 	  for (auto j : Range(rvs))
-	    { rvs[j] = prolvals.Rows(BS * k, BS * (k + 1)).Cols(BS * j, (1 + BS) * j); }
+	    { rvs[j] = 0.5 * prolvals.Rows(BS * k, BS * (k + 1)).Cols(BS * j, (1 + BS) * j); }
+	  rvs[ris.Pos(cenr)] += 0.5 * PWP(ff, cenr);
+	  // for (auto j : Range(rvs))
+	    // { rvs[j] = prolvals.Rows(BS * k, BS * (k + 1)).Cols(BS * j, (1 + BS) * j); }
 	}
-	cout << endl;
+	// cout << endl;
       } // non-triv case
     }
     
@@ -724,8 +738,8 @@ namespace amg
 	  });
 
 	bool ntriv = false;
-	for (auto j : Range(cfacets))
-	  if (cfgraph[j].Size() > 1)
+	for (auto cf : cfacets)
+	  if (cfgraph[cf].Size() > 1)
 	    { ntriv = true; break; }
 	if (!ntriv) { // trivial case - copy pwprol
 	  for (auto fnr : ffacets) {
@@ -871,7 +885,9 @@ namespace amg
 	merge_arrays(cfgrows, rcfacets, [&](auto i, auto j) { return i < j; });
 	ncf = rcfacets.Size();
 	
-	FlatArray<double> bcbase(BS * ncf, lh);
+	cout << " rcfacets: "; prow2(rcfacets); cout << endl;
+
+	FlatArray<double> bcbase(BS * ncf, lh); bcbase = 0;
 	FlatMatrix<double> Bc(HB, BS * ncf, lh);
 	int bccol = 0;
 	for (auto j : Range(cfacets)) {
@@ -928,11 +944,14 @@ namespace amg
 	FlatMatrix<double> Pf(Hf, Hc, lh); Pf = 0;
 	for (auto j : Range(nfff)) {
 	  auto fnr = ffacets[fffinds[j]];
+	  cout << " Pf row " << j << ", facet " << fnr << endl;
 	  auto ris = SP.GetRowIndices(fnr);
-	  auto rvs = SP.GetRowIndices(fnr);
-	  for (auto j : Range(ris)) {
-	    int col = BS * find_in_sorted_array(ris[j], rcfacets);
-	    Pf.Rows(j*BS, (j+1)*BS).Cols(col*BS, (col+1)*BS) = rvs[j];
+	  auto rvs = SP.GetRowValues(fnr);
+	  auto Pf_rows = Pf.Rows(j*BS, (j+1)*BS);
+	  for (auto l : Range(ris)) {
+	    int col = BS * find_in_sorted_array(ris[l], rcfacets);
+	    cout << " l = " << l << ", col = " << col << ", val = " << rvs[l] << endl;
+	    Pf_rows.Cols(col, col + BS) = rvs[l];
 	  }
 	}
 
@@ -993,7 +1012,8 @@ namespace amg
 	    ris = graph[ff];
 	    for (auto j : Range(ris)) {
 	      int col = BS * find_in_sorted_array(ris[j], rcfacets);
-	      rvs[j] = Pext.Rows(BS*kfi, BS*(kfi+1)).Cols(BS*col, BS*(col+1));
+	      // rvs[j] = 0;
+	      rvs[j] = Pext.Rows(BS*kfi, BS*(kfi+1)).Cols(col, col + BS);
 	    }
 	}
       } // agg_vs.Size() > 1
@@ -1102,8 +1122,8 @@ namespace amg
       }
     }
 
-    cout << "stage 1 pwp: " << endl;
-    print_tm_spmat(cout << endl, P);
+    // cout << "stage 1 pwp: " << endl;
+    // print_tm_spmat(cout << endl, P);
 
 
     /** Extend the prolongation - Solve:
@@ -1117,12 +1137,12 @@ namespace amg
       auto agg_vs = v_aggs[agg_nr];
       auto cv = vmap[agg_vs[0]];
       if (agg_vs.Size() > 1) { // for single verts there are no interior edges
-	cout << "cv is " << cv << endl;
-	cout << "fill agg " << agg_nr << ", agg_vs: "; prow(agg_vs); cout << endl;
-	cout << "v vols: " << endl;
-	for (auto v : agg_vs)
-	  { cout << fvd[v].vol << " "; }
-	cout << endl;
+	// cout << "cv is " << cv << endl;
+	// cout << "fill agg " << agg_nr << ", agg_vs: "; prow(agg_vs); cout << endl;
+	// cout << "v vols: " << endl;
+	// for (auto v : agg_vs)
+	  // { cout << fvd[v].vol << " "; }
+	// cout << endl;
 	auto cv = vmap[agg_vs[0]];
 	auto cneibs = cecon.GetRowIndices(cv);
 	auto cfacets = cecon.GetRowValues(cv);
@@ -1133,14 +1153,14 @@ namespace amg
 	auto it_f_facets = [&](auto lam) {
 	  for (auto k : Range(agg_vs)) {
 	    auto vk = agg_vs[k];
-	    cout << k << ", vk " << vk << endl;
+	    // cout << k << ", vk " << vk << endl;
     	    auto vk_neibs = fecon.GetRowIndices(vk);
-	    cout << "neibs "; prow(vk_neibs); cout << endl;
+	    // cout << "neibs "; prow(vk_neibs); cout << endl;
     	    auto vk_fs = fecon.GetRowValues(vk);
 	    for (auto j : Range(vk_neibs)) {
 	      auto vj = vk_neibs[j];
 	      auto cvj = vmap[vj];
-	      cout << j << " vj " << vj << " cvj " << cvj << endl;
+	      // cout << j << " vj " << vj << " cvj " << cvj << endl;
 	      if (cvj == cv) { // neib in same agg - interior facet!
 		auto kj = find_in_sorted_array(vj, agg_vs);
 		if (vj > vk) { // do not count interior facets twice!
@@ -1159,7 +1179,7 @@ namespace amg
 	    else
 	      { nffi++; }
 	  });
-	cout << "nff/f/i " << nff << " " << nfff << " " << nffi << endl << endl;
+	// cout << "nff/f/i " << nff << " " << nfff << " " << nffi << endl << endl;
 	/** All vertices (in this connected component) are in one agglomerate - nothing to do!
 	    Sometimes happens on coarsest level. **/
 	if (nfff == 0)
@@ -1180,19 +1200,19 @@ namespace amg
 	      { ffiinds[nffi++] = nff; }
 	    ffacets[nff++] = eid;
 	  });
-	cout << "unsorted ffacets " << nff << ": "; prow(ffacets, cout << endl); cout << endl;
-	cout << "unsorted ffiinds " << nffi << ": "; prow(ffiinds, cout << endl); cout << endl;
-	cout << "unsorted fffinds " << nfff << ": "; prow(fffinds, cout << endl); cout << endl;
+	// cout << "unsorted ffacets " << nff << ": "; prow(ffacets, cout << endl); cout << endl;
+	// cout << "unsorted ffiinds " << nffi << ": "; prow(ffiinds, cout << endl); cout << endl;
+	// cout << "unsorted fffinds " << nfff << ": "; prow(fffinds, cout << endl); cout << endl;
 	QuickSortI(ffacets, index);
 	for (auto k : Range(nffi))
 	  { ffiinds[k] = index.Pos(ffiinds[k]); }
 	for (auto k : Range(nfff)) // TODO...
 	  { fffinds[k] = index.Pos(fffinds[k]); }
-	cout << "index " << nff << ": "; prow2(index, cout << endl); cout << endl;
+	// cout << "index " << nff << ": "; prow2(index, cout << endl); cout << endl;
 	ApplyPermutation(ffacets, index);
-	cout << "ffacets " << nff << ": "; prow(ffacets, cout << endl); cout << endl;
-	cout << "ffiinds " << nffi << ": "; prow(ffiinds, cout << endl); cout << endl;
-	cout << "fffinds " << nfff << ": "; prow(fffinds, cout << endl); cout << endl;
+	// cout << "ffacets " << nff << ": "; prow(ffacets, cout << endl); cout << endl;
+	// cout << "ffiinds " << nffi << ": "; prow(ffiinds, cout << endl); cout << endl;
+	// cout << "fffinds " << nfff << ": "; prow(fffinds, cout << endl); cout << endl;
 
 	auto it_f_edges = [&](auto lam) {
 	  for (auto kvi : Range(agg_vs)) {
@@ -1245,7 +1265,7 @@ namespace amg
 
 	int HM = HA + HB;
 
-	cout << "H A/B/M = " << HA << " / " << HB << " / " << HM << endl;
+	// cout << "H A/B/M = " << HA << " / " << HB << " / " << HM << endl;
 
 	FlatMatrix<double> M(HM, HM, lh); M = 0;
 	auto A = M.Rows(0, HA).Cols(0, HA);
@@ -1272,7 +1292,7 @@ namespace amg
 	    }
 	  });
 
-	cout << "A block: " << endl << A << endl;
+	// cout << "A block: " << endl << A << endl;
 
 	/** (fine) B blocks **/
 	auto Bf = M.Rows(HA, HA+HB).Cols(0, HA);
@@ -1284,9 +1304,9 @@ namespace amg
 	    auto BfRow = Bf.Row(rkvi);
 	    auto vi_neibs = fecon.GetRowIndices(vi);
 	    auto vi_fs = fecon.GetRowValues(vi);
-	    cout << "calc b for " << kvi << ", vi " << vi << ", rkvi " << rkvi << endl;
-	    cout << "neibs "; prow(vi_neibs); cout << endl;
-	    cout << "edgs "; prow(vi_fs); cout << endl;
+	    // cout << "calc b for " << kvi << ", vi " << vi << ", rkvi " << rkvi << endl;
+	    // cout << "neibs "; prow(vi_neibs); cout << endl;
+	    // cout << "edgs "; prow(vi_fs); cout << endl;
 	    const double fac = 1.0/fvd[vi].vol;
 	    for (auto j : Range(vi_fs)) {
 	      auto vj = vi_neibs[j];
@@ -1294,9 +1314,9 @@ namespace amg
 	      auto kfij = find_in_sorted_array(fij, ffacets);
 	      auto & fijd = fed[fij];
 	      int col = BS * kfij;
-	      cout << "j " << j << ", vj " << vj << ", fij " << fij << ", kfij " << kfij << ", col " << col << ", fac " << fac << endl;
-	      cout << "vol volinv: " << fvd[vi].vol << " " << fac << endl;
-	      cout << "flow: " << fijd.flow << endl;
+	      // cout << "j " << j << ", vj " << vj << ", fij " << fij << ", kfij " << kfij << ", col " << col << ", fac " << fac << endl;
+	      // cout << "vol volinv: " << fvd[vi].vol << " " << fac << endl;
+	      // cout << "flow: " << fijd.flow << endl;
 	      for (auto l : Range(BS)) {
 		BfRow(col++) = ( (vi < vj) ? 1.0 : -1.0) * fijd.flow(l);
 		// BfRow(col++) = ( (vi < vj) ? fac : -fac) * fijd.flow(l);
@@ -1316,14 +1336,14 @@ namespace amg
 	  auto cvj = cv_neibs[j];
 	  auto fij = int(cv_fs[j]);
 	  auto & fijd = ced[fij];
-	  cout << " c vol " << cvd[cv].vol << " " << 1.0/cvd[cv].vol << endl;
-	  cout << " cvj " << cvj << " cfij " << fij << endl;
-	  cout << " c flow " << fijd.flow << endl;
+	  // cout << " c vol " << cvd[cv].vol << " " << 1.0/cvd[cv].vol << endl;
+	  // cout << " cvj " << cvj << " cfij " << fij << endl;
+	  // cout << " c flow " << fijd.flow << endl;
 	  for (auto l : Range(BS))
 	    { bcbase[bccol++] = ( (cv < cvj) ? 1.0 : -1.0) * fijd.flow(l); }
 	}
 
-	cout << " bcbase " << endl; prow(bcbase); cout << endl;
+	// cout << " bcbase " << endl; prow(bcbase); cout << endl;
 	
 	/** If we have an outflow, we force 0 divergence, otherwise only constant divergence **/
 	const double cvinv = (has_outflow) ? 0.0 : 1.0 / cvd[cv].vol;
@@ -1356,12 +1376,12 @@ namespace amg
 	    { colsf[cf++] = base++; }
 	}
 
-	cout << "Hi + Hf " << Hi << " " << Hf << " " << Hi+Hf << " " << HA << endl;
-	cout << "HA HB HM " << HA << " " << HB << " " << HM << endl;
-	cout << "Hc " << Hc << endl;
+	// cout << "Hi + Hf " << Hi << " " << Hf << " " << Hi+Hf << " " << HA << endl;
+	// cout << "HA HB HM " << HA << " " << HB << " " << HM << endl;
+	// cout << "Hc " << Hc << endl;
 
-	cout << "colsi (" << colsi.Size() << ") = "; prow(colsi); cout << endl;
-	cout << "colsf (" << colsf.Size() << ") = "; prow(colsf); cout << endl;
+	// cout << "colsi (" << colsi.Size() << ") = "; prow(colsi); cout << endl;
+	// cout << "colsf (" << colsf.Size() << ") = "; prow(colsf); cout << endl;
 
 	FlatMatrix<double> Pf(Hf, Hc, lh); Pf = 0;
 	for (auto j : Range(nfff)) {
@@ -1370,16 +1390,16 @@ namespace amg
 	    { Pf.Rows(j*BS, (j+1)*BS).Cols(l*BS, (l+1)*BS) = const_P(fnr, cfacets[l]); }
 	}
 
- 	cout << "Pf: " << endl << Pf << endl;
+ 	// cout << "Pf: " << endl << Pf << endl;
 
-	cout << "Bc: " << endl << Bc << endl;
+	// cout << "Bc: " << endl << Bc << endl;
 
 	/** -A_if * P_f **/
 	FlatMatrix<double> rhs(Hi + HB, Hc, lh);
 	rhs = -M.Rows(colsi).Cols(colsf) * Pf;
 
-	cout << "Mif " << endl << M.Rows(colsi).Cols(colsf) << endl;
-	cout << "rhs only homogen. " << endl << rhs << endl;
+	// cout << "Mif " << endl << M.Rows(colsi).Cols(colsf) << endl;
+	// cout << "rhs only homogen. " << endl << rhs << endl;
 	rhs.Rows(Hi, rhs.Height()) += Bc;
 
 	// rhs.Rows(0, Hi) = 0;
@@ -1387,7 +1407,7 @@ namespace amg
 	// cout << "RHS without homogenization" << endl << rhs << endl;
 	// rhs -= M.Rows(colsi).Cols(colsf) * Pf;
 
-	cout << "full RHS: " << endl << rhs << endl;
+	// cout << "full RHS: " << endl << rhs << endl;
 
 	/** Lock constant pressure **/
 	// auto Bf = M.Rows(HA, HA+HB).Cols(0, HA);
@@ -1401,7 +1421,7 @@ namespace amg
 	}
 	// Bf.Row(HB-1) = bfsum/((HB-1)*(HB-1));
 	// BfT.Col(HB-1) = bfsum/((HB-1)*(HB-1));
-	cout << "M mat: " << endl << M << endl;
+	// cout << "M mat: " << endl << M << endl;
 
 
 	{
@@ -1409,37 +1429,37 @@ namespace amg
 	  auto iii = colsi.Part(0, Hi);
 	  auto bbb = colsi.Part(Hi);
 	  Aii = M.Rows(iii).Cols(iii);
-	  cout << "Aii " << endl << Aii << endl;
+	  // cout << "Aii " << endl << Aii << endl;
 	  CalcInverse(Aii);
-	  cout << "Aii inv " << endl << Aii << endl;
+	  // cout << "Aii inv " << endl << Aii << endl;
 	  S = M.Rows(bbb).Cols(bbb);
 	  S -= M.Rows(bbb).Cols(iii) * Aii * M.Rows(iii).Cols(bbb);
-	  cout << "S: " << endl << S << endl;
+	  // cout << "S: " << endl << S << endl;
 	  CalcInverse(S);
-	  cout << "Sinv: " << endl << S << endl;
+	  // cout << "Sinv: " << endl << S << endl;
 	}
 
 	/** The block to invert **/
 	FlatMatrix<double> Mii(Hi + HB, Hi + HB, lh);
 	Mii = M.Rows(colsi).Cols(colsi);
-	cout << "Mii " << endl << Mii << endl;
+	// cout << "Mii " << endl << Mii << endl;
 	CalcInverse(Mii);
-	cout << "Mii-inv " << endl << Mii << endl;
+	// cout << "Mii-inv " << endl << Mii << endl;
 
 	/** The final prol **/
 	FlatMatrix<double> Pext(Hi + HB, Hc, lh);
 	Pext = Mii * rhs;
 
-	cout << "Pext: " << endl << Pext << endl;
+	// cout << "Pext: " << endl << Pext << endl;
 
 	/** Write into sprol **/
 	for (auto kfi : Range(nffi)) {
 	    auto ff = ffacets[ffiinds[kfi]];
 	    auto ris = P.GetRowIndices(ff);
 	    auto rvs = P.GetRowValues(ff);
-	    cout << "write row " << kfi << " -> " << ff << endl;
-	    cout << "mat space = " << rvs.Size() << " * BS = " << rvs.Size() * BS << endl;
-	    cout << "Pext width = " << Pext.Width() << endl;
+	    // cout << "write row " << kfi << " -> " << ff << endl;
+	    // cout << "mat space = " << rvs.Size() << " * BS = " << rvs.Size() * BS << endl;
+	    // cout << "Pext width = " << Pext.Width() << endl;
 	    for (auto j : Range(ncf)) // TODO??
 	      { ris[j] = cfacets[j]; }
 	    QuickSort(ris);

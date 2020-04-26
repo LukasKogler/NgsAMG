@@ -63,6 +63,7 @@ namespace amg
     virtual shared_ptr<TMESH> BuildAlgMesh (shared_ptr<BlockTM> top_mesh);
     virtual void SetLoops (shared_ptr<TMESH> alg_mesh);
     virtual shared_ptr<TMESH> BuildAlgMesh_TRIV (shared_ptr<BlockTM> top_mesh) const; // implement seperately (but easy)
+    virtual shared_ptr<TMESH> BuildAlgMesh_ALG (shared_ptr<BlockTM> top_mesh) const; // implement seperately (but easy)
 
     /** Hiptmair Smoother for Stokes **/
     virtual shared_ptr<BaseSmoother> BuildSmoother (const BaseAMGFactory::AMGLevel & amg_level) override;

@@ -124,6 +124,12 @@ namespace amg
     bool smooth_lo_only = false;         // smooth only on low order part -> AMG-PC is for the LO part only
     bool regularize_cmats = false;       // do we need to regularize coarse level matrices ?
 
+    /** How do we compute the replacement matrix **/
+    enum ENERGY : char { TRIV_ENERGY = 0,     // uniform weights
+			 ALG_ENERGY = 1,      // from the sparse matrix
+			 ELMAT_ENERGY = 2 };  // from element matrices
+    ENERGY energy = ALG_ENERGY;
+
   public:
 
     Options () { ; }

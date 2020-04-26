@@ -59,8 +59,8 @@ namespace amg
     for (auto k : Range(nfacets))
       if (a2f_facet[k] != -1)
 	{ f2a_facet[nff++] = k; }
-    cout << " fine facets " << nff << endl; prow2(f2a_facet); cout << endl;
-    cout << " update done " << endl;
+    // cout << " fine facets " << nff << endl; prow2(f2a_facet); cout << endl;
+    // cout << " update done " << endl;
 
     UpdateDofTables ();
     UpdateCouplingDofArray ();
@@ -69,32 +69,32 @@ namespace amg
 
   void NoCoH1FESpace :: UpdateDofTables ()
   {
-    cout << " UDT " << endl;
+    // cout << " UDT " << endl;
     SetNDof(f2a_facet.Size());
-    cout << " UDT done! " << endl;
+    // cout << " UDT done! " << endl;
   } // NoCoH1FESpace::Update
 
 
   void NoCoH1FESpace :: UpdateCouplingDofArray ()
   {
-    cout << " cda " << endl;
+    // cout << " cda " << endl;
     ctofdof.SetSize(GetNDof());
     ctofdof = WIREBASKET_DOF;
-    cout << " cda done " << endl;
+    // cout << " cda done " << endl;
   } // NoCoH1FESpace::Update
 
 
   FiniteElement & NoCoH1FESpace :: GetFE (ElementId ei, Allocator & alloc) const
   {
-    cout << " get fel, ei " << ei << endl;
+    // cout << " get fel, ei " << ei << endl;
     Ngs_Element ngel = ma->GetElement(ei);
     ELEMENT_TYPE eltype = ngel.GetType();
 
     if (eltype == ET_TRIG)
       {
-	cout << " alloc el" << endl;
+	// cout << " alloc el" << endl;
 	auto el = new (alloc) NoCoH1Element<ET_TRIG>;
-	cout << " have el, return it!" << endl;
+	// cout << " have el, return it!" << endl;
 	return *el;
       }
 
@@ -106,26 +106,26 @@ namespace amg
 
   void NoCoH1FESpace :: GetDofNrs (ElementId ei, Array<DofId> & dnums) const
   {
-    cout << " el dnrs " << ei << endl;
+    // cout << " el dnrs " << ei << endl;
     auto el_facets = ma->GetElFacets(ei);
     dnums.SetSize(el_facets.Size());
     for (auto k : Range(el_facets))
       { dnums[k] = a2f_facet[el_facets[k]]; }
-    cout << " ndofs " << GetNDof() << endl; prow2(dnums); cout << endl;
-    cout << " el dnrs OK " << ei << endl;
+    // cout << " ndofs " << GetNDof() << endl; prow2(dnums); cout << endl;
+    // cout << " el dnrs OK " << ei << endl;
   } // NoCoH1FESpace::GetDofNrs
 
 
   void NoCoH1FESpace :: GetDofNrs (NodeId ni, Array<DofId> & dnums) const
   {
-    cout << " n dnrs " << ni << endl;
+    // cout << " n dnrs " << ni << endl;
     if (ni.GetType() == NT_EDGE) {
       dnums.SetSize(1);
       dnums[0] = f2a_facet[ni.GetNr()];
     }
     else
       { dnums.SetSize0(); }
-    cout << " n dnrs OK " << ni << endl;
+    // cout << " n dnrs OK " << ni << endl;
   } // NoCoH1FESpace::GetDofNrs
 
 
