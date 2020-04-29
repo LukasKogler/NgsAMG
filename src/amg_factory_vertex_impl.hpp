@@ -39,7 +39,6 @@ namespace amg
     int disc_max_bs = 5;
 
     /** AGG **/
-    int n_levels_d2_agg = 1;                    // do this many levels MIS(2)-like aggregates (afterwards MIS(1)-like)
     bool agg_neib_boost = false;
 
   public:
@@ -77,7 +76,6 @@ namespace amg
       set_num(min_ecw, "edge_thresh");
       set_num(min_vcw, "vert_thresh");
       set_num(min_vcw, "vert_thresh");
-      set_num(n_levels_d2_agg, "n_levels_d2_agg");
       set_bool(agg_neib_boost, "agg_neib_boost");
     } // VertexAMGFactoryOptions::SetFromFlags
 

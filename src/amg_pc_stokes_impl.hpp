@@ -13,13 +13,15 @@ namespace amg
 						   public AUXPC::Options
   {
   public:
-    bool hiptmair = true;    // Use Hiptmair Smoother
+    bool hiptmair = true;          // Use Hiptmair Smoother
+    bool hiptmair_block = false;   // Use Block-Hiptmair Smoother
 
     virtual void SetFromFlags (shared_ptr<FESpace> fes, const Flags & flags, string prefix)
     {
       FACTORY::Options::SetFromFlags(flags, prefix);
       AUXPC::Options::SetFromFlags(fes, flags, prefix);
       hiptmair = !flags.GetDefineFlagX(prefix + "hpt_sm").IsFalse();
+      hiptmair_block = flags.GetDefineFlagX(prefix + "hpt_sm_blk").IsTrue();
     }
   }; // StokesAMGPC::Options
 
@@ -137,10 +139,10 @@ namespace amg
 	}
       }
       {
-	cout << "diri_verts: " << endl;
-	for (auto k : Range(free_verts->Size()))
-	  { if (!free_verts->Test(k)) { cout << k << " "; } }
-	cout << endl << endl;
+	// cout << "diri_verts: " << endl;
+	// for (auto k : Range(free_verts->Size()))
+	  // { if (!free_verts->Test(k)) { cout << k << " "; } }
+	// cout << endl << endl;
       }
       finest_level.free_nodes = free_verts;
     }
@@ -148,8 +150,46 @@ namespace amg
   
 
   template<class FACTORY, class AUX_SYS>
+  Table<int> StokesAMGPC<FACTORY, AUX_SYS> :: GetGSBlocks2 (const BaseAMGFactory::AMGLevel & amg_level)
+  {
+    if (amg_level.crs_map == nullptr) {
+      throw Exception("Crs Map not saved!!");
+      return move(Table<int>());
+    }
+
+    /** Blocks: 1 per agg, consisting of all "internal" edges, maybe also 1 per coarse facet **/
+
+    auto & O(static_cast<Options&>(*options));
+
+    const auto & map = *amg_level.crs_map;
+
+    size_t cnv = map.GetMappedNN<NT_VERTEX>(), cne = map.GetMappedNN<NT_EDGE>();
+    auto vmap = map.GetMap<NT_VERTEX>();
+    auto emap = map.GetMap<NT_EDGE>();
+
+    const auto & fmesh = *static_pointer_cast<TMESH>(map.GetMesh());
+    auto loops = fmesh.GetLoops();
+    
+    TableCreator<int> cblocks(loops.Size());
+    for (; !cblocks.Done(); cblocks++) {
+      for (auto loop_nr : Range(loops)) {
+	auto loop = loops[loop_nr];
+	for (auto j : Range(loop))
+	  { cblocks.Add(loop_nr, abs(loop[j])-1); }
+      }
+    }
+    
+    auto blocks = cblocks.MoveTable();
+
+    return blocks;
+  } // StokesAMGPC::GetGSBlocks2
+
+
+  template<class FACTORY, class AUX_SYS>
   Table<int> StokesAMGPC<FACTORY, AUX_SYS> :: GetGSBlocks (const BaseAMGFactory::AMGLevel & amg_level)
   {
+    // return GetGSBlocks2(amg_level);
+
     if (amg_level.crs_map == nullptr) {
       throw Exception("Crs Map not saved!!");
       return move(Table<int>());
@@ -175,6 +215,10 @@ namespace amg
 	if ( (cv != -1) && (vmap[edge.v[1]] == cv) )
 	  { cnt[cv]++; }
       }
+      // else {
+      // 	cnt[vmap[edge.v[0]]]++;
+      // 	cnt[vmap[edge.v[1]]]++;
+      // }
     }
     Array<int> cv2bnr(cnv); cv2bnr = -1;
     size_t n_blocks = 0;
@@ -183,7 +227,7 @@ namespace amg
 	{ cv2bnr[k] = n_blocks++; }
     size_t ebos = n_blocks; // edge block offset
     n_blocks += cne;
-
+    
     TableCreator<int> cblocks(n_blocks);
     for (; !cblocks.Done(); cblocks++) {
       for (const auto & edge : fmesh.GetNodes<NT_EDGE>()) {
@@ -194,8 +238,11 @@ namespace amg
 	    cblocks.Add(cv2bnr[cv], edge.id);
 	  }
 	}
-	else
-	  { cblocks.Add(ebos + ceid, edge.id); }
+	else {
+	  // cblocks.Add(cv2bnr[vmap[edge.v[0]]], edge.id);
+	  // cblocks.Add(cv2bnr[vmap[edge.v[1]]], edge.id);
+	  cblocks.Add(ebos + ceid, edge.id);
+	}
       }
     }
 
@@ -253,11 +300,11 @@ namespace amg
       (*mesh_emb)(senr, fnr) = Qij;
     }
 
-    cout << "PMAT:" << endl;
-    print_tm_spmat(cout << endl, *aux_sys->GetPMat());
+    // cout << "PMAT:" << endl;
+    // print_tm_spmat(cout << endl, *aux_sys->GetPMat());
 
-    cout << "mesh_emb:" << endl;
-    print_tm_spmat(cout << endl, *mesh_emb);
+    // cout << "mesh_emb:" << endl;
+    // print_tm_spmat(cout << endl, *mesh_emb);
 
     auto mesh_pds = factory->BuildParallelDofs(mesh);
 
@@ -525,14 +572,14 @@ namespace amg
 	vert_sort[i] = j;
 	if (i >= nxpub) {
 	  if ( (i-nxpub) < nvels ) {
-	    cout << " calc vol for vertex " << j << " = element " << i-nxpub << " = " << ma->ElementVolume(i-nxpub) << endl;
+	    // cout << " calc vol for vertex " << j << " = element " << i-nxpub << " = " << ma->ElementVolume(i-nxpub) << endl;
 
 	    // cout << " calc vol for vertex " << j << ", el+1 " << i-nxpub+1 << " = " << ma->ElementVolume(1+i-nxpub) << endl;
 	    vdata[j].vol = ma->ElementVolume(i-nxpub);
 	    if constexpr(is_same<typename TVD::TVD, double>::value==0){throw Exception("SET CORRECT POS HERE!!"); }
 	  }
 	  else {
-	    cout << "vertex " << i << " -> " << j << " is surf index " << ma->GetElIndex(ElementId(BND, fvselnrs[i-nxpub-nvels])) << endl;
+	    // cout << "vertex " << i << " -> " << j << " is surf index " << ma->GetElIndex(ElementId(BND, fvselnrs[i-nxpub-nvels])) << endl;
 	    vdata[j].vol = -1 - ma->GetElIndex(ElementId(BND, fvselnrs[i-nxpub-nvels]));
 	    if constexpr(is_same<typename TVD::TVD, double>::value==0){throw Exception("SET CORRECT POS HERE [mirror vol-pos]!!"); }
 	  }
@@ -541,7 +588,7 @@ namespace amg
       // [vert_sort](auto i, auto j) { vert_sort[i] = j; } // not sure
       );
 
-    cout << "vert_sort: " << endl; prow2(vert_sort); cout << endl;
+    // cout << "vert_sort: " << endl; prow2(vert_sort); cout << endl;
 
     const size_t osfict = nxpub + nvels;
 
@@ -575,7 +622,6 @@ namespace amg
 	}
 	if (pair[1] < pair[0])
 	  { swap(pair[0], pair[1]); }
-	cout << "ret pair " << pair << endl;
 	return pair;
       },
       [&](auto edge_num, auto id) LAMBDA_INLINE {
@@ -586,13 +632,13 @@ namespace amg
 
     edata.SetSize(mesh->GetNN<NT_EDGE>()); edata = 0;
 
-    cout << "final top mesh: " << endl << *mesh << endl;
+    // cout << "final top mesh: " << endl << *mesh << endl;
 
     auto avd = new ATVD(move(vdata), CUMULATED);
     auto aed = new ATED(move(edata), CUMULATED);
     auto alg_mesh = make_shared<TMESH>(move(*mesh), avd, aed);
 
-    cout << "alg mesh with partial data: " << endl << *alg_mesh << endl;
+    // cout << "alg mesh with partial data: " << endl << *alg_mesh << endl;
 
     return alg_mesh;
   } // StokesAMGPC::BuildTopMesh
@@ -610,7 +656,7 @@ namespace amg
       for (auto j : loops[k]) {
 	auto fnr = abs(j) - 1;
 	if (!free_facets->Test(fnr))
-	  { takeloop = false; cout << " discard loop " << k << endl; }
+	  { takeloop = false; /** cout << " discard loop " << k << endl; **/ }
       }
       if (takeloop)
 	{ cntrl++; }
@@ -642,7 +688,7 @@ namespace amg
 	  // actually, I think we should throw out loops that touch the Dirichlet BND
 	  loop[j] = (loop[j] > 0) ? fac * (1 + enr) : -fac * (1 + enr);
 	  if (!free_facets->Test(fnr))
-	    { takeloop = false; cout << " discard loop " << loop_nr << endl; break; }
+	    { takeloop = false; /** cout << " discard loop " << loop_nr << endl; **/ break; }
 	  // }
 	}
 	if (takeloop)
@@ -650,12 +696,11 @@ namespace amg
       }
     }
     auto edata = get<1>(mesh->Data())->Data();
-    cout << " edges/flows: " << endl;
-    for (auto k : Range(edges.Size())) {
-      cout << edges[k] << ", flow " << edata[k].flow << endl;
-    }
+    // cout << " edges/flows: " << endl;
+    // for (auto k : Range(edges.Size()))
+      // { cout << edges[k] << ", flow " << edata[k].flow << endl; }
     auto mod_loops = crl.MoveTable();
-    cout << " modded loops: " << endl << mod_loops << endl;
+    // cout << " modded loops: " << endl << mod_loops << endl;
     // mesh->SetLoops(move(loops));
     mesh->SetLoops(move(mod_loops));
   } // StokesAMGPC::SetLoops
@@ -696,6 +741,10 @@ namespace amg
   template<class FACTORY, class AUX_SYS>
   shared_ptr<BaseSmoother> StokesAMGPC<FACTORY, AUX_SYS> :: BuildHiptMairSmoother (const BaseAMGFactory::AMGLevel & amg_level, shared_ptr<BaseSmoother> sm)
   {
+    static Timer t("BuildHiptMairSmoother");
+    RegionTimer rt(t);
+
+    const auto & O = static_cast<Options&>(*options);
 
     const auto & M = *static_pointer_cast<TMESH>(amg_level.mesh);
     M.CumulateData();
@@ -790,7 +839,23 @@ namespace amg
     auto hc_pds = make_shared<ParallelDofs>(eqc_h.GetCommunicator(), move(loop_pds), 1, false);
 
     /** Smoother in HCurl-like space (not sure about EQCH!!) **/
-    auto csm = BaseAMGPC::BuildGSSmoother(CTAC, hc_pds, M.GetEQCHierarchy());
+    Table<int> blocks;
+    bool hblocks = O.hiptmair_block;
+    if (hblocks) {
+      if (amg_level.crs_map == nullptr)
+	{ throw Exception("Crs Map not saved!!"); }
+      blocks = move(M.LoopBlocks(*amg_level.crs_map));
+      if (blocks.Size() == 0)
+	{ hblocks = false; }
+    }
+    
+    // cout << " use hiptmair blocks: " << hblocks << endl;
+
+    shared_ptr<BaseSmoother> csm;
+    if (hblocks)
+      { csm = BaseAMGPC::BuildBGSSmoother(CTAC, hc_pds, M.GetEQCHierarchy(), move(blocks)); }
+    else
+      { csm = BaseAMGPC::BuildGSSmoother(CTAC, hc_pds, M.GetEQCHierarchy()); }
 
     /** Wrap parallel matrices **/
     auto A_p = make_shared<ParallelMatrix>(A, amg_level.pardofs, PARALLEL_OP::C2D);

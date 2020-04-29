@@ -23,14 +23,30 @@ namespace amg
     bool has_crs_inv = false;
     size_t n_levels = 0;
     size_t n_levels_glob = 0;
+    int stk = 1;
     shared_ptr<BaseMatrix> crs_inv;
+    int vwb = 0;
 
   public:
     AMGMatrix (shared_ptr<DOFMap> _map, FlatArray<shared_ptr<BaseSmoother>> _smoothers);
 
     void SetCoarseInv (shared_ptr<BaseMatrix> _crs_inv);
     
+    INLINE void Smooth (BaseVector & x, const BaseVector & b) const {
+      switch(vwb) {
+      case(0) : { SmoothV(x, b); break; }
+      case(1) : { SmoothW(x, b); break; }
+      case(2) : { SmoothBS(x, b); break; }
+      }
+    }
+
     void SmoothV (BaseVector & x, const BaseVector & b) const;
+    void SmoothW (BaseVector & x, const BaseVector & b) const;
+    void SmoothBS (BaseVector & x, const BaseVector & b) const;
+
+    virtual void SetSTK (int _stk) { stk = _stk; }
+    virtual void SetVWB (int _vwb) { vwb = _vwb; }
+    virtual int GetVWB () const { return vwb; }
 
     virtual void MultTrans (const BaseVector & b, BaseVector & x) const override;
     virtual void Mult (const BaseVector & b, BaseVector & x) const override;
@@ -67,11 +83,15 @@ namespace amg
     shared_ptr<BaseDOFMapStep> ds;
     shared_ptr<BaseVector> res;
     shared_ptr<BaseVector> xbuf;
+    int stk = 1;
 
   public:
     EmbeddedAMGMatrix (shared_ptr<BaseSmoother> _fls, shared_ptr<AMGMatrix> _clm, shared_ptr<BaseDOFMapStep> _ds)
       : fls(_fls), clm(_clm), ds(_ds)
     { res = ds->CreateVector(); xbuf = ds->CreateVector(); }
+
+    virtual void SetSTK_outer (int _stk) { stk = _stk; }
+    virtual void SetSTK_inner (int _stk) { clm->SetSTK(_stk); }
 
     virtual void MultTrans (const BaseVector & b, BaseVector & x) const override;
     virtual void Mult (const BaseVector & b, BaseVector & x) const override;

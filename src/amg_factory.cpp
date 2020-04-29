@@ -32,6 +32,7 @@ namespace amg
     set_num(aaf, "aaf");
     set_num(first_aaf, "first_aaf");
     set_num(aaf_scale, "aafaaf_scale");
+    set_num(n_levels_d2_agg, "n_levels_d2_agg");
 
     set_bool(enable_redist, "enable_redist");
     set_num(rdaf, "rdaf");

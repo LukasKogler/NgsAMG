@@ -237,6 +237,7 @@ namespace amg
       bool comp_sm = true;              // Also Smooth in Compound space
       bool comp_sm_blocks = true;       // Use Block-Smoother in Compound space
       bool comp_sm_blocks_el = false;   // Use element-blocks in Compound space (otherwise facet-blocks) [no benefit with MPI]
+      int comp_sm_steps = 1;            // # of smoothing steps in compound space
 
     public:
       Options () : BASE::Options() { ; }    
@@ -253,6 +254,7 @@ namespace amg
 	comp_sm           = !flags.GetDefineFlagX(pfit("comp_sm")).IsFalse();
 	comp_sm_blocks    = !flags.GetDefineFlagX(pfit("comp_sm_blocks")).IsFalse();
 	comp_sm_blocks_el =  flags.GetDefineFlagX(pfit("comp_sm_blocks_el")).IsTrue();
+	comp_sm_steps     =  flags.GetNumFlag(pfit("comp_sm_steps"), 1);
       } // BaseFacetAMGOptions :: SetFromFlags
 
     }; // class BaseAuxiliaryAMGOptions

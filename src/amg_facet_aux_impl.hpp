@@ -318,7 +318,8 @@ namespace amg
   void FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: BuildPMat ()
   {
     if (pmat != nullptr)
-      { cout << " ALREADY HAVE PMAT!" << endl; return; }
+     { return; }
+
     auto H = comp_fes->GetNDof();
     auto nfacets = ma->GetNFacets(); // ...
     auto W = nfacets; // TODO: is this right ?? should I consider free facets etc. ??
@@ -641,7 +642,7 @@ namespace amg
     Table<int> loops(loop_sizes);
     // Vec<2> vpos, epos, tvec;
     for (auto vnr : Range(NV)) {
-      cout << "loop for vertex " << vnr << endl;
+      // cout << "loop for vertex " << vnr << endl;
       /** Find initial element **/
       int el0 = -1, e0 = -1, orient = -1;
       /** If we are at the mesh boundary, we should start with an element at the boundary,
@@ -668,9 +669,9 @@ namespace amg
 	    { e0 = enr; orient = -1; }
 	}
       }
-      cout << " loop len " << loop_sizes[vnr] << endl;
-      cout << " start with el " << el0 << endl;
-      cout << " first edge "  << e0 << endl;
+      // cout << " loop len " << loop_sizes[vnr] << endl;
+      // cout << " start with el " << el0 << endl;
+      // cout << " first edge "  << e0 << endl;
       /** Set loop start **/
       auto & loop = loops[vnr];
       const int loop_len = loop.Size();
@@ -684,32 +685,32 @@ namespace amg
 	auto eledges = ma->GetElEdges(ElementId(VOL, next_el));
 	const int neles = eledges.Size();
 	int next_edg = -1;
-	cout << " k = " << k << ", el " << next_el << ", edges = "; prow(eledges); cout << endl;
+	// cout << " k = " << k << ", el " << next_el << ", edges = "; prow(eledges); cout << endl;
 	for (int j = 0; (j < neles) && (next_edg == -1); j++) {
 	  auto enr = eledges[j];
 	  if (enr != curr_edg) {
 	    auto everts = ma->GetEdgePNums(enr);
 	    if ( (everts[0] == vnr) || (everts[1] == vnr) ) {
-	      cout << "  new edge " << enr << endl;
+	      // cout << "  new edge " << enr << endl;
 	      next_edg = curr_edg = enr;
 	      ma->GetFacetElements(enr, edgels);
-	      cout << "  els "; prow(edgels); cout << endl;
+	      // cout << "  els "; prow(edgels); cout << endl;
 	      loop[k] = (edgels[0] == next_el) ? (1 + enr) : -(1 + enr);
 	      if (edgels.Size() > 1)
 		{ next_el = (edgels[0] == next_el) ? edgels[1] : edgels[0]; }
 	      else {
-		cout << " no more els! " << endl;
+		// cout << " no more els! " << endl;
 		next_el = -1;
 	      }
 	    }
 	  }
 	}
-	cout << "  okay, next el/edge: " << next_el << ", " << next_edg << endl;
+	// cout << "  okay, next el/edge: " << next_el << ", " << next_edg << endl;
       }
-      cout << "loop: "; prow(loop); cout << endl;
+      // cout << "loop: "; prow(loop); cout << endl;
     } // Range(NV)
 
-    cout << "loops: " << endl << loops << endl;
+    // cout << "loops: " << endl << loops << endl;
 
     return loops;
   } // FacetAuxSystem::CalcFacetLoops2d
@@ -1076,8 +1077,8 @@ namespace amg
 	rv = rv2;
       }
     }
-    cout << " new P mat: " << endl;
-    print_tm_spmat(cout, *newP); cout << endl;
+    // cout << " new P mat: " << endl;
+    // print_tm_spmat(cout, *newP); cout << endl;
     pmat = newP;
   } // FacetAuxSystem::__hacky__set__Pmat
 
@@ -1198,8 +1199,8 @@ namespace amg
   {
     aux_sys->Finalize(shared_ptr<BaseMatrix>(const_cast<BaseMatrix*>(mat), NOOP_Deleter));
 
-    cout << "aux mat: " << endl;
-    print_tm_spmat(cout, *aux_sys->GetAuxMat()); cout << endl;
+    // cout << "aux mat: " << endl;
+    // print_tm_spmat(cout, *aux_sys->GetAuxMat()); cout << endl;
 
     // BASE::FinalizeLevel(mat);
 
@@ -1359,6 +1360,7 @@ namespace amg
     auto pmatT = aux_sys->GetPMatT();
     auto ds = make_shared<ProlMap<typename AUX_SYS::TPMAT_TM>>(pmat, pmatT, comp_pds, aux_pds);
     emb_amg_mat = make_shared<EmbeddedAMGMatrix> (fls, amg_mat, ds);
+    emb_amg_mat->SetSTK_outer(O.comp_sm_steps);
 
     if (__hacky_test) {
       /** Aux space AMG + finest level smoother as a preconditioner for the bilinear-form **/

@@ -31,6 +31,203 @@ namespace amg
   { crs_inv = _crs_inv; has_crs_inv = true; }
 
 
+
+  void AMGMatrix :: SmoothW (BaseVector & x, const BaseVector & b) const
+  {
+    b.Distribute();
+
+    static Timer tt ("AMGMatrix::SmoothW"); RegionTimer rt(tt);
+
+    // static Timer t4("coarse inv");
+    // static Timer t5("drop, wait ");
+    // static Timer t_l0 ("level 0");    
+    // static Timer t_l1 ("level 1");    
+    // static Timer t_l2 ("level 2");    
+    // static Timer t_l3 ("level 3");    
+    // static Timer t_lr ("rest");    
+    // static Timer t_lc ("coarsest");    
+    // static Array<Timer*> lev_timers({ &t_l0, &t_l1, &t_l2, &t_l3, &t_lr });
+    // auto ltimer = [](int level) -> Timer& { return *lev_timers[min2(level,4)]; };
+
+    auto comm = map->GetParDofs(0)->GetCommunicator();
+
+    function<void(int)> smit = [&](int level) {
+      if ( level == 0 ) {
+	BaseVector &xl ( (level == 0) ? x : *x_level[level]);
+	const BaseVector &bl ( (level == 0) ? b : *rhs_level[level]);
+	BaseVector &rl (*res_level[level]);
+
+       	xl.FVDouble() = 0.0;
+	xl.SetParallelStatus(CUMULATED);
+	rl.FVDouble() = bl.FVDouble();
+	rl.SetParallelStatus(bl.GetParallelStatus());
+
+	smoothers[level]->SmoothK(stk, xl, bl, rl, true, true, true);
+	rl.Distribute();
+
+	map->TransferF2C(level, res_level[level].get(), rhs_level[level+1].get());
+	smit(1);
+	map->AddC2F(level, 1.0, &xl, x_level[level+1].get());
+
+	smoothers[level]->SmoothBackK(stk, xl, bl, rl, false, false, false);
+      }
+      if ( level + 1 < n_levels ) {
+	BaseVector &xl ( (level == 0) ? x : *x_level[level]);
+	const BaseVector &bl ( (level == 0) ? b : *rhs_level[level]);
+	BaseVector &rl (*res_level[level]);
+
+       	xl.FVDouble() = 0.0;
+	xl.SetParallelStatus(CUMULATED);
+	rl.FVDouble() = bl.FVDouble();
+	rl.SetParallelStatus(bl.GetParallelStatus());
+
+
+	smoothers[level]->SmoothK(stk, xl, bl, rl, true, true, true);
+	rl.Distribute();
+
+	map->TransferF2C(level, res_level[level].get(), rhs_level[level+1].get());
+	smit(level + 1);
+	map->AddC2F(level, 1.0, &xl, x_level[level+1].get());
+
+	smoothers[level]->SmoothK(stk, xl, bl, rl, false, false, false);
+	smoothers[level]->SmoothBackK(stk, xl, bl, rl, false, false, false);
+
+	map->TransferF2C(level, res_level[level].get(), rhs_level[level+1].get());
+	smit(level + 1);
+	map->AddC2F(level, 1.0, &xl, x_level[level+1].get());
+
+	smoothers[level]->SmoothBackK(stk, xl, bl, rl, false, false, false);
+      }
+      else {
+	if (!drops_out) {
+	  if (has_crs_inv) { /** exact solve on coarsest level **/
+	    if (crs_inv == nullptr)
+	      { x_level[n_levels-1]->FVDouble() = 0; }
+	    else
+	      { crs_inv->Mult(*rhs_level[n_levels-1], *x_level[n_levels-1]); }
+	    x_level[n_levels-1]->Cumulate();
+	  }
+	  else
+	    { *x_level[n_levels-1] = 0; x_level[n_levels-1]->Cumulate(); }
+	}
+      }
+    };
+
+    smit(0);
+  } // AMGMatrix::SmoothW
+
+
+  void AMGMatrix :: SmoothBS (BaseVector & x, const BaseVector & b) const
+  {
+    b.Distribute();
+
+    static Timer tt ("AMGMatrix::SmoothBS"); RegionTimer rt(tt);
+
+    static Timer t4("coarse inv");
+    static Timer t5("drop, wait ");
+    static Timer t_l0 ("level 0");    
+    static Timer t_l1 ("level 1");    
+    static Timer t_l2 ("level 2");    
+    static Timer t_l3 ("level 3");    
+    static Timer t_lr ("rest");    
+    static Timer t_lc ("coarsest");    
+    static Array<Timer*> lev_timers({ &t_l0, &t_l1, &t_l2, &t_l3, &t_lr });
+    auto ltimer = [](int level) -> Timer& { return *lev_timers[min2(level,4)]; };
+
+    auto comm = map->GetParDofs(0)->GetCommunicator();
+
+    function<void(int, bool)> smit = [&](int level, bool bs) {
+      auto & t = ltimer(level);
+      if ( level == 0 ) {
+	RegionTimer rt(t);
+	// t.Start();
+      	BaseVector &xl ( (level == 0) ? x : *x_level[level]);
+      	const BaseVector &bl ( (level == 0) ? b : *rhs_level[level]);
+      	BaseVector &rl (*res_level[level]);
+
+       	xl.FVDouble() = 0.0;
+      	xl.SetParallelStatus(CUMULATED);
+      	rl.FVDouble() = bl.FVDouble();
+      	rl.SetParallelStatus(bl.GetParallelStatus());
+
+      	smoothers[level]->SmoothK(stk, xl, bl, rl, true, true, true);
+      	rl.Distribute();
+
+      	map->TransferF2C(level, res_level[level].get(), rhs_level[level+1].get());
+	// t.Stop();
+      	smit(1, true);
+	// t.Start();
+      	map->AddC2F(level, 1.0, &xl, x_level[level+1].get());
+
+      	smoothers[level]->SmoothBackK(stk, xl, bl, rl, false, false, false);
+	// t.Stop();
+      }
+      if ( level + 1 < n_levels ) {
+	RegionTimer rt(t);
+	// t.Start();
+	BaseVector &xl ( (level == 0) ? x : *x_level[level]);
+	const BaseVector &bl ( (level == 0) ? b : *rhs_level[level]);
+	BaseVector &rl (*res_level[level]);
+
+       	xl.FVDouble() = 0.0;
+	xl.SetParallelStatus(CUMULATED);
+	rl.FVDouble() = bl.FVDouble();
+	rl.SetParallelStatus(bl.GetParallelStatus());
+
+	if (bs) { // BS: MG as smoother
+	  smoothers[level]->SmoothK(stk, xl, bl, rl, true, true, true);
+	  rl.Distribute();
+	  map->TransferF2C(level, res_level[level].get(), rhs_level[level+1].get());
+	  // t.Stop();
+	  smit(level + 1, false);
+	  // t.Start();
+	  map->AddC2F(level, 1.0, &xl, x_level[level+1].get());
+	  smoothers[level]->SmoothBackK(stk, xl, bl, rl, false, true, false);
+	}
+	else
+	  { smoothers[level]->SmoothK(stk, xl, bl, rl, true, true, true); }
+
+	// recursive MG
+	rl.Distribute();
+	map->TransferF2C(level, res_level[level].get(), rhs_level[level+1].get());
+	// t.Stop();
+	smit(level + 1, true);
+	// t.Start();
+	map->AddC2F(level, 1.0, &xl, x_level[level+1].get());
+
+	if (bs) {
+	  smoothers[level]->SmoothK(stk, xl, bl, rl, false, true, false);
+	  map->TransferF2C(level, res_level[level].get(), rhs_level[level+1].get());
+	  // t.Stop();
+	  smit(level + 1, false);
+	  // t.Start();
+	  map->AddC2F(level, 1.0, &xl, x_level[level+1].get());
+	  smoothers[level]->SmoothBackK(stk, xl, bl, rl, false, false, false);
+	}
+	else
+	  { smoothers[level]->SmoothBackK(stk, xl, bl, rl, false, false, false); }
+	// t.Stop();
+      }
+      else {
+	RegionTimer rt(t4);
+	if (!drops_out) {
+	  if (has_crs_inv) { /** exact solve on coarsest level **/
+	    if (crs_inv == nullptr)
+	      { x_level[n_levels-1]->FVDouble() = 0; }
+	    else
+	      { crs_inv->Mult(*rhs_level[n_levels-1], *x_level[n_levels-1]); }
+	    x_level[n_levels-1]->Cumulate();
+	  }
+	  else
+	    { *x_level[n_levels-1] = 0; x_level[n_levels-1]->Cumulate(); }
+	}
+      }
+    };
+
+    smit(0, true);
+  } // AMGMatrix::SmoothBS
+
+
   void AMGMatrix :: SmoothV (BaseVector & x, const BaseVector & b) const
   {
     b.Distribute();
@@ -68,7 +265,8 @@ namespace amg
 	rl.FVDouble() = bl.FVDouble();
 	rl.SetParallelStatus(bl.GetParallelStatus());
 
-	smoothers[level]->Smooth(xl, bl, rl, true, true, true);
+	// smoothers[level]->Smooth(xl, bl, rl, true, true, true);
+	smoothers[level]->SmoothK(stk, xl, bl, rl, true, true, true);
 
 	// cout << " x 1  level " << level << ": " << endl << xl.FVDouble() << endl;
 
@@ -131,7 +329,8 @@ namespace amg
 	if (x_level[level+1] == nullptr)
 	  { t5.Stop(); }
 
-	smoothers[level]->SmoothBack(xl, bl, rl, false, false, false);
+	// smoothers[level]->SmoothBack(xl, bl, rl, false, false, false);
+	smoothers[level]->SmoothBackK(stk, xl, bl, rl, false, false, false);
 	
 	// cout << " x 3  level " << level << ": " << endl << xl.FVDouble() << endl;
       }
@@ -140,7 +339,7 @@ namespace amg
 
 
   void AMGMatrix :: Mult (const BaseVector & b, BaseVector & x) const
-  { SmoothV(x, b); }
+  { Smooth(x, b); }
 
 
   void AMGMatrix :: MultTrans (const BaseVector & b, BaseVector & x) const
@@ -149,7 +348,7 @@ namespace amg
 
   void AMGMatrix :: MultAdd (double s, const BaseVector & b, BaseVector & x) const
   {
-    this->SmoothV(*x_level[0], b);
+    this->Smooth(*x_level[0], b);
     x += s * *x_level[0];
   }
 
@@ -424,14 +623,16 @@ namespace amg
       x.SetParallelStatus(CUMULATED);
       res->FVDouble() = b.FVDouble();
       res->SetParallelStatus(b.GetParallelStatus());
-      fls->Smooth(x, b, *res, true, true, true);
+      // fls->Smooth(x, b, *res, true, true, true);
+      fls->SmoothK(stk, x, b, *res, true, true, true);
       // fls->Smooth(x, b, *res, false, false, false);
       ds->TransferF2C(res.get(), cr.get());
       tpre.Stop();
-      clm->SmoothV(*cx, *cr);
+      clm->Smooth(*cx, *cr);
       tpost.Start();
       ds->AddC2F(1.0, &x, cx.get());
-      fls->SmoothBack(x, b, *res, false, false, false);
+      // fls->SmoothBack(x, b, *res, false, false, false);
+      fls->SmoothBackK(stk, x, b, *res, false, false, false);
       tpost.Stop();
     }
     else { /** **/

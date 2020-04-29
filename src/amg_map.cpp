@@ -250,20 +250,20 @@ namespace amg
   {
     if (auto opmap = dynamic_pointer_cast<ProlMap<SPM_TM_C>>(other)) {
 
-      cout << "conc prols " << endl;
-      cout << " left " << GetProl() << endl;
-      cout << " left:  " << GetProl()->Height() << " x " << GetProl()->Width() << endl;
-      cout << " left typeid " << typeid(*this).name() << endl;
-      print_tm_spmat(cout, *prol); cout << endl<< endl;
-      cout << " right " << other << " " << opmap << endl;
-      cout << " right mat: " << opmap->GetProl() << endl;
-      cout << " right: " << opmap->GetProl()->Height() << " x " << opmap->GetProl()->Width() << endl;
-      print_tm_spmat(cout, *opmap->GetProl()); cout << endl<< endl;
+      // cout << "conc prols " << endl;
+      // cout << " left " << GetProl() << endl;
+      // cout << " left:  " << GetProl()->Height() << " x " << GetProl()->Width() << endl;
+      // cout << " left typeid " << typeid(*this).name() << endl;
+      // print_tm_spmat(cout, *prol); cout << endl<< endl;
+      // cout << " right " << other << " " << opmap << endl;
+      // cout << " right mat: " << opmap->GetProl() << endl;
+      // cout << " right: " << opmap->GetProl()->Height() << " x " << opmap->GetProl()->Width() << endl;
+      // print_tm_spmat(cout, *opmap->GetProl()); cout << endl<< endl;
 
       auto comp_prol = MatMultAB<TMAT, SPM_TM_C> (*prol, *opmap->GetProl());
 
-      cout << " comp: "  << comp_prol->Height() << " x " << comp_prol->Width() << endl;
-      print_tm_spmat(cout, *comp_prol); cout << endl<< endl;
+      // cout << " comp: "  << comp_prol->Height() << " x " << comp_prol->Width() << endl;
+      // print_tm_spmat(cout, *comp_prol); cout << endl<< endl;
 
       auto comp_map = make_shared<ProlMap<mult_spm_tm<TMAT, SPM_TM_C>>> (comp_prol, GetParDofs(), opmap->GetMappedParDofs());
       return comp_map;

@@ -53,6 +53,7 @@ namespace amg
     virtual shared_ptr<TopologicMesh> BuildInitialMesh () override;
     virtual void InitFinestLevel (BaseAMGFactory::AMGLevel & finest_level) override;
     virtual Table<int> GetGSBlocks (const BaseAMGFactory::AMGLevel & amg_level) override;
+    virtual Table<int> GetGSBlocks2 (const BaseAMGFactory::AMGLevel & amg_level);
     virtual shared_ptr<BaseAMGFactory> BuildFactory () override;
     virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (shared_ptr<TopologicMesh> mesh) override;
 

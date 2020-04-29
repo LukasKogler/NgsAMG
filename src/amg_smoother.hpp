@@ -29,6 +29,24 @@ namespace amg {
     			     BaseVector &res, bool res_updated = false,
     			     bool update_res = true, bool x_zero = false) const = 0;
 
+    virtual void SmoothK (int k, BaseVector  &x, const BaseVector &b,
+    			 BaseVector  &res, bool res_updated = false,
+    			 bool update_res = true, bool x_zero = false) const
+    {
+      Smooth(x, b, res, res_updated, update_res, x_zero);
+      for (auto j : Range(k-1))
+	{ Smooth(x, b, res, update_res, update_res, false); }
+    }
+
+    virtual void SmoothBackK (int k, BaseVector  &x, const BaseVector &b,
+			      BaseVector &res, bool res_updated = false,
+			      bool update_res = true, bool x_zero = false) const
+    {
+      SmoothBack(x, b, res, res_updated, update_res, x_zero);
+      for (auto j : Range(k-1))
+	{ SmoothBack(x, b, res, update_res, update_res, false); }
+    }
+
     virtual Array<MemoryUsage> GetMemoryUsage() const override { return Array<MemoryUsage>(); }
     // virtual Array<MemoryUsage> GetMemoryUsage() const override = 0;
 

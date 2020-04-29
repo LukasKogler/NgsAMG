@@ -89,6 +89,12 @@ namespace amg
   {
   public:
 
+    /** Which AMG cycle to use **/
+    enum MG_CYCLE : char { V_CYCLE = 0,       // V cycle
+			   W_CYCLE = 1,       // W cycle
+			   BS_CYCLE = 2 };    // (hacky) Braess-Sarazin
+    MG_CYCLE mg_cycle = V_CYCLE;
+
     /** What we do on the coarsest level **/
     enum CLEVEL : char { INV_CLEV = 0,       // invert coarsest level
 			 SMOOTH_CLEV = 1,    // smooth coarsest level
@@ -112,6 +118,7 @@ namespace amg
 	VER3 = 2 };  // newest, optional overlap
     GS_VER gs_ver = GS_VER::VER3;
 
+    int sm_steps = 1;                    // # of smoothing steps
     bool sm_symm = false;                // smooth symmetrically
     bool sm_mpi_overlap = true;          // overlap communication/computation (only VER3)
     bool sm_mpi_thread = false;          // do MPI-comm in seperate thread (only VER3)

@@ -132,6 +132,7 @@ namespace amg
     Array<int> elnums;
     auto comm = aux_sys->GetAuxParDofs()->GetCommunicator();
     auto f2a_facet = aux_sys->GetFMapF2A();
+    auto aux_free = aux_sys->GetAuxFreeDofs();
     for (auto k : Range(f2a_facet)) {
       auto facet_nr = f2a_facet[k];
       auto enr = esort[f2a_facet[k]]; // TODO: garbage with MPI
@@ -145,6 +146,7 @@ namespace amg
 	  { fac = -1; }
 	else
 	  { throw Exception("ummm .. WTF??"); }
+	edata[enr].edi = 1; edata[enr].edj = 1;
       }
       else {
 	// I think GetDistantProcs for non-parallel mesh just segfaults ...
@@ -153,11 +155,13 @@ namespace amg
 	}
 	else {
 	  fac = (vsort[elnums[0]] == edge.v[0]) ? 1.0 : -1.0; // should only flip if surface vertex is sorted before vol vertex - never without MPI??
+	  if (aux_free->Test(k))
+	    { edata[enr].edi = 1; edata[enr].edj = 1; }
+	  else
+	    { edata[enr].edi = 1e-3; edata[enr].edj = 1e-3; }
 	}
       }
       edata[enr].flow = fac * flows[k];
-      edata[enr].edi = 1;
-      edata[enr].edj = 1;
     }
 
     return alg_mesh;

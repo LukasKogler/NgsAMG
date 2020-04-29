@@ -295,7 +295,7 @@ namespace amg
       for (; !ccl.Done(); ccl++) {
 	int cnt_c_loops = 0;
 	for (auto flnr : Range(loops.Size())) {
-	  cout << "map loop " << flnr << " = "; prow(loops[flnr]); cout << endl;
+	  // cout << "map loop " << flnr << " = "; prow(loops[flnr]); cout << endl;
 	  auto floop = loops[flnr];
 	  bool cloop_ok = true;
 	  int c = 0;
@@ -307,22 +307,22 @@ namespace amg
 	    bool fflip = (sfenr < 0);
 	    int fenr = abs(sfenr) - 1;
 	    auto cenr = emap[fenr];
-	    cout << " enr " << fenr << " -> " << cenr << endl;
+	    // cout << " enr " << fenr << " -> " << cenr << endl;
 	    if (cenr != -1) {
 	      auto pos = merge_pos_in_sorted_array(cenr, ucfacets);
-	      cout << " looked for " << cenr << " in ucfacets = "; prow(ucfacets); cout << endl;
-	      cout << " pos is " << pos << endl;
+	      // cout << " looked for " << cenr << " in ucfacets = "; prow(ucfacets); cout << endl;
+	      // cout << " pos is " << pos << endl;
 	      if ( (pos != -1) && (pos > 0) && (ucfacets[pos-1] == cenr) )
 		{ cloop_ok = false; break; }
 	      else if (pos >= 0)
 		{ ucfacets.Insert(pos, cenr); }
-	      cout << " now ucfacets is "; prow(ucfacets); cout << endl;
+	      // cout << " now ucfacets is "; prow(ucfacets); cout << endl;
 	      bool cflip = cedges[cenr].v[0] == vmap[fedges[fenr].v[0]];
 	      cloop[c++] = (fflip ^ cflip) ? -(1 + cenr) : (1 + cenr);
 	    }
 	  }
 	  cloop.SetSize(c);
-	  cout << " maps to cloop "; prow(cloop); cout << endl;
+	  // cout << " maps to cloop "; prow(cloop); cout << endl;
 	  cloop_ok &= (c > 1);
 	  if (cloop_ok) {
 	    loop_map[flnr] = cnt_c_loops;
@@ -334,28 +334,90 @@ namespace amg
       }
       cmesh.loops = ccl.MoveTable();
 
-      cout << " c loops: " << endl << cmesh.loops << endl;
+      // cout << " c loops: " << endl << cmesh.loops << endl;
 
     } // StokesMesh::map_loops
 
 
-    // Table<int> LoopBlocks (const BaseCoarseMap & cmap)
-    // {
-    //   auto & fmesh = *this;
-    //   fmesh.CumulateData();
+    Table<int> LoopBlocks (const BaseCoarseMap & cmap) const
+    {
+      // TODO: should check c2f edge, if those are simple, dont do anything
+      auto & fmesh = *this;
+      fmesh.CumulateData();
 
-    //   // NOTE: this prooobably does not work ... 
-    //   auto & cmesh = *static_pointer_cast<THIS_CLASS>(cmap.GetMappedMesh());
+      auto & cmesh = *static_pointer_cast<THIS_CLASS>(cmap.GetMappedMesh());
 
-    //   auto fedges = fmesh.template GetNodes<NT_EDGE>();
-    //   auto cedges = cmesh.template GetNodes<NT_EDGE>();
+      auto fedges = fmesh.template GetNodes<NT_EDGE>();
+      auto cedges = cmesh.template GetNodes<NT_EDGE>();
 
-    //   auto vmap = cmap.GetMap<NT_VERTEX>();
-    //   auto emap = cmap.GetMap<NT_EDGE>();
+      auto vmap = cmap.GetMap<NT_VERTEX>();
+      auto emap = cmap.GetMap<NT_EDGE>();
 
-    //   Array<int> ce2block(cedges.Size()); ce2block = -1;
-      
-    // }
+      TableCreator<int> cblocks;
+      Array<int> ce2block(cedges.Size());
+      Array<int> ucfacets(30); // unique coarse facets
+
+      // for (; !cblocks.Done(); cblocks++) {
+      // 	for (auto flnr : Range(loops.Size())) {
+      // 	  cblocks.Add(0, flnr);
+      // 	}
+      // }
+      // return cblocks.MoveTable();
+
+      // cout << " mak loop blocks, loops are: " << endl << loops << endl;
+      for (; !cblocks.Done(); cblocks++) {
+	int cntblocks = 0; ce2block = -1;
+	for (auto flnr : Range(loops.Size())) {
+	  auto floop = loops[flnr];
+	  // cout << " floop nr " << flnr << ", loop = "; prow(floop); cout << endl;
+	  ucfacets.SetSize0();
+	  for (auto j : Range(floop.Size())) {
+	    auto sfenr = floop[j];
+	    int fenr = abs(sfenr) - 1;
+	    auto cenr = emap[fenr];
+	    if (cenr != -1) {
+	      auto pos = merge_pos_in_sorted_array(cenr, ucfacets);
+	      if ( (pos != -1) && (pos > 0) && (ucfacets[pos-1] == cenr) )
+		{ continue; }
+	      else if (pos >= 0)
+		{ ucfacets.Insert(pos, cenr); }
+	    }
+	  }
+	  // cout << " cfacets: "; prow(ucfacets); cout << endl;
+	  if (ucfacets.Size() == 1) {
+	    auto cenr = ucfacets[0];
+	    if (ce2block[cenr] == -1)
+	      { ce2block[cenr] = cntblocks++; }
+	    cblocks.Add(ce2block[cenr], flnr);
+	  }
+	  else if (ucfacets.Size() > 1) {
+	    for(auto cenr : ucfacets) {
+	      if (ce2block[cenr] == -1)
+		{ ce2block[cenr] = cntblocks++; }
+	      cblocks.Add(ce2block[cenr], flnr);
+	    }
+	  }
+	  else
+	    { cblocks.Add(cntblocks++, flnr); }
+	}
+      }
+
+      auto blocks = cblocks.MoveTable();
+
+      // cout << " hiptmair blocks: " << endl << blocks << endl;
+
+      bool need_blocks = false;
+      for (auto k : Range(blocks))
+	if (blocks[k].Size() > 1)
+	  { need_blocks = true; break; }
+
+      // cout << " need blocsk: " << need_blocks << endl;
+
+      if (need_blocks)
+	{ return move(blocks); }
+      else
+	{ return Table<int>(); }
+    } // StokesMesh::LoopBlocks
 
   protected:
 

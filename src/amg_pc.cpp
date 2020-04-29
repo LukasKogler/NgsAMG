@@ -49,6 +49,8 @@ namespace amg
       set_opt_sv(opt, flag_opt, keys, vals);
     };
 
+    set_enum_opt(mg_cycle, "mg_cycle", {"V", "W", "BS"}, Options::MG_CYCLE::V_CYCLE);
+
     set_enum_opt(clev, "clev", {"inv", "sm", "none"}, Options::CLEVEL::INV_CLEV);
 
     set_opt_kv(cinv_type, "cinv_type", { "masterinverse", "mumps" }, Array<INVERSETYPE>({ MASTERINVERSE, MUMPS }));
@@ -67,6 +69,7 @@ namespace amg
     gs_ver = Options::GS_VER(max(0, min(3, int(flags.GetNumFlag(prefix + "gs_ver", 3) - 1))));
 
     set_bool(sm_symm, "sm_symm");
+    sm_steps = flags.GetNumFlag(prefix + "sm_steps", 1);
     set_bool(sm_mpi_overlap, "sm_mpi_overlap");
     set_bool(sm_mpi_thread, "sm_mpi_thread");
     set_bool(sm_shm, "sm_shm");
@@ -287,6 +290,8 @@ namespace amg
     }
 
     amg_mat = make_shared<AMGMatrix> (dof_map, smoothers);
+    amg_mat->SetSTK(O.sm_steps);
+    amg_mat->SetVWB(O.mg_cycle);
 
     /** Coarsest level inverse **/
     if (O.sync)
@@ -324,7 +329,7 @@ namespace amg
 		  ( (comm.Size() == 2) && (comm.Rank() == 1) ) ) { // local inverse
 	  cspm->SetInverseType(O.cinv_type_loc);
 	  auto cinv = cspm->InverseMatrix();
-	  cout << " coarse inv: " << endl << *cinv << endl;
+	  // cout << " coarse inv: " << endl << *cinv << endl;
 	  if (comm.Size() > 1)
 	    { coarse_inv = make_shared<ParallelMatrix> (cinv, cpds, cpds, C2C); } // dummy parmat
 	  else
@@ -359,11 +364,11 @@ namespace amg
   {
     auto finest_mesh = BuildInitialMesh();
 
-    cout << "init mesh: " << endl << finest_mesh << endl;
-    if (finest_mesh != nullptr)
-      cout << *finest_mesh << endl;
-    else
-      { throw Exception("HAVE NOT BUILT FINEST MESH CORRECTLY!!!!"); }
+    // cout << "init mesh: " << endl << finest_mesh << endl;
+    // if (finest_mesh != nullptr)
+    //   { cout << *finest_mesh << endl; }
+    // else
+    //   { throw Exception("HAVE NOT BUILT FINEST MESH CORRECTLY!!!!"); }
 
     finest_level.level = 0;
     finest_level.mesh = finest_mesh; // TODO: get out of factory??

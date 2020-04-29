@@ -88,6 +88,7 @@ namespace amg
     double first_aaf = 0.05;                    // (static crs ratio) (smaller) factor for first level. -1 for dont use
     double aaf_scale = 1;                       // (static crs ratio) scale aaf, e.g if 2:   first_aaf, aaf, 2*aaf, 4*aaf, .. (or aaf, 2*aaf, ...)
     bool enable_dyn_crs = true;                 // use dynamic coarsening ratios
+    int n_levels_d2_agg = 1;                    // do this many levels MIS(2)-like aggregates (afterwards MIS(1)-like)
 
     /** Contract (Re-Distribute) **/
     bool enable_redist = true;                  // allow re-distributing on coarse levels
