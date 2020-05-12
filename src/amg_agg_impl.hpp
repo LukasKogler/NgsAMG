@@ -1085,6 +1085,14 @@ namespace amg
 
 
   template<class ENERGY, class TMESH, bool ROBUST>
+  Agglomerator<ENERGY, TMESH, ROBUST> :: Agglomerator (shared_ptr<TMESH> _mesh, shared_ptr<BitArray> _free_verts)
+    : AgglomerateCoarseMap<TMESH>(_mesh), free_verts(_free_verts)
+  {
+    assert(mesh != nullptr); // obviously this would be bad
+  } // Agglomerator(..)
+
+
+  template<class ENERGY, class TMESH, bool ROBUST>
   void Agglomerator<ENERGY, TMESH, ROBUST> :: SetFixedAggs (Table<int> && _fixed_aggs)
   {
     fixed_aggs = move(_fixed_aggs);

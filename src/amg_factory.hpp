@@ -15,10 +15,11 @@ namespace amg
   class BaseAMGFactory
   {
   public:
-    class Logger;      // logging/printing
-    class Options;     // configurable from outside
-    struct State;      // internal book-keeping
-    struct AMGLevel;   // contains one "level"
+    class Logger;         // logging/printing
+    class Options;        // configurable from outside
+    struct State;         // internal book-keeping
+    struct LevelCapsule;  // Contains everything for one level on it's own - at least a mesh and pardofs.
+    struct AMGLevel;      // Contains one LevelCapsule, plus maps leading to the next level, plus potentially an embedding on the finest level
 
   protected:
 
@@ -35,36 +36,39 @@ namespace amg
 
   protected:
 
-    void RSU (Array<AMGLevel> & amg_levels, shared_ptr<DOFMap> & dof_map, State & state);
+    void RSU (Array<shared_ptr<AMGLevel>> & amg_levels, shared_ptr<DOFMap> & dof_map, State & state);
 
     static void SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix = "ngs_amg_");
 
-    virtual shared_ptr<BaseDOFMapStep> DoStep (AMGLevel & f_lev, AMGLevel & c_lev, State & state);
+    virtual shared_ptr<shared_ptr<LevelCapsule>> AllocCap () const;
+    virtual void MapLevel (shared_ptr<BaseDOFMapStep> dof_step, shared_ptr<LevelCapsule> & f_cap, shared_ptr<LevelCapsule> & c_cap);
+
+    virtual shared_ptr<BaseDOFMapStep> DoStep (shared_ptr<AMGLevel> & f_lev, shared_ptr<AMGLevel> & c_lev, State & state);
 
     /** Used for controlling coarse levels and deciding on redistributing **/
     virtual size_t ComputeMeshMeasure (const TopologicMesh & m) const = 0;
     virtual double ComputeLocFrac (const TopologicMesh & m) const = 0;
 
-    virtual State* NewState (AMGLevel & lev);
+    virtual State* NewState (shared_ptr<AMGLevel> & lev);
     virtual State* AllocState () const = 0;
-    virtual void InitState (State & state, AMGLevel & lev) const ;
+    virtual void InitState (State & state, shared_ptr<AMGLevel> & lev) const;
 
     /** Discard **/
     virtual bool TryDiscardStep (State & state) = 0;
     // virtual shared_ptr<BaseDiscardMap> BuildDiscardMap (State & state);
 
     /** Coarse **/
-    virtual size_t ComputeGoal (const AMGLevel & f_lev, State & state) = 0;
+    virtual size_t ComputeGoal (const shared_ptr<AMGLevel> & f_lev, State & state) = 0;
     virtual bool TryCoarseStep (State & state);
-    virtual shared_ptr<BaseCoarseMap> BuildCoarseMap (State & state) = 0;
-    virtual shared_ptr<BaseDOFMapStep> PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<ParallelDofs> fpds, shared_ptr<ParallelDofs> cpds) = 0;
-    virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<TopologicMesh> fmesh) = 0;
-    virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap) = 0;
+    virtual shared_ptr<BaseCoarseMap> BuildCoarseMap (State & state, LevelCapsule & mapped_cap) = 0;
+    virtual shared_ptr<BaseDOFMapStep> PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<LevelCap> fcap, shared_ptr<LevelCap> ccap) = 0;
+    virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<LevelCap> fcap) = 0;
+    virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap, shared_ptr<LevelCap> fcap) = 0;
 
     /** Redist **/
     virtual bool TryContractStep (State & state);
     virtual double FindRDFac (shared_ptr<TopologicMesh> cmesh);
-    virtual shared_ptr<BaseGridMapStep> BuildContractMap (double factor, shared_ptr<TopologicMesh> mesh) const = 0;
+    virtual shared_ptr<BaseGridMapStep> BuildContractMap (double factor, shared_ptr<TopologicMesh> mesh, LevelCapsule & mapped_cap) const = 0;
     virtual shared_ptr<BaseDOFMapStep> BuildDOFContractMap (shared_ptr<BaseGridMapStep> cmap, shared_ptr<ParallelDofs> fpd) const = 0;
 
   }; // BaseAMGFactory
@@ -141,13 +145,11 @@ namespace amg
   {
     INT<3> level;
     /** most "current" objects **/
-    shared_ptr<TopologicMesh> curr_mesh;
-    shared_ptr<ParallelDofs> curr_pds;
+    shared_ptr<BaseAMGFactory::LevelCapsule> curr_cap;
     /** built maps **/
     shared_ptr<BaseDOFMapStep> dof_map;
     shared_ptr<BaseDiscardMap> disc_map;
     shared_ptr<BaseCoarseMap> crs_map;
-    shared_ptr<BitArray> free_nodes;
     /** book-keeping **/
     bool first_redist_used = false;
     size_t last_redist_meas = 0;
@@ -159,19 +161,29 @@ namespace amg
 
   /** AMGLevel **/
 
+  struct BaseAMGFactory::LevelCapsule
+  {
+    shared_ptr<EQCHierarchy> eqc_h = nullptr;
+    shared_ptr<TopologicMesh> mesh = nullptr;
+    shared_ptr<ParallelDofs> pardofs = nullptr;
+    shared_ptr<BaseSparseMatrix> mat = nullptr;
+    shared_ptr<BitArray> free_nodes = nullptr;
+  }; // struct BaseAMGFactory::LevelCapsule
+
+  /** END AMGLevel **/
+
+
+  /** AMGLevel **/
+
   struct BaseAMGFactory::AMGLevel
   {
     int level;
-    shared_ptr<TopologicMesh> mesh = nullptr;
-    shared_ptr<EQCHierarchy> eqc_h = nullptr;
-    shared_ptr<ParallelDofs> pardofs = nullptr;
-    shared_ptr<BaseSparseMatrix> mat = nullptr;
+    shared_ptr<BaseAMGFactory::LevelCapsule> cap;
     shared_ptr<BaseDOFMapStep> embed_map = nullptr; // embedding
     // map to next level: embed -> disc -> crs (-> ctr)
     shared_ptr<BaseDiscardMap> disc_map = nullptr;
     shared_ptr<BaseCoarseMap> crs_map = nullptr;
-    shared_ptr<BitArray> free_nodes = nullptr;
-  }; // BaseAMGFactory::AMGLevel
+  }; // struct BaseAMGFactory::AMGLevel
 
   /** END AMGLevel**/
 

@@ -188,7 +188,7 @@ namespace amg
     template<NODE_TYPE NT> INLINE size_t GetNN () const { return NN[NT]; }
     template<NODE_TYPE NT> INLINE size_t GetMappedNN () const { return mapped_NN[NT]; }
     template<NODE_TYPE NT> INLINE FlatArray<int> GetMap () const { return node_maps[NT]; }
-    shared_ptr<BaseCoarseMap> Concatenate (shared_ptr<BaseCoarseMap> right_map);
+    virtual shared_ptr<BaseCoarseMap> Concatenate (shared_ptr<BaseCoarseMap> right_map);
   protected:
     Array<Array<int>> node_maps = Array<Array<int>> (4);
     size_t NN[4] = {0,0,0,0};

@@ -95,6 +95,16 @@ namespace amg
   };
 
   template<typename T>
+  INLINE bool insert_into_sorted_array_nodups (T elem, Array<T> & a)
+  {
+    int pos = merge_pos_in_sorted_array(elem, a);
+    if ( (pos == -1) || ((pos > 0) && (a[pos-1] == elem) ))
+      {  return false; }
+    else
+      {  a.Insert(pos, elem); return true; }
+  }
+
+  template<typename T>
   INLINE void insert_into_sorted_array (T elem, Array<T> & a)
   { a.Insert(merge_pos_in_sorted_array(elem, a), elem); }
 

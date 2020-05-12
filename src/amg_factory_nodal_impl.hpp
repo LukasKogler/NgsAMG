@@ -70,7 +70,7 @@ namespace amg
 
 
   template<NODE_TYPE NT, class TMESH, int BS>
-  size_t NodalAMGFactory<NT, TMESH, BS> :: ComputeGoal (const AMGLevel & f_lev, State & state)
+  size_t NodalAMGFactory<NT, TMESH, BS> :: ComputeGoal (const shared_ptr<AMGLevel> & f_lev, State & state)
   {
     auto &O(*options);
 

@@ -209,7 +209,10 @@ namespace amg
   } // BaseAMGFactory(..)
 
 
-  void BaseAMGFactory :: SetUpLevels (Array<BaseAMGFactory::AMGLevel> & amg_levels, shared_ptr<DOFMap> & dof_map)
+  shared_ptr<shared_ptr<LevelCapsule>> BaseAMGFactory :: AllocCap ();
+  { auto lev = make_shared<BaseAMGFactory::LevelCapsule>(); }
+
+  void BaseAMGFactory :: SetUpLevels (Array<shared_ptr<BaseAMGFactory::AMGLevel>> & amg_levels, shared_ptr<DOFMap> & dof_map)
   {
     static Timer t("SetupLevels"); RegionTimer rt(t);
 
@@ -237,13 +240,13 @@ namespace amg
   } // BaseAMGFactory::SetUpLevels
 
 
-  void BaseAMGFactory :: RSU (Array<AMGLevel> & amg_levels, shared_ptr<DOFMap> & dof_map, State & state)
+  void BaseAMGFactory :: RSU (Array<shared_ptr<AMGLevel>> & amg_levels, shared_ptr<DOFMap> & dof_map, State & state)
   {
     const auto & O(*options);
 
     auto & f_lev = amg_levels.Last();
 
-    AMGLevel c_lev;
+    shared_ptr<AMGLevel> c_lev;
 
     logger->LogLevel (f_lev);
 
@@ -284,7 +287,7 @@ namespace amg
   } // BaseAMGFactory::RSU
 
 
-  shared_ptr<BaseDOFMapStep> BaseAMGFactory :: DoStep (AMGLevel & f_lev, AMGLevel & c_lev, State & state)
+  shared_ptr<BaseDOFMapStep> BaseAMGFactory :: DoStep (shared_ptr<AMGLevel> & f_lev, shared_ptr<AMGLevel> & c_lev, State & state)
   {
     const auto & O(*options);
 
@@ -305,7 +308,7 @@ namespace amg
       if ( TryDiscardStep(state) ) {
 	cout << " DISC WORKED!!" << endl;
 	disc_map = move(state.dof_map);
-	curr_meas = ComputeMeshMeasure(*state.curr_mesh);
+	curr_meas = ComputeMeshMeasure(*state.curr_cap->mesh);
       }
     }
 
@@ -322,36 +325,36 @@ namespace amg
 	/** mesh0 -(ctr)-> mesh1 -(first_crs)-> mesh2 -(crs/ctr)-> mesh3
 	    mesh0-mesh1, and mesh2-mesh3 can be the same **/
       shared_ptr<TopologicMesh> mesh0 = nullptr, mesh1 = nullptr, mesh2 = nullptr, mesh3 = nullptr;
-      mesh0 = state.curr_mesh; mesh_meas[0] = ComputeMeshMeasure(*mesh0);
+      mesh0 = state.curr_cap->mesh; mesh_meas[0] = ComputeMeshMeasure(*mesh0);
+      shared_ptr<LevelCap> m0cap = state.curr_cap;
       
       Array<shared_ptr<BaseDOFMapStep>> dof_maps;
       Array<int> prol_inds;
       shared_ptr<BaseCoarseMap> first_cmap;
+      shared_ptr<LevelCap> fcm_cap = nullptr;
       Array<shared_ptr<BaseDOFMapStep>> rd_chunks;
 
       bool could_recover = O.enable_redist;
 	
       do { /** coarsen until goal reached or stuck **/
 	cm_chunks.SetSize0();
-	auto comm = static_cast<BlockTM&>(*state.curr_mesh).GetEQCHierarchy()->GetCommunicator();
+	auto comm = static_cast<BlockTM&>(*state.curr_cap->mesh).GetEQCHierarchy()->GetCommunicator();
 	could_recover = ( O.enable_redist && (comm.Size() > 2) && (state.level[2] == 0) );
 	bool crs_stuck = false, rded_out = false;
-	auto cm_fpds = state.curr_pds;
+	auto cm_cap = state.curr_cap;
 	do { /** coarsen until stuck or goal reached **/
 	  cout << " inner C loop, curr " << curr_meas << " -> " << goal_meas << endl;
-	  auto fm = state.curr_mesh;
-	  auto fpds = state.curr_pds;
+	  auto f_cap = state.curr_cap;
 	  if ( TryCoarseStep(state) ) { // coarse map constructed successfully
 	    state.level[1]++; state.level[2] = 0; // count up sub-coarse, reset redist
-	    size_t f_meas = ComputeMeshMeasure(*fm), c_meas = ComputeMeshMeasure(*state.curr_mesh);
+	    size_t f_meas = ComputeMeshMeasure(*fm), c_meas = ComputeMeshMeasure(*state.curr_cap->mesh);
 	    double meas_fac = (f_meas == 0) ? 0 : c_meas / double(f_meas);
 	    cout << " c step " << f_meas << " -> " << c_meas << ", frac = " << meas_fac << endl;
 	    goal_reached = (c_meas < goal_meas);
 	    if ( (goal_reached) && (cm_chunks.Size() > 0) && (f_meas * c_meas < sqr(goal_meas)) ) {
 	      cout << " roll back c!" << endl;
 	      // last step was closer than current step - reset to last step
-	      state.curr_mesh = fm;
-	      state.curr_pds = fpds;
+	      state.curr_cap = f_cap;
 	      state.crs_map = nullptr;
 	      state.disc_map = nullptr;
 	      state.dof_map = nullptr;
@@ -389,10 +392,12 @@ namespace amg
 
 	if (c_step != nullptr) {
 	  /** build pw-prolongation **/
-	  shared_ptr<BaseDOFMapStep> pmap = PWProlMap(c_step, cm_fpds, state.curr_pds);
+	  auto fcap = state.curr_cap;
+	  shared_ptr<BaseDOFMapStep> pmap = PWProlMap(c_step, cm_cap, state.curr_cap);
 
 	  /** Save the first coarse-map - we might be able to use it later to get a slightly better smoothed prol! **/
 	  if (first_cmap == nullptr) {
+	    fcm_cap = fcap;
 	    first_cmap = c_step;
 	    mesh1 = first_cmap->GetMesh(); mesh_meas[1] = ComputeMeshMeasure(*mesh1);
 	    mesh2 = first_cmap->GetMappedMesh(); mesh_meas[2] = ComputeMeshMeasure(*mesh2);
@@ -416,7 +421,7 @@ namespace amg
 	    rd_chunks.Append(rdm);
 	    if (state.curr_mesh == nullptr)
 	      { rded_out = true; break; }
-	    mesh3 = state.curr_mesh; mesh_meas[3] = ComputeMeshMeasure(*mesh3);
+	    mesh3 = state.curr_cap->mesh; mesh_meas[3] = ComputeMeshMeasure(*mesh3);
 	  }
 	  else // redist rejected
 	    { cout << " no contract " << endl; could_recover = false; }
@@ -459,7 +464,7 @@ namespace amg
 	  sp_done = true;
 	  if (prol_inds.Size() > 0) { // might be rded out!
 	    auto pmap = dof_maps[prol_inds[0]];
-	    dof_maps[prol_inds[0]] = SmoothedProlMap(pmap, first_cmap);
+	    dof_maps[prol_inds[0]] = SmoothedProlMap(pmap, first_cmap, fcm_cap);
 	    first_cmap = nullptr; // no need for this anymore
 	  }
 	}
@@ -494,7 +499,7 @@ namespace amg
 
       // cout << " last, non-master PB done " << endl;
 
-      bool first_rd = true;
+      bool first_rd = true; /** Actually, I think this is garbage ... I THINK, I should just delete first_rd.**/
       int maxmi = dof_maps.Size() - 1 + ( last_map_rd ? -1 : 0 );
       for (int map_ind = maxmi, pii = prol_inds.Size() - 1; map_ind >= 0; map_ind--) {
 	if ( (pii >= 0) && (map_ind == prol_inds[pii]) ) { // prol map
@@ -526,7 +531,7 @@ namespace amg
       /** If not forced to before, smooth prol here.
 	  TODO: check if other version would be possible here (that one should be better anyways!)  **/
       if ( O.enable_sp && (!sp_done) && (have_pwp) )
-	{ prol_map = SmoothedProlMap(prol_map, mesh0); }
+	{ prol_map = SmoothedProlMap(prol_map, m0cap); }
 
       /** pack rd-maps into one step**/
       if (rd_chunks.Size() == 1)
@@ -578,25 +583,24 @@ namespace amg
       else
 	{ final_step = make_shared<ConcDMS>(sub_steps); }
 
-      /** assemble coarse level matrix and set return vals **/
+      /** assemble coarse level matrix, set return vals, etc. **/
       c_lev.level = f_lev.level + 1;
-      c_lev.mesh = state.curr_mesh;
-      c_lev.eqc_h = (c_lev.mesh == nullptr) ? nullptr : c_lev.mesh->GetEQCHierarchy();
-      // c_lev.pardofs = final_step->GetMappedParDofs();
-      c_lev.pardofs = state.curr_pds;
-      c_lev.mat = final_step->AssembleMatrix(f_lev.mat);
+      c_lev.cap = state.curr_cap;
+      MapLevel(final_step, f_lev.cap, clev.cap);
+
       return final_step;
     }
     else {
-      c_lev.level = f_lev.level;
-      c_lev.mesh = f_lev.mesh;
-      c_lev.eqc_h = f_lev.eqc_h;
-      c_lev.pardofs = f_lev.pardofs;
-      c_lev.mat = f_lev.mat;
-
+      c_lev.cap == f_lev.cap;
       return nullptr;
     }
   } // BaseAMGFactory::DoStep
+
+
+  void BaseAMGFactory :: MapLevel (shared_ptr<BaseDOFMapStep> dof_step, shared_ptr<LevelCapsule> & f_cap, shared_ptr<LevelCapsule> & c_cap)
+  {
+    c_lev.cap->mat = dof_step->AssembleMatrix(f_lev.cap->mat);
+  } // BaseAMGFactory::MapLevel
 
 
   bool BaseAMGFactory :: TryCoarseStep (State & state)
@@ -604,7 +608,9 @@ namespace amg
     auto & O(*options);
 
     /** build coarse map **/
-    shared_ptr<BaseCoarseMap> cmap = BuildCoarseMap(state);
+    shared_Ptr<LevelCapsule> c_cap = AllocCap();
+
+    shared_ptr<BaseCoarseMap> cmap = BuildCoarseMap(state, c_cap);
 
     if (cmap == nullptr) // could not build map
       { return false; }
@@ -613,7 +619,6 @@ namespace amg
     bool accept_crs = true;
 
     auto cmesh = cmap->GetMappedMesh();
-    auto comm = state.curr_mesh;
 
     size_t f_meas = ComputeMeshMeasure(*state.curr_mesh), c_meas = ComputeMeshMeasure(*cmesh);
     double cfac = (f_meas == 0) ? 0 : double(c_meas) / f_meas;
@@ -630,10 +635,9 @@ namespace amg
     if (!map_ok)
       { return false; }
 
-    state.curr_mesh = cmap->GetMappedMesh();
-    state.curr_pds = BuildParallelDofs(state.curr_mesh);
+    /** Okay, we have a new map! **/
+    state.curr_cap = c_cap;
     state.crs_map = cmap;
-    state.free_nodes = nullptr; // TODO: should this be different ?
 
     return true;
   } // BaseAMGFactory::TryCoarseStep
@@ -727,23 +731,23 @@ namespace amg
 
     auto rd_factor = FindRDFac (state.curr_mesh);
 
-    auto rd_map = BuildContractMap(rd_factor, state.curr_mesh);
+    shared_Ptr<LevelCapsule> c_cap = AllocCap();
+    auto rd_map = BuildContractMap(rd_factor, state.curr_mesh, c_cap);
 
     if (state.free_nodes != nullptr)
       { throw Exception("free-node redist update todo"); /** do sth here..**/ }
 
-    state.first_redist_used = true;
-    state.last_redist_meas = meas;
-    state.curr_mesh = rd_map->GetMappedMesh();
+    state.curr_cap = c_cap;
     state.dof_map = BuildDOFContractMap(rd_map, state.curr_pds);
-    state.curr_pds = state.dof_map->GetMappedParDofs();
+    state.first_redist_used = true;
     state.need_rd = false;
+    state.last_redist_meas = meas;
 
     return true;
   } // BaseAMGFactory::TryContractStep
 
 
-  BaseAMGFactory::State* BaseAMGFactory :: NewState (AMGLevel & lev)
+  BaseAMGFactory::State* BaseAMGFactory :: NewState (shared_ptr<AMGLevel> & lev)
   {
     auto s = AllocState();
     InitState(*s, lev);
@@ -751,7 +755,7 @@ namespace amg
   } // BaseAMGFactory::NewState
 
 
-  void BaseAMGFactory :: InitState (BaseAMGFactory::State& state, AMGLevel & lev) const
+  void BaseAMGFactory :: InitState (BaseAMGFactory::State& state, shared_ptr<AMGLevel> & lev) const
   {
     state.level = { 0, 0, 0 };
 

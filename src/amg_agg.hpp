@@ -120,8 +120,13 @@ namespace amg
 
   public:
 
-    Agglomerator (shared_ptr<TMESH> _mesh, shared_ptr<BitArray> _free_verts, Options && _opts);
+    Agglomerator (shared_ptr<TMESH> _mesh, shared_ptr<BitArray> _free_verts, Options && _settings);
 
+    Agglomerator (shared_ptr<TMESH> _mesh, shared_ptr<BitArray> _free_verts = nullptr);
+
+    void SetFreeVertes (shared_ptr<BitArray> _free_verts) { free_verts = _free_verts; }
+    Options & GetOpts () { return settings; }
+    void SetOpts (Options && _settings) { settings = move(_settings); }
     void SetFixedAggs (Table<int> && _fixed_aggs);
 
   protected:

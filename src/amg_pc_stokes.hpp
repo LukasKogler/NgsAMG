@@ -44,6 +44,7 @@ namespace amg
     virtual void InitLevel (shared_ptr<BitArray> freedofs = nullptr) override;
     // virtual void FinalizeLevel (const BaseMatrix * mat) override;
     virtual void Update () override { ; } // TODO: what should this do??
+    virtual shared_ptr<AMGLevel> AllocLevel () override;
 
     virtual shared_ptr<BaseAMGPC::Options> NewOpts () override;
     virtual void SetDefaultOptions (BaseAMGPC::Options& O) override;
@@ -51,9 +52,9 @@ namespace amg
     virtual void ModifyOptions (BaseAMGPC::Options & O, const Flags & flags, string prefix = "ngs_amg_") override;
 
     virtual shared_ptr<TopologicMesh> BuildInitialMesh () override;
-    virtual void InitFinestLevel (BaseAMGFactory::AMGLevel & finest_level) override;
-    virtual Table<int> GetGSBlocks (const BaseAMGFactory::AMGLevel & amg_level) override;
-    virtual Table<int> GetGSBlocks2 (const BaseAMGFactory::AMGLevel & amg_level);
+    virtual void InitFinestLevel (shared_ptr<BaseAMGFactory::AMGLevel> & finest_level) override;
+    virtual Table<int> GetGSBlocks (shared_ptr<const BaseAMGFactory::AMGLevel> & amg_level) override;
+    virtual Table<int> GetGSBlocks2 (shared_ptr<const BaseAMGFactory::AMGLevel> & amg_level);
     virtual shared_ptr<BaseAMGFactory> BuildFactory () override;
     virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (shared_ptr<TopologicMesh> mesh) override;
 
@@ -67,8 +68,8 @@ namespace amg
     virtual shared_ptr<TMESH> BuildAlgMesh_ALG (shared_ptr<BlockTM> top_mesh) const; // implement seperately (but easy)
 
     /** Hiptmair Smoother for Stokes **/
-    virtual shared_ptr<BaseSmoother> BuildSmoother (const BaseAMGFactory::AMGLevel & amg_level) override;
-    virtual shared_ptr<BaseSmoother> BuildHiptMairSmoother (const BaseAMGFactory::AMGLevel & amg_level, shared_ptr<BaseSmoother> smoother);
+    virtual shared_ptr<BaseSmoother> BuildSmoother (const shared_ptr<BaseAMGFactory::AMGLevel> & amg_level) override;
+    virtual shared_ptr<BaseSmoother> BuildHiptMairSmoother (const shared_ptr<BaseAMGFactory::AMGLevel> & amg_level, shared_ptr<BaseSmoother> smoother);
 
   }; // class StokesAMGPC
 

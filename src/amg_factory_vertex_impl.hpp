@@ -110,7 +110,7 @@ namespace amg
 
 
   template<class ENERGY, class TMESH, int BS>
-  void VertexAMGFactory<ENERGY, TMESH, BS> :: InitState (BaseAMGFactory::State & state, BaseAMGFactory::AMGLevel & lev) const
+  void VertexAMGFactory<ENERGY, TMESH, BS> :: InitState (BaseAMGFactory::State & state, shared_ptr<BaseAMGFactory::AMGLevel> & lev) const
   {
     BASE_CLASS::InitState(state, lev);
 
@@ -120,15 +120,15 @@ namespace amg
 
 
   template<class ENERGY, class TMESH, int BS>
-  shared_ptr<BaseCoarseMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildCoarseMap (BaseAMGFactory::State & state)
+  shared_ptr<BaseCoarseMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildCoarseMap (BaseAMGFactory::State & state, LevelCapsule & mapped_cap)
   {
     auto & O(static_cast<Options&>(*options));
 
     Options::CRS_ALG calg = O.crs_alg;
 
     switch(calg) {
-    case(Options::CRS_ALG::AGG): { return BuildAggMap(state); break; }
-    case(Options::CRS_ALG::ECOL): { return BuildECMap(state); break; }
+    case(Options::CRS_ALG::AGG): { return BuildAggMap(state, mapped_cap); break; }
+    case(Options::CRS_ALG::ECOL): { return BuildECMap(state, mapped_cap); break; }
     default: { throw Exception("Invalid coarsen alg!"); break; }
     }
 
@@ -137,7 +137,7 @@ namespace amg
 
 
   template<class ENERGY, class TMESH, int BS>
-  shared_ptr<BaseCoarseMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildAggMap (BaseAMGFactory::State & state)
+  shared_ptr<BaseCoarseMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildAggMap (BaseAMGFactory::State & state, BaseAMGFactory::LevelCapsule & mapped_cap)
   {
     auto & O = static_cast<Options&>(*options);
     typedef Agglomerator<ENERGY, TMESH, ENERGY::NEED_ROBUST> AGG_CLASS;
@@ -152,13 +152,21 @@ namespace amg
     agg_opts.robust = O.ecw_robust;
     agg_opts.dist2 = ( state.level[1] == 0 ) && ( state.level[0] < O.n_levels_d2_agg );
     // auto agglomerator = make_shared<Agglomerator<FACTORY>>(mesh, state.free_nodes, move(agg_opts));
+
     auto agglomerator = make_shared<AGG_CLASS>(mesh, state.free_nodes, move(agg_opts));
+
+    /** Set mapped Capsule **/
+    auto cmesh = agglomerator->GetMappedMesh();
+    mapped_cap.eqc_h = cmesh->GetEQCHierarchy();
+    mapped_cap.mesh = cmesh;
+    mapped_cap.pardofs = BuildParallelDofs(cmesh);
+
     return agglomerator;
   } // VertexAMGFactory::BuildCoarseMap
 
 
   template<class ENERGY, class TMESH, int BS>
-  shared_ptr<BaseCoarseMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildECMap (BaseAMGFactory::State & astate)
+  shared_ptr<BaseCoarseMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildECMap (BaseAMGFactory::State & astate, BaseAMGFactory::LevelCapsule & mapped_cap)
   {
     // throw Exception("finish this up ...");
     auto & O = static_cast<Options&>(*options);
@@ -182,6 +190,12 @@ namespace amg
     auto calg = make_shared<BlockVWC<TMESH>>(coarsen_opts);
 
     auto grid_step = calg->Coarsen(mesh);
+
+    /** Set mapped Capsule **/
+    auto cmesh = grid_step->GetMappedMesh();
+    mapped_cap.eqc_h = cmesh->GetEQCHierarchy();
+    mapped_cap.mesh = cmesh;
+    mapped_cap.pardofs = BuildParallelDofs(cmesh);
 
     return grid_step;
   } // VertexAMGFactory::BuildCoarseMap
@@ -290,9 +304,11 @@ namespace amg
   }
 
   template<class ENERGY, class TMESH, int BS>
-  shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<ParallelDofs> fpds, shared_ptr<ParallelDofs> cpds)
+  shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<LevelCap> fcap, shared_ptr<LevelCap> ccap)
   {
     static Timer t("PWProlMap"); RegionTimer rt(t);
+
+    shared_ptr<ParallelDofs> fpds = fcap->pardofs, cpds = ccap->pardofs;
 
     const auto & rcmap(*cmap);
     const TMESH & fmesh = static_cast<TMESH&>(*rcmap.GetMesh()); fmesh.CumulateData();
@@ -330,9 +346,11 @@ namespace amg
 
 
   template<class ENERGY, class TMESH, int BS>
-  shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<TopologicMesh> tfmesh)
+  shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<LevelCap> fcap)
   {
     static Timer t("SmoothedProlMap"); RegionTimer rt(t);
+
+    shared_ptr<TopologicMesh> tfmesh = fcap->mesh;
 
     if (pw_step == nullptr)
       { throw Exception("Need pw-map for SmoothedProlMap!"); }
@@ -681,7 +699,7 @@ namespace amg
 
 
   template<class ENERGY, class TMESH, int BS>
-  shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap)
+  shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap, shared_ptr<LevelCap> fcap)
   {
     static Timer t("SmoothedProlMap"); RegionTimer rt(t);
 

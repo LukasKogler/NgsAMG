@@ -8,10 +8,11 @@ namespace amg {
 
   template<int BS>
   HybridGSS<BS> :: HybridGSS ( const shared_ptr<HybridGSS<BS>::TSPMAT> & amat,
-					 const shared_ptr<ParallelDofs> & par_dofs,
-					 const shared_ptr<BitArray> & atake_dofs)
-    : BaseSmoother(par_dofs), free_dofs(atake_dofs), parallel_dofs(par_dofs),
-      comm(par_dofs->GetCommunicator()), spmat(amat), A(*spmat)
+			       const shared_ptr<ParallelDofs> & par_dofs,
+			       const shared_ptr<BitArray> & atake_dofs)
+    : BaseSmoother(make_shared<ParallelMatrix>(amat, par_dofs, par_dofs, PATALLEL_OP::C2D), par_dofs),
+      free_dofs(atake_dofs), parallel_dofs(par_dofs),
+      comm(par_dofs->GetCommunicator()), spmat(amat), A(*spmat), 
   {
     name =  string("HybridGSS<") + to_string(BS) + string(">");
     auto & pds = *parallel_dofs;

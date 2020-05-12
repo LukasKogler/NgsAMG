@@ -222,7 +222,7 @@ namespace amg
       : BASE(move(_data), stat)
     { ; }
 
-    void map_data (const BaseCoarseMap & cmap, AttachedSED<TED> & ceed) const; // in impl header beacust I static_cast to elasticity-mesh
+    void map_data (const BaseCoarseMap & cmap, AttachedSED<TED> & ceed) const; // in impl header beacuse I static_cast to elasticity-mesh
   }; // class AttachedSED
 
   /** END Stokes Attached Data **/
@@ -243,6 +243,7 @@ namespace amg
 
   protected:
 
+    bool have_loops;
     Table<int> loops;
 
   public:
@@ -424,6 +425,81 @@ namespace amg
   }; // class StokesMesh
 
 
+  /** An extension to a coarse map that can also map loops.
+      This is actually the worst of both worlds - virtual inheritance and mix-ins ...  **/
+
+  class StokesBCM : virtual public BaseCoarseMap
+  {
+  protected:
+    Array<int> loop_map;
+  public:
+    StokesBCM (shared_ptr<TopologicMesh> fmesh, shared_ptr<TopologicMesh> cmesh = nullptr)
+      : BaseCoarseMap(fmesh, cmesh)
+    { ; }
+
+    FlatArray<int> GetLoopMap () const { return loop_map; }
+
+    virtual shared_ptr<BaseCoarseMap> Concatenate (shared_ptr<BaseCoarseMap> right_map) override
+    {
+      auto cmap = make_shared<StokesBCM>(this->mesh, right_map->mapped_mesh);
+      for ( NODE_TYPE NT : { NT_VERTEX, NT_EDGE, NT_FACE, NT_CELL } ) {
+	cmap->NN[NT] = this->NN[NT];
+	cmap->mapped_NN[NT] = right_map->mapped_NN[NT];
+	FlatArray<int> lmap = this->node_maps[NT], rmap = right_map->node_maps[NT];
+	Array<int> & cnm = cmap->node_maps[NT];
+	cnm.SetSize(this->NN[NT]);
+	for (auto k : Range(this->NN[NT])) {
+	  auto midnum = lmap[k];
+	  cnm[k] = (midnum == -1) ? -1 : rmap[midnum];
+	}
+      }
+      if (auto rsm = dynamic_pointer_cast<StokesBCM>(right_map)) {
+	auto & right_map = rsm->loop_map;
+	// Array<int> nlm(loop_map.Size());
+	auto & nlm = cmap->loop_map; nlm.SetSize(loop_map.Size());
+	for (auto k : Range(loop_map)) {
+	  nlm[k] = 0;
+	  auto mk = loop_map[k];
+	  if (mk != 0) {
+	    auto mid_loop_nr = abs(mk)-1;
+	    double fac = (mk < 0) ? -1.0 : 1.0;
+	    auto mmk = right_map[mid_loop_nr];
+	    if (mmk != 0)
+	      { nlm[k] = fac * mmk; }
+	  }
+	}
+      }
+      else
+	{ throw Exception("This should probably not happen ..."); }
+      return cmap;
+    } // StokesBCM::Concatenate
+
+  }; // class StokesBCM
+
+
+  template<class TMAP>
+  class StokesCoarseMap : virtual public TMAP, virtual public StokesBCM
+  {
+  public:
+    using TMAP::TMESH;
+  public:
+    StokesCoarseMap (shared_ptr<TMESH> fmesh)
+      : TMAP(fmesh), StokesBCM(fmesh)
+    { ; }
+
+    virtual shared_ptr<BaseCoarseMap> Concatenate (shared_ptr<BaseCoarseMap> right_map) override
+    { StokesBCM::Concatenate(right_map); }
+
+  }; // class StokesCoarseMap
+
+
+  // /** An extension to a GridContractMap that can also map loops **/
+  // template<class TMAP>
+  // class StokesGCMap : public TMAP
+  // {
+  // }; // class StokesCoarseMap
+
+  
   /** END StokesMesh **/
 
 } // namespace amg

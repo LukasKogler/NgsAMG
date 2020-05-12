@@ -23,6 +23,14 @@ namespace amg
     using TM = typename ENERGY::TM;
     using TSPM_TM = stripped_spm_tm<TM>;
 
+    struct StokesLC :: public BaseAMGPC::LevelCapsule
+    {
+      shared_ptr<BaseSparseMatrix> pot_mat;   // matrix in the potential space
+      shared_ptr<ParallelDofs> pot_pardofs;   // ParallelDofs in the potential space
+      shared_ptr<BaseSparseMatrix> curl_mat;  // discrete curl matrix on this level 
+    }; // class
+
+
   protected:
     using BASE_CLASS::options;
 
@@ -41,16 +49,25 @@ namespace amg
     virtual shared_ptr<BaseCoarseMap> BuildCoarseMap (BaseAMGFactory::State & state) override;
     virtual shared_ptr<BaseCoarseMap> BuildAggMap (BaseAMGFactory::State & state);
     // virtual shared_ptr<BaseCoarseMap> BuildECMap (BaseAMGFactory::State & state);
-    virtual shared_ptr<BaseDOFMapStep> PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<ParallelDofs> fpds, shared_ptr<ParallelDofs> cpds) override;
+    virtual shared_ptr<BaseDOFMapStep> PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<BaseAMGPC::LevelCapsule> fcap,
+						  shared_ptr<BaseAMGPC::LevelCapsule> ccap) override;
+    virtual shared_ptr<BaseDOFMapStep> PotPWProl (shared_ptr<StokesBCM> cmap, shared_ptr<BaseAMGPC::LevelCapsule> fcap,
+						  shared_ptr<BaseAMGPC::LevelCapsule> ccap) override;
+    virtual shared_ptr<BaseDOFMapStep> RangePWProl (shared_ptr<StokesBCM> cmap, shared_ptr<BaseAMGPC::LevelCapsule> fcap,
+						    shared_ptr<BaseAMGPC::LevelCapsule> ccap) override;
     virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<TopologicMesh> fmesh) override;
     virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap) override;
     // shared_ptr<BaseDOFMapStep> SP_impl (shared_ptr<ProlMap<TSPM_TM>> pw_prol, shared_ptr<TMESH> fmesh, FlatArray<int> vmap);
-    shared_ptr<TSPM_TM> BuildPWProl_impl (shared_ptr<ParallelDofs> fpds, shared_ptr<ParallelDofs> cpds,
-					  shared_ptr<TMESH> fmesh, shared_ptr<TMESH> cmesh,
+    shared_ptr<TSPM_TM> BuildPWProl_impl (shared_ptr<TMESH> fmesh, shared_ptr<TMESH> cmesh,
 					  FlatArray<int> vmap, FlatArray<int> emap,
 					  FlatTable<int> v_aggs);
     shared_ptr<TSPM_TM> SmoothProlMap_impl (shared_ptr<ProlMap<TSPM_TM>> pwprol, shared_ptr<TMESH> fmesh, shared_ptr<TMESH> cmesh,
 					    FlatArray<int> vmap, FlatArray<int> emap, FlatTable<int> v_aggs);
+    shared_ptr<SparseMatrixTM<double>> BuildPotProl (shared_ptr<BaseCoarseMap> cmap);
+
+    virtual void BuildCurlMap (shared_ptr<StokesLC> cap);
+    virtual void ProjectToPotSpace (shared_ptr<StokesLC> cap);
+    virtual void BuildPotParDofs (shared_ptr<StokesLC> cap);
 
     /** Discard **/
     virtual bool TryDiscardStep (BaseAMGFactory::State & state) override { return false; }

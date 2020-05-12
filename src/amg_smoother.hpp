@@ -8,11 +8,23 @@ namespace amg {
   /** Base class for all smoothers to be used with any AMG preconditioner **/
   class BaseSmoother : public BaseMatrix
   {
-  public:
-    BaseSmoother (){}
+  protected:
+    shared_ptr<BaseMatrix> sysmat;
 
-    BaseSmoother (const shared_ptr<ParallelDofs> & par_dofs)
-      : BaseMatrix(par_dofs) {}
+    void SetSysMat (_sysmat) { sysmat = _sysmat; }
+
+  public:
+    BaseSmoother (shared_ptr<BaseMatrix> _sysmat, shared_ptr<ParallelDofs> par_dofs)
+      : BaseMatrix(par_dofs), sysmat(_sysmat)
+    { ; }
+
+    BaseSmoother (shared_ptr<BaseMatrix> _sysmat)
+      : BaseSmoother(_sysmat, _sysmat->GetParallelDofs())
+    { ; }
+    
+    BaseSmoother (shared_ptr<ParallelDofs> par_dofs)
+      : BaseSmoother(nullptr, par_dofs)
+    { ; }
 
     virtual ~BaseSmoother(){}
 
@@ -51,6 +63,9 @@ namespace amg {
     // virtual Array<MemoryUsage> GetMemoryUsage() const override = 0;
 
     virtual void Finalize() { ; }
+
+    virtual shared_ptr<BaseMatrix> GetAMatrix() const
+    { return sysmat; }
 
     // return the underlying matrix
     // virtual shared_ptr<BaseMatrix> GetMatrix () const = 0;
@@ -95,6 +110,7 @@ namespace amg {
     virtual AutoVector CreateRowVector () const override { return Arange->CreateRowVector(); };
     virtual AutoVector CreateColVector () const override { return Arange->CreateColVector(); };
 
+    virtual shared_ptr<BaseMatrix> GetAMatrix() const override { return Arange; }
 
     shared_ptr<BaseSmoother> GetSMPot () { return smpot; }
     shared_ptr<BaseSmoother> GetSMRange () { return smrange; }
@@ -190,6 +206,8 @@ namespace amg {
     void smoothfull (int type, BaseVector  &x, const BaseVector &b, BaseVector &res,
 		     bool res_updated = false, bool update_res = true, bool x_zero = false) const;
         
+    virtual shared_ptr<BaseMatrix> GetAMatrix() const override { return Apar; }
+
   public:
     virtual void Finalize () override { CalcDiag(); }
     

@@ -36,10 +36,10 @@ namespace amg
 
     /** State **/
     virtual BaseAMGFactory::State* AllocState () const override;
-    virtual void InitState (BaseAMGFactory::State & state, BaseAMGFactory::AMGLevel & lev) const override;
+    virtual void InitState (BaseAMGFactory::State & state, shared_ptr<BaseAMGFactory::AMGLevel> & lev) const override;
 
     /** Coarse **/
-    virtual shared_ptr<BaseCoarseMap> BuildCoarseMap (BaseAMGFactory::State & state) override;
+    virtual shared_ptr<BaseCoarseMap> BuildCoarseMap (BaseAMGFactory::State & state, LevelCapsule & mapped_cap) override;
     virtual shared_ptr<BaseCoarseMap> BuildAggMap (BaseAMGFactory::State & state);
     virtual shared_ptr<BaseCoarseMap> BuildECMap (BaseAMGFactory::State & state);
     virtual shared_ptr<BaseDOFMapStep> PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<ParallelDofs> fpds, shared_ptr<ParallelDofs> cpds) override;

@@ -592,13 +592,12 @@ namespace amg
 
   template<class TM>
   HybridSmoother<TM> :: HybridSmoother (shared_ptr<BaseMatrix> _A, bool _csr)
-    : can_smooth_res(_csr)
+    : BaseSmoother(_A->GetParallelDofs()), can_smooth_res(_csr)
   {
     A = make_shared<HybridMatrix<TM>> (_A);
 
+    SetSysMat(A);
     auto pardofs = A->GetParallelDofs();
-
-    SetParallelDofs(pardofs);
 
     if (pardofs != nullptr)
       { Sx = make_shared<S_BaseVectorPtr<double>> (pardofs->GetNDofLocal(), pardofs->GetEntrySize()); }

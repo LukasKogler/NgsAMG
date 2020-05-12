@@ -325,6 +325,84 @@ namespace amg
     return make_shared<SPM_C>(move(*spm_tm));
   }
 
+
+  /** MultiDofMapStep **/
+
+  void MultiDofMapStep :: TransferF2C (const BaseVector * x_fine, BaseVector * x_coarse) const
+  { GetPrimMap()->TransferF2C(x_fine, x_coarse); } // MultiDofMapStep :: TransferF2C
+
+
+  void MultiDofMapStep :: AddF2C (double fac, const BaseVector * x_fine, BaseVector * x_coarse) const override;
+  { 
+    GetPrimMap()->AddF2C(fac, x_find, x_coarse);
+  } // MultiDofMapStep :: AddF2C
+
+
+  void MultiDofMapStep :: TransferC2F (BaseVector * x_fine, const BaseVector * x_coarse) const override;
+  {
+    GetPrimMap()->TransferC2F(x_fine, x_coarse);
+  } // MultiDofMapStep :: TransferC2F
+
+
+  void MultiDofMapStep :: AddC2F (double fac, BaseVector * x_fine, const BaseVector * x_coarse) const override;
+  {
+    GetPrimMap()->AddC2F(fac, x_find, x_coarse);
+  } // MultiDofMapStep :: AddC2F
+
+
+  bool MultiDofMapStep :: CanConcatenate (shared_ptr<BaseDOFMapStep> other)
+  {
+    if (auto mdms = dynamic_pointer_cast<MultiDofMapStep>(other)) {
+      bool cc = mdms->GetNMaps() == GetNMaps();
+      for (auto k : range(maps))
+	{ cc &= GetMap(k)->CanConcatenate(other->GetMap(k)); }
+    }
+    else if (GetNMaps() == 1)
+      { return maps[0]->CanConcatenate(other); }
+    else
+      { return false; }
+  } // MultiDofMapStep :: CanConcatenate
+
+
+  shared_ptr<BaseDOFMapStep> MultiDofMapStep :: Concatenate (shared_ptr<BaseDOFMapStep> other)
+  {
+    if (!CanConcatenate(other))
+      { return nullptr; }
+    if (auto mdms = dynamic_pointer_cast<MultiDofMapStep>(other)) {
+      Array<shared_ptr<BaseDOFMapStep>> cmaps(GetNMaps());
+      for (auto k : Range(cmaps))
+	{ cmaps[k] = GetMap(k)->Concatenate(mdms->GetMap(k)); }
+      return make_shared<MultiDofMapStep>(cmaps);
+    }
+    else if (GetNMaps() == 1)
+      { return maps[0]->Concatenate(other); }
+    return nullptr;
+  } // MultiDofMapStep :: Concatenate
+
+
+  shared_ptr<BaseDOFMapStep> MultiDofMapStep :: PullBack (shared_ptr<BaseDOFMapStep> other)
+  {
+    if (auto mdms = dynamic_pointer_cast<MultiDofMapStep>(other)) {
+      Array<shared_ptr<BaseDOFMapStep>> cmaps(GetNMaps());
+      for (auto k : Range(cmaps)) {
+	  cmaps[k] = GetMap(k)->PullBack(mdms->GetMap(k));
+	if (cmaps[k] == nullptr)
+	  { throw Exception("MultiDofMapStep could not pull back a component!"); }
+      }
+      return make_shared<MultiDofMapStep>(cmaps);
+    }
+    else if (GetNMaps() == 1)
+      { return maps[0]->PullBack(other); }
+    return maps[0]->PullBack(other);
+  } // MultiDofMapStep :: PullBack
+
+
+  shared_ptr<BaseSparseMatrix> MultiDofMapStep :: AssembleMatrix (shared_ptr<BaseSparseMatrix> mat)
+  { return maps[0]->AssembleMatrix(mat); } // MultiDofMapStep :: AssembleMatrix
+
+
+  /** END MultiDofMapStep **/
+
 } // namespace amg
 
 #include "amg_tcs.hpp"

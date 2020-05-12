@@ -1362,7 +1362,7 @@ namespace amg
   template<class TM>
   HybridSmoother2<TM> :: HybridSmoother2 (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h,
 					  bool _overlap, bool _in_thread)
-    : overlap(_overlap), in_thread(_in_thread)
+    : BaseSmoother(_A->GetParallelDofs()), overlap(_overlap), in_thread(_in_thread)
   {
 
     shared_ptr<DCCMap<typename mat_traits<TM>::TSCAL>> dcc_map = nullptr;
@@ -1380,6 +1380,8 @@ namespace amg
 
     A = make_shared<HybridMatrix2<TM>> (_A, dcc_map);
     origA = _A;
+
+    SetSysMat(A);
 
     auto pardofs = A->GetParallelDofs();
 

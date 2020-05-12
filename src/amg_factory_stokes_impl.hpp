@@ -108,7 +108,11 @@ namespace amg
     agg_opts.robust = false;
     agg_opts.dist2 = ( state.level[1] == 0 ) && ( state.level[0] < O.n_levels_d2_agg );
     
-    auto agglomerator = make_shared<AGG_CLASS>(mesh, state.free_nodes, move(agg_opts));
+    // auto agglomerator = make_shared<AGG_CLASS>(mesh, state.free_nodes, move(agg_opts));
+
+    auto agglomerator = make_shared<StokesCoarseMap<AGG_CLASS>>(mesh);
+    agglomerator->SetFreeVerts(state.free_nodes);
+    agglomerator->SetOpts(move(agg_opts));
 
     auto faggs = cfas.MoveTable();
 
@@ -127,8 +131,308 @@ namespace amg
 
 
   template<class TMESH, class ENERGY> shared_ptr<BaseDOFMapStep>
-  StokesAMGFactory<TMESH, ENERGY> :: PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<ParallelDofs> fpds, shared_ptr<ParallelDofs> cpds)
+  StokesAMGFactory<TMESH, ENERGY> :: PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<BaseAMGPC::LevelCapsule> fcap,
+						shared_ptr<BaseAMGPC::LevelCapsule> ccap)
   {
+    shared_ptr<StokesLC> fc = dynamic_pointer_cast<StokesLC>(fcap),
+      cc = dynamic_pointer_cast<StokesLC>(ccap);
+    if (fc == nullptr)
+      { throw Exception("Wrong fine Cap!"); }
+    if (cc == nullptr)
+      { throw Exception("Wrong crs  Cap!"); }
+    auto stokes_cmap = dynamic_pointer_cast<StokesBCM>(cmap);
+    if (stokes_cmap == nullptr)
+      { throw Exception("Wrong cmap!"); }
+    Array<shared_ptr<BaseDOFMapStep>> step_comps(2);
+    step_comps[0] = RangePWProl(stokes_cmap, fc, cc);
+    step_comps[1] = PotPWProl(stokes_cmap, fc, cc);
+    auto multi_step = make_shared<MultiDofMapStep>(step_comps);
+    return multi_step;
+  } // StokesAMGFactory::PWProlMap
+
+
+  template<class TMESH, class ENERGY> shared_ptr<BaseDOFMapStep>
+  shared_ptr<BaseDOFMapStep> StokesAMGFactory<TMESH, ENERGY> :: PotPWProl (shared_ptr<StokesBCM> cmap, shared_ptr<StokesLC> fcap,
+									   shared_ptr<StokesLC> ccap, shared_ptr<ProlMap<TSPM_TM>> range_prol)
+  {
+    /** Prolongation for the HCurl-like space:
+	We construct a prolongation Pc for the HC-like potential space 
+	such that this diagram commutes:
+	     HC_f  <- Pc <- HC_c         | prolongation in the HC potential space
+	      |              |
+	      v              v
+	      C              C           | discrete curl matrix
+	      |              |
+	      v              v
+	     HD_f  <- Pd <- HD_c         | prolongation in the HD range space
+     **/
+    auto fmesh = static_pointer_cast<TMESH>(cmap->GetMesh());
+    auto cmesh = static_pointer_cast<TMESH>(cmap->GetMappedMesh());
+    auto vmap = cmap->GetMap<NT_VERTEX>();
+    auto emap = cmap->GetMap<NT_EDGE>();
+
+    auto floops = fmesh->GetLoops();
+    auto cloops = cmesh->GetLoops();
+    auto loop_map = cmap->GetLoopMap();
+
+    if (fcap->curl_mat == nullptr)
+      { BuildCurlMat(fcap); }
+    const auto & f_cmat = *fcap->curl_mat;
+    if (ccap->curl_mat == nullptr)
+      { BuildCurlMat(ccap); }
+    const auto & c_cmat = *ccap->curl_mat;
+
+    const auto & RP = *range_prol->GetProl();
+
+    Array<int> perow;
+    auto transpose_table = [&](auto & tab, size_t width) {
+      perow.SetSize(width); perow = 0;
+      for (auto k : Range(tab))
+	for (auto j : tab[k])
+	  { perow[j]++; }
+      Table<int> ttab(perow); perow = 0;
+      for (auto k : Range(tab))
+	for (auto j : tab[k])
+	  { perow[j][cnt[j]++] = k; }
+      return move(ttab);
+    };
+
+    const size_t NFE = fmesh->template GetNN<NT_EDGE>(), NCE = cmesh->template GetNN<NT_EDGE>();
+    
+    Table<int> e2l_f = transpose_table(floops, NFE);
+    Table<int> e2l_c = transpose_table(cloops, NCE);
+
+    const auto & fecon = *fmesh->GetEdgeCM();
+    const auto & cecon = *cmesh->GetEdgeCM();
+
+    auto fedges = fmesh->template GetNodes<NT_EDGE>();
+    auto cedges = cmesh->template GetNodes<NT_EDGE>();
+
+    auto v_aggs = cmap->GetMapC2F<NT_VERTEX>(); // TODO: implement this
+    auto c2f_e = cmap->GetMapC2F<NT_EDGE>();
+
+    /** Create graph **/
+    TableCreator<int> cg(floops.Size());
+    Array<int> cols(50);
+    for (; !cg.Done(); cg++) {
+      for (auto loop_nr : Range(perow)) {
+	int c = 0;
+	if (loop_map[loop_nr] != 0) { /** fine loop maps to coarse loop - depends only on that coarse loop **/
+	  int cln = abs(loop_map[loop_nr]-1);
+	  cg.Add(loop_nr, cln);
+	}
+	else {
+	  /** If there are any edges in the loop that have a coarse edge, the loop
+	      crosses an agg. boundary. **/
+	  auto loop = floops[loop_nr];
+	  int crs_enr = -1; bool agg_bnd_loop = false;
+	  for (auto j : Range(loop)) {
+	    int enr = abs(loop[j])-1;
+	    if (emap[enr] != -1)
+	      if (crs_enr == -1)
+		{ agg_bnd_loop = true; crs_enr = emap[enr]; /**break;**/ }
+	      else if (crs_enr != emap[enr]) // TODO: remove this
+		{ throw Exception("I think this should be impossible!"); }
+	  }
+	  if (agg_bnd_loop) { /** fine loop crosses an agg. facet - depends only on coarse loops going through this facet! **/
+	    for (auto cln : e2l_c[crs_enr])
+	      { cg.Add(loop_nr, cln); }
+	  }
+	  else { /** fine loop is completely inside an agg. - depends on all coarse loops through it's facets **/
+	    int cvnr = vmap[fedges[abs(loop[0])-1].v[0]];
+	    int ms = 0;
+	    for (auto cenr : cecon.GetRowValues(cvnr))
+	      { ms += e2l_c[cenr].Size(); }
+	    cols.SetSize(ms); cols.SetSize0();
+	    int pos;
+	    for (auto cenr : cecon.GetRowValues(cvnr)) {
+	      auto celoops = e2l_c[cenr];
+	      for (auto j : Range(celoops))
+		{ insert_into_sorted_array_nodups(celoops[j], cols); }
+	    }
+	    cg.Add(loop_nr, cols);
+	  }
+	}
+      }
+    }
+    graph = cg.MoveTable();
+      
+    auto pot_prol = make_shared<SparseMatrixTM<double>>(perow, cloops.Size());
+
+    /** (I) Fill trivial loops **/
+    BitArray loop_done(loops.Size()); loop_done.Clear();
+    for (auto loop_nr : Range(perow)) {
+      const int lm = loop_map[loop_nr];
+      if (lm != 0) {
+	int cln = abs(lm) - 1;
+	loop_done.Set(loop_nr);
+	pot_prol->GetRowIndices(loop_nr)[0] = cln;
+	pot_prol->GetRowValues(loop_nr)[0] = (lm > 0) ? 1.0 : -1.0;
+      }
+    }
+
+    cout << "trivial pot prol: " << endl;
+    print_tm_spmat(cout, SP);
+
+    LocalHeap lh(2000000, "AtomicSpider", false); // ~2 MB LocalHeap
+
+    auto calc_pot_prol_block = [&](FlatArray<int> fenrs, FlatArray<int> cenrs,
+				   FlatArray<int> fdloops, FlatArray<int> ffloops,
+				   FlatArray<int> cloops) {
+      /**
+	 Solve:
+	 I 0 CT   | ud  |     0
+	 0 O CT   | uf  | =   0
+	 C C 0    | lam |     P_range C uc
+	 With Dirichlet condition:
+	   ud = P_pot uc
+       **/
+      const int nfe = fenrs.Size(), nce = cenrs.Size(), nffloops = ffloops.Size(),
+      nfdloops = fdloops.Size(), ncloops = cloops.Size();
+      const int hM = nffloops + nfe * BS, hPp = nffloops, wPp = ncloops;
+      /** (I) Clac RHS **/
+      FlatMatrix<double> rhs(hM, wPp, lh); rhs = 0;
+      /** Coarse curl-mat block, cols = crs loops, rows = facet edges **/
+      FlatMatrix<double> Cc(nce * BS, ncloops, lh);
+      for (auto k : Rance(cenrs))
+	for (auto j : Range(ncloops))
+	  { Cc.Rows(BS*k, BS*(k+1)).Cols(j,j+1) = c_cmat(cenrs[k], cloops[j]); }
+      /** range prolongation block **/
+      FlatMatrix<double> P_d(nfe * BS, 1*BS, lh);
+      for (auto k : Range(nfe))
+	{ P_d.Rows(BS*k, BS*(k+1)).Cols(0,BS) = RP(fedges[k], cenr); }
+      /** P * C_c **/
+      // FlatMatrix<double> PCc(nfe * BS, ncloops, lh);
+      // PCc = P_d * Cc;
+      rhs.Rows(nffloops, hM) = P_d * Cc;
+      /** pot prol to dirichlet f loops **/
+      FlatMatrix<double> P_p(nfdloops, ncloops, lh);
+      for (auto k : Range(nfdloops))
+	for (auto j : Range(ncloops))
+	  { P_p(k, j) = PP(ffloops[k], cloops[j]); }
+      /** curl mat on dirichlet f loops **/
+      FlatMatrix<double> Cff(nfe * BS, nfdloops, lh);
+      for (auto k : Range(nfe))
+	for (auto j : Range(nfdloops))
+	  { Cff.Rows(BS*k, BS*(k+1)).Cols(j, j+1) = f_cmat(fedges[k], fdloops[j]); }
+      /** C_f * P **/
+      // FlatMatrix<double> CffP(nfe * BS, ncloops, lh);
+      // CffP = Cff * P_p;
+      rhs.Rows(nffloops, hM) -= Cff * P_p;
+      /** (II) Set up matrix **/
+      FlatMatrix<double> M(hM, hM, lh);
+      M = 0;
+      // free loops x free loops: Identity
+      for (auto k : Range(BS * nfiloops))
+	{ M(k,k) = 1.0; }
+      const int b0 = BS*nfiloops;
+      // fine edges x free loops (+transp) fine curl
+      for (auto k : Range(nfe))
+	for (auto j : Range(nffloops)) {
+	  M.Rows(b0 + k, b0 + k + 1).Cols(BS*j, BS*(j+1)) = f_cmat(fedges[k], ffloops[j]);
+	  M.Rows(BS*j, BS*(j+1)).Cols(b0 + k, b0 + k + 1) = Trans(f_cmat(fedges[k], ffloops[j]));
+	}
+      /** (III) Solve **/
+      CalcInverse(M);
+      FlatMatrix<double> pot_prol_block(hPp, wPp, lh);
+      pot_prol_block = M.Rows(0, nffloops) * rhs;
+      /** (IV) Fill prol! **/
+      for (auto k : Range(nfiloops)) {
+	auto ris = pot_prol->GetRowIndices(filoops[k]);
+	auto rvs = pot_prol->GetRowValues(filoops[k]);
+	for (auto j : Range(ncloops)) {
+	  ris[j] = cloops[j];
+	  rvs[j] = pot_prol_block(k,j);
+	}
+      }
+    };
+
+
+    /** (II) Fill agg.-facets **/
+    Array<int> ffloops(50), fdloops(50);
+    for (auto cenr : Range(cedges)) {
+      const auto & cedge = cedges[cenr];
+      FlatArray<int> cenrs(1): cenrs[0] = cenr;
+      FlatArray<int> fenrs = c2f_e[cenr];
+
+      auto celoops = e2l_c[cenr];
+      ffloops.SetSize0(); fdloops.SetSize0();
+      for (auto k : Range(fedges))
+	for (auto j : e2l_f[fedges[k]])
+	  if (loop_done.Test(j))
+	    { insert_into_sorted_array_nodups(j, fdloops); }
+	  else
+	    { insert_into_sorted_array_nodups(j, ffloops); }
+
+      calc_pot_prol_block(fenrs, cenrs, fdloops, ffloops, celoops);
+
+      for (auto loop_nr : ffloops)
+	{ loop_done.Set(loop_nr); }
+    }
+
+    cout << "facet pot prol: " << endl;
+    print_tm_spmat(cout, SP);
+
+    /** (III) Fill agg.-interiors **/
+    for (auto agg_nr : Range(v_aggs)) {
+      auto agg_vs = v_aggs[agg_nr];
+      auto cvnr = vmap[agg_vs[0]];
+      auto cecon_rvs = cecon.GetRowValues(cvnr);
+
+      FlatArray<int> cenrs(cecon_rvs.Size(), lh);
+      for (auto j : Range(cenrs))
+	{ cenrs[j] = int(cecon_rvs[j]); }
+
+      auto it_fes = [&](auto lam) {
+	for (auto kv : Range(agg_vs)) {
+	  auto vk = agg_vs[kv];
+	  auto kvns = fecon.GetRowIndices(vk);
+	  auto kves = fecon.GetRowValues(vk);
+	  for (auto j : Range(kvns)) {
+	    auto vj = kvns[j];
+	    auto cvj = vmap[vj];
+	    if (cvj != -1) {
+	      if (cvj == cvnr) {
+		if (vk < vj)
+		  { lam(vk, vj, int(kv_es[j])); }
+	      }
+	      else
+		{ lam(vk, vj, int(kv_es[j])); }
+	    }
+	  }
+	}
+      };
+      int nfes = 0;
+      it_fes([&](auto vk , auto vj, auto fenr) { nfes++; });
+      FlatArray<int> fenrs(nfes, lh); nfes = 0;
+      ffloops.SetSize0(); fdloops.SetSize0();
+      it_fes([&](auto vk , auto vj, auto fenr) {
+	  fenrs[nfes++] = fenr;
+	  for (auto j : e2l_f[fenr])
+	    if (loop_done.Test(j))
+	      { insert_into_sorted_array_nodups(j, fdloops); }
+	    else
+	      { insert_into_sorted_array_nodups(j, ffloops); }
+	  });
+      calc_pot_prol_block(fenrs, cenrs, fdloops, ffloops, celoops);
+      // for (auto loop_nr : ffloops)
+	// { loop_done.Set(loop_nr); }
+    }
+
+    cout << "final pot prol: " << endl;
+    print_tm_spmat(cout, SP);
+
+    ccap->pot_pardofs = BuildPotParallelDofs(cmesh);
+
+    return make_shared<ProlMap<SparseMatrixTM<double>>>(pot_prol, fcap->pot_pardofs, ccap->pot_pardofs);
+  } // StokesAMGFactory::PotPWProlMap
+
+
+  template<class TMESH, class ENERGY> shared_ptr<BaseDOFMapStep>
+  StokesAMGFactory<TMESH, ENERGY> :: RangePWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<BaseAMGPC::LevelCapsule> fcap,
+						     shared_ptr<BaseAMGPC::LevelCapsule> ccap)
+  {
+    /** Prolongation for HDiv-like space **/
     auto fmesh = static_pointer_cast<TMESH>(cmap->GetMesh());
     auto cmesh = static_pointer_cast<TMESH>(cmap->GetMappedMesh());
     auto vmap = cmap->GetMap<NT_VERTEX>();
@@ -140,9 +444,12 @@ namespace amg
 	  { cva.Add(vmap[k], k); }
     }
     auto v_aggs = cva.MoveTable();
-    auto pwprol = BuildPWProl_impl (fpds, cpds, fmesh, cmesh, vmap, emap, v_aggs);
-    return make_shared<ProlMap<TSPM_TM>>(pwprol, fpds, cpds);
-  } // StokesAMGFactory::PWProlMap
+
+    auto pwprol = BuildPWProl_impl (fmesh, cmesh, vmap, emap, v_aggs);
+    ccap->pardofs = BuildParallelDofs(ccap->mesh);
+
+    return make_shared<ProlMap<TSPM_TM>>(pwprol, fcap->pardofs, ccap->pardofs);
+  } // StokesAMGFactory::RangePWProlMap
 
 
   template<class TMESH, class ENERGY> shared_ptr<BaseDOFMapStep>
@@ -1040,8 +1347,7 @@ namespace amg
     **/
 
   template<class TMESH, class ENERGY> shared_ptr<typename StokesAMGFactory<TMESH, ENERGY>::TSPM_TM>
-  StokesAMGFactory<TMESH, ENERGY> :: BuildPWProl_impl (shared_ptr<ParallelDofs> fpds, shared_ptr<ParallelDofs> cpds,
-						       shared_ptr<TMESH> fmesh, shared_ptr<TMESH> cmesh,
+  StokesAMGFactory<TMESH, ENERGY> :: BuildPWProl_impl (shared_ptr<TMESH> fmesh, shared_ptr<TMESH> cmesh,
 						       FlatArray<int> vmap, FlatArray<int> emap,
 						       FlatTable<int> v_aggs)//, FlatTable<int> c2f_e)
   {
