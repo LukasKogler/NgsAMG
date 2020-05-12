@@ -761,15 +761,15 @@ namespace amg
 
 
   template<class FACTORY>
-  void VertexAMGPC<FACTORY> :: InitFinestLevel (shared_ptr<BaseAMGFactory::AMGLevel> & finest_level)
+  void VertexAMGPC<FACTORY> :: InitFinestLevel (BaseAMGFactory::AMGLevel & finest_level)
   {
     BaseAMGPC::InitFinestLevel(finest_level);
-    finest_level.free_nodes = free_verts;
+    finest_level.cap->free_nodes = free_verts;
   }
 
 
   template<class FACTORY>
-  Table<int> VertexAMGPC<FACTORY> :: GetGSBlocks (const shared_ptr<BaseAMGFactory::AMGLevel> & amg_level)
+  Table<int> VertexAMGPC<FACTORY> :: GetGSBlocks (const BaseAMGFactory::AMGLevel & amg_level)
   {
     if (amg_level.crs_map == nullptr) {
       throw Exception("Crs Map not saved!!");

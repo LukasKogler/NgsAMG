@@ -76,7 +76,7 @@ namespace amg
 
     // TODO: we have to respect enable_multistep/interleave here
 
-    auto fmesh = f_lev.mesh;
+    auto fmesh = f_lev->cap->mesh;
 
     auto curr_meas = ComputeMeshMeasure(*fmesh);
 
@@ -84,8 +84,8 @@ namespace amg
 
     /** static coarsening ratio **/
     if (O.use_static_crs) {
-      double af = ( (f_lev.level == 0) && (O.first_aaf != -1) ) ?
-	O.first_aaf : ( pow(O.aaf_scale, f_lev.level - ( (O.first_aaf == -1) ? 0 : 1) ) * O.aaf );
+      double af = ( (f_lev->level == 0) && (O.first_aaf != -1) ) ?
+	O.first_aaf : ( pow(O.aaf_scale, f_lev->level - ( (O.first_aaf == -1) ? 0 : 1) ) * O.aaf );
       goal_meas = max( size_t(min(af, 0.9) * curr_meas), max(O.max_meas, size_t(1)));
     }
 
@@ -114,7 +114,7 @@ namespace amg
 
 
   template<NODE_TYPE NT, class TMESH, int BS>
-  shared_ptr<BaseGridMapStep> NodalAMGFactory<NT, TMESH, BS> :: BuildContractMap (double factor, shared_ptr<TopologicMesh> mesh) const
+  shared_ptr<BaseGridMapStep> NodalAMGFactory<NT, TMESH, BS> :: BuildContractMap (double factor, shared_ptr<TopologicMesh> mesh, shared_ptr<BaseAMGFactory::LevelCapsule> & mapped_cap) const
   {
     static Timer t("BuildContractMap"); RegionTimer rt(t);
 
@@ -128,12 +128,19 @@ namespace amg
     int n_groups = (factor == -1) ? 2 : max2(int(2), int(1 + std::round( (mesh->GetEQCHierarchy()->GetCommunicator().Size()-1) * factor)));
     Table<int> groups = PartitionProcsMETIS (*m, n_groups);
 
-    return make_shared<GridContractMap<TMESH>>(move(groups), m);
+    auto cm = make_shared<GridContractMap<TMESH>>(move(groups), m);
+
+    mapped_cap->mesh = cm->GetMappedMesh();
+    mapped_cap->free_nodes = nullptr;
+    mapped_cap->eqc_h = cm->IsMaster() ? mapped_cap->mesh->GetEQCHierarchy() : nullptr;
+    mapped_cap->pardofs = nullptr; // is set in BuildDOFContractMap
+
+    return cm;
   } // NodalAMGFactory::BuildContractMap
 
 
   template<NODE_TYPE NT, class TMESH, int BS>
-  shared_ptr<BaseDOFMapStep> NodalAMGFactory<NT, TMESH, BS> :: BuildDOFContractMap (shared_ptr<BaseGridMapStep> cmap, shared_ptr<ParallelDofs> fpd) const
+  shared_ptr<BaseDOFMapStep> NodalAMGFactory<NT, TMESH, BS> :: BuildDOFContractMap (shared_ptr<BaseGridMapStep> cmap, shared_ptr<ParallelDofs> fpd, shared_ptr<LevelCapsule> & mapped_cap) const
   {
     static Timer t("BuildDOFContractMap"); RegionTimer rt(t);
 
@@ -155,11 +162,12 @@ namespace amg
       for (auto k : Range(group.Size())) perow[k] = cm->template GetNodeMap<NT>(k).Size();
       dof_maps = Table<int>(perow);
       for (auto k : Range(group.Size())) dof_maps[k] = cm->template GetNodeMap<NT>(k);
+      mapped_cap->pardofs = cpd;
     }
     auto ctr_map = make_shared<CtrMap<typename strip_vec<Vec<BS, double>>::type>> (fpd, cpd, move(group), move(dof_maps));
-    if (cm->IsMaster()) {
-      ctr_map->_comm_keepalive_hack = cm->GetMappedEQCHierarchy()->GetCommunicator();
-    }
+    if (cm->IsMaster())
+      { ctr_map->_comm_keepalive_hack = cm->GetMappedEQCHierarchy()->GetCommunicator(); }
+    
 
     return move(ctr_map);
   } // NodalAMGFactory::BuildDOFContractMap

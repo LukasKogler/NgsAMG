@@ -11,7 +11,7 @@ namespace amg {
   protected:
     shared_ptr<BaseMatrix> sysmat;
 
-    void SetSysMat (_sysmat) { sysmat = _sysmat; }
+    void SetSysMat (shared_ptr<BaseMatrix> _sysmat) { sysmat = _sysmat; }
 
   public:
     BaseSmoother (shared_ptr<BaseMatrix> _sysmat, shared_ptr<ParallelDofs> par_dofs)
@@ -88,7 +88,7 @@ namespace amg {
     HiptMairSmoother (shared_ptr<BaseSmoother> _smpot, shared_ptr<BaseSmoother> _smrange,
 		      shared_ptr<BaseMatrix> _Apot, shared_ptr<BaseMatrix> _Arange,
 		      shared_ptr<BaseMatrix> _D, shared_ptr<BaseMatrix> _DT)
-      : smpot(_smpot), smrange(_smrange), Apot(_Apot), Arange(_Arange), D(_D), DT(_DT)
+      : BaseSmoother(_Arange), smpot(_smpot), smrange(_smrange), Apot(_Apot), Arange(_Arange), D(_D), DT(_DT)
     {
       solpot = smpot->CreateColVector();
       respot = smpot->CreateColVector();
@@ -206,8 +206,6 @@ namespace amg {
     void smoothfull (int type, BaseVector  &x, const BaseVector &b, BaseVector &res,
 		     bool res_updated = false, bool update_res = true, bool x_zero = false) const;
         
-    virtual shared_ptr<BaseMatrix> GetAMatrix() const override { return Apar; }
-
   public:
     virtual void Finalize () override { CalcDiag(); }
     

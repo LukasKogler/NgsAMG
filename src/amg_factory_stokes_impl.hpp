@@ -131,8 +131,8 @@ namespace amg
 
 
   template<class TMESH, class ENERGY> shared_ptr<BaseDOFMapStep>
-  StokesAMGFactory<TMESH, ENERGY> :: PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<BaseAMGPC::LevelCapsule> fcap,
-						shared_ptr<BaseAMGPC::LevelCapsule> ccap)
+  StokesAMGFactory<TMESH, ENERGY> :: PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<BaseAMGFactory::LevelCapsule> fcap,
+						shared_ptr<BaseAMGFactory::LevelCapsule> ccap)
   {
     shared_ptr<StokesLC> fc = dynamic_pointer_cast<StokesLC>(fcap),
       cc = dynamic_pointer_cast<StokesLC>(ccap);
@@ -428,9 +428,83 @@ namespace amg
   } // StokesAMGFactory::PotPWProlMap
 
 
+  template<class TMESH, class ENERGY>
+  void StokesAMGFactory<TMESH, ENERGY> :: BuildCurlMap (shared_ptr<StokesLC> cap);
+  {
+    const auto & M = *static_pointer_cast<TMESH>(cap->mesh);
+
+    auto loops = M.GetLoops();
+
+    Array<int> perow(loops.Size()); perow = 0;
+    for (auto k : Range(loops.Size()))
+      { perow[k] = loops[k].Size(); }
+    auto curlT_mat = make_shared<TCTM_TM>(perow, M.template GetNN<NT_EDGE>());
+    for (auto k : Range(loops.Size())) {
+      auto loop = loops[k];
+      auto ris = curlT_mat->GetRowIndices(k);
+      auto rvs = curlT_mat->GetRowValues(k);
+      for (auto j : Range(ris))
+	{ ris[j] = abs(loop[j]) - 1; }
+      QuickSort(ris);
+      for (auto j : Range(ris)) {
+	int enr = abs(loop[j]) - 1;
+	int col = ris.Pos(enr);
+	int fac = (loop[j] < 0) ? -1 : 1;
+	auto flow = edata[enr].flow;
+	double fsum = 0;
+	for (auto l : Range(BS))
+	  { fsum += sqr(flow[l]); }
+	for (auto l : Range(BS))
+	  { rvs[col](0, l) = fac * flow[l]/fsum; }
+      }
+    }
+
+    cap->curl_mat_T = make_shared<TCTM>(move(*curlT_mat));
+    cap->curl_mat = TransposeSPM(*cap->curl_mat_T);
+  } // StokesAMGFactory::BuildCurlMap
+
+
+  template<class TMESH, class ENERGY>
+  void StokesAMGFactory<TMESH, ENERGY> :: ProjectToPotSpace (shared_ptr<StokesLC> cap);
+  {
+    const auto & M = *static_pointer_cast<TMESH>(cap->mesh);
+    shared_ptr<TSPM_TM> range_mat = static_pointer_cast<TSPM_TM>(cap->mat);
+    shared_ptr<TCM_TM> curl_mat = static_pointer_cast<TC_TM>(cap->curl_mat);
+    shared_ptr<TCTM_TM> curl_mat_T = static_pointer_cast<TC_TM>(cap->curl_mat_T);
+    auto RC = MatMultAB(*range_mat, *curl_mat);
+    shared_ptr<TPM_TM> pot_mat = MatMultAB(*curl_mat_T, RC);
+    cap->pot_mat = make_shared<TPM>(move(*pot_mat));
+  } // StokesAMGFactory::ProjectToPotSpace
+
+
+  template<class TMESH, class ENERGY>
+  void StokesAMGFactory<TMESH, ENERGY> :: BuildPotParDofs (shared_ptr<StokesLC> cap);
+  {
+    const auto & M = *static_pointer_cast<TMESH>(cap->mesh);
+    const auto & eqc_h = *M.GetEQCHierarchy();
+    auto loops = M.GetLoops();
+
+    TableCreator<itn> cdps(loops.Size());
+    Array<FlatArray<int>> aldps(10);
+    Array<int> ldps;
+    for (; !cdps.Done(); cdps++) {
+      for (auto loop_nr : Range(loops)) {
+	auto loop = loops[loop_nr];
+	aldps.SetSize0(); aldps.SetSize(loop.Size());
+	for (auto j : Range(loop))
+	  { aldps[j].Assign(eqc_h.GetDistatnProcs(M.template GetEqcOfNode<NT_EDGE>(abs(loop[j]) - 1))); }
+	merge_arrays(aldps, ldps, [&](auto pk, auto pj) { return pk < pj; });
+	cdps.Add(loop_nr, ldps);
+      }
+    }
+
+    cap->pot_pardofs = make_shared<ParallelDofs>(cdps.MoveTable());
+  } // StokesAMGFactory::BuildPotParDofs
+
+
   template<class TMESH, class ENERGY> shared_ptr<BaseDOFMapStep>
-  StokesAMGFactory<TMESH, ENERGY> :: RangePWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<BaseAMGPC::LevelCapsule> fcap,
-						     shared_ptr<BaseAMGPC::LevelCapsule> ccap)
+  StokesAMGFactory<TMESH, ENERGY> :: RangePWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<BaseAMGFactory::LevelCapsule> fcap,
+						     shared_ptr<BaseAMGFactory::LevelCapsule> ccap)
   {
     /** Prolongation for HDiv-like space **/
     auto fmesh = static_pointer_cast<TMESH>(cmap->GetMesh());

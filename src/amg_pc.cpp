@@ -273,7 +273,9 @@ namespace amg
 
     auto dof_map = make_shared<DOFMap>();
 
-    Array<BaseAMGFactory::AMGLevel> amg_levels(1); InitFinestLevel(amg_levels[0]);
+    Array<shared_ptr<BaseAMGFactory::AMGLevel>> amg_levels(1);
+    amg_levels[0] = make_shared<BaseAMGFactory::AMGLevel>();
+    InitFinestLevel(*amg_levels[0]);
 
     if (options->sync)
       { RegionTimer rt(tsync); dof_map->GetParDofs(0)->GetCommunicator().Barrier(); }
@@ -284,8 +286,8 @@ namespace amg
     Array<shared_ptr<BaseSmoother>> smoothers(amg_levels.Size() - 1);
     for (int k = 0; k < amg_levels.Size() - 1; k++) {
       if ( (k > 0) && O.regularize_cmats) // Regularize coarse level matrices
-	{ RegularizeMatrix(amg_levels[k].mat, amg_levels[k].pardofs); }
-      smoothers[k] = BuildSmoother(amg_levels[k]);
+	{ RegularizeMatrix(amg_levels[k]->cap->mat, amg_levels[k]->cap->pardofs); }
+      smoothers[k] = BuildSmoother(*amg_levels[k]);
       cout << "type k sm " << typeid(*smoothers[k]).name() << endl;
     }
 
@@ -313,7 +315,7 @@ namespace amg
 	// print_tm_spmat(cout, *cspmtm);
 
 	if (O.regularize_cmats)
-	  {  RegularizeMatrix(cspm, cpds); }
+	  { RegularizeMatrix(cspm, cpds); }
 
 	shared_ptr<BaseMatrix> coarse_inv = nullptr;
       
@@ -371,13 +373,17 @@ namespace amg
     //   { throw Exception("HAVE NOT BUILT FINEST MESH CORRECTLY!!!!"); }
 
     finest_level.level = 0;
-    finest_level.mesh = finest_mesh; // TODO: get out of factory??
-    finest_level.eqc_h = finest_level.mesh->GetEQCHierarchy();
-    finest_level.pardofs = finest_mat->GetParallelDofs();
-    auto fpm = dynamic_pointer_cast<ParallelMatrix>(finest_mat);
-    finest_level.mat = (fpm == nullptr) ? dynamic_pointer_cast<BaseSparseMatrix>(finest_mat)
-      : dynamic_pointer_cast<BaseSparseMatrix>(fpm->GetMatrix());
+
     finest_level.embed_map = BuildEmbedding(finest_mesh);
+
+    finest_level.curr_cap = factory->AllocCap();
+    finest_level.curr_cap->mesh = finest_mesh; // TODO: get out of factory??
+    finest_level.curr_cap->eqc_h = finest_level.mesh->GetEQCHierarchy();
+    finest_level.curr_cap->pardofs = finest_mat->GetParallelDofs();
+    auto fpm = dynamic_pointer_cast<ParallelMatrix>(finest_mat);
+    finest_level.curr_cap->mat = (fpm == nullptr) ? dynamic_pointer_cast<BaseSparseMatrix>(finest_mat)
+      : dynamic_pointer_cast<BaseSparseMatrix>(fpm->GetMatrix());
+
   } // BaseAMGPC::InitFinestLevel
 
 

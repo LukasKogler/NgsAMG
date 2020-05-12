@@ -86,28 +86,28 @@ namespace amg
   {
     ready = false;
     if (cap.level == 0)
-      { comm = cap.mesh->GetEQCHierarchy()->GetCommunicator(); }
+      { comm = cap.cap->mesh->GetEQCHierarchy()->GetCommunicator(); }
     if (lev == LOG_LEVEL::NONE)
       { return; }
-    auto lev_comm = cap.mesh->GetEQCHierarchy()->GetCommunicator();
-    vcc.Append(cap.mesh->template GetNNGlobal<NT_VERTEX>());
+    auto lev_comm = cap.cap->mesh->GetEQCHierarchy()->GetCommunicator();
+    vcc.Append(cap.cap->mesh->template GetNNGlobal<NT_VERTEX>());
     // cout << " occ-comp would be " << cap.mat->NZE() << " * " << GetEntrySize(cap.mat.get())
     // 	 << " = " << cap.mat->NZE() * GetEntrySize(cap.mat.get()) << endl;
     // cout << " mat " << cap.mat << " " << typeid(*cap.mat).name() << endl;
     if (lev_comm.Rank() == 0)
-      { occ.Append(lev_comm.Reduce(cap.mat->NZE() * GetEntrySize(cap.mat.get()), MPI_SUM, 0)); }
+      { occ.Append(lev_comm.Reduce(cap.cap->mat->NZE() * GetEntrySize(cap.cap->mat.get()), MPI_SUM, 0)); }
     else
-      { lev_comm.Reduce(cap.mat->NZE() * GetEntrySize(cap.mat.get()), MPI_SUM, 0); }
+      { lev_comm.Reduce(cap.cap->mat->NZE() * GetEntrySize(cap.cap->mat.get()), MPI_SUM, 0); }
     if (lev == LOG_LEVEL::BASIC)
       { return; }
-    NVs.Append(cap.mesh->template GetNNGlobal<NT_VERTEX>());
-    NEs.Append(cap.mesh->template GetNNGlobal<NT_EDGE>());
-    NPs.Append(cap.mesh->GetEQCHierarchy()->GetCommunicator().Size());
-    NZEs.Append(lev_comm.Reduce(cap.mat->NZE(), MPI_SUM, 0));
+    NVs.Append(cap.cap->mesh->template GetNNGlobal<NT_VERTEX>());
+    NEs.Append(cap.cap->mesh->template GetNNGlobal<NT_EDGE>());
+    NPs.Append(cap.cap->mesh->GetEQCHierarchy()->GetCommunicator().Size());
+    NZEs.Append(lev_comm.Reduce(cap.cap->mat->NZE(), MPI_SUM, 0));
     if (lev == LOG_LEVEL::NORMAL)
       { return; }
-    vccl.Append(cap.mesh->template GetNN<NT_VERTEX>());
-    occl.Append(cap.mat->NZE() * GetEntrySize(cap.mat.get()));
+    vccl.Append(cap.cap->mesh->template GetNN<NT_VERTEX>());
+    occl.Append(cap.cap->mat->NZE() * GetEntrySize(cap.cap->mat.get()));
   } // Logger::LogLevel
 
 
@@ -209,8 +209,10 @@ namespace amg
   } // BaseAMGFactory(..)
 
 
-  shared_ptr<shared_ptr<LevelCapsule>> BaseAMGFactory :: AllocCap ();
-  { auto lev = make_shared<BaseAMGFactory::LevelCapsule>(); }
+  shared_ptr<BaseAMGFactory::LevelCapsule> BaseAMGFactory :: AllocCap () const
+  {
+    auto lev = make_shared<BaseAMGFactory::LevelCapsule>();
+  } // BaseAMGFactory :: AllocCap
 
   void BaseAMGFactory :: SetUpLevels (Array<shared_ptr<BaseAMGFactory::AMGLevel>> & amg_levels, shared_ptr<DOFMap> & dof_map)
   {
@@ -248,7 +250,7 @@ namespace amg
 
     shared_ptr<AMGLevel> c_lev;
 
-    logger->LogLevel (f_lev);
+    logger->LogLevel (*f_lev);
 
     shared_ptr<BaseDOFMapStep> step = DoStep(f_lev, c_lev, state);
 
@@ -274,7 +276,7 @@ namespace amg
     else if ( (f_lev.level + 2 == O.max_n_levels) ||                // max n levels reached
     	      (O.max_meas >= ComputeMeshMeasure (*c_lev.mesh) ) ) { // max coarse size reached
       cout << "done" << endl;
-      logger->LogLevel (c_lev);
+      logger->LogLevel (*c_lev);
       amg_levels.Append(move(c_lev));
       return;
     }
@@ -326,12 +328,12 @@ namespace amg
 	    mesh0-mesh1, and mesh2-mesh3 can be the same **/
       shared_ptr<TopologicMesh> mesh0 = nullptr, mesh1 = nullptr, mesh2 = nullptr, mesh3 = nullptr;
       mesh0 = state.curr_cap->mesh; mesh_meas[0] = ComputeMeshMeasure(*mesh0);
-      shared_ptr<LevelCap> m0cap = state.curr_cap;
+      shared_ptr<LevelCapsule> m0cap = state.curr_cap;
       
       Array<shared_ptr<BaseDOFMapStep>> dof_maps;
       Array<int> prol_inds;
       shared_ptr<BaseCoarseMap> first_cmap;
-      shared_ptr<LevelCap> fcm_cap = nullptr;
+      shared_ptr<LevelCapsule> fcm_cap = nullptr;
       Array<shared_ptr<BaseDOFMapStep>> rd_chunks;
 
       bool could_recover = O.enable_redist;
@@ -607,9 +609,9 @@ namespace amg
   {
     auto & O(*options);
 
-    /** build coarse map **/
     shared_Ptr<LevelCapsule> c_cap = AllocCap();
 
+    /** build coarse map **/
     shared_ptr<BaseCoarseMap> cmap = BuildCoarseMap(state, c_cap);
 
     if (cmap == nullptr) // could not build map
@@ -731,17 +733,17 @@ namespace amg
 
     auto rd_factor = FindRDFac (state.curr_mesh);
 
-    shared_Ptr<LevelCapsule> c_cap = AllocCap();
+    shared_ptr<LevelCapsule> c_cap = AllocCap();
     auto rd_map = BuildContractMap(rd_factor, state.curr_mesh, c_cap);
 
     if (state.free_nodes != nullptr)
       { throw Exception("free-node redist update todo"); /** do sth here..**/ }
 
-    state.curr_cap = c_cap;
     state.dof_map = BuildDOFContractMap(rd_map, state.curr_pds);
     state.first_redist_used = true;
     state.need_rd = false;
     state.last_redist_meas = meas;
+    state.curr_cap = c_cap;
 
     return true;
   } // BaseAMGFactory::TryContractStep

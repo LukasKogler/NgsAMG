@@ -328,6 +328,10 @@ namespace amg
 
   /** MultiDofMapStep **/
 
+  MultiDofMapStep :: MultiDofMapStep (FlatArray<shared_ptr<BaseDOFMapStep>> _maps)
+    : BaseDOFMapStep(maps[0]->GetParDofs(), maps[0]->GetMappedParDofs()), maps(_maps)
+  { ; }
+
   void MultiDofMapStep :: TransferF2C (const BaseVector * x_fine, BaseVector * x_coarse) const
   { GetPrimMap()->TransferF2C(x_fine, x_coarse); } // MultiDofMapStep :: TransferF2C
 

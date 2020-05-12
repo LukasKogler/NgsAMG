@@ -120,7 +120,7 @@ namespace amg
 
 
   template<class ENERGY, class TMESH, int BS>
-  shared_ptr<BaseCoarseMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildCoarseMap (BaseAMGFactory::State & state, LevelCapsule & mapped_cap)
+  shared_ptr<BaseCoarseMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildCoarseMap (BaseAMGFactory::State & state, shared_ptr<BaseAMGFactory::LevelCapsule> & mapped_cap)
   {
     auto & O(static_cast<Options&>(*options));
 
@@ -137,14 +137,14 @@ namespace amg
 
 
   template<class ENERGY, class TMESH, int BS>
-  shared_ptr<BaseCoarseMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildAggMap (BaseAMGFactory::State & state, BaseAMGFactory::LevelCapsule & mapped_cap)
+  shared_ptr<BaseCoarseMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildAggMap (BaseAMGFactory::State & state, shared_ptr<BaseAMGFactory::LevelCapsule> & mapped_cap)
   {
     auto & O = static_cast<Options&>(*options);
     typedef Agglomerator<ENERGY, TMESH, ENERGY::NEED_ROBUST> AGG_CLASS;
     typename AGG_CLASS::Options agg_opts;
-    auto mesh = dynamic_pointer_cast<TMESH>(state.curr_mesh);
+    auto mesh = dynamic_pointer_cast<TMESH>(state.curr_cap->mesh);
     if (mesh == nullptr)
-      { throw Exception(string("Invalid mesh type ") + typeid(*state.curr_mesh).name() + string(" for BuildAggMap!")); }
+      { throw Exception(string("Invalid mesh type ") + typeid(*state.curr_cap->mesh).name() + string(" for BuildAggMap!")); }
     agg_opts.edge_thresh = O.min_ecw;
     agg_opts.vert_thresh = O.min_vcw;
     agg_opts.cw_geom = O.ecw_geom;
@@ -153,32 +153,32 @@ namespace amg
     agg_opts.dist2 = ( state.level[1] == 0 ) && ( state.level[0] < O.n_levels_d2_agg );
     // auto agglomerator = make_shared<Agglomerator<FACTORY>>(mesh, state.free_nodes, move(agg_opts));
 
-    auto agglomerator = make_shared<AGG_CLASS>(mesh, state.free_nodes, move(agg_opts));
+    auto agglomerator = make_shared<AGG_CLASS>(mesh, state.curr_cap->free_nodes, move(agg_opts));
 
     /** Set mapped Capsule **/
     auto cmesh = agglomerator->GetMappedMesh();
-    mapped_cap.eqc_h = cmesh->GetEQCHierarchy();
-    mapped_cap.mesh = cmesh;
-    mapped_cap.pardofs = BuildParallelDofs(cmesh);
+    mapped_cap->eqc_h = cmesh->GetEQCHierarchy();
+    mapped_cap->mesh = cmesh;
+    mapped_cap->pardofs = BuildParallelDofs(cmesh);
 
     return agglomerator;
   } // VertexAMGFactory::BuildCoarseMap
 
 
   template<class ENERGY, class TMESH, int BS>
-  shared_ptr<BaseCoarseMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildECMap (BaseAMGFactory::State & astate, BaseAMGFactory::LevelCapsule & mapped_cap)
+  shared_ptr<BaseCoarseMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildECMap (BaseAMGFactory::State & astate, shared_ptr<BaseAMGFactory::LevelCapsule> & mapped_cap)
   {
     // throw Exception("finish this up ...");
     auto & O = static_cast<Options&>(*options);
     auto & state(static_cast<State&>(astate));
-    auto mesh = dynamic_pointer_cast<TMESH>(state.curr_mesh);
+    auto mesh = dynamic_pointer_cast<TMESH>(state.curr_cap->mesh);
     if (mesh == nullptr)
-      { throw Exception(string("Invalid mesh type ") + typeid(*state.curr_mesh).name() + string(" for BuildECMap!")); }
+      { throw Exception(string("Invalid mesh type ") + typeid(*state.curr_cap->mesh).name() + string(" for BuildECMap!")); }
 
     shared_ptr<typename HierarchicVWC<TMESH>::Options> coarsen_opts;
 
     coarsen_opts = make_shared<typename HierarchicVWC<TMESH>::Options>();
-    coarsen_opts->free_verts = state.free_nodes;
+    coarsen_opts->free_verts = state.curr_cap->free_nodes;
     coarsen_opts->min_vcw = O.min_vcw;
     coarsen_opts->min_ecw = O.min_vcw;
 
@@ -193,9 +193,9 @@ namespace amg
 
     /** Set mapped Capsule **/
     auto cmesh = grid_step->GetMappedMesh();
-    mapped_cap.eqc_h = cmesh->GetEQCHierarchy();
-    mapped_cap.mesh = cmesh;
-    mapped_cap.pardofs = BuildParallelDofs(cmesh);
+    mapped_cap->eqc_h = cmesh->GetEQCHierarchy();
+    mapped_cap->mesh = cmesh;
+    mapped_cap->pardofs = BuildParallelDofs(cmesh);
 
     return grid_step;
   } // VertexAMGFactory::BuildCoarseMap
@@ -206,7 +206,7 @@ namespace amg
   {
     const auto & O = static_cast<Options&>(*options);
 
-    auto mesh = dynamic_pointer_cast<TMESH>(state.curr_mesh);
+    auto mesh = dynamic_pointer_cast<TMESH>(state.curr_cap->mesh);
     const auto & M(*mesh); M.CumulateData();
 
     auto vdata = get<0>(M.Data())->Data();
@@ -252,7 +252,7 @@ namespace amg
       // #else
       const auto & O = static_cast<Options&>(*options);
 
-      auto mesh = dynamic_pointer_cast<TMESH>(state.curr_mesh);
+      auto mesh = dynamic_pointer_cast<TMESH>(state.curr_cap->mesh);
       const auto & M(*mesh); M.CumulateData();
 
       auto vdata = get<0>(M.Data())->Data();
@@ -304,7 +304,8 @@ namespace amg
   }
 
   template<class ENERGY, class TMESH, int BS>
-  shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<LevelCap> fcap, shared_ptr<LevelCap> ccap)
+  shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: PWProlMap (shared_ptr<BaseCoarseMap> cmap,
+									       shared_ptr<BaseAMGFactory::LevelCapsule> fcap, shared_ptr<BaseAMGFactory::LevelCapsule> ccap)
   {
     static Timer t("PWProlMap"); RegionTimer rt(t);
 
@@ -346,7 +347,7 @@ namespace amg
 
 
   template<class ENERGY, class TMESH, int BS>
-  shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<LevelCap> fcap)
+  shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseAMGFactory::LevelCapsule> fcap)
   {
     static Timer t("SmoothedProlMap"); RegionTimer rt(t);
 
@@ -699,7 +700,7 @@ namespace amg
 
 
   template<class ENERGY, class TMESH, int BS>
-  shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap, shared_ptr<LevelCap> fcap)
+  shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap, shared_ptr<BaseAMGFactory::LevelCapsule> fcap)
   {
     static Timer t("SmoothedProlMap"); RegionTimer rt(t);
 
@@ -1013,16 +1014,18 @@ namespace amg
     if (!options->enable_disc)
       { return false; }
 
-    if (state.free_nodes != nullptr)
+    if (state.curr_cap->free_nodes != nullptr)
       { throw Exception("discard with dirichlet TODO!!"); }
 
-    shared_ptr<BaseDiscardMap> disc_map = BuildDiscardMap(state);
+    shared_ptr<BaseAMGFactory::LevelCapsule> c_cap = this->AllocCap();
+
+    shared_ptr<BaseDiscardMap> disc_map = BuildDiscardMap(state, c_cap);
 
     if (disc_map == nullptr)
       { return false; }
 
     auto n_d_v = disc_map->GetNDroppedNodes<NT_VERTEX>();
-    auto any_n_d_v = state.curr_mesh->GetEQCHierarchy()->GetCommunicator().AllReduce(n_d_v, MPI_SUM);
+    auto any_n_d_v = state.curr_cap->mesh->GetEQCHierarchy()->GetCommunicator().AllReduce(n_d_v, MPI_SUM);
 
     cout << " disc dropped " << n_d_v << endl;
 
@@ -1039,22 +1042,27 @@ namespace amg
 
     //TODO: disc prol map!!
 
+    auto disc_prol_map = PWProlMap(disc_map, state.curr_cap, c_cap);
+
     state.disc_map = disc_map;
-    state.curr_mesh = disc_map->GetMappedMesh();
-    state.curr_pds = this->BuildParallelDofs(state.curr_mesh);
-    state.free_nodes = nullptr;
-    // state.dof_map = disc_prol_map;
+    state.curr_cap = c_cap;
+    state.dof_map = disc_prol_map;
 
     return true;
   } // VertexAMGFactory::TryDiscardStep
 
 
   template<class ENERGY, class TMESH, int BS>
-  shared_ptr<BaseDiscardMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildDiscardMap (BaseAMGFactory::State & state)
+  shared_ptr<BaseDiscardMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildDiscardMap (BaseAMGFactory::State & state, shared_ptr<BaseAMGFactory::LevelCapsule> & c_cap)
   {
     auto & O(static_cast<Options&>(*options));
-    auto tm_mesh = dynamic_pointer_cast<TMESH>(state.curr_mesh);
+    auto tm_mesh = dynamic_pointer_cast<TMESH>(state.curr_cap->mesh);
     auto disc_map = make_shared<VDiscardMap<TMESH>> (tm_mesh, O.disc_max_bs);
+
+    c_cap->mesh = disc_map->GetMappedMesh();
+    c_cap->pardofs = this->BuildParallelDofs(c_cap->mesh);
+    c_cap->free_nodes = nullptr;
+
     return disc_map;
   } // VertexAMGFactory :: BuildDiscardMap
 

@@ -30,7 +30,7 @@ namespace amg
 
     BaseAMGFactory (shared_ptr<Options> _opts);
 
-    void SetUpLevels (Array<AMGLevel> & finest_level, shared_ptr<DOFMap> & dmap);
+    void SetUpLevels (Array<shared_ptr<AMGLevel>> & finest_level, shared_ptr<DOFMap> & dmap);
 
     virtual shared_ptr<ParallelDofs> BuildParallelDofs (shared_ptr<TopologicMesh> amesh) const = 0;
 
@@ -40,7 +40,7 @@ namespace amg
 
     static void SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix = "ngs_amg_");
 
-    virtual shared_ptr<shared_ptr<LevelCapsule>> AllocCap () const;
+    virtual shared_ptr<LevelCapsule> AllocCap () const;
     virtual void MapLevel (shared_ptr<BaseDOFMapStep> dof_step, shared_ptr<LevelCapsule> & f_cap, shared_ptr<LevelCapsule> & c_cap);
 
     virtual shared_ptr<BaseDOFMapStep> DoStep (shared_ptr<AMGLevel> & f_lev, shared_ptr<AMGLevel> & c_lev, State & state);
@@ -60,16 +60,16 @@ namespace amg
     /** Coarse **/
     virtual size_t ComputeGoal (const shared_ptr<AMGLevel> & f_lev, State & state) = 0;
     virtual bool TryCoarseStep (State & state);
-    virtual shared_ptr<BaseCoarseMap> BuildCoarseMap (State & state, LevelCapsule & mapped_cap) = 0;
-    virtual shared_ptr<BaseDOFMapStep> PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<LevelCap> fcap, shared_ptr<LevelCap> ccap) = 0;
-    virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<LevelCap> fcap) = 0;
-    virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap, shared_ptr<LevelCap> fcap) = 0;
+    virtual shared_ptr<BaseCoarseMap> BuildCoarseMap (State & state, shared_ptr<LevelCapsule> & mapped_cap) = 0;
+    virtual shared_ptr<BaseDOFMapStep> PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<LevelCapsule> fcap, shared_ptr<LevelCapsule> ccap) = 0;
+    virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<LevelCapsule> fcap) = 0;
+    virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap, shared_ptr<LevelCapsule> fcap) = 0;
 
     /** Redist **/
     virtual bool TryContractStep (State & state);
     virtual double FindRDFac (shared_ptr<TopologicMesh> cmesh);
-    virtual shared_ptr<BaseGridMapStep> BuildContractMap (double factor, shared_ptr<TopologicMesh> mesh, LevelCapsule & mapped_cap) const = 0;
-    virtual shared_ptr<BaseDOFMapStep> BuildDOFContractMap (shared_ptr<BaseGridMapStep> cmap, shared_ptr<ParallelDofs> fpd) const = 0;
+    virtual shared_ptr<BaseGridMapStep> BuildContractMap (double factor, shared_ptr<TopologicMesh> mesh, shared_ptr<LevelCapsule> & mapped_cap) const = 0;
+    virtual shared_ptr<BaseDOFMapStep> BuildDOFContractMap (shared_ptr<BaseGridMapStep> cmap, shared_ptr<ParallelDofs> fpd, shared_ptr<LevelCapsule> & mapped_cap) const = 0;
 
   }; // BaseAMGFactory
 

@@ -236,15 +236,13 @@ namespace amg {
   protected:
     Array<shared_ptr<BaseDOFMapStep>> maps;
   public:
-    MultiDofMapStep (FlatArray<shared_ptr<BaseDOFMapStep>> sec_maps)
-      : BaseDOFMapStep(sec_maps[0]->GetParDofs(), sec_maps[0]->GetMappedParDofs()), sec_maps(_sec_maps)
-    { ; }
+    MultiDofMapStep (FlatArray<shared_ptr<BaseDOFMapStep>> _maps);
 
     virtual ~MultiDofMapStep () { ; }
 
     INLINE int GetNMaps () const { return maps.Size(); }
-    const shared_ptr<BaseDOFMapStep> & GetPrimMap () const { return sec_maps[0]; }
-    const shared_ptr<BaseDOFMapStep> & GetMap (int k) const { return sec_maps[k]; }
+    const shared_ptr<BaseDOFMapStep> & GetPrimMap () const { return maps[0]; }
+    const shared_ptr<BaseDOFMapStep> & GetMap (int k) const { return maps[k]; }
 
     virtual void TransferF2C (const BaseVector * x_fine, BaseVector * x_coarse) const override;
     virtual void AddF2C (double fac, const BaseVector * x_fine, BaseVector * x_coarse) const override;
