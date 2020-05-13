@@ -336,21 +336,21 @@ namespace amg
   { GetPrimMap()->TransferF2C(x_fine, x_coarse); } // MultiDofMapStep :: TransferF2C
 
 
-  void MultiDofMapStep :: AddF2C (double fac, const BaseVector * x_fine, BaseVector * x_coarse) const override;
+  void MultiDofMapStep :: AddF2C (double fac, const BaseVector * x_fine, BaseVector * x_coarse) const
   { 
-    GetPrimMap()->AddF2C(fac, x_find, x_coarse);
+    GetPrimMap()->AddF2C(fac, x_fine, x_coarse);
   } // MultiDofMapStep :: AddF2C
 
 
-  void MultiDofMapStep :: TransferC2F (BaseVector * x_fine, const BaseVector * x_coarse) const override;
+  void MultiDofMapStep :: TransferC2F (BaseVector * x_fine, const BaseVector * x_coarse) const
   {
     GetPrimMap()->TransferC2F(x_fine, x_coarse);
   } // MultiDofMapStep :: TransferC2F
 
 
-  void MultiDofMapStep :: AddC2F (double fac, BaseVector * x_fine, const BaseVector * x_coarse) const override;
+  void MultiDofMapStep :: AddC2F (double fac, BaseVector * x_fine, const BaseVector * x_coarse) const
   {
-    GetPrimMap()->AddC2F(fac, x_find, x_coarse);
+    GetPrimMap()->AddC2F(fac, x_fine, x_coarse);
   } // MultiDofMapStep :: AddC2F
 
 
@@ -358,8 +358,9 @@ namespace amg
   {
     if (auto mdms = dynamic_pointer_cast<MultiDofMapStep>(other)) {
       bool cc = mdms->GetNMaps() == GetNMaps();
-      for (auto k : range(maps))
-	{ cc &= GetMap(k)->CanConcatenate(other->GetMap(k)); }
+      for (auto k : Range(maps))
+	{ cc &= GetMap(k)->CanConcatenate(mdms->GetMap(k)); }
+      return cc;
     }
     else if (GetNMaps() == 1)
       { return maps[0]->CanConcatenate(other); }
@@ -401,9 +402,10 @@ namespace amg
   } // MultiDofMapStep :: PullBack
 
 
-  shared_ptr<BaseSparseMatrix> MultiDofMapStep :: AssembleMatrix (shared_ptr<BaseSparseMatrix> mat)
-  { return maps[0]->AssembleMatrix(mat); } // MultiDofMapStep :: AssembleMatrix
-
+  shared_ptr<BaseSparseMatrix> MultiDofMapStep :: AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const
+  {
+    return maps[0]->AssembleMatrix(mat);
+  } // MultiDofMapStep :: AssembleMatrix
 
   /** END MultiDofMapStep **/
 

@@ -91,6 +91,7 @@ namespace amg
 
   template<class TM>
   GSS3<TM> :: GSS3 (shared_ptr<SparseMatrix<TM>> mat, shared_ptr<BitArray> subset)
+    : BaseSmoother(spmat)
   {
     SetUp(mat, subset);
     CalcDiags();
@@ -99,6 +100,7 @@ namespace amg
 
   template<class TM>
   GSS3<TM> :: GSS3 (shared_ptr<SparseMatrix<TM>> mat, FlatArray<TM> repl_diag, shared_ptr<BitArray> subset)
+    : BaseSmoother(mat)
   {
     SetUp(mat, subset);
     dinv.SetSize(repl_diag.Size());
@@ -1379,7 +1381,8 @@ namespace amg
     // }
 
     A = make_shared<HybridMatrix2<TM>> (_A, dcc_map);
-    origA = _A;
+
+    // origA = _A; // keep it for debugging purposes, but don't set it
 
     SetSysMat(A);
 

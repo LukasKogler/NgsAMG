@@ -44,7 +44,6 @@ namespace amg
     virtual void InitLevel (shared_ptr<BitArray> freedofs = nullptr) override;
     // virtual void FinalizeLevel (const BaseMatrix * mat) override;
     virtual void Update () override { ; } // TODO: what should this do??
-    virtual shared_ptr<AMGLevel> AllocLevel () override;
 
     virtual shared_ptr<BaseAMGPC::Options> NewOpts () override;
     virtual void SetDefaultOptions (BaseAMGPC::Options& O) override;

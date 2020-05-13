@@ -27,6 +27,13 @@ namespace amg
 
 
   template<class TMESH, class ENERGY>
+  shared_ptr<BaseAMGFactory::LevelCapsule> StokesAMGFactory<TMESH, ENERGY> :: AllocCap () const
+  {
+    return make_shared<StokesLC>();
+  } // StokesAMGFactory::AllocCap
+
+
+  template<class TMESH, class ENERGY>
   void StokesAMGFactory<TMESH, ENERGY> :: InitState (BaseAMGFactory::State & state, BaseAMGFactory::AMGLevel & lev) const
   {
     BASE_CLASS::InitState(state, lev);
@@ -34,13 +41,13 @@ namespace amg
 
 
   template<class TMESH, class ENERGY>
-  shared_ptr<BaseCoarseMap> StokesAMGFactory<TMESH, ENERGY> :: BuildCoarseMap (BaseAMGFactory::State & state)
+  shared_ptr<BaseCoarseMap> StokesAMGFactory<TMESH, ENERGY> :: BuildCoarseMap (BaseAMGFactory::State & state, shared_ptr<BaseAMGFactory::LevelCapsule> & mapped_cap)
   {
     auto & O(static_cast<Options&>(*options));
 
-    // typename Options::CRS_ALG calg = O.crs_alg;
+    auto slc = static_pointer_cast<StokesLC>(mapped_cap);
 
-    return BuildAggMap(state);
+    return BuildAggMap(state, mapped_cap, slc);
 
   //   switch(calg) {
   //   case(Options::CRS_ALG::AGG): { return BuildAggMap(state); break; }
@@ -51,22 +58,22 @@ namespace amg
 
 
   template<class TMESH, class ENERGY>
-  shared_ptr<BaseCoarseMap> StokesAMGFactory<TMESH, ENERGY> :: BuildAggMap (BaseAMGFactory::State & state)
+  shared_ptr<BaseCoarseMap> StokesAMGFactory<TMESH, ENERGY> :: BuildAggMap (BaseAMGFactory::State & state, shared_ptr<StokesLC> & mapped_cap)
   {
     auto & O = static_cast<Options&>(*options);
     typedef Agglomerator<ENERGY, TMESH, ENERGY::NEED_ROBUST> AGG_CLASS;
     typename AGG_CLASS::Options agg_opts;
 
-    auto mesh = dynamic_pointer_cast<TMESH>(state.curr_mesh);
+    auto mesh = dynamic_pointer_cast<TMESH>(state.curr_cap->mesh);
     if (mesh == nullptr)
-      { throw Exception(string("Invalid mesh type ") + typeid(*state.curr_mesh).name() + string(" for BuildAggMap!")); }
+      { throw Exception(string("Invalid mesh type ") + typeid(*state.curr_cap->mesh).name() + string(" for BuildAggMap!")); }
 
     auto edges = mesh->template GetNodes<NT_EDGE>();
     Array<INT<2,double>> olded(edges.Size());
     auto vdata = get<0>(mesh->Data())->Data();
     auto edata = get<1>(mesh->Data())->Data();
 
-    auto fnodes = state.free_nodes;
+    auto fnodes = state.curr_cap->free_nodes;
     int max_surf = 0;
     Array<int> free_surfs;
     for (auto v : Range(vdata.Size()))
@@ -111,7 +118,7 @@ namespace amg
     // auto agglomerator = make_shared<AGG_CLASS>(mesh, state.free_nodes, move(agg_opts));
 
     auto agglomerator = make_shared<StokesCoarseMap<AGG_CLASS>>(mesh);
-    agglomerator->SetFreeVerts(state.free_nodes);
+    agglomerator->SetFreeVerts(state.curr_cap->free_nodes);
     agglomerator->SetOpts(move(agg_opts));
 
     auto faggs = cfas.MoveTable();
@@ -125,6 +132,12 @@ namespace amg
     // 	SetScalIdentity(olded[edge.id][1], edata[edge.id].edj);
     //   }
     // }
+
+    auto cmesh = agglomerator->GetMappedMesh();
+    mapped_cap->eqc_h = cmesh->GetEQCHierarchy();
+    mapped_cap->mesh = cmesh;
+    mapped_cap->pardofs = this->BuildParallelDofs(cmesh);
+    mapped_cap->pot_pardofs = BuildPotParallelDofs(cmesh);
 
     return agglomerator;
   } // StokesAMGFactory::BuildAggMap
@@ -152,8 +165,8 @@ namespace amg
 
 
   template<class TMESH, class ENERGY> shared_ptr<BaseDOFMapStep>
-  shared_ptr<BaseDOFMapStep> StokesAMGFactory<TMESH, ENERGY> :: PotPWProl (shared_ptr<StokesBCM> cmap, shared_ptr<StokesLC> fcap,
-									   shared_ptr<StokesLC> ccap, shared_ptr<ProlMap<TSPM_TM>> range_prol)
+  StokesAMGFactory<TMESH, ENERGY> :: PotPWProl (shared_ptr<StokesBCM> cmap, shared_ptr<StokesLC> fcap,
+						shared_ptr<StokesLC> ccap, shared_ptr<ProlMap<TSPM_TM>> range_prol)
   {
     /** Prolongation for the HCurl-like space:
 	We construct a prolongation Pc for the HC-like potential space 
@@ -520,7 +533,6 @@ namespace amg
     auto v_aggs = cva.MoveTable();
 
     auto pwprol = BuildPWProl_impl (fmesh, cmesh, vmap, emap, v_aggs);
-    ccap->pardofs = BuildParallelDofs(ccap->mesh);
 
     return make_shared<ProlMap<TSPM_TM>>(pwprol, fcap->pardofs, ccap->pardofs);
   } // StokesAMGFactory::RangePWProlMap

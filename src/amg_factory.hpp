@@ -34,13 +34,14 @@ namespace amg
 
     virtual shared_ptr<ParallelDofs> BuildParallelDofs (shared_ptr<TopologicMesh> amesh) const = 0;
 
+    virtual shared_ptr<LevelCapsule> AllocCap () const; // weird, but I need to call this from PC
+
   protected:
 
     void RSU (Array<shared_ptr<AMGLevel>> & amg_levels, shared_ptr<DOFMap> & dof_map, State & state);
 
     static void SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix = "ngs_amg_");
 
-    virtual shared_ptr<LevelCapsule> AllocCap () const;
     virtual void MapLevel (shared_ptr<BaseDOFMapStep> dof_step, shared_ptr<LevelCapsule> & f_cap, shared_ptr<LevelCapsule> & c_cap);
 
     virtual shared_ptr<BaseDOFMapStep> DoStep (shared_ptr<AMGLevel> & f_lev, shared_ptr<AMGLevel> & c_lev, State & state);

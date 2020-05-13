@@ -7,6 +7,8 @@
 #include "amg_factory.hpp"
 #include "amg_factory_nodal.hpp"
 #include "amg_factory_nodal_impl.hpp"
+
+#include "amg_stokes.hpp" // need special StokesBCM for the factory
 #include "amg_factory_stokes.hpp"
 
 // need to include these before facet_aux
@@ -26,7 +28,6 @@
 #include "amg_agg.hpp"
 #include "amg_agg_impl.hpp"
 
-#include "amg_stokes.hpp"
 #include "amg_pc_stokes.hpp"
 #include "amg_stokes_gg.hpp"
 #include "amg_energy.hpp"

@@ -10,7 +10,7 @@ namespace amg
   template<class TM>
   BSmoother<TM> :: BSmoother (shared_ptr<SparseMatrix<TM>> _spmat,  Table<int> && _blocks, 
 			      bool _parallel, bool _use_sl2, FlatArray<TM> md)
-    : spmat(_spmat), blocks(move(_blocks)), parallel(_parallel), use_sl2(_use_sl2)
+    : BaseSmoother(_spmat), spmat(_spmat), blocks(move(_blocks)), parallel(_parallel), use_sl2(_use_sl2)
   {
     static Timer t("BSmoother"); RegionTimer rt(t);
     
@@ -139,7 +139,7 @@ namespace amg
   template<class TM>
   BSmoother<TM> :: BSmoother (shared_ptr<SparseMatrix<TM>> _spmat,  Table<int> && _blocks, Table<int> && _block_ext_dofs,
 			      bool _parallel, bool _use_sl2, FlatArray<TM> md)
-    : spmat(_spmat), blocks(move(_blocks)), parallel(_parallel), use_sl2(_use_sl2)
+    : BaseSmoother(_spmat), spmat(_spmat), blocks(move(_blocks)), parallel(_parallel), use_sl2(_use_sl2)
   {
     static Timer t("BSmoother"); RegionTimer rt(t);
 

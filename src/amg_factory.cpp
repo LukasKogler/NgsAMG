@@ -211,7 +211,7 @@ namespace amg
 
   shared_ptr<BaseAMGFactory::LevelCapsule> BaseAMGFactory :: AllocCap () const
   {
-    auto lev = make_shared<BaseAMGFactory::LevelCapsule>();
+    return make_shared<BaseAMGFactory::LevelCapsule>();
   } // BaseAMGFactory :: AllocCap
 
   void BaseAMGFactory :: SetUpLevels (Array<shared_ptr<BaseAMGFactory::AMGLevel>> & amg_levels, shared_ptr<DOFMap> & dof_map)
@@ -256,25 +256,25 @@ namespace amg
 
     cout << "step done " << step << endl;
 
-    if ( (step == nullptr) || (c_lev.mesh == f_lev.mesh) || (c_lev.mat == f_lev.mat) )
+    if ( (step == nullptr) || (c_lev->cap->mesh == f_lev->cap->mesh) || (c_lev->cap->mat == f_lev->cap->mat) )
       { return; } // step not performed correctly - coarsening is probably stuck
-    else if (ComputeMeshMeasure(*c_lev.mesh) == 0)
+    else if (ComputeMeshMeasure(*c_lev->cap->mesh) == 0)
       { return; } // e.g stokes: when coarsening down to 1 vertex, no more edges left!
-    else if (ComputeMeshMeasure(*c_lev.mesh) < O.min_meas)
+    else if (ComputeMeshMeasure(*c_lev->cap->mesh) < O.min_meas)
       { return; } // coarse grid is too small
     else
       { dof_map->AddStep(step); }
 
     if (!O.keep_grid_maps){
-      f_lev.disc_map = nullptr;
-      f_lev.crs_map = nullptr;
+      f_lev->disc_map = nullptr;
+      f_lev->crs_map = nullptr;
     }
 
     /** Recursive call (or return) **/
-    if ( (c_lev.mesh == nullptr) || (c_lev.mat == nullptr) ) // dropped out (redundand "||" ?)
+    if ( (c_lev->cap->mesh == nullptr) || (c_lev->cap->mat == nullptr) ) // dropped out (redundand "||" ?)
       { cout << "dropped" << endl; amg_levels.Append(move(c_lev)); return; }
-    else if ( (f_lev.level + 2 == O.max_n_levels) ||                // max n levels reached
-    	      (O.max_meas >= ComputeMeshMeasure (*c_lev.mesh) ) ) { // max coarse size reached
+    else if ( (f_lev->level + 2 == O.max_n_levels) ||                // max n levels reached
+    	      (O.max_meas >= ComputeMeshMeasure (*c_lev->cap->mesh) ) ) { // max coarse size reached
       cout << "done" << endl;
       logger->LogLevel (*c_lev);
       amg_levels.Append(move(c_lev));
@@ -293,20 +293,20 @@ namespace amg
   {
     const auto & O(*options);
 
-    size_t curr_meas = ComputeMeshMeasure(*state.curr_mesh), goal_meas = ComputeGoal(f_lev, state);
+    size_t curr_meas = ComputeMeshMeasure(*state.curr_cap->mesh), goal_meas = ComputeGoal(f_lev, state);
 
-    cout << " step from level " << f_lev.level << " goal is: " << curr_meas << " -> " << goal_meas << endl; 
+    cout << " step from level " << f_lev->level << " goal is: " << curr_meas << " -> " << goal_meas << endl; 
 
-    if (f_lev.level == 0)
+    if (f_lev->level == 0)
       { state.last_redist_meas = curr_meas; }
 
-    shared_ptr<BaseDOFMapStep> embed_map = move(f_lev.embed_map), disc_map;
+    shared_ptr<BaseDOFMapStep> embed_map = move(f_lev->embed_map), disc_map;
 
     cout << " EMBED MAP " << embed_map << endl;
 
     // CalcCoarsenOpts(state); // TODO: proper update of coarse cols for ecol?
 
-    if ( O.enable_redist && (f_lev.level != 0) ) {
+    if ( O.enable_redist && (f_lev->level != 0) ) {
       if ( TryDiscardStep(state) ) {
 	cout << " DISC WORKED!!" << endl;
 	disc_map = move(state.dof_map);
@@ -315,7 +315,7 @@ namespace amg
     }
 
     if (O.keep_grid_maps)
-      { f_lev.disc_map = state.disc_map; }
+      { f_lev->disc_map = state.disc_map; }
 
     shared_ptr<BaseDOFMapStep> prol_map, rd_map;
     { /** Coarse/Redist maps - constructed interleaved, but come out untangled. **/
@@ -349,7 +349,7 @@ namespace amg
 	  auto f_cap = state.curr_cap;
 	  if ( TryCoarseStep(state) ) { // coarse map constructed successfully
 	    state.level[1]++; state.level[2] = 0; // count up sub-coarse, reset redist
-	    size_t f_meas = ComputeMeshMeasure(*fm), c_meas = ComputeMeshMeasure(*state.curr_cap->mesh);
+	    size_t f_meas = ComputeMeshMeasure(*f_cap->mesh), c_meas = ComputeMeshMeasure(*state.curr_cap->mesh);
 	    double meas_fac = (f_meas == 0) ? 0 : c_meas / double(f_meas);
 	    cout << " c step " << f_meas << " -> " << c_meas << ", frac = " << meas_fac << endl;
 	    goal_reached = (c_meas < goal_meas);
@@ -389,8 +389,8 @@ namespace amg
 
 	cout << " have conc c-step ? " << c_step << endl;;
 
-	if (f_lev.crs_map == nullptr)
-	  { f_lev.crs_map = c_step; }
+	if (f_lev->crs_map == nullptr)
+	  { f_lev->crs_map = c_step; }
 
 	if (c_step != nullptr) {
 	  /** build pw-prolongation **/
@@ -421,7 +421,7 @@ namespace amg
 	    auto rdm = move(state.dof_map);
 	    dof_maps.Append(rdm);
 	    rd_chunks.Append(rdm);
-	    if (state.curr_mesh == nullptr)
+	    if (state.curr_cap->mesh == nullptr)
 	      { rded_out = true; break; }
 	    mesh3 = state.curr_cap->mesh; mesh_meas[3] = ComputeMeshMeasure(*mesh3);
 	  }
@@ -586,14 +586,14 @@ namespace amg
 	{ final_step = make_shared<ConcDMS>(sub_steps); }
 
       /** assemble coarse level matrix, set return vals, etc. **/
-      c_lev.level = f_lev.level + 1;
-      c_lev.cap = state.curr_cap;
-      MapLevel(final_step, f_lev.cap, clev.cap);
+      c_lev->level = f_lev->level + 1;
+      c_lev->cap = state.curr_cap;
+      MapLevel(final_step, f_lev->cap, c_lev->cap);
 
       return final_step;
     }
     else {
-      c_lev.cap == f_lev.cap;
+      c_lev->cap == f_lev->cap;
       return nullptr;
     }
   } // BaseAMGFactory::DoStep
@@ -601,7 +601,7 @@ namespace amg
 
   void BaseAMGFactory :: MapLevel (shared_ptr<BaseDOFMapStep> dof_step, shared_ptr<LevelCapsule> & f_cap, shared_ptr<LevelCapsule> & c_cap)
   {
-    c_lev.cap->mat = dof_step->AssembleMatrix(f_lev.cap->mat);
+    c_cap->mat = dof_step->AssembleMatrix(f_cap->mat);
   } // BaseAMGFactory::MapLevel
 
 
@@ -609,7 +609,7 @@ namespace amg
   {
     auto & O(*options);
 
-    shared_Ptr<LevelCapsule> c_cap = AllocCap();
+    shared_ptr<LevelCapsule> c_cap = AllocCap();
 
     /** build coarse map **/
     shared_ptr<BaseCoarseMap> cmap = BuildCoarseMap(state, c_cap);
@@ -622,7 +622,7 @@ namespace amg
 
     auto cmesh = cmap->GetMappedMesh();
 
-    size_t f_meas = ComputeMeshMeasure(*state.curr_mesh), c_meas = ComputeMeshMeasure(*cmesh);
+    size_t f_meas = ComputeMeshMeasure(*state.curr_cap->mesh), c_meas = ComputeMeshMeasure(*cmesh);
     double cfac = (f_meas == 0) ? 0 : double(c_meas) / f_meas;
 
     cout << " map maps " << f_meas << " -> " << c_meas <<  ", fac " << cfac << endl;
@@ -701,7 +701,7 @@ namespace amg
     RegionTimer rt(t);
 
     const auto & O(*options);
-    const auto & M = *state.curr_mesh;
+    const auto & M = *state.curr_cap->mesh;
     const auto & eqc_h = *M.GetEQCHierarchy();
     auto comm = eqc_h.GetCommunicator();
     double meas = ComputeMeshMeasure(M);
@@ -731,15 +731,15 @@ namespace amg
     if (!want_redist)
       { return false; }
 
-    auto rd_factor = FindRDFac (state.curr_mesh);
+    auto rd_factor = FindRDFac (state.curr_cap->mesh);
 
     shared_ptr<LevelCapsule> c_cap = AllocCap();
-    auto rd_map = BuildContractMap(rd_factor, state.curr_mesh, c_cap);
+    auto rd_map = BuildContractMap(rd_factor, state.curr_cap->mesh, c_cap);
 
-    if (state.free_nodes != nullptr)
+    if (state.curr_cap->free_nodes != nullptr)
       { throw Exception("free-node redist update todo"); /** do sth here..**/ }
 
-    state.dof_map = BuildDOFContractMap(rd_map, state.curr_pds);
+    state.dof_map = BuildDOFContractMap(rd_map, state.curr_cap->pardofs, c_cap);
     state.first_redist_used = true;
     state.need_rd = false;
     state.last_redist_meas = meas;
@@ -761,19 +761,18 @@ namespace amg
   {
     state.level = { 0, 0, 0 };
 
-    state.curr_mesh = lev.mesh;
+    state.curr_cap = lev->cap;
 
-    if (lev.embed_map == nullptr)
-      { state.curr_pds = lev.pardofs; }
-    else
-      { state.curr_pds = lev.embed_map->GetMappedParDofs(); }
+    /** TODO: this is kind of unclean ... **/
+    if (lev->embed_map != nullptr)
+      { state.curr_cap->pardofs = lev->embed_map->GetMappedParDofs(); }
 
     state.disc_map = nullptr;
     state.crs_map = nullptr;
-    state.free_nodes = lev.free_nodes;
+    state.curr_cap->free_nodes = lev->cap->free_nodes;
 
     state.first_redist_used = false;
-    state.last_redist_meas = ComputeMeshMeasure(*lev.mesh);
+    state.last_redist_meas = ComputeMeshMeasure(*lev->cap->mesh);
   } // BaseAMGFactory::InitState
 
 

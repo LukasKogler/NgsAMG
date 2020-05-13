@@ -159,7 +159,7 @@ namespace amg
     auto cmesh = agglomerator->GetMappedMesh();
     mapped_cap->eqc_h = cmesh->GetEQCHierarchy();
     mapped_cap->mesh = cmesh;
-    mapped_cap->pardofs = BuildParallelDofs(cmesh);
+    mapped_cap->pardofs = this->BuildParallelDofs(cmesh);
 
     return agglomerator;
   } // VertexAMGFactory::BuildCoarseMap
@@ -195,7 +195,7 @@ namespace amg
     auto cmesh = grid_step->GetMappedMesh();
     mapped_cap->eqc_h = cmesh->GetEQCHierarchy();
     mapped_cap->mesh = cmesh;
-    mapped_cap->pardofs = BuildParallelDofs(cmesh);
+    mapped_cap->pardofs = this->BuildParallelDofs(cmesh);
 
     return grid_step;
   } // VertexAMGFactory::BuildCoarseMap

@@ -503,6 +503,12 @@ namespace amg
   shared_ptr<BaseCoarseMap> BaseCoarseMap :: Concatenate (shared_ptr<BaseCoarseMap> right_map)
   {
     auto cmap = make_shared<BaseCoarseMap>(this->mesh, right_map->mapped_mesh);
+    SetConcedMap(right_map, cmap);
+    return cmap;
+  } // BaseCoarseMap::Concatenate
+
+  void BaseCoarseMap :: SetConcedMap (shared_ptr<BaseCoarseMap> right_map, shared_ptr<BaseCoarseMap> cmap)
+  {
     for ( NODE_TYPE NT : { NT_VERTEX, NT_EDGE, NT_FACE, NT_CELL } ) {
       cmap->NN[NT] = this->NN[NT];
       cmap->mapped_NN[NT] = right_map->mapped_NN[NT];
@@ -520,8 +526,7 @@ namespace amg
 	  // cout << k << "->" << midnum << "->" << cnm[k] << endl;
       }
     }
-    return cmap;
-  } // BaseCoarseMap::Concatenate
+  } // BaseCoarseMap::SetConecMap
 
 
   template<class TMESH>

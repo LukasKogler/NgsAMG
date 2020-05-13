@@ -300,7 +300,7 @@ namespace amg
       { RegionTimer rt(tsync); dof_map->GetParDofs(0)->GetCommunicator().Barrier(); }
     
 
-    if ( (amg_levels.Size() > 1) && (amg_levels.Last().mat != nullptr) ) { // otherwise, dropped out
+    if ( (amg_levels.Size() > 1) && (amg_levels.Last()->cap->mat != nullptr) ) { // otherwise, dropped out
       switch(O.clev) {
       case(Options::CLEVEL::INV_CLEV) : {
 	static Timer t("CoarseInv"); RegionTimer rt(t);
@@ -308,7 +308,7 @@ namespace amg
 	auto & c_lev = amg_levels.Last();
 	auto cpds = dof_map->GetMappedParDofs();
 	auto comm = cpds->GetCommunicator();
-	auto cspm = c_lev.mat;
+	auto cspm = c_lev->cap->mat;
 
 	// auto cspmtm = dynamic_pointer_cast<SparseMatrixTM<Mat<3,3,double>>>(cspm);
 	// cout << " Coarse mat: " << endl;
@@ -376,12 +376,17 @@ namespace amg
 
     finest_level.embed_map = BuildEmbedding(finest_mesh);
 
-    finest_level.curr_cap = factory->AllocCap();
-    finest_level.curr_cap->mesh = finest_mesh; // TODO: get out of factory??
-    finest_level.curr_cap->eqc_h = finest_level.mesh->GetEQCHierarchy();
-    finest_level.curr_cap->pardofs = finest_mat->GetParallelDofs();
+    finest_level.cap = factory->AllocCap();
+    finest_level.cap->mesh = finest_mesh; // TODO: get out of factory??
+    finest_level.cap->eqc_h = finest_level.cap->mesh->GetEQCHierarchy();
+
+    if (finest_level.embed_map == nullptr)
+      { finest_level.cap->pardofs = finest_mat->GetParallelDofs(); }
+    else
+      { finest_level.cap->pardofs = finest_level.embed_map->GetMappedParDofs(); }
+
     auto fpm = dynamic_pointer_cast<ParallelMatrix>(finest_mat);
-    finest_level.curr_cap->mat = (fpm == nullptr) ? dynamic_pointer_cast<BaseSparseMatrix>(finest_mat)
+    finest_level.cap->mat = (fpm == nullptr) ? dynamic_pointer_cast<BaseSparseMatrix>(finest_mat)
       : dynamic_pointer_cast<BaseSparseMatrix>(fpm->GetMatrix());
 
   } // BaseAMGPC::InitFinestLevel
@@ -393,8 +398,8 @@ namespace amg
     
     shared_ptr<BaseSmoother> smoother = nullptr;
 
-    cout << " smoother, mat " << amg_level.mat->Height() << " x " << amg_level.mat->Width() << endl;
-    cout << " pds " << amg_level.pardofs->GetNDofLocal() << endl;
+    cout << " smoother, mat " << amg_level.cap->mat->Height() << " x " << amg_level.cap->mat->Width() << endl;
+    cout << " pds " << amg_level.cap->pardofs->GetNDofLocal() << endl;
 
     Options::SM_TYPE sm_type = O.sm_type;
 
@@ -402,8 +407,8 @@ namespace amg
       { sm_type = O.spec_sm_types[amg_level.level]; }
 
     switch(sm_type) {
-    case(Options::SM_TYPE::GS)  : { smoother = BuildGSSmoother(amg_level.mat, amg_level.pardofs, amg_level.eqc_h, GetFreeDofs(amg_level)); break; }
-    case(Options::SM_TYPE::BGS) : { smoother = BuildBGSSmoother(amg_level.mat, amg_level.pardofs, amg_level.eqc_h, move(GetGSBlocks(amg_level))); break; }
+    case(Options::SM_TYPE::GS)  : { smoother = BuildGSSmoother(amg_level.cap->mat, amg_level.cap->pardofs, amg_level.cap->eqc_h, GetFreeDofs(amg_level)); break; }
+    case(Options::SM_TYPE::BGS) : { smoother = BuildBGSSmoother(amg_level.cap->mat, amg_level.cap->pardofs, amg_level.cap->eqc_h, move(GetGSBlocks(amg_level))); break; }
     default : { throw Exception("Invalid Smoother type!"); break; }
     }
 
@@ -477,7 +482,7 @@ namespace amg
     if (amg_level.level == 0)
       { return finest_freedofs; }
     else
-      { return amg_level.free_nodes; }
+      { return amg_level.cap->free_nodes; }
   } // BaseAMGPC::GetFreeDofs
 
 

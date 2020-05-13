@@ -253,7 +253,7 @@ namespace amg {
     virtual shared_ptr<BaseDOFMapStep> Concatenate (shared_ptr<BaseDOFMapStep> other) override;
     /** "me - other" -> "new other - new me" **/
     virtual shared_ptr<BaseDOFMapStep> PullBack (shared_ptr<BaseDOFMapStep> other) override;
-    virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const ;
+    virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const;
   };
 
 

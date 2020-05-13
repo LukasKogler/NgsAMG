@@ -190,6 +190,7 @@ namespace amg
     template<NODE_TYPE NT> INLINE FlatArray<int> GetMap () const { return node_maps[NT]; }
     virtual shared_ptr<BaseCoarseMap> Concatenate (shared_ptr<BaseCoarseMap> right_map);
   protected:
+    void SetConcedMap (shared_ptr<BaseCoarseMap> right_map, shared_ptr<BaseCoarseMap> cmap);
     Array<Array<int>> node_maps = Array<Array<int>> (4);
     size_t NN[4] = {0,0,0,0};
     size_t mapped_NN[4] = {0,0,0,0};

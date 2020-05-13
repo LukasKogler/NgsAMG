@@ -22,16 +22,15 @@ namespace amg
     using Options = typename BASE_CLASS::Options;
     using TM = typename ENERGY::TM;
     using TSPM_TM = stripped_spm_tm<TM>;
-    using TCM_TM = stripped_spm_tm<Mat<FACTORY::BS, 1, double>>;
-    using TCM = SparseMatrix<Mat<FACTORY::BS, 1, double>>;
-    using TCTM_TM = stripped_spm_tm<Mat<FACTORY::BS, 1, double>>;
-    using TCTM = SparseMatrix<Mat<FACTORY::BS, 1, double>>;
+    using TCM_TM = stripped_spm_tm<Mat<BS, 1, double>>;
+    using TCM = SparseMatrix<Mat<BS, 1, double>>;
+    using TCTM_TM = stripped_spm_tm<Mat<BS, 1, double>>;
+    using TCTM = SparseMatrix<Mat<BS, 1, double>>;
     using TPM = SparseMatrix<double>;
     using TPM_TM = SparseMatrixTM<double>;
 
 
-
-    struct StokesLC :: public BaseAMGFactory::LevelCapsule
+    struct StokesLC : public BaseAMGFactory::LevelCapsule
     {
       shared_ptr<BaseSparseMatrix> pot_mat;   // matrix in the potential space
       shared_ptr<ParallelDofs> pot_pardofs;   // ParallelDofs in the potential space
@@ -50,20 +49,20 @@ namespace amg
     ~StokesAMGFactory() { ; }
 
   protected:
-    /** State **/
+    /** Misc overloads **/
     virtual BaseAMGFactory::State* AllocState () const override;
+    virtual shared_ptr<BaseAMGFactory::LevelCapsule> AllocCap () const override;
     virtual void InitState (BaseAMGFactory::State & state, BaseAMGFactory::AMGLevel & lev) const override;
 
     /** Coarse **/
-    virtual shared_ptr<BaseCoarseMap> BuildCoarseMap (BaseAMGFactory::State & state) override;
-    virtual shared_ptr<BaseCoarseMap> BuildAggMap (BaseAMGFactory::State & state);
+    virtual shared_ptr<BaseCoarseMap> BuildCoarseMap (BaseAMGFactory::State & state, shared_ptr<BaseAMGFactory::LevelCapsule> & mapped_cap) override;
+    virtual shared_ptr<BaseCoarseMap> BuildAggMap (BaseAMGFactory::State & state, shared_ptr<StokesLC> & mapped_cap);
     // virtual shared_ptr<BaseCoarseMap> BuildECMap (BaseAMGFactory::State & state);
     virtual shared_ptr<BaseDOFMapStep> PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<BaseAMGFactory::LevelCapsule> fcap,
 						  shared_ptr<BaseAMGFactory::LevelCapsule> ccap) override;
-    virtual shared_ptr<BaseDOFMapStep> PotPWProl (shared_ptr<StokesBCM> cmap, shared_ptr<BaseAMGFactory::LevelCapsule> fcap,
-						  shared_ptr<BaseAMGFactory::LevelCapsule> ccap) override;
-    virtual shared_ptr<BaseDOFMapStep> RangePWProl (shared_ptr<StokesBCM> cmap, shared_ptr<BaseAMGFactory::LevelCapsule> fcap,
-						    shared_ptr<BaseAMGFactory::LevelCapsule> ccap) override;
+    virtual shared_ptr<BaseDOFMapStep> RangePWProl (shared_ptr<StokesBCM> cmap, shared_ptr<StokesLC> fcap, shared_ptr<StokesLC> ccap) override;
+    virtual shared_ptr<BaseDOFMapStep> PotPWProl (shared_ptr<StokesBCM> cmap, shared_ptr<StokesLC> fcap, shared_ptr<StokesLC> ccap,
+						  shared_ptr<ProlMap<TSPM_TM>> range_prol) override;
     virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<TopologicMesh> fmesh) override;
     virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap) override;
     // shared_ptr<BaseDOFMapStep> SP_impl (shared_ptr<ProlMap<TSPM_TM>> pw_prol, shared_ptr<TMESH> fmesh, FlatArray<int> vmap);
