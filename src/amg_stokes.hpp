@@ -275,70 +275,7 @@ namespace amg
     void MapAdditionalData_impl (const GridContractMap<THIS_CLASS> & cmap)
     { throw Exception("MapAdditionalData contract TODO!"); }
 
-    void MapAdditionalData_impl (const BaseCoarseMap & cmap)
-    {
-      auto & fmesh = *this;
-      fmesh.CumulateData();
-
-      // NOTE: this prooobably does not work ... 
-      auto & cmesh = *static_pointer_cast<THIS_CLASS>(cmap.GetMappedMesh());
-
-      auto fedges = fmesh.template GetNodes<NT_EDGE>();
-      auto cedges = cmesh.template GetNodes<NT_EDGE>();
-
-      auto vmap = cmap.GetMap<NT_VERTEX>();
-      auto emap = cmap.GetMap<NT_EDGE>();
-
-      Array<int> loop_map(loops.Size());
-      Array<int> ucfacets(30); // unique coarse facets
-      Array<int> cloop(30);
-      TableCreator<int> ccl;
-      for (; !ccl.Done(); ccl++) {
-	int cnt_c_loops = 0;
-	for (auto flnr : Range(loops.Size())) {
-	  // cout << "map loop " << flnr << " = "; prow(loops[flnr]); cout << endl;
-	  auto floop = loops[flnr];
-	  bool cloop_ok = true;
-	  int c = 0;
-	  ucfacets.SetSize0();
-	  cloop.SetSize(floop.Size());
-	  const int fls = floop.Size();
-	  for (int j = 0; (j < fls) && cloop_ok; j++) {
-	    auto sfenr = floop[j];
-	    bool fflip = (sfenr < 0);
-	    int fenr = abs(sfenr) - 1;
-	    auto cenr = emap[fenr];
-	    // cout << " enr " << fenr << " -> " << cenr << endl;
-	    if (cenr != -1) {
-	      auto pos = merge_pos_in_sorted_array(cenr, ucfacets);
-	      // cout << " looked for " << cenr << " in ucfacets = "; prow(ucfacets); cout << endl;
-	      // cout << " pos is " << pos << endl;
-	      if ( (pos != -1) && (pos > 0) && (ucfacets[pos-1] == cenr) )
-		{ cloop_ok = false; break; }
-	      else if (pos >= 0)
-		{ ucfacets.Insert(pos, cenr); }
-	      // cout << " now ucfacets is "; prow(ucfacets); cout << endl;
-	      bool cflip = cedges[cenr].v[0] == vmap[fedges[fenr].v[0]];
-	      cloop[c++] = (fflip ^ cflip) ? -(1 + cenr) : (1 + cenr);
-	    }
-	  }
-	  cloop.SetSize(c);
-	  // cout << " maps to cloop "; prow(cloop); cout << endl;
-	  cloop_ok &= (c > 1);
-	  if (cloop_ok) {
-	    loop_map[flnr] = cnt_c_loops;
-	    ccl.Add(cnt_c_loops++, cloop);
-	  }
-	  else
-	    { loop_map[flnr] = -1; }
-	}
-      }
-      cmesh.loops = ccl.MoveTable();
-
-      // cout << " c loops: " << endl << cmesh.loops << endl;
-
-    } // StokesMesh::map_loops
-
+    void MapAdditionalData_impl (const BaseCoarseMap & cmap);
 
     Table<int> LoopBlocks (const BaseCoarseMap & cmap) const
     {
@@ -432,12 +369,14 @@ namespace amg
   {
   protected:
     Array<int> loop_map;
+
   public:
     StokesBCM (shared_ptr<TopologicMesh> fmesh, shared_ptr<TopologicMesh> cmesh = nullptr)
       : BaseCoarseMap(fmesh, cmesh)
     { ; }
 
     FlatArray<int> GetLoopMap () const { return loop_map; }
+    Array<int> & GetLoopMapMod () { return loop_map; }
 
     virtual shared_ptr<BaseCoarseMap> Concatenate (shared_ptr<BaseCoarseMap> right_map) override
     {
@@ -468,14 +407,21 @@ namespace amg
 
 
   template<class TMAP>
-  class StokesCoarseMap : virtual public TMAP, virtual public StokesBCM
+  class StokesCoarseMap : public TMAP, public StokesBCM
   {
   public:
     using TMESH = typename TMAP::TMESH;
+
+    using TMAP::GetMesh, TMAP::GetMappedMesh, TMAP::CleanupMeshes;
+
   public:
     StokesCoarseMap (shared_ptr<TMESH> fmesh)
-      : TMAP(fmesh), StokesBCM(fmesh)
+      : BaseCoarseMap(fmesh), TMAP(fmesh), StokesBCM(fmesh)
     { ; }
+
+    // virtual shared_ptr<TopologicMesh> GetMesh () const override { cout << " get mesh, " << TMAP::GetMesh() << " //" << StokesBCM::GetMesh() << " /\\" << BaseCoarseMap::GetMesh() << "\\\\"<<endl; return TMAP::GetMesh(); }
+
+    // virtual shared_ptr<TopologicMesh> GetMappedMesh () const override { cout << " get mapped mesh, " << TMAP::GetMappedMesh() << " //" << StokesBCM::GetMappedMesh() << "/\\ " << BaseCoarseMap::GetMappedMesh() << "////" <<endl; return TMAP::GetMappedMesh(); }
 
     virtual shared_ptr<BaseCoarseMap> Concatenate (shared_ptr<BaseCoarseMap> right_map) override
     { return StokesBCM::Concatenate(right_map); }
@@ -490,6 +436,75 @@ namespace amg
   // }; // class StokesCoarseMap
 
   
+  template<class... T>
+  void StokesMesh<T...> :: MapAdditionalData_impl (const BaseCoarseMap & cmap)
+  {
+    auto & fmesh = *this;
+    fmesh.CumulateData();
+
+    // NOTE: this prooobably does not work ... 
+    auto & cmesh = *static_pointer_cast<THIS_CLASS>(cmap.GetMappedMesh());
+
+    auto fedges = fmesh.template GetNodes<NT_EDGE>();
+    auto cedges = cmesh.template GetNodes<NT_EDGE>();
+
+    auto vmap = cmap.GetMap<NT_VERTEX>();
+    auto emap = cmap.GetMap<NT_EDGE>();
+
+    cout << " map loops, f loops: " << endl << loops << endl;
+
+    // Array<int> loop_map(loops.Size());
+    auto & loop_map = dynamic_cast<StokesBCM&>(const_cast<BaseCoarseMap&>(cmap)).GetLoopMapMod();
+    loop_map.SetSize(loops.Size());
+    Array<int> ucfacets(30); // unique coarse facets
+    Array<int> cloop(30);
+    TableCreator<int> ccl;
+    for (; !ccl.Done(); ccl++) {
+      int cnt_c_loops = 0;
+      for (auto flnr : Range(loops.Size())) {
+	cout << "map loop " << flnr << " = "; prow(loops[flnr]); cout << endl;
+	auto floop = loops[flnr];
+	bool cloop_ok = true;
+	int c = 0;
+	ucfacets.SetSize0();
+	cloop.SetSize(floop.Size());
+	const int fls = floop.Size();
+	for (int j = 0; (j < fls) && cloop_ok; j++) {
+	  auto sfenr = floop[j];
+	  bool fflip = (sfenr < 0);
+	  int fenr = abs(sfenr) - 1;
+	  auto cenr = emap[fenr];
+	  cout << " enr " << fenr << " -> " << cenr << endl;
+	  if (cenr != -1) {
+	    auto pos = merge_pos_in_sorted_array(cenr, ucfacets);
+	    // cout << " looked for " << cenr << " in ucfacets = "; prow(ucfacets); cout << endl;
+	    // cout << " pos is " << pos << endl;
+	    if ( (pos != -1) && (pos > 0) && (ucfacets[pos-1] == cenr) )
+	      { cloop_ok = false; break; }
+	    else if (pos >= 0)
+	      { ucfacets.Insert(pos, cenr); }
+	    // cout << " now ucfacets is "; prow(ucfacets); cout << endl;
+	    bool cflip = cedges[cenr].v[0] == vmap[fedges[fenr].v[0]];
+	    cloop[c++] = (fflip ^ cflip) ? -(1 + cenr) : (1 + cenr);
+	  }
+	}
+	cloop.SetSize(c);
+	cout << " maps to cloop "; prow(cloop); cout << endl;
+	cloop_ok &= (c > 1);
+	if (cloop_ok) {
+	  loop_map[flnr] = cnt_c_loops;
+	  ccl.Add(cnt_c_loops++, cloop);
+	}
+	else
+	  { loop_map[flnr] = -1; }
+      }
+    }
+    cmesh.loops = ccl.MoveTable();
+
+    cout << " c loops: " << endl << cmesh.loops << endl;
+
+  } // StokesMesh::map_loops
+
   /** END StokesMesh **/
 
 } // namespace amg

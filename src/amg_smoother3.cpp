@@ -91,7 +91,7 @@ namespace amg
 
   template<class TM>
   GSS3<TM> :: GSS3 (shared_ptr<SparseMatrix<TM>> mat, shared_ptr<BitArray> subset)
-    : BaseSmoother(spmat)
+    : BaseSmoother(mat)
   {
     SetUp(mat, subset);
     CalcDiags();

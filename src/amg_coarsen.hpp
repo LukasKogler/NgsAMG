@@ -188,10 +188,24 @@ namespace amg
     template<NODE_TYPE NT> INLINE size_t GetNN () const { return NN[NT]; }
     template<NODE_TYPE NT> INLINE size_t GetMappedNN () const { return mapped_NN[NT]; }
     template<NODE_TYPE NT> INLINE FlatArray<int> GetMap () const { return node_maps[NT]; }
+    template<NODE_TYPE NT> INLINE FlatTable<int> GetMapC2F () const {
+      auto & t = rev_node_maps[NT];
+      if (t.Size() != mapped_NN[NT]) { /** Set up table only once. **/
+	FlatArray<int> map = node_maps[NT];
+	TableCreator<int> ct(mapped_NN[NT]);
+	for (; !ct.Done(); ct++)
+	  for (auto k : Range(map))
+	    if (map[k] != -1)
+	      { ct.Add(map[k], k); }
+	t = ct.MoveTable();
+      }
+      return t;
+    }
     virtual shared_ptr<BaseCoarseMap> Concatenate (shared_ptr<BaseCoarseMap> right_map);
   protected:
     void SetConcedMap (shared_ptr<BaseCoarseMap> right_map, shared_ptr<BaseCoarseMap> cmap);
     Array<Array<int>> node_maps = Array<Array<int>> (4);
+    Array<Table<int>> rev_node_maps = Array<Table<int>>(4);
     size_t NN[4] = {0,0,0,0};
     size_t mapped_NN[4] = {0,0,0,0};
   };

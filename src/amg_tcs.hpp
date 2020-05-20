@@ -230,6 +230,11 @@ namespace amg
   InstProlMap(3,6);
   InstProlMap(6,6);
 #endif
+#ifdef STOKES
+  /** Need these for embed-prol to potential space! **/
+  InstProlMap(2,1);
+  InstProlMap(3,1);
+#endif
 #undef InstProLMap
 #endif
 #endif //  FILE_AMG_MAP

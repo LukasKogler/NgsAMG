@@ -31,7 +31,6 @@ namespace amg
   { crs_inv = _crs_inv; has_crs_inv = true; }
 
 
-
   void AMGMatrix :: SmoothW (BaseVector & x, const BaseVector & b) const
   {
     b.Distribute();
@@ -256,7 +255,7 @@ namespace amg
 	BaseVector &xl ( (level == 0) ? x : *x_level[level]);
 	const BaseVector &bl ( (level == 0) ? b : *rhs_level[level]);
 	BaseVector &rl (*res_level[level]);
-	
+
 	/** Start with initial guess 0 and keep residum up to date **/
 
        	xl.FVDouble() = 0.0;
@@ -336,6 +335,70 @@ namespace amg
       }
 
   } // AMGMatrix::SmoothV
+
+
+  void AMGMatrix :: SmoothVFromLevel (int startlevel, BaseVector  &x, const BaseVector &b, BaseVector  &res,
+				     bool res_updated, bool update_res, bool x_zero) const
+  {
+    static Timer t ("SmoothFromLevel"); RegionTimer rt(t);
+    cout << "SVL " << startlevel << endl;
+    cout << " x b r s " << x.Size() << " " << b.Size() << " " << res.Size() << endl;
+
+    cout << " SVL (F) " << startlevel << " " << startlevel << endl;
+    smoothers[startlevel]->SmoothK(stk, x, b, res, res_updated, true, x_zero);
+    res.Distribute();
+    cout << " SVL (F) " << startlevel << " " << startlevel << endl;
+    map->TransferF2C(startlevel, &res, rhs_level[startlevel+1].get());
+    cout << " SVL (F) " << startlevel << " " << startlevel << endl;
+
+    if (startlevel + 2 < n_levels)
+      for (int level = startlevel + 1; level+1 < n_levels; level++ ) {
+	BaseVector &xl ( *x_level[level] ), &rl (*res_level[level]);
+	const BaseVector &bl ( *rhs_level[level] );
+	cout << " xl bl l" << level << " lens " << xl.Size() << " " << bl.Size() << endl;
+	xl.FVDouble() = 0.0;
+	xl.SetParallelStatus(CUMULATED);
+	rl.FVDouble() = bl.FVDouble();
+	rl.SetParallelStatus(bl.GetParallelStatus());
+	cout << " SVL (F) " << startlevel << " " << level << endl;
+	smoothers[level]->SmoothK(stk, xl, bl, rl, true, true, true);
+	rl.Distribute();
+	cout << " SVL (F) " << startlevel << " " << level << endl;
+	map->TransferF2C(level, res_level[level].get(), rhs_level[level+1].get());
+      }
+
+    if (!drops_out) {
+      if (has_crs_inv) { /** exact solve on coarsest level **/
+	if (crs_inv == nullptr)
+	  { x_level[n_levels-1]->FVDouble() = 0; }
+	else
+	  { crs_inv->Mult(*rhs_level[n_levels-1], *x_level[n_levels-1]); }
+	x_level[n_levels-1]->Cumulate();
+      }
+      else {
+	*x_level[n_levels-1] = 0;
+	x_level[n_levels-1]->Cumulate();
+      }
+    }
+
+    if (startlevel + 2 < n_levels)
+      for (int level = n_levels - 2; level > startlevel; level--) {
+	BaseVector &xl ( *x_level[level] ), &rl (*res_level[level]);
+	const BaseVector &bl ( *rhs_level[level] );
+	cout << " SVL (B) " << startlevel << " " << level << endl;
+	map->AddC2F(level, 1.0, &xl, x_level[level+1].get());
+	cout << " SVL (B) " << startlevel << " " << level << endl;
+	smoothers[level]->SmoothBackK(stk, xl, bl, rl, false, false, false);
+      }
+    
+    cout << " SVL (B) " << startlevel << " " << startlevel << endl;
+    map->AddC2F(startlevel, 1.0, &x, x_level[startlevel+1].get());
+    cout << " SVL (B) " << startlevel << " " << startlevel << endl;
+    smoothers[startlevel]->SmoothBackK(stk, x, b, res, false, update_res, false);
+
+    cout << "SVL " << startlevel << " done" << endl;
+
+  } // AMGMatrix::SmoothVFromLevel
 
 
   void AMGMatrix :: Mult (const BaseVector & b, BaseVector & x) const
@@ -499,11 +562,7 @@ namespace amg
       cout << "rank " << rank << "does not have that many levels!!" << endl;
     else if ( (rank==arank) && (rank!=0) && (dof>x_level[level]->FVDouble().Size()))
       cout << "rank " << rank << "only has " << x_level[level]->FVDouble().Size() << " dofs on level " << level << " (wanted dof " << dof << ")" << endl;
-#ifdef ELASTICITY
     else if ( (rank==arank) && (rank==0) && (dof>map->GetParDofs(level)->GetNDofGlobal()*map->GetParDofs(level)->GetEntrySize()))
-#else
-    else if ( (rank==arank) && (rank==0) && (dof>map->GetParDofs(level)->GetNDofGlobal()))
-#endif
       cout << "global ndof on level " << level << "is " << map->GetParDofs(level)->GetNDofGlobal() << " (wanted dof " << dof << ")" << endl;
     else
       input_notok = 0;
@@ -527,11 +586,7 @@ namespace amg
     }
     else if ( (arank==0) && (my_max_level==level) ){
       auto pd = map->GetParDofs(level);
-#ifdef ELASTICITY
       auto BS = pd->GetEntrySize();
-#else
-      auto BS = 1;
-#endif
       auto n = pd->GetNDofLocal();
       auto all = make_shared<BitArray>(n);
       all->Set();
@@ -691,5 +746,8 @@ namespace amg
     cout << endl;
     ds->TransferC2F(&vec, cx.get());
   } // EmbeddedAMGMatrix::GetBF
+
+
+
 
 } // namespace amg

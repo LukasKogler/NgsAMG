@@ -317,8 +317,10 @@ namespace amg
 
 
   template<class FACTORY>
-  shared_ptr<BaseDOFMapStep> VertexAMGPC<FACTORY> :: BuildEmbedding (shared_ptr<TopologicMesh> mesh)
+  shared_ptr<BaseDOFMapStep> VertexAMGPC<FACTORY> :: BuildEmbedding (BaseAMGFactory::AMGLevel & level)
   {
+    shared_ptr<TopologicMesh> mesh = level.cap->mesh;
+
     static Timer t("BuildEmbedding"); RegionTimer rt(t);
     auto & O(static_cast<Options&>(*options));
 

@@ -370,7 +370,7 @@ namespace amg
 
     /** Inherited from AMG_CLASS **/
     virtual void SetUpMaps () override;
-    virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (shared_ptr<TopologicMesh> mesh) override;
+    virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (BaseAMGFactory::AMGLevel & finest_level) override;
     // virtual shared_ptr<BaseSmoother> BuildSmoother (const BaseAMGFactory::AMGLevel & amg_level) override;
     virtual shared_ptr<BaseAMGPC::Options> NewOpts () override;
     virtual void SetDefaultOptions (BaseAMGPC::Options& O) override;

@@ -64,9 +64,11 @@ namespace amg
     
     virtual void Finalize ();
     virtual void BuildAMGMat ();
+    virtual Array<shared_ptr<BaseSmoother>> BuildSmoothers (FlatArray<shared_ptr<BaseAMGFactory::AMGLevel>> levels,
+							    shared_ptr<DOFMap> dof_map);
 
     virtual void InitFinestLevel (BaseAMGFactory::AMGLevel & finest_level);
-    virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (shared_ptr<TopologicMesh> mesh) = 0;
+    virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (BaseAMGFactory::AMGLevel & finest_level) = 0;
 
     virtual shared_ptr<BaseSmoother> BuildSmoother (const BaseAMGFactory::AMGLevel & amg_level);
 

@@ -14,7 +14,8 @@ namespace amg
   {
   public:
     bool hiptmair = true;          // Use Hiptmair Smoother
-    bool hiptmair_block = false;   // Use Block-Hiptmair Smoother
+    bool hiptmair_bs = true;       // Inexact Braess-Sarazin/Hiptmair smoother
+    bool hiptmair_block = false;   // Use Block-Smoothers in potential space
 
     virtual void SetFromFlags (shared_ptr<FESpace> fes, const Flags & flags, string prefix)
     {
@@ -22,6 +23,7 @@ namespace amg
       AUXPC::Options::SetFromFlags(fes, flags, prefix);
       hiptmair = !flags.GetDefineFlagX(prefix + "hpt_sm").IsFalse();
       hiptmair_block = flags.GetDefineFlagX(prefix + "hpt_sm_blk").IsTrue();
+      hiptmair_bs = !flags.GetDefineFlagX(prefix + "hpt_sm_bs").IsFalse();
     }
   }; // StokesAMGPC::Options
 
@@ -125,7 +127,7 @@ namespace amg
       const auto & ff(*free_facets);
       auto f2a_facet = aux_sys->GetFMapF2A();
       FlatArray<int> esort = node_sort[NT_EDGE];
-      const auto & fmesh = static_cast<TMESH&>(*finest_level.mesh);
+      const auto & fmesh = static_cast<TMESH&>(*finest_level.cap->mesh);
       auto edges = fmesh.template GetNodes<NT_EDGE>();
       auto free_verts = make_shared<BitArray>(fmesh.template GetNN<NT_VERTEX>());
       free_verts->Clear();
@@ -144,7 +146,7 @@ namespace amg
 	  // { if (!free_verts->Test(k)) { cout << k << " "; } }
 	// cout << endl << endl;
       }
-      finest_level.free_nodes = free_verts;
+      finest_level.cap->free_nodes = free_verts;
     }
   } // StokesAMGPC::InitFinestLevel
   
@@ -195,6 +197,7 @@ namespace amg
       return move(Table<int>());
     }
 
+    /** TODO: For MPI, sorting not in yet! **/
     /** Blocks: 1 per agg, consisting of all "internal" edges, maybe also 1 per coarse facet **/
 
     auto & O(static_cast<Options&>(*options));
@@ -263,8 +266,10 @@ namespace amg
   
 
   template<class FACTORY, class AUX_SYS>
-  shared_ptr<BaseDOFMapStep> StokesAMGPC<FACTORY, AUX_SYS> :: BuildEmbedding (shared_ptr<TopologicMesh> mesh)
+  shared_ptr<BaseDOFMapStep> StokesAMGPC<FACTORY, AUX_SYS> :: BuildEmbedding (BaseAMGFactory::AMGLevel & level)
   {
+    shared_ptr<TopologicMesh> mesh = level.cap->mesh;
+
     /** 2-stage embedding: 
 	  comp_fes -> aux_fes -> mesh-canonic
 	Step 1 is the embedding-matrix from the auxiliary system
@@ -316,7 +321,23 @@ namespace amg
 
     auto emb_dms = make_shared<ProlMap<typename AUX_SYS::TAUX_TM>>(mesh_emb, aux_sys->GetAuxParDofs(), mesh_pds);
 
-    return emb_dms;
+    // return emb_dms;
+
+    auto sfactory = static_pointer_cast<FACTORY>(factory);
+    auto lcc = static_pointer_cast<typename FACTORY::StokesLC>(level.cap);
+    sfactory->BuildCurlMat(*lcc);
+    sfactory->BuildPotParDofs(*lcc);
+    auto emb_prol = emb_dms->GetProl();
+    typename FACTORY::TCM_TM & cmat = *lcc->curl_mat;
+    auto cep = MatMultAB(*emb_prol, cmat);
+    auto emb_pot = make_shared<ProlMap<stripped_spm_tm<Mat<FACTORY::BS, 1, double>>>>(cep, aux_sys->GetAuxParDofs(), lcc->pot_pardofs);
+
+    // Array<shared_ptr<BaseDOFMapStep>> steps(2);
+    // steps[0] = emb_dms; steps[1] = emb_pot;
+    Array<shared_ptr<BaseDOFMapStep>> steps( { emb_dms, emb_pot } );
+    auto multi_emb = make_shared<MultiDofMapStep>(steps);
+
+    return multi_emb;
   } // StokesAMGPC::BuildEmbedding
   
 
@@ -725,17 +746,274 @@ namespace amg
 
 
   template<class FACTORY, class AUX_SYS>
-  shared_ptr<BaseSmoother> StokesAMGPC<FACTORY, AUX_SYS> :: BuildSmoother (const BaseAMGFactory::AMGLevel & amg_level)
+  Array<shared_ptr<BaseSmoother>> StokesAMGPC<FACTORY, AUX_SYS> :: BuildSmoothers (FlatArray<shared_ptr<BaseAMGFactory::AMGLevel>> amg_levels,
+										   shared_ptr<DOFMap> dof_map)
   {
     const auto & O = static_cast<Options&>(*options);
 
+    if (O.hiptmair && O.hiptmair_bs)
+      { return BuildSmoothersHIBS(amg_levels, dof_map); }
+    else {
+      Array<shared_ptr<BaseSmoother>> smoothers(amg_levels.Size() - 1);
+      for (int k = 0; k < amg_levels.Size() - 1; k++) {
+	if ( (k > 0) && O.regularize_cmats) // Regularize coarse level matrices
+	  { RegularizeMatrix(amg_levels[k]->cap->mat, amg_levels[k]->cap->pardofs); }
+	smoothers[k] = BuildSmoother(*amg_levels[k], dof_map);
+	cout << "type k sm " << typeid(*smoothers[k]).name() << endl;
+      }
+      return smoothers;
+    }
+  } // StokesAMGPC::BuildSmoothers
+
+
+  template<class FACTORY, class AUX_SYS>
+  Array<shared_ptr<BaseSmoother>> StokesAMGPC<FACTORY, AUX_SYS> :: BuildSmoothersHIBS (FlatArray<shared_ptr<BaseAMGFactory::AMGLevel>> levels,
+										       shared_ptr<DOFMap> dof_map)
+  {
+    const auto & O = static_cast<Options&>(*options);
+
+    /** Split potential/range maps from dof_map **/
+    auto pot_dof_map = make_shared<DOFMap>();
+    auto range_dof_map = make_shared<DOFMap>();
+    for (auto k : Range(dof_map->GetNSteps())) {
+      dof_map->GetStep(k)->Finalize(); // build transposed prols if we do not have them yet
+      if (auto mdms = dynamic_pointer_cast<MultiDofMapStep>(dof_map->GetStep(k))) {
+	range_dof_map->AddStep(mdms->GetMap(0));
+	pot_dof_map->AddStep(mdms->GetMap(1));
+      }
+      else
+	{ throw Exception("Do not have potential dof maps!"); }
+    }
+
+    auto build_pot_smoother = [&](int k) {
+      const auto & cap = static_cast<typename FACTORY::StokesLC&>(*levels[k]->cap);
+      if (O.hiptmair_block) {
+	if (levels[k]->crs_map == nullptr)
+	  { throw Exception("Crs Map not saved!!"); }
+	const auto & M = static_cast<typename FACTORY::TMESH&>(*cap.mesh);
+	Table<int> blocks = M.LoopBlocks(*levels[k]->crs_map);
+	if (blocks.Size() == 0)
+	  { return BaseAMGPC::BuildGSSmoother(cap.pot_mat, cap.pot_pardofs, M.GetEQCHierarchy()); }
+	else
+	  { return BaseAMGPC::BuildBGSSmoother(cap.pot_mat, cap.pot_pardofs, M.GetEQCHierarchy(), move(blocks)); }
+      }
+      else
+	{ return BaseAMGPC::BuildGSSmoother(cap.pot_mat, cap.pot_pardofs, levels[k]->cap->eqc_h); }
+    };
+
+    /** Build Smoothers for the range spaces **/
+    Array<shared_ptr<BaseSmoother>> range_smoothers(range_dof_map->GetNSteps());
+    for (auto k : Range(range_smoothers)) {
+      auto & cap = static_cast<typename FACTORY::StokesLC&>(*levels[k]->cap);
+      auto hd_sm = BaseAMGPC::BuildSmoother(*levels[k]);
+      /** Potential space maps from level k to max level **/
+      shared_ptr<DOFMap> pot_dof_chunk = (k == 0) ? pot_dof_map : pot_dof_map->SubMap(k);
+      /** Galerkin project potential space matrices  **/
+      Array<shared_ptr<BaseSparseMatrix>> pot_mats_k = pot_dof_chunk->AssembleMatrices(cap.pot_mat);
+      Array<shared_ptr<BaseSmoother>> pot_smoothers_k(pot_dof_chunk->GetNSteps());
+      for (auto j : Range(pot_smoothers_k)) {
+	// auto opm = cap.pot_mat; cap.pot_mat = dynamic_pointer_cast<SparseMatrix<double>>(pot_mats_k[j]);
+	pot_smoothers_k[j] = build_pot_smoother(k + j);
+	// cap.pot_mat = opm;
+      }
+      shared_ptr<AMGMatrix> pot_amg_mat = make_shared<AMGMatrix>(pot_dof_chunk, pot_smoothers_k);
+
+      if (pot_amg_mat->GetSmoother(0)->Height() > 0)
+	{
+	  /** Aux space AMG as a preconditioner for Auxiliary matrix **/
+	  auto i1 = printmessage_importance;
+	  auto i2 = netgen::printmessage_importance;
+	  printmessage_importance = 1;
+	  netgen::printmessage_importance = 1;
+	  cout << IM(1) << "Test potential space AMG, level " << k << "! " << endl;
+	  // EigenSystem eigen(*aux_mat, *amg_mat);
+	  EigenSystem eigen(*pot_amg_mat->GetSmoother(0)->GetAMatrix(), *pot_amg_mat); // need parallel mat
+	  eigen.SetPrecision(1e-12);
+	  eigen.SetMaxSteps(1000); 
+	  eigen.Calc();
+	  cout << IM(1) << "Results for potential space AMG, V1, level " << k << "! " << endl;
+	  cout << IM(1) << " Min Eigenvalue : "  << eigen.EigenValue(1) << endl; 
+	  cout << IM(1) << " Max Eigenvalue : " << eigen.MaxEigenValue() << endl; 
+	  cout << IM(1) << " Condition   " << eigen.MaxEigenValue()/eigen.EigenValue(1) << endl; 
+	  printmessage_importance = i1;
+	  netgen::printmessage_importance = i2;
+	}
+
+      Array<shared_ptr<BaseSmoother>> pot_smoothers_k2(pot_dof_chunk->GetNSteps());
+      for (auto j : Range(pot_smoothers_k)) {
+	auto & capj = static_cast<typename FACTORY::StokesLC&>(*levels[k + j]->cap);
+	cout << k << " " << j << " " << cap.pot_mat << " " << pot_mats_k[j] << endl;
+	auto opm = capj.pot_mat; capj.pot_mat = dynamic_pointer_cast<SparseMatrix<double>>(pot_mats_k[j]);
+	pot_smoothers_k2[j] = build_pot_smoother(k + j);
+	capj.pot_mat = opm;
+      }
+      shared_ptr<AMGMatrix> pot_amg_mat2 = make_shared<AMGMatrix>(pot_dof_chunk, pot_smoothers_k2);
+
+      if (pot_amg_mat->GetSmoother(0)->Height() > 0)
+	{
+	  /** Aux space AMG as a preconditioner for Auxiliary matrix **/
+	  auto i1 = printmessage_importance;
+	  auto i2 = netgen::printmessage_importance;
+	  printmessage_importance = 1;
+	  netgen::printmessage_importance = 1;
+	  cout << IM(1) << "Test potential space AMG, level " << k << "! " << endl;
+	  // EigenSystem eigen(*aux_mat, *amg_mat);
+	  EigenSystem eigen(*pot_amg_mat2->GetSmoother(0)->GetAMatrix(), *pot_amg_mat2); // need parallel mat
+	  eigen.SetPrecision(1e-12);
+	  eigen.SetMaxSteps(1000); 
+	  eigen.Calc();
+	  cout << IM(1) << "Results for potential space AMG, V2, level " << k << "! " << endl;
+	  cout << IM(1) << " Min Eigenvalue : "  << eigen.EigenValue(1) << endl; 
+	  cout << IM(1) << " Max Eigenvalue : " << eigen.MaxEigenValue() << endl; 
+	  cout << IM(1) << " Condition   " << eigen.MaxEigenValue()/eigen.EigenValue(1) << endl; 
+	  printmessage_importance = i1;
+	  netgen::printmessage_importance = i2;
+	}
+
+      auto hc_sm = make_shared<AMGSmoother>(pot_amg_mat2, 0);
+      hc_sm->Finalize();
+      shared_ptr<BaseMatrix> cmat, cmat_T;
+      if (k == 0) {
+	cout << " l0 emb " << levels[0]->embed_map << endl;
+	cout << " l0 emb tp " << typeid(*levels[0]->embed_map).name() << endl;
+	if ( auto emb_mdms = dynamic_pointer_cast<MultiDofMapStep>(levels[0]->embed_map) ) {
+	  if ( auto emb_pot = dynamic_pointer_cast<ProlMap<stripped_spm_tm<Mat<2, 1, double>>>>(emb_mdms->GetMap(1)) ) {
+	    cmat = dynamic_pointer_cast<SparseMatrix<Mat<FACTORY::BS, 1, double>>>(emb_pot->GetProl());
+	    cmat_T = dynamic_pointer_cast<SparseMatrix<Mat<1, FACTORY::BS, double>>>(emb_pot->GetProlTrans());
+	    if ( (cmat == nullptr) || (cmat_T == nullptr) )
+	      { throw Exception("wow i really do need a lot of casts here ..."); }
+	  }
+	  else
+	    { throw Exception("pot emb not correct"); }
+	}
+	else
+	  { throw Exception("level 0 should be mdms!"); }
+      }
+      else {
+	cmat = cap.curl_mat;
+	cmat_T = cap.curl_mat_T;
+      }
+      auto hsm = make_shared<HiptMairSmoother>(hc_sm, hd_sm, cap.pot_mat, cap.mat, cmat, cmat_T);
+      hsm->Finalize();
+      range_smoothers[k] = hsm;
+    }
+
+    return range_smoothers;
+  } // StokesAMGPC::BuildSmoothersHIBS
+
+
+  template<class FACTORY, class AUX_SYS>
+  Array<shared_ptr<BaseSmoother>> StokesAMGPC<FACTORY, AUX_SYS> :: BuildSmoothersHIBS2 (FlatArray<shared_ptr<BaseAMGFactory::AMGLevel>> levels,
+										       shared_ptr<DOFMap> dof_map)
+  {
+    const auto & O = static_cast<Options&>(*options);
+
+    /** Split potential/range maps from dof_map **/
+    auto pot_dof_map = make_shared<DOFMap>();
+    auto range_dof_map = make_shared<DOFMap>();
+    for (auto k : Range(dof_map->GetNSteps())) {
+      dof_map->GetStep(k)->Finalize(); // build transposed prols if we do not have them yet
+      if (auto mdms = dynamic_pointer_cast<MultiDofMapStep>(dof_map->GetStep(k))) {
+	range_dof_map->AddStep(mdms->GetMap(0));
+	pot_dof_map->AddStep(mdms->GetMap(1));
+      }
+      else
+	{ throw Exception("Do not have potential dof maps!"); }
+    }
+
+    /** Build Smoothers for the potential spaces. **/
+    Array<shared_ptr<BaseSmoother>> pot_smoothers(pot_dof_map->GetNSteps());
+    for (auto k : Range(pot_smoothers)) {
+      const auto & cap = static_cast<typename FACTORY::StokesLC&>(*levels[k]->cap);
+      if (O.hiptmair_block) {
+	if (levels[k]->crs_map == nullptr)
+	  { throw Exception("Crs Map not saved!!"); }
+	const auto & M = static_cast<typename FACTORY::TMESH&>(*cap.mesh);
+	Table<int> blocks = M.LoopBlocks(*levels[k]->crs_map);
+	if (blocks.Size() == 0)
+	  { pot_smoothers[k] = BaseAMGPC::BuildGSSmoother(cap.pot_mat, cap.pot_pardofs, M.GetEQCHierarchy()); }
+	else
+	  { pot_smoothers[k] = BaseAMGPC::BuildBGSSmoother(cap.pot_mat, cap.pot_pardofs, M.GetEQCHierarchy(), move(blocks)); }
+      }
+      else
+	{ pot_smoothers[k] = BaseAMGPC::BuildGSSmoother(cap.pot_mat, cap.pot_pardofs, levels[k]->cap->eqc_h); }
+    }
+
+    /** TODO: should I invert on the coarsest level potential space (if small enough??)
+	Also, I think that would be a singular problem. **/
+
+    /** Build an AMGMatrix for potential spaces. **/
+    auto pot_amg_mat = make_shared<AMGMatrix>(pot_dof_map, pot_smoothers);
+    {
+      /** Aux space AMG as a preconditioner for Auxiliary matrix **/
+      auto i1 = printmessage_importance;
+      auto i2 = netgen::printmessage_importance;
+      printmessage_importance = 1;
+      netgen::printmessage_importance = 1;
+      cout << IM(1) << "Test potential space AMG! " << endl;
+      // EigenSystem eigen(*aux_mat, *amg_mat);
+      EigenSystem eigen(*pot_amg_mat->GetSmoother(0)->GetAMatrix(), *pot_amg_mat); // need parallel mat
+      eigen.SetPrecision(1e-12);
+      eigen.SetMaxSteps(1000); 
+      eigen.Calc();
+      cout << IM(1) << "Results for potential space AMG! " << endl;
+      cout << IM(1) << " Min Eigenvalue : "  << eigen.EigenValue(1) << endl; 
+      cout << IM(1) << " Max Eigenvalue : " << eigen.MaxEigenValue() << endl; 
+      cout << IM(1) << " Condition   " << eigen.MaxEigenValue()/eigen.EigenValue(1) << endl; 
+      printmessage_importance = i1;
+      netgen::printmessage_importance = i2;
+    }
+
+    /** Build Smoothers for the range spaces **/
+    Array<shared_ptr<BaseSmoother>> range_smoothers(range_dof_map->GetNSteps());
+    for (auto k : Range(range_smoothers)) {
+      const auto & cap = static_cast<typename FACTORY::StokesLC&>(*levels[k]->cap);
+      auto hd_sm = BaseAMGPC::BuildSmoother(*levels[k]);
+      auto hc_sm = make_shared<AMGSmoother>(pot_amg_mat, k);
+      hc_sm->Finalize();
+      shared_ptr<BaseMatrix> cmat, cmat_T;
+      if (k == 0) {
+	cout << " l0 emb " << levels[0]->embed_map << endl;
+	cout << " l0 emb tp " << typeid(*levels[0]->embed_map).name() << endl;
+	if ( auto emb_mdms = dynamic_pointer_cast<MultiDofMapStep>(levels[0]->embed_map) ) {
+	  if ( auto emb_pot = dynamic_pointer_cast<ProlMap<stripped_spm_tm<Mat<2, 1, double>>>>(emb_mdms->GetMap(1)) ) {
+	    cmat = dynamic_pointer_cast<SparseMatrix<Mat<FACTORY::BS, 1, double>>>(emb_pot->GetProl());
+	    cmat_T = dynamic_pointer_cast<SparseMatrix<Mat<1, FACTORY::BS, double>>>(emb_pot->GetProlTrans());
+	    if ( (cmat == nullptr) || (cmat_T == nullptr) )
+	      { throw Exception("wow i really do need a lot of casts here ..."); }
+	  }
+	  else
+	    { throw Exception("pot emb not correct"); }
+	}
+	else
+	  { throw Exception("level 0 should be mdms!"); }
+      }
+      else {
+	cmat = cap.curl_mat;
+	cmat_T = cap.curl_mat_T;
+      }
+      auto hsm = make_shared<HiptMairSmoother>(hc_sm, hd_sm, cap.pot_mat, cap.mat, cmat, cmat_T);
+      hsm->Finalize();
+      range_smoothers[k] = hsm;
+    }
+
+    return range_smoothers;
+  } // StokesAMGPC::BuildSmoothersHIBS2
+
+
+  template<class FACTORY, class AUX_SYS>
+  shared_ptr<BaseSmoother> StokesAMGPC<FACTORY, AUX_SYS> :: BuildSmoother (const BaseAMGFactory::AMGLevel & amg_level, shared_ptr<DOFMap> dof_map)
+  {
+    const auto & O = static_cast<Options&>(*options);
+
+    /** Smoother in the HDiv-like space **/
     auto sm = BaseAMGPC::BuildSmoother(amg_level);
 
     if (O.hiptmair)
-      { sm = BuildHiptMairSmoother(amg_level, sm); }
+	{ sm = BuildHiptMairSmoother(amg_level, sm); }
 
     return sm;
-  } // StokesAMGPC<FACTORY, AUX_SYS>::BuildSmoother
+  } // StokesAMGPC::BuildSmoother
 
 
   template<class FACTORY, class AUX_SYS>
@@ -746,7 +1024,52 @@ namespace amg
 
     const auto & O = static_cast<Options&>(*options);
 
-    const auto & M = *static_pointer_cast<TMESH>(amg_level.mesh);
+    // const auto & cap = *static_pointer_cast<typename FACTORY::StokesLC>(amg_level.cap);
+    const auto & cap = static_cast<typename FACTORY::StokesLC&>(*amg_level.cap);
+
+    const auto & M = *static_pointer_cast<TMESH>(cap.mesh);
+    M.CumulateData();
+
+    /** Smoother in HCurl-like space (not sure about EQCH!!) **/
+    shared_ptr<BaseSmoother> csm;
+
+    bool hblocks = O.hiptmair_block;
+    if (hblocks) {
+      Table<int> blocks;
+      if (amg_level.crs_map == nullptr)
+	{ throw Exception("Crs Map not saved!!"); }
+      blocks = move(M.LoopBlocks(*amg_level.crs_map));
+      if (blocks.Size() == 0)
+	{ csm = BaseAMGPC::BuildGSSmoother(cap.pot_mat, cap.pot_pardofs, M.GetEQCHierarchy()); }
+      else
+	{ csm = BaseAMGPC::BuildBGSSmoother(cap.pot_mat, cap.pot_pardofs, M.GetEQCHierarchy(), move(blocks)); }
+    }
+    else
+      { csm = BaseAMGPC::BuildGSSmoother(cap.pot_mat, cap.pot_pardofs, M.GetEQCHierarchy()); }
+
+    /** Wrap parallel matrices **/
+    auto A_p = make_shared<ParallelMatrix>(cap.mat, cap.pardofs, PARALLEL_OP::C2D);
+    auto CTAC_p = make_shared<ParallelMatrix>(cap.pot_mat, cap.pot_pardofs, PARALLEL_OP::C2D);
+    auto C_p = make_shared<ParallelMatrix>(cap.curl_mat, cap.pot_pardofs, cap.pardofs, PARALLEL_OP::C2C);
+    auto CT_p = make_shared<ParallelMatrix>(cap.curl_mat_T, cap.pardofs, cap.pot_pardofs, PARALLEL_OP::D2D);
+
+    /** Construct Hiptmair Smother **/
+    auto hsm = make_shared<HiptMairSmoother>(csm, sm, CTAC_p, A_p, C_p, CT_p);
+
+    return hsm;
+  } // StokesAMGPC<FACTORY, AUX_SYS>::BuildHiptMairSmoother
+
+
+  /** Older version - also sets up curl-mat and pot pardofs**/
+  template<class FACTORY, class AUX_SYS>
+  shared_ptr<BaseSmoother> StokesAMGPC<FACTORY, AUX_SYS> :: BuildHiptMairSmoother1 (const BaseAMGFactory::AMGLevel & amg_level, shared_ptr<BaseSmoother> sm)
+  {
+    static Timer t("BuildHiptMairSmoother");
+    RegionTimer rt(t);
+
+    const auto & O = static_cast<Options&>(*options);
+
+    const auto & M = *static_pointer_cast<TMESH>(amg_level.cap->mesh);
     M.CumulateData();
 
     const auto & eqc_h = *M.GetEQCHierarchy();
@@ -813,7 +1136,7 @@ namespace amg
 	    
     /** Project matrix to HCurl-like space **/
     auto & CT_TM = curlT_mat;
-    auto A_TM = dynamic_pointer_cast<typename FACTORY::TSPM_TM>(amg_level.mat);
+    auto A_TM = dynamic_pointer_cast<typename FACTORY::TSPM_TM>(amg_level.cap->mat);
     auto C_TM = TransposeSPM(*CT_TM);
     // cout << " CT_TM " << endl;
     // print_tm_spmat(cout, *CT_TM); cout << endl;
@@ -830,7 +1153,7 @@ namespace amg
     typedef SparseMatrix<Mat<1, FACTORY::BS, double>> T_CT;
     typedef SparseMatrix<Mat<FACTORY::BS, FACTORY::BS, double>> T_A;
 
-    auto A = dynamic_pointer_cast<T_A>(amg_level.mat);
+    auto A = dynamic_pointer_cast<T_A>(amg_level.cap->mat);
     auto C = make_shared<T_C>(move(*C_TM));
     auto CT = make_shared<T_CT>(move(*CT_TM));
     auto CTAC = make_shared<SparseMatrix<double>>(move(*CTAC_TM));    
@@ -858,16 +1181,16 @@ namespace amg
       { csm = BaseAMGPC::BuildGSSmoother(CTAC, hc_pds, M.GetEQCHierarchy()); }
 
     /** Wrap parallel matrices **/
-    auto A_p = make_shared<ParallelMatrix>(A, amg_level.pardofs, PARALLEL_OP::C2D);
+    auto A_p = make_shared<ParallelMatrix>(A, amg_level.cap->pardofs, PARALLEL_OP::C2D);
     auto CTAC_p = make_shared<ParallelMatrix>(CTAC, hc_pds, PARALLEL_OP::C2D);
-    auto C_p = make_shared<ParallelMatrix>(C, hc_pds, amg_level.pardofs, PARALLEL_OP::C2C);
-    auto CT_p = make_shared<ParallelMatrix>(CT, amg_level.pardofs, hc_pds, PARALLEL_OP::D2D);
+    auto C_p = make_shared<ParallelMatrix>(C, hc_pds, amg_level.cap->pardofs, PARALLEL_OP::C2C);
+    auto CT_p = make_shared<ParallelMatrix>(CT, amg_level.cap->pardofs, hc_pds, PARALLEL_OP::D2D);
 
-    /** Construct Huptmair Smother **/
+    /** Construct Hiptmair Smother **/
     auto hsm = make_shared<HiptMairSmoother>(csm, sm, CTAC_p, A_p, C_p, CT_p);
 
     return hsm;
-  } // StokesAMGPC<FACTORY, AUX_SYS>::BuildHiptMairSmoother
+  } // StokesAMGPC<FACTORY, AUX_SYS>::BuildHiptMairSmoother1
 
 
   /** END StokesAMGPC **/

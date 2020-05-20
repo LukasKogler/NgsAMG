@@ -42,7 +42,7 @@ namespace amg
   }
 
   template<class TMESH>
-  class AgglomerateCoarseMap : public BaseCoarseMap
+  class AgglomerateCoarseMap : virtual public BaseCoarseMap
   {
     friend class BlockTM;
 
@@ -124,7 +124,7 @@ namespace amg
 
     Agglomerator (shared_ptr<TMESH> _mesh, shared_ptr<BitArray> _free_verts = nullptr);
 
-    void SetFreeVertes (shared_ptr<BitArray> _free_verts) { free_verts = _free_verts; }
+    void SetFreeVerts (shared_ptr<BitArray> _free_verts) { free_verts = _free_verts; }
     Options & GetOpts () { return settings; }
     void SetOpts (Options && _settings) { settings = move(_settings); }
     void SetFixedAggs (Table<int> && _fixed_aggs);

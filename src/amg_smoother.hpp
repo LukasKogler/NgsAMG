@@ -28,7 +28,6 @@ namespace amg {
 
     virtual ~BaseSmoother(){}
 
-
     /**
        res_updated: is residuum up to date??
        update_res:  if true, updates the residuum while smoothing
@@ -69,6 +68,10 @@ namespace amg {
 
     // return the underlying matrix
     // virtual shared_ptr<BaseMatrix> GetMatrix () const = 0;
+
+    virtual AutoVector CreateRowVector () const override { return GetAMatrix()->CreateRowVector(); };
+    virtual AutoVector CreateColVector () const override { return GetAMatrix()->CreateColVector(); };
+
   };
   
 

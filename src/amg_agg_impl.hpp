@@ -1078,7 +1078,7 @@ namespace amg
 
   template<class ENERGY, class TMESH, bool ROBUST>
   Agglomerator<ENERGY, TMESH, ROBUST> :: Agglomerator (shared_ptr<TMESH> _mesh, shared_ptr<BitArray> _free_verts, Options && _settings)
-    : AgglomerateCoarseMap<TMESH>(_mesh), free_verts(_free_verts), settings(_settings)
+    : BaseCoarseMap(_mesh), AgglomerateCoarseMap<TMESH>(_mesh), free_verts(_free_verts), settings(_settings)
   {
     assert(mesh != nullptr); // obviously this would be bad
   } // Agglomerator(..)
@@ -1086,7 +1086,7 @@ namespace amg
 
   template<class ENERGY, class TMESH, bool ROBUST>
   Agglomerator<ENERGY, TMESH, ROBUST> :: Agglomerator (shared_ptr<TMESH> _mesh, shared_ptr<BitArray> _free_verts)
-    : AgglomerateCoarseMap<TMESH>(_mesh), free_verts(_free_verts)
+    : BaseCoarseMap(_mesh), AgglomerateCoarseMap<TMESH>(_mesh), free_verts(_free_verts)
   {
     assert(mesh != nullptr); // obviously this would be bad
   } // Agglomerator(..)

@@ -51,11 +51,11 @@ namespace amg
     virtual void ModifyOptions (BaseAMGPC::Options & O, const Flags & flags, string prefix = "ngs_amg_") override;
 
     virtual shared_ptr<TopologicMesh> BuildInitialMesh () override;
-    virtual void InitFinestLevel (shared_ptr<BaseAMGFactory::AMGLevel> & finest_level) override;
-    virtual Table<int> GetGSBlocks (shared_ptr<const BaseAMGFactory::AMGLevel> & amg_level) override;
-    virtual Table<int> GetGSBlocks2 (shared_ptr<const BaseAMGFactory::AMGLevel> & amg_level);
+    virtual void InitFinestLevel (BaseAMGFactory::AMGLevel & finest_level) override;
+    virtual Table<int> GetGSBlocks (const BaseAMGFactory::AMGLevel & amg_level) override;
+    virtual Table<int> GetGSBlocks2 (const BaseAMGFactory::AMGLevel & amg_level);
     virtual shared_ptr<BaseAMGFactory> BuildFactory () override;
-    virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (shared_ptr<TopologicMesh> mesh) override;
+    virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (BaseAMGFactory::AMGLevel & finest_level) override;
 
     virtual void RegularizeMatrix (shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs> & pardofs) const override;
 
@@ -66,9 +66,17 @@ namespace amg
     virtual shared_ptr<TMESH> BuildAlgMesh_TRIV (shared_ptr<BlockTM> top_mesh) const; // implement seperately (but easy)
     virtual shared_ptr<TMESH> BuildAlgMesh_ALG (shared_ptr<BlockTM> top_mesh) const; // implement seperately (but easy)
 
+    virtual Array<shared_ptr<BaseSmoother>> BuildSmoothers (FlatArray<shared_ptr<BaseAMGFactory::AMGLevel>> levels, shared_ptr<DOFMap> dof_map) override;
+    virtual shared_ptr<BaseSmoother> BuildSmoother (const BaseAMGFactory::AMGLevel & amg_level, shared_ptr<DOFMap> dof_map);
+
+
+    /** Hiptmair/Inexact Braess-Sarazin **/
+    virtual Array<shared_ptr<BaseSmoother>> BuildSmoothersHIBS (FlatArray<shared_ptr<BaseAMGFactory::AMGLevel>> levels, shared_ptr<DOFMap> dof_map);
+    virtual Array<shared_ptr<BaseSmoother>> BuildSmoothersHIBS2 (FlatArray<shared_ptr<BaseAMGFactory::AMGLevel>> levels, shared_ptr<DOFMap> dof_map);
+
     /** Hiptmair Smoother for Stokes **/
-    virtual shared_ptr<BaseSmoother> BuildSmoother (const shared_ptr<BaseAMGFactory::AMGLevel> & amg_level) override;
-    virtual shared_ptr<BaseSmoother> BuildHiptMairSmoother (const shared_ptr<BaseAMGFactory::AMGLevel> & amg_level, shared_ptr<BaseSmoother> smoother);
+    virtual shared_ptr<BaseSmoother> BuildHiptMairSmoother (const BaseAMGFactory::AMGLevel & amg_level, shared_ptr<BaseSmoother> smoother);
+    virtual shared_ptr<BaseSmoother> BuildHiptMairSmoother1 (const BaseAMGFactory::AMGLevel & amg_level, shared_ptr<BaseSmoother> smoother);
 
   }; // class StokesAMGPC
 

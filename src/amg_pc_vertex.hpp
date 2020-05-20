@@ -54,7 +54,7 @@ namespace amg
     virtual void InitFinestLevel (BaseAMGFactory::AMGLevel & finest_level) override;
     virtual Table<int> GetGSBlocks (const BaseAMGFactory::AMGLevel & amg_level) override;
     virtual shared_ptr<BaseAMGFactory> BuildFactory () override;
-    virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (shared_ptr<TopologicMesh> mesh) override;
+    virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (BaseAMGFactory::AMGLevel & mesh) override;
 
     virtual void RegularizeMatrix (shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs> & pardofs) const override;
 

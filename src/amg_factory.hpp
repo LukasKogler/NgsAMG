@@ -42,7 +42,9 @@ namespace amg
 
     static void SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix = "ngs_amg_");
 
-    virtual void MapLevel (shared_ptr<BaseDOFMapStep> dof_step, shared_ptr<LevelCapsule> & f_cap, shared_ptr<LevelCapsule> & c_cap);
+    virtual void MapLevel2 (shared_ptr<BaseDOFMapStep> & dof_step, shared_ptr<AMGLevel> & f_cap, shared_ptr<AMGLevel> & c_cap);
+    virtual shared_ptr<BaseDOFMapStep> MapLevel (FlatArray<shared_ptr<BaseDOFMapStep>> dof_steps,
+						 shared_ptr<AMGLevel> & f_cap, shared_ptr<AMGLevel> & c_cap);
 
     virtual shared_ptr<BaseDOFMapStep> DoStep (shared_ptr<AMGLevel> & f_lev, shared_ptr<AMGLevel> & c_lev, State & state);
 
@@ -169,6 +171,8 @@ namespace amg
     shared_ptr<ParallelDofs> pardofs = nullptr;
     shared_ptr<BaseSparseMatrix> mat = nullptr;
     shared_ptr<BitArray> free_nodes = nullptr;
+
+    virtual ~LevelCapsule () { ; } // so we can cast down to child classes
   }; // struct BaseAMGFactory::LevelCapsule
 
   /** END AMGLevel **/

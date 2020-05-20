@@ -1506,8 +1506,9 @@ namespace amg
 
 
   template<int DIM, class AUX_SYS, class AMG_CLASS>
-  shared_ptr<BaseDOFMapStep> FacetAuxVertexAMGPC<DIM, AUX_SYS, AMG_CLASS> :: BuildEmbedding (shared_ptr<TopologicMesh> mesh)
+  shared_ptr<BaseDOFMapStep> FacetAuxVertexAMGPC<DIM, AUX_SYS, AMG_CLASS> :: BuildEmbedding (BaseAMGFactory::AMGLevel & finest_level)
   {
+    auto mesh = finest_level.cap->mesh;
 
     /** aux_mat is finest mat **/
     // shared_ptr<TPMAT_TM> emb_mat;

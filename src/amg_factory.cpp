@@ -248,7 +248,7 @@ namespace amg
 
     auto & f_lev = amg_levels.Last();
 
-    shared_ptr<AMGLevel> c_lev;
+    shared_ptr<AMGLevel> c_lev = make_shared<AMGLevel>();
 
     logger->LogLevel (*f_lev);
 
@@ -300,7 +300,7 @@ namespace amg
     if (f_lev->level == 0)
       { state.last_redist_meas = curr_meas; }
 
-    shared_ptr<BaseDOFMapStep> embed_map = move(f_lev->embed_map), disc_map;
+    shared_ptr<BaseDOFMapStep> embed_map = f_lev->embed_map, disc_map;
 
     cout << " EMBED MAP " << embed_map << endl;
 
@@ -543,7 +543,8 @@ namespace amg
     }
 
     /** We now have emb - disc - prol - rd. Concatenate and pack into final map. **/
-    Array<shared_ptr<BaseDOFMapStep>> sub_steps, init_steps;
+
+    Array<shared_ptr<BaseDOFMapStep>> init_steps;
     if (embed_map != nullptr)
       { init_steps.Append(embed_map); }
     if (disc_map != nullptr)
@@ -557,51 +558,61 @@ namespace amg
     cout << "disc_map " << disc_map << endl;
     cout << "prol_map " << prol_map << endl;
     cout << "rd_map " << rd_map << endl;
-    const int iss = init_steps.Size();
-    for (int k = 0; k < iss; k++) {
-      shared_ptr<BaseDOFMapStep> conc_step = init_steps[k];
-      int j = k+1;
-      for ( ; j < iss; j++)
-	if (auto x = conc_step->Concatenate(init_steps[j]))
-	  { cout << " conc " << k << " - " << j << endl; conc_step = x; k++; }
-	else
-	  { break; }
-      // if (auto pm = dynamic_pointer_cast<ProlMap<SparseMatrixTM<double>>>(conc_step)) {
-	// cout << " CONC STEP " << k << " - " << j << ": " << endl;
-	// print_tm_spmat(cout, *pm->GetProl()); cout << endl;
-      // }
-      sub_steps.Append(conc_step);
-    }
-    init_steps = nullptr;
 
-    cout << "sub_steps: " << endl;
-    for (auto k :Range(sub_steps.Size()))
-      { cout << k << ": " << typeid(*sub_steps[k]).name() << endl; }
+    // const int iss = init_steps.Size();
+    // for (int k = 0; k < iss; k++) {
+    //   shared_ptr<BaseDOFMapStep> conc_step = init_steps[k];
+    //   int j = k+1;
+    //   for ( ; j < iss; j++)
+    // 	if (auto x = conc_step->Concatenate(init_steps[j]))
+    // 	  { cout << " conc " << k << " - " << j << endl; conc_step = x; k++; }
+    // 	else
+    // 	  { break; }
+    //   // if (auto pm = dynamic_pointer_cast<ProlMap<SparseMatrixTM<double>>>(conc_step)) {
+    // 	// cout << " CONC STEP " << k << " - " << j << ": " << endl;
+    // 	// print_tm_spmat(cout, *pm->GetProl()); cout << endl;
+    //   // }
+    //   sub_steps.Append(conc_step);
+    // }
+    // init_steps = nullptr;
+    // cout << "sub_steps: " << endl;
+    // for (auto k :Range(sub_steps.Size()))
+    //   { cout << k << ": " << typeid(*sub_steps[k]).name() << endl; }
+    // if (sub_steps.Size() > 0) {
+    //   shared_ptr<BaseDOFMapStep> final_step = nullptr;
+    //   if (sub_steps.Size() == 1)
+    // 	{ final_step = sub_steps[0]; }
+    //   else
+    // 	{ final_step = make_shared<ConcDMS>(sub_steps); }
 
-    if (sub_steps.Size() > 0) {
-      shared_ptr<BaseDOFMapStep> final_step = nullptr;
-      if (sub_steps.Size() == 1)
-	{ final_step = sub_steps[0]; }
-      else
-	{ final_step = make_shared<ConcDMS>(sub_steps); }
+    /** assemble coarse level matrix, set return vals, etc. **/
+    c_lev->level = f_lev->level + 1;
+    c_lev->cap = state.curr_cap;
+    auto final_step = MapLevel(init_steps, f_lev, c_lev);
 
-      /** assemble coarse level matrix, set return vals, etc. **/
-      c_lev->level = f_lev->level + 1;
-      c_lev->cap = state.curr_cap;
-      MapLevel(final_step, f_lev->cap, c_lev->cap);
+    // auto final_step = MakeSingleStep(init_steps);
+    // c_lev->level = f_lev->level + 1;
+    // c_lev->cap = state.curr_cap;
+    // MapLevel(final_step, f_lev, c_lev);
 
-      return final_step;
-    }
-    else {
-      c_lev->cap == f_lev->cap;
-      return nullptr;
-    }
+    if (final_step == nullptr)
+      { c_lev->cap = f_lev->cap; }
+
+    return final_step;
   } // BaseAMGFactory::DoStep
 
 
-  void BaseAMGFactory :: MapLevel (shared_ptr<BaseDOFMapStep> dof_step, shared_ptr<LevelCapsule> & f_cap, shared_ptr<LevelCapsule> & c_cap)
+  shared_ptr<BaseDOFMapStep> BaseAMGFactory :: MapLevel (FlatArray<shared_ptr<BaseDOFMapStep>> dof_steps, shared_ptr<AMGLevel> & f_lev, shared_ptr<AMGLevel> & c_lev)
   {
-    c_cap->mat = dof_step->AssembleMatrix(f_cap->mat);
+    auto final_step = MakeSingleStep(dof_steps);
+    c_lev->cap->mat = final_step->AssembleMatrix(f_lev->cap->mat);
+    return final_step;
+  } // BaseAMGFactory::MapLevel
+
+
+  void BaseAMGFactory :: MapLevel2 (shared_ptr<BaseDOFMapStep> & dof_step, shared_ptr<AMGLevel> & f_lev, shared_ptr<AMGLevel> & c_lev)
+  {
+    c_lev->cap->mat = dof_step->AssembleMatrix(f_lev->cap->mat);
   } // BaseAMGFactory::MapLevel
 
 
@@ -622,7 +633,14 @@ namespace amg
 
     auto cmesh = cmap->GetMappedMesh();
 
+    cout << " state cap " << state.curr_cap << endl;
+    cout << " state cap mesh " << state.curr_cap->mesh << endl;
+    cout << " cmesh " << cmesh << endl;
+
     size_t f_meas = ComputeMeshMeasure(*state.curr_cap->mesh), c_meas = ComputeMeshMeasure(*cmesh);
+
+    cout << " meass " << f_meas << " " << c_meas << endl;
+
     double cfac = (f_meas == 0) ? 0 : double(c_meas) / f_meas;
 
     cout << " map maps " << f_meas << " -> " << c_meas <<  ", fac " << cfac << endl;

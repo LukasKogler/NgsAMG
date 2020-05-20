@@ -283,13 +283,7 @@ namespace amg
     factory->SetUpLevels(amg_levels, dof_map);
 
     /** Smoothers **/
-    Array<shared_ptr<BaseSmoother>> smoothers(amg_levels.Size() - 1);
-    for (int k = 0; k < amg_levels.Size() - 1; k++) {
-      if ( (k > 0) && O.regularize_cmats) // Regularize coarse level matrices
-	{ RegularizeMatrix(amg_levels[k]->cap->mat, amg_levels[k]->cap->pardofs); }
-      smoothers[k] = BuildSmoother(*amg_levels[k]);
-      cout << "type k sm " << typeid(*smoothers[k]).name() << endl;
-    }
+    Array<shared_ptr<BaseSmoother>> smoothers = BuildSmoothers(amg_levels, dof_map);
 
     amg_mat = make_shared<AMGMatrix> (dof_map, smoothers);
     amg_mat->SetSTK(O.sm_steps);
@@ -362,22 +356,32 @@ namespace amg
   } // BaseAMGPC::BuildAMGMAt
 
 
+  Array<shared_ptr<BaseSmoother>> BaseAMGPC :: BuildSmoothers (FlatArray<shared_ptr<BaseAMGFactory::AMGLevel>> amg_levels,
+							       shared_ptr<DOFMap> dof_map)
+  {
+    auto & O(*options);
+
+    Array<shared_ptr<BaseSmoother>> smoothers(amg_levels.Size() - 1);
+
+    for (int k = 0; k < amg_levels.Size() - 1; k++) {
+      if ( (k > 0) && O.regularize_cmats) // Regularize coarse level matrices
+	{ RegularizeMatrix(amg_levels[k]->cap->mat, amg_levels[k]->cap->pardofs); }
+      smoothers[k] = BuildSmoother(*amg_levels[k]);
+      cout << "type k sm " << typeid(*smoothers[k]).name() << endl;
+    }
+
+    return smoothers;
+  } // BaseAMGPC :: BuildSmoothers
+
+
   void BaseAMGPC :: InitFinestLevel (BaseAMGFactory::AMGLevel & finest_level)
   {
-    auto finest_mesh = BuildInitialMesh();
-
-    // cout << "init mesh: " << endl << finest_mesh << endl;
-    // if (finest_mesh != nullptr)
-    //   { cout << *finest_mesh << endl; }
-    // else
-    //   { throw Exception("HAVE NOT BUILT FINEST MESH CORRECTLY!!!!"); }
 
     finest_level.level = 0;
-
-    finest_level.embed_map = BuildEmbedding(finest_mesh);
-
     finest_level.cap = factory->AllocCap();
-    finest_level.cap->mesh = finest_mesh; // TODO: get out of factory??
+
+    finest_level.cap->mesh = BuildInitialMesh(); // TODO: get out of factory??
+
     finest_level.cap->eqc_h = finest_level.cap->mesh->GetEQCHierarchy();
 
     if (finest_level.embed_map == nullptr)
@@ -388,6 +392,8 @@ namespace amg
     auto fpm = dynamic_pointer_cast<ParallelMatrix>(finest_mat);
     finest_level.cap->mat = (fpm == nullptr) ? dynamic_pointer_cast<BaseSparseMatrix>(finest_mat)
       : dynamic_pointer_cast<BaseSparseMatrix>(fpm->GetMatrix());
+
+    finest_level.embed_map = BuildEmbedding(finest_level);
 
   } // BaseAMGPC::InitFinestLevel
 

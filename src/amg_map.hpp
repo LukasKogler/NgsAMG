@@ -86,6 +86,7 @@ namespace amg {
     shared_ptr<ParallelDofs> GetParDofs () const { return pardofs; }
     shared_ptr<ParallelDofs> GetMappedParDofs () const { return mapped_pardofs; }
     virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const = 0;
+    virtual void Finalize () { ; }
   };
 
 
@@ -142,6 +143,7 @@ namespace amg {
 
     Array<shared_ptr<BaseSparseMatrix>> AssembleMatrices (shared_ptr<BaseSparseMatrix> finest_mat) const;
 
+    shared_ptr<DOFMap> SubMap (int from, int to = -1);
   }; // DOFMap
 
 
@@ -163,6 +165,11 @@ namespace amg {
 
     virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const override;
 
+    INLINE int GetNSteps () const { return sub_steps.Size(); }
+    INLINE shared_ptr<BaseDOFMapStep> GetStep (int k) const { return sub_steps[k]; }
+    INLINE FlatArray<shared_ptr<BaseDOFMapStep>> GetSteps () const { return sub_steps; }
+
+    virtual void Finalize () override;
     // virtual bool CanPullBack (shared_ptr<BaseDOFMapStep> other) override;
     // virtual shared_ptr<BaseDOFMapStep> PullBack (shared_ptr<BaseDOFMapStep> other) override;
   };
@@ -222,6 +229,7 @@ namespace amg {
     INLINE void SetProl (shared_ptr<TMAT> aprol) { prol = aprol; }
 
     void BuildPT (bool force = false);
+    virtual void Finalize () override;
 
   protected:
 
@@ -254,8 +262,12 @@ namespace amg {
     /** "me - other" -> "new other - new me" **/
     virtual shared_ptr<BaseDOFMapStep> PullBack (shared_ptr<BaseDOFMapStep> other) override;
     virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const;
-  };
+    virtual void Finalize () override; 
+ };
 
+
+  shared_ptr<BaseDOFMapStep> MakeSingleStep (FlatArray<shared_ptr<BaseDOFMapStep>> sub_steps);
+  shared_ptr<BaseDOFMapStep> MakeSingleStep2 (FlatArray<shared_ptr<BaseDOFMapStep>> sub_steps);
 
 }
 

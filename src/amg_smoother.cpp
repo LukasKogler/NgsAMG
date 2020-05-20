@@ -1448,13 +1448,17 @@ namespace amg {
     // cout << " FW b " << endl << b << endl;
     // cout << " FW res " << endl << res << endl;
     // cout << " FW x " << endl << x << endl;
+    // cout << " HMS FW " << endl;
     smrange->Smooth(x, b, res, res_updated, true, x_zero);
     // cout << " FW x smoothed " << endl << x << endl;
+    // cout << " HMS FW " << endl;
     DT->Mult(res, *rhspot);
     // cout << " FW rhs-pot " << endl << *rhspot << endl;
     *solpot = 0;
+    // cout << " HMS FW " << endl;
     smpot->Smooth(*solpot, *rhspot, *respot, false, false, true);
     // cout << " FW sol-pot " << endl << *solpot << endl;
+    // cout << " HMS FW " << endl;
     D->MultAdd(1.0, *solpot, x);
     // cout << " FW x incl pot " << endl << x << endl;
     if (update_res)
@@ -1465,10 +1469,12 @@ namespace amg {
   void HiptMairSmoother :: SmoothBack (BaseVector &x, const BaseVector &b, BaseVector &res,
 				       bool res_updated, bool update_res, bool x_zero) const
   {
-    if (!res_updated) {
-      if (x_zero) {
-	DT->Mult(b, *rhspot);
-      }
+
+    if (res_updated)
+      { DT->Mult(res, *rhspot); }
+    else {
+      if (x_zero)
+	{ DT->Mult(b, *rhspot); }
       else {
 	res = b - (*Arange) * x;
 	DT->Mult(res, *rhspot);
@@ -1476,10 +1482,13 @@ namespace amg {
     }
     // cout << " BW rhs-pot " << endl << *rhspot << endl;
     *solpot = 0;
+    // cout << " HMS BW " << endl;
     smpot->SmoothBack(*solpot, *rhspot, *respot, false, false, true);
     // cout << " BW sol-pot " << endl << *solpot << endl;
+    // cout << " HMS BW " << endl;
     D->MultAdd(1.0, *solpot, x);
     // cout << " BW x " << endl << *solpot << endl;
+    // cout << " HMS BW " << endl;
     smrange->SmoothBack(x, b, res, false, update_res, false);
     // cout << " BW x fin " << endl << x << endl;
   }
