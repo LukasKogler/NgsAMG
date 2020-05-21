@@ -106,7 +106,6 @@ namespace amg
     TAU_PROFILE("ConcDMS::TransferF2C", TAU_CT(*this), TAU_DEFAULT);
 #endif
 
-    cout << " conc f2c " << endl;
     if (sub_steps.Size() == 1)
       { sub_steps[0]->TransferF2C(x_fine, x_coarse); }
     else {
@@ -115,7 +114,6 @@ namespace amg
 	sub_steps[l]->TransferF2C(vecs[l-1], vecs[l]);
       sub_steps.Last()->TransferF2C(vecs.Last(), x_coarse);
     }
-    cout << " conc f2c done " << endl;
   }
 
 
@@ -463,6 +461,8 @@ namespace amg
   shared_ptr<BaseDOFMapStep> MakeSingleStep2 (FlatArray<shared_ptr<BaseDOFMapStep>> init_steps)
   {
     const int iss = init_steps.Size();
+    if (iss == 0)
+      { return nullptr; }
     Array<shared_ptr<BaseDOFMapStep>> sub_steps(iss); sub_steps.SetSize0();
     for (int k = 0; k < iss; k++) {
       shared_ptr<BaseDOFMapStep> conc_step = init_steps[k];

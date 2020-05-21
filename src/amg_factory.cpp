@@ -614,7 +614,12 @@ namespace amg
   shared_ptr<BaseDOFMapStep> BaseAMGFactory :: MapLevel (FlatArray<shared_ptr<BaseDOFMapStep>> dof_steps, shared_ptr<AMGLevel> & f_lev, shared_ptr<AMGLevel> & c_lev)
   {
     auto final_step = MakeSingleStep(dof_steps);
+
+    if (final_step == nullptr)
+      { return final_step; }
+
     c_lev->cap->mat = final_step->AssembleMatrix(f_lev->cap->mat);
+
     return final_step;
   } // BaseAMGFactory::MapLevel
 
