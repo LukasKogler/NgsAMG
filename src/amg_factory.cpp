@@ -256,14 +256,23 @@ namespace amg
 
     cout << "step done " << step << endl;
 
+    int step_bad = 0;
+
     if ( (step == nullptr) || (c_lev->cap->mesh == f_lev->cap->mesh) || (c_lev->cap->mat == f_lev->cap->mat) )
       { return; } // step not performed correctly - coarsening is probably stuck
-    else if (ComputeMeshMeasure(*c_lev->cap->mesh) == 0)
-      { return; } // e.g stokes: when coarsening down to 1 vertex, no more edges left!
-    else if (ComputeMeshMeasure(*c_lev->cap->mesh) < O.min_meas)
-      { return; } // coarse grid is too small
-    else
-      { dof_map->AddStep(step); }
+    if (c_lev->cap->mesh != nullptr) { // not dropped out
+      if (ComputeMeshMeasure(*c_lev->cap->mesh) == 0)
+	{ step_bad = 1; } // e.g stokes: when coarsening down to 1 vertex, no more edges left!
+      if (ComputeMeshMeasure(*c_lev->cap->mesh) < O.min_meas)
+	{ step_bad = 1; } // coarse grid is too small
+    }
+
+    step_bad = f_lev->cap->eqc_h->GetCommunicator().AllReduce(step_bad, MPI_SUM);
+
+    if (step_bad != 0)
+      { return; }
+
+    dof_map->AddStep(step);
 
     if (!O.keep_grid_maps){
       f_lev->disc_map = nullptr;
