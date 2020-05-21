@@ -42,9 +42,9 @@ def do_test_vec_h1(mesh_dim = 2, vec_dim = 2, maxh = None, nref = 0, space = "md
                 "ngs_amg_log_level" : "extra",
                 "ngs_amg_print_log" : True }
     if vec_dim == 2:
-        c = ngs_amg.h1_dim2(a, **pc_opts)
+        c = ngs_amg.h1_2d(a, **pc_opts)
     else:
-        c = ngs_amg.h1_dim3(a, **pc_opts)
+        c = ngs_amg.h1_3d(a, **pc_opts)
     Solve(a, f, c, ms=ms)
     print("--- DONE with test vector h1, mesh_dim", mesh_dim, "vec_dim", vec_dim, "space", space)
     sys.stdout.flush()
