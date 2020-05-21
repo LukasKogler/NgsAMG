@@ -384,17 +384,16 @@ namespace amg
 
     finest_level.cap->eqc_h = finest_level.cap->mesh->GetEQCHierarchy();
 
-    if (finest_level.embed_map == nullptr)
-      { finest_level.cap->pardofs = finest_mat->GetParallelDofs(); }
-    else
-      { finest_level.cap->pardofs = finest_level.embed_map->GetMappedParDofs(); }
-
     auto fpm = dynamic_pointer_cast<ParallelMatrix>(finest_mat);
     finest_level.cap->mat = (fpm == nullptr) ? dynamic_pointer_cast<BaseSparseMatrix>(finest_mat)
       : dynamic_pointer_cast<BaseSparseMatrix>(fpm->GetMatrix());
 
     finest_level.embed_map = BuildEmbedding(finest_level);
 
+    if (finest_level.embed_map == nullptr)
+      { finest_level.cap->pardofs = finest_mat->GetParallelDofs(); }
+    else
+      { finest_level.cap->pardofs = finest_level.embed_map->GetMappedParDofs(); }
   } // BaseAMGPC::InitFinestLevel
 
 
@@ -412,9 +411,11 @@ namespace amg
     if (O.spec_sm_types.Size() > amg_level.level)
       { sm_type = O.spec_sm_types[amg_level.level]; }
 
+    shared_ptr<ParallelDofs> pardofs = (amg_level.level == 0) ? finest_mat->GetParallelDofs() : amg_level.cap->pardofs;
+
     switch(sm_type) {
-    case(Options::SM_TYPE::GS)  : { smoother = BuildGSSmoother(amg_level.cap->mat, amg_level.cap->pardofs, amg_level.cap->eqc_h, GetFreeDofs(amg_level)); break; }
-    case(Options::SM_TYPE::BGS) : { smoother = BuildBGSSmoother(amg_level.cap->mat, amg_level.cap->pardofs, amg_level.cap->eqc_h, move(GetGSBlocks(amg_level))); break; }
+    case(Options::SM_TYPE::GS)  : { smoother = BuildGSSmoother(amg_level.cap->mat, pardofs, amg_level.cap->eqc_h, GetFreeDofs(amg_level)); break; }
+    case(Options::SM_TYPE::BGS) : { smoother = BuildBGSSmoother(amg_level.cap->mat, pardofs, amg_level.cap->eqc_h, move(GetGSBlocks(amg_level))); break; }
     default : { throw Exception("Invalid Smoother type!"); break; }
     }
 
