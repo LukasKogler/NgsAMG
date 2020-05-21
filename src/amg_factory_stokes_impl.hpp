@@ -228,6 +228,7 @@ namespace amg
     agg_opts.neib_boost = false;
     agg_opts.robust = false;
     agg_opts.dist2 = ( state.level[1] == 0 ) && ( state.level[0] < O.n_levels_d2_agg );
+    agg_opts.print_aggs = true;
     
     // auto agglomerator = make_shared<AGG_CLASS>(mesh, state.free_nodes, move(agg_opts));
 

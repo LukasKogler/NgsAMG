@@ -103,6 +103,7 @@ namespace amg
       int min_new_aggs = 3;
       bool robust = true;
       bool neib_boost = true;
+      bool print_aggs = false;
     };
 
   protected:

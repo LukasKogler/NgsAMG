@@ -40,6 +40,7 @@ namespace amg
 
     /** AGG **/
     bool agg_neib_boost = false;
+    bool print_aggs = false;                    // print agglomerates (for debugging purposes)
 
   public:
 
@@ -77,6 +78,7 @@ namespace amg
       set_num(min_vcw, "vert_thresh");
       set_num(min_vcw, "vert_thresh");
       set_bool(agg_neib_boost, "agg_neib_boost");
+      set_bool(print_aggs, "print_aggs");
     } // VertexAMGFactoryOptions::SetFromFlags
 
   }; // VertexAMGFactoryOptions
@@ -151,6 +153,7 @@ namespace amg
     agg_opts.neib_boost = O.agg_neib_boost;
     agg_opts.robust = O.ecw_robust;
     agg_opts.dist2 = ( state.level[1] == 0 ) && ( state.level[0] < O.n_levels_d2_agg );
+    agg_opts.print_aggs = O.print_aggs;
     // auto agglomerator = make_shared<Agglomerator<FACTORY>>(mesh, state.free_nodes, move(agg_opts));
 
     auto agglomerator = make_shared<AGG_CLASS>(mesh, state.curr_cap->free_nodes, move(agg_opts));
