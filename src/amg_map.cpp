@@ -1,3 +1,4 @@
+
 #define FILE_AMGMAP_CPP
 
 #ifdef USE_TAU
@@ -333,12 +334,12 @@ namespace amg
   shared_ptr<BaseSparseMatrix> ProlMap<TMAT> :: AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const
   {
 
-    cout << "prolmap assmat, type " << typeid(*this).name() << endl;
-    cout << "prol type " << typeid(*prol).name() << endl;
-    cout << "prol dims " << prol->Height() << " x " << prol->Width() << endl;
-    cout << "prol, fmat " << prol << ", " << mat << endl;
-    cout << "fmat type " << typeid(*mat).name() << endl;
-    cout << "fmat dims " << mat->Height() << " x " << mat->Width() << endl;
+    // cout << "prolmap assmat, type " << typeid(*this).name() << endl;
+    // cout << "prol type " << typeid(*prol).name() << endl;
+    // cout << "prol dims " << prol->Height() << " x " << prol->Width() << endl;
+    // cout << "prol, fmat " << prol << ", " << mat << endl;
+    // cout << "fmat type " << typeid(*mat).name() << endl;
+    // cout << "fmat dims " << mat->Height() << " x " << mat->Width() << endl;
 
     auto tfmat = dynamic_pointer_cast<SPM_TM_F>(mat);
     if (tfmat == nullptr) {

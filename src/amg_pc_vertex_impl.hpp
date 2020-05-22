@@ -84,8 +84,6 @@ namespace amg
       { throw Exception("Invalid Opts!"); }
     Options & O(*myO);
 
-    cout << " VertexAMGPC::SetOptionsFromFlags " << endl;
-    
     O.SetFromFlags(bfa->GetFESpace(), flags, prefix);
   } // VertexAMGPC<FACTORY> :: SetOptionsFromFlags
 

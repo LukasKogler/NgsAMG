@@ -367,7 +367,7 @@ namespace amg
       if ( (k > 0) && O.regularize_cmats) // Regularize coarse level matrices
 	{ RegularizeMatrix(amg_levels[k]->cap->mat, amg_levels[k]->cap->pardofs); }
       smoothers[k] = BuildSmoother(*amg_levels[k]);
-      cout << "type k sm " << typeid(*smoothers[k]).name() << endl;
+      // cout << "type k sm " << typeid(*smoothers[k]).name() << endl;
     }
 
     return smoothers;
@@ -403,8 +403,8 @@ namespace amg
     
     shared_ptr<BaseSmoother> smoother = nullptr;
 
-    cout << " smoother, mat " << amg_level.cap->mat->Height() << " x " << amg_level.cap->mat->Width() << endl;
-    cout << " pds " << amg_level.cap->pardofs->GetNDofLocal() << endl;
+    // cout << " smoother, mat " << amg_level.cap->mat->Height() << " x " << amg_level.cap->mat->Width() << endl;
+    // cout << " pds " << amg_level.cap->pardofs->GetNDofLocal() << endl;
 
     Options::SM_TYPE sm_type = O.sm_type;
 
