@@ -1,3 +1,4 @@
+
 #define FILE_AMGMAP_CPP
 
 #ifdef USE_TAU

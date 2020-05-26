@@ -667,6 +667,8 @@ namespace amg
     TAU_PROFILE("StartCO2CU", TAU_CT(*this), TAU_DEFAULT);
 #endif
 
+    // static Timer t("StartCO2CU"); RegionTimer rt(t);
+
     if (vec.GetParallelStatus() != DISTRIBUTED)
       { return; }
 
@@ -1431,10 +1433,10 @@ namespace amg
   {
 
     static Timer t(string("HybSm<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::Smooth");
-    RegionTimer rt(t);
-
-    static Timer tpre(string("HybSm<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::S - pre");
-    static Timer tpost(string("HybSm<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::S - post");
+    static Timer tpre(string("HybSm<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::pre");
+    static Timer tpost(string("HybSm<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::post");
+    static Timer tprep(string("HybSm<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::prep1");
+    static Timer tprep2(string("HybSm<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::prep12");
 
     /** most of the time RU == UR, if not, reduce to such a case **/
     if (res_updated && !update_res) { // RU && !UR
@@ -1443,10 +1445,12 @@ namespace amg
     }
     else if (!res_updated && update_res) { // !RU + UR
       // should happen very infrequently - we can affort mat x vector 
+      tprep.Start();
       if (x_zero)
   	{ res = b; }
       else
   	{ res = b - *A * x; } // what about freedofs?
+      tprep.Stop();
       SmoothInternal(type, x, b, res, true, update_res, x_zero);
       return;
     }
@@ -1461,6 +1465,8 @@ namespace amg
       SmoothInternal(0, x, b, res, res_updated, update_res, false);
       return;
     }
+
+    RegionTimer rt(t);
 
 #ifdef USE_TAU
     TAU_PROFILE("", TAU_CT(*this), TAU_DEFAULT)
@@ -1479,7 +1485,9 @@ namespace amg
     //   return;
     // }
 
-    auto dcc_map = A->GetMap();
+      tprep2.Start();
+      
+      auto dcc_map = A->GetMap();
     const auto H = A->Height();
     auto G = A->GetG();
     auto & xloc = *get_loc_ptr(x);
@@ -1489,7 +1497,9 @@ namespace amg
     auto & resloc = *get_loc_ptr(res);
     auto & Gxloc = *Gx;
 
-    /** 
+    tprep2.Stop();
+
+      /** 
 	!MPI &  RES           -> use res
 	!MPI & !RES           -> use b
 	 MPI &  RES           -> use res
