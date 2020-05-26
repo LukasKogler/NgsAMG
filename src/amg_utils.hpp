@@ -284,7 +284,25 @@ namespace amg
     return out;
   }
 
-  // TODO: coutl this be binary_op_table?
+  /** binary_op table **/
+  template<class T, class TLAM> INLINE Array<typename tab_scal_trait<T>::type> bop_table (T & tab, TLAM lam)
+  {
+    Array<typename tab_scal_trait<T>::type> out;
+    auto nrows = tab.Size();
+    if (nrows == 0) return out;
+    auto row_s = tab[0].Size();
+    if (row_s == 0) return out;
+    out.SetSize(row_s); out = tab[0];
+    if (nrows == 1) { return out; }
+    for (size_t k = 1; k < tab.Size(); k++) {
+      auto row = tab[k];
+      for (auto l : Range(row_s))
+	{ lam(out[l], row[l]); }
+    }
+    return out;
+  }
+
+
   template<class T> INLINE Array<typename tab_scal_trait<T>::type> sum_table (T & tab)
   {
     Array<typename tab_scal_trait<T>::type> out;
@@ -647,6 +665,12 @@ namespace amg
 	sum += fabs(x(k,j));
     return sum;
   }
+  INLINE double calc_trace (FlatMatrix<double> x) {
+    double sum = 0;
+    for (auto k : Range(x.Height()))
+      { sum += x(k,k); }
+    return sum;
+  }
 
   template<class A, class B, class TLAM>
   INLINE void iterate_intersection (const A & a, const B & b, TLAM lam)
@@ -871,6 +895,72 @@ namespace amg
       { m = -Trans(evecs.Rows(0, nneg)) * evecs.Rows(0, nneg); }
     else
       { m = 0; }
+  }
+
+
+  INLINE void CalcStabPseudoInverse (double & M, LocalHeap & lh)
+  { M = (M == 0) ? 0 : 1.0/M; }
+
+  INLINE void CalcPseudoInverse2 (double & M, LocalHeap & lh)
+  { M = (M == 0) ? 0 : 1.0/M; }
+
+  INLINE void CalcPseudoInverse2 (FlatMatrix<double> M, LocalHeap & lh)
+  {
+    static Timer t("CalcPseudoInverse2"); RegionTimer rt(t);
+    const int N = M.Height();
+    FlatMatrix<double> evecs(N, N, lh);
+    FlatVector<double> evals(N, lh);
+    LapackEigenValuesSymmetric(M, evals, evecs);
+    double tol = 0; for (auto v : evals) tol += v;
+    tol = 1e-12 * tol; tol = max2(tol, 1e-15);
+    for (auto & v : evals)
+      { v = (v > tol) ? 1/sqrt(v) : 0; }
+    for (auto i : Range(N))
+      for (auto j : Range(N))
+	{ evecs(i, j) *= evals(i); }
+    M = Trans(evecs) * evecs;
+  }
+
+
+  INLINE void CalcStabPseudoInverse (FlatMatrix<double> mat, LocalHeap & lh)
+  {
+    static Timer t("CalcStabPseudoInverse2"); RegionTimer rt(t);
+    int N = mat.Height(), M = 0;
+    double tr = calc_trace(mat) / N;
+    double eps = 1e-8 * tr;
+    for (auto k : Range(N))
+      if (mat(k,k) > eps)
+	{ M++; }
+    FlatArray<double> mat_diags(M, lh);
+    FlatArray<double> mat_diag_invs(M, lh);
+    FlatArray<int> nzeros(M, lh);
+    M = 0;
+    for (auto k : Range(N)) {
+      if (mat(k,k) > eps) {
+	auto rt = sqrt(mat(k,k));
+	mat_diags[M] = rt;
+	mat_diag_invs[M] = 1.0/rt;
+	nzeros[M] = k;
+	M++;
+      }
+    }
+    FlatMatrix<double> small_mat(M, M, lh);
+    for (auto i : Range(M))
+      for (auto j : Range(M))
+	{ small_mat(i,j) = mat(nzeros[i], nzeros[j]) * mat_diag_invs[i] * mat_diag_invs[j]; }
+    CalcPseudoInverse2(small_mat, lh);
+    mat = 0;
+    for (auto i : Range(M))
+      for (auto j : Range(M))
+	{ mat(nzeros[i],nzeros[j]) = small_mat(i,j) * mat_diag_invs[i] * mat_diag_invs[j]; }
+  }
+
+  template<int N> INLINE void CalcStabPseudoInverse (Mat<N, N, double> & TM, LocalHeap & lh)
+  {
+    FlatMatrix<double> mat(N, N, lh);
+    mat = TM;
+    CalcStabPseudoInverse(mat, lh);
+    TM = mat;
   }
 
   template<int N, class T> INLINE void CalcPseudoInverse (T & m)

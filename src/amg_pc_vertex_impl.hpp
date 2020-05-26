@@ -766,6 +766,7 @@ namespace amg
   void VertexAMGPC<FACTORY> :: InitFinestLevel (BaseAMGFactory::AMGLevel & finest_level)
   {
     BaseAMGPC::InitFinestLevel(finest_level);
+    /** Explicitely assemble matrix associated with the finest mesh. **/
     finest_level.cap->free_nodes = free_verts;
   }
 

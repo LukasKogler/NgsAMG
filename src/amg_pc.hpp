@@ -132,6 +132,7 @@ namespace amg
     bool do_test = false;                // perform PC-test for amg_mat
     bool smooth_lo_only = false;         // smooth only on low order part -> AMG-PC is for the LO part only
     bool regularize_cmats = false;       // do we need to regularize coarse level matrices ?
+    bool force_ass_flmat = false;        // force assembling of matrix belonging to finest level (embedding)
 
     /** How do we compute the replacement matrix **/
     enum ENERGY : char { TRIV_ENERGY = 0,     // uniform weights

@@ -119,6 +119,10 @@ namespace amg
   template<class FACTORY, class AUX_SYS>
   void StokesAMGPC<FACTORY, AUX_SYS> :: InitFinestLevel (BaseAMGFactory::AMGLevel & finest_level)
   {
+    auto & O(static_cast<Options&>(*options));
+    if (O.force_ass_flmat)
+      { throw Exception("force_ass_flmat for stokes probably not correct yet"); }
+
     BaseAMGPC::InitFinestLevel(finest_level);
 
     /** We set BND-verts to dirichlet if their single facet is Dirichlet. **/
@@ -817,6 +821,8 @@ namespace amg
 	// cap.pot_mat = opm;
       }
       shared_ptr<AMGMatrix> pot_amg_mat = make_shared<AMGMatrix>(pot_dof_chunk, pot_smoothers_k);
+      // pot_amg_mat->SetSTK(3);
+      // pot_amg_mat->SetVWB(2);
 
       if (pot_amg_mat->GetSmoother(0)->Height() > 0)
 	{
@@ -848,6 +854,8 @@ namespace amg
 	capj.pot_mat = opm;
       }
       shared_ptr<AMGMatrix> pot_amg_mat2 = make_shared<AMGMatrix>(pot_dof_chunk, pot_smoothers_k2);
+      // pot_amg_mat2->SetSTK(3);
+      // pot_amg_mat2->SetVWB(2);
 
       if (pot_amg_mat->GetSmoother(0)->Height() > 0)
 	{
@@ -870,7 +878,7 @@ namespace amg
 	  netgen::printmessage_importance = i2;
 	}
 
-      auto hc_sm = make_shared<AMGSmoother>(pot_amg_mat2, 0);
+      auto hc_sm = make_shared<AMGSmoother>(pot_amg_mat, 0);
       hc_sm->Finalize();
       shared_ptr<BaseMatrix> cmat, cmat_T;
       if (k == 0) {

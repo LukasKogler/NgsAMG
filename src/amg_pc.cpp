@@ -79,6 +79,7 @@ namespace amg
     set_bool(do_test, "do_test");
     set_bool(smooth_lo_only, "smooth_lo_only");
     set_bool(regularize_cmats, "regularize_cmats");
+    set_bool(force_ass_flmat, "faflm");
 
     set_enum_opt(energy, "energy", { "triv", "alg", "elmat" }, Options::ENERGY::ALG_ENERGY);
 
@@ -367,7 +368,6 @@ namespace amg
       if ( (k > 0) && O.regularize_cmats) // Regularize coarse level matrices
 	{ RegularizeMatrix(amg_levels[k]->cap->mat, amg_levels[k]->cap->pardofs); }
       smoothers[k] = BuildSmoother(*amg_levels[k]);
-      cout << "type k sm " << typeid(*smoothers[k]).name() << endl;
     }
 
     return smoothers;
@@ -392,8 +392,15 @@ namespace amg
 
     if (finest_level.embed_map == nullptr)
       { finest_level.cap->pardofs = finest_mat->GetParallelDofs(); }
-    else
-      { finest_level.cap->pardofs = finest_level.embed_map->GetMappedParDofs(); }
+    else {
+      /** Explicitely assemble matrix associated with the finest mesh. **/
+      if (options->force_ass_flmat) {
+	finest_level.cap->mat = finest_level.embed_map->AssembleMatrix(finest_level.cap->mat);
+	finest_level.embed_done = true;
+      }
+      /** Either way, pardofs associated with the mesh are the mapped pardofs of the embed step **/
+      finest_level.cap->pardofs = finest_level.embed_map->GetMappedParDofs();
+    }
   } // BaseAMGPC::InitFinestLevel
 
 
@@ -403,8 +410,8 @@ namespace amg
     
     shared_ptr<BaseSmoother> smoother = nullptr;
 
-    cout << " smoother, mat " << amg_level.cap->mat->Height() << " x " << amg_level.cap->mat->Width() << endl;
-    cout << " pds " << amg_level.cap->pardofs->GetNDofLocal() << endl;
+    // cout << " smoother, mat " << amg_level.cap->mat->Height() << " x " << amg_level.cap->mat->Width() << endl;
+    // cout << " pds " << amg_level.cap->pardofs->GetNDofLocal() << endl;
 
     Options::SM_TYPE sm_type = O.sm_type;
 
@@ -412,10 +419,17 @@ namespace amg
       { sm_type = O.spec_sm_types[amg_level.level]; }
 
     shared_ptr<ParallelDofs> pardofs = (amg_level.level == 0) ? finest_mat->GetParallelDofs() : amg_level.cap->pardofs;
+    shared_ptr<BaseSparseMatrix> spmat;
+    if (amg_level.level == 0) { /** This makes a difference with force_ass_flmat **/
+      auto fpm = dynamic_pointer_cast<ParallelMatrix>(finest_mat);
+      spmat = (fpm == nullptr) ? dynamic_pointer_cast<BaseSparseMatrix>(finest_mat) : dynamic_pointer_cast<BaseSparseMatrix>(fpm->GetMatrix());
+    }
+    else
+      { spmat = amg_level.cap->mat; }
 
     switch(sm_type) {
-    case(Options::SM_TYPE::GS)  : { smoother = BuildGSSmoother(amg_level.cap->mat, pardofs, amg_level.cap->eqc_h, GetFreeDofs(amg_level)); break; }
-    case(Options::SM_TYPE::BGS) : { smoother = BuildBGSSmoother(amg_level.cap->mat, pardofs, amg_level.cap->eqc_h, move(GetGSBlocks(amg_level))); break; }
+    case(Options::SM_TYPE::GS)  : { smoother = BuildGSSmoother(spmat, pardofs, amg_level.cap->eqc_h, GetFreeDofs(amg_level)); break; }
+    case(Options::SM_TYPE::BGS) : { smoother = BuildBGSSmoother(spmat, pardofs, amg_level.cap->eqc_h, move(GetGSBlocks(amg_level))); break; }
     default : { throw Exception("Invalid Smoother type!"); break; }
     }
 

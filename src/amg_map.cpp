@@ -333,12 +333,12 @@ namespace amg
   shared_ptr<BaseSparseMatrix> ProlMap<TMAT> :: AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const
   {
 
-    cout << "prolmap assmat, type " << typeid(*this).name() << endl;
-    cout << "prol type " << typeid(*prol).name() << endl;
-    cout << "prol dims " << prol->Height() << " x " << prol->Width() << endl;
-    cout << "prol, fmat " << prol << ", " << mat << endl;
-    cout << "fmat type " << typeid(*mat).name() << endl;
-    cout << "fmat dims " << mat->Height() << " x " << mat->Width() << endl;
+    // cout << "prolmap assmat, type " << typeid(*this).name() << endl;
+    // cout << "prol type " << typeid(*prol).name() << endl;
+    // cout << "prol dims " << prol->Height() << " x " << prol->Width() << endl;
+    // cout << "prol, fmat " << prol << ", " << mat << endl;
+    // cout << "fmat type " << typeid(*mat).name() << endl;
+    // cout << "fmat dims " << mat->Height() << " x " << mat->Width() << endl;
 
     auto tfmat = dynamic_pointer_cast<SPM_TM_F>(mat);
     if (tfmat == nullptr) {
@@ -350,8 +350,8 @@ namespace amg
     self.Finalize();
     
     // if (prol->Width() < 100) {
-    //   cout << " fmat: " << endl; print_tm_spmat(cout, *tfmat); cout << endl<< endl;
-    //   cout << " prol: " << endl; print_tm_spmat(cout, *prol); cout << endl<< endl;
+      // cout << " fmat: " << endl; print_tm_spmat(cout, *tfmat); cout << endl<< endl;
+      // cout << " prol: " << endl; print_tm_spmat(cout, *prol); cout << endl<< endl;
     // }
 
     // auto spm_tm = RestrictMatrixTM<SPM_TM_F, TMAT> (*prol_trans, *tfmat, *prol);

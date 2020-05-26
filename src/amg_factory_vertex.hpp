@@ -52,6 +52,11 @@ namespace amg
     virtual void CalcECOLWeightsRobust (BaseAMGFactory::State & state, Array<double> & vcw, Array<double> & ecw);
 
 
+    virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap_impl (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap,
+							     shared_ptr<BaseAMGFactory::LevelCapsule> fcap);
+    virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap_impl_v2 (shared_ptr<ProlMap<TSPM_TM>> pw_step, shared_ptr<BaseCoarseMap> cmap,
+								shared_ptr<BaseAMGFactory::LevelCapsule> fcap);
+
     /** Discard **/
     virtual bool TryDiscardStep (BaseAMGFactory::State & state) override;
     virtual shared_ptr<BaseDiscardMap> BuildDiscardMap (BaseAMGFactory::State & state, shared_ptr<BaseAMGFactory::LevelCapsule> & c_cap);

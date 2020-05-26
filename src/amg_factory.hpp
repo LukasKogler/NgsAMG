@@ -185,6 +185,7 @@ namespace amg
     int level;
     shared_ptr<BaseAMGFactory::LevelCapsule> cap;
     shared_ptr<BaseDOFMapStep> embed_map = nullptr; // embedding
+    bool embed_done = false;
     // map to next level: embed -> disc -> crs (-> ctr)
     shared_ptr<BaseDiscardMap> disc_map = nullptr;
     shared_ptr<BaseCoarseMap> crs_map = nullptr;

@@ -195,6 +195,20 @@ namespace amg
       // 	  if constexpr(NT!=NT_VERTEX) for (const auto& node : GetCNodes<NT>(eqc)) lam(eqc, node);
       // 	}
     }
+    template<NODE_TYPE NT, class TX, class TLAM>
+    INLINE void ApplyEQ2 (TX&& eqcs, TLAM lam, bool master_only = false) const {
+      for (auto eqc : eqcs) {
+	if ( !master_only || eqc_h->IsMasterOfEQC(eqc) ) {
+	  lam(eqc, GetENodes<NT>(eqc));
+	  if constexpr(NT != NT_VERTEX)
+	    { lam(eqc, GetCNodes<NT>(eqc)); }
+	}
+      }
+    }
+    template<NODE_TYPE NT, class TLAM>
+    INLINE void ApplyEQ2 (TLAM lam, bool master_only = false) const {
+      ApplyEQ2<NT>(Range(GetNEqcs()), lam, master_only);
+    }
     // ugly stuff
     template<NODE_TYPE NT, class T>
     void ScatterNodalData (Array<T> & avdata) const {

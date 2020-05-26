@@ -341,29 +341,29 @@ namespace amg
 				     bool res_updated, bool update_res, bool x_zero) const
   {
     static Timer t ("SmoothFromLevel"); RegionTimer rt(t);
-    cout << "SVL " << startlevel << endl;
-    cout << " x b r s " << x.Size() << " " << b.Size() << " " << res.Size() << endl;
+    // cout << "SVL " << startlevel << " of " << n_levels << endl;
+    // cout << " x b r s " << x.Size() << " " << b.Size() << " " << res.Size() << endl;
 
-    cout << " SVL (F) " << startlevel << " " << startlevel << endl;
+    // cout << " SVL (F) " << startlevel << " " << startlevel << endl;
     smoothers[startlevel]->SmoothK(stk, x, b, res, res_updated, true, x_zero);
     res.Distribute();
-    cout << " SVL (F) " << startlevel << " " << startlevel << endl;
+    // cout << " SVL (F) " << startlevel << " " << startlevel << endl;
     map->TransferF2C(startlevel, &res, rhs_level[startlevel+1].get());
-    cout << " SVL (F) " << startlevel << " " << startlevel << endl;
+    // cout << " SVL (F) " << startlevel << " " << startlevel << endl;
 
     if (startlevel + 2 < n_levels)
       for (int level = startlevel + 1; level+1 < n_levels; level++ ) {
 	BaseVector &xl ( *x_level[level] ), &rl (*res_level[level]);
 	const BaseVector &bl ( *rhs_level[level] );
-	cout << " xl bl l" << level << " lens " << xl.Size() << " " << bl.Size() << endl;
+	// cout << " xl bl l" << level << " lens " << xl.Size() << " " << bl.Size() << endl;
 	xl.FVDouble() = 0.0;
 	xl.SetParallelStatus(CUMULATED);
 	rl.FVDouble() = bl.FVDouble();
 	rl.SetParallelStatus(bl.GetParallelStatus());
-	cout << " SVL (F) " << startlevel << " " << level << endl;
+	// cout << " SVL (F) " << startlevel << " " << level << endl;
 	smoothers[level]->SmoothK(stk, xl, bl, rl, true, true, true);
 	rl.Distribute();
-	cout << " SVL (F) " << startlevel << " " << level << endl;
+	// cout << " SVL (F) " << startlevel << " " << level << endl;
 	map->TransferF2C(level, res_level[level].get(), rhs_level[level+1].get());
       }
 
@@ -385,18 +385,18 @@ namespace amg
       for (int level = n_levels - 2; level > startlevel; level--) {
 	BaseVector &xl ( *x_level[level] ), &rl (*res_level[level]);
 	const BaseVector &bl ( *rhs_level[level] );
-	cout << " SVL (B) " << startlevel << " " << level << endl;
+	// cout << " SVL (B) " << startlevel << " " << level << endl;
 	map->AddC2F(level, 1.0, &xl, x_level[level+1].get());
-	cout << " SVL (B) " << startlevel << " " << level << endl;
+	// cout << " SVL (B) " << startlevel << " " << level << endl;
 	smoothers[level]->SmoothBackK(stk, xl, bl, rl, false, false, false);
       }
     
-    cout << " SVL (B) " << startlevel << " " << startlevel << endl;
+    // cout << " SVL (B) " << startlevel << " " << startlevel << endl;
     map->AddC2F(startlevel, 1.0, &x, x_level[startlevel+1].get());
-    cout << " SVL (B) " << startlevel << " " << startlevel << endl;
+    // cout << " SVL (B) " << startlevel << " " << startlevel << endl;
     smoothers[startlevel]->SmoothBackK(stk, x, b, res, false, update_res, false);
 
-    cout << "SVL " << startlevel << " done" << endl;
+    // cout << "SVL " << startlevel << " done" << endl;
 
   } // AMGMatrix::SmoothVFromLevel
 

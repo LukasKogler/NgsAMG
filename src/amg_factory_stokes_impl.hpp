@@ -37,6 +37,9 @@ namespace amg
   shared_ptr<BaseDOFMapStep> StokesAMGFactory<TMESH, ENERGY> :: MapLevel (FlatArray<shared_ptr<BaseDOFMapStep>> dof_steps,
 									  shared_ptr<BaseAMGFactory::AMGLevel> & f_lev, shared_ptr<BaseAMGFactory::AMGLevel> & c_lev)
   {
+    if ( (dof_steps.Size() > 1) && (f_lev->embed_map != nullptr) && (f_lev->cap->mat->GetParallelDofs() == f_lev->cap->pardofs) )
+      { throw Exception("Force assemble FLM not yet done for stokes (PC-MapLevel)"); }
+
     auto & fcap = static_cast<StokesLC&>(*f_lev->cap);
     auto & ccap = static_cast<StokesLC&>(*c_lev->cap);
 
