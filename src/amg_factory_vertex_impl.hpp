@@ -428,6 +428,17 @@ namespace amg
     auto get_cols_classic = [&](auto eqc, auto fvnr) {
       if (eqc != 0) // might still have non-hierarchic neibs on other side!
 	{ return false; }
+      auto ovs = fecon.GetRowIndices(fvnr);
+      int nniscv = 0; // number neibs in same cv
+      auto cvnr = vmap[fvnr];
+      for (auto v : ovs)
+	if (vmap[v] == cvnr)
+	  { nniscv++; }
+      if (nniscv == 0) { // no neib that maps to same coarse vertex - use pwprol!
+	cols.SetSize(1);
+	cols[0] = cvnr;
+	return true;
+      }
       auto ris = fmat->GetRowIndices(fvnr);
       cols.SetSize0();
       bool is_ok = true;
