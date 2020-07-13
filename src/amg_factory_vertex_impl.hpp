@@ -1439,8 +1439,8 @@ namespace amg
       // print_tm_spmat(cout, *sprol); cout << endl;
     }
 
-    cout << "sprol (with cmesh):: " << endl;
-    print_tm_spmat(cout, *sprol); cout << endl;
+    // cout << "sprol (with cmesh):: " << endl;
+    // print_tm_spmat(cout, *sprol); cout << endl;
 
     return make_shared<ProlMap<TSPM_TM>> (sprol, pw_step->GetParDofs(), pw_step->GetMappedParDofs());
   } // VertexAMGFactory::SmoothedProlMap_impl
