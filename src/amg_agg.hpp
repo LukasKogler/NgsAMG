@@ -60,6 +60,8 @@ namespace amg
 
     using BaseGridMapStep::mesh, BaseGridMapStep::mapped_mesh;
 
+    bool print_vmap = false;
+
     virtual void FormAgglomerates (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg) = 0;
 
     shared_ptr<BitArray> is_center;
@@ -104,6 +106,7 @@ namespace amg
       bool robust = true;
       bool neib_boost = true;
       bool print_aggs = false;
+      xbool use_stab_ecw_hack = maybe;
     };
 
   protected:

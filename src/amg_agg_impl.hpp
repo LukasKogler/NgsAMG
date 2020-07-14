@@ -51,6 +51,9 @@ namespace amg
 
     MapVerts(*mapped_btm, aggs, v_to_agg);
 
+    if (this->print_vmap)
+      { cout << " vmap: " << endl; prow2(this->GetMap<NT_VERTEX>()); cout << endl; }
+
     MapEdges(*mapped_btm, aggs, v_to_agg);
 
     if constexpr(std::is_same<TMESH, BlockTM>::value == 1) {
@@ -1081,6 +1084,7 @@ namespace amg
     : BaseCoarseMap(_mesh), AgglomerateCoarseMap<TMESH>(_mesh), free_verts(_free_verts), settings(_settings)
   {
     assert(mesh != nullptr); // obviously this would be bad
+    this->print_vmap = settings.print_aggs;
   } // Agglomerator(..)
 
 
@@ -1142,6 +1146,8 @@ namespace amg
     const bool geom = settings.cw_geom;
     const int MIN_NEW_AGG_SIZE = 2;
     const bool enable_neib_boost = settings.neib_boost;
+    /** use if explicitely turned on, or if harmonic mean and not turned off **/
+    const bool use_stab_ecw_hack = settings.use_stab_ecw_hack.IsTrue() || ( (!settings.use_stab_ecw_hack.IsFalse()) && (!geom) );
 
     FlatArray<TVD> vdata = get<0>(tm_mesh->Data())->Data();
     FlatArray<TMU> edata = GetEdgeData<TMU>();
@@ -1253,6 +1259,7 @@ namespace amg
       // if (doout) {
       // prt_evv<N>(diagb, "diag cb", false);
       // }
+      constexpr int N2 = mat_traits<TMU>::HEIGHT;
       const auto memsas = memsa.Size();
       const auto memsbs = memsb.Size();
       bool vv_case = (memsas == memsbs) && (memsas == 1);
@@ -1338,7 +1345,14 @@ namespace amg
 	// cout << " harm " << mmev_h << endl;
 	// FACTORY::CalcQs(vdata[ca], vdata[cb], Qij, Qji);
 	ModQs(vdata[ca], vdata[cb], Qij, Qji);
-	mmev = MIN_EV_FG(Aaa, Abb, Qij, Qji, emat);
+	// mmev = MIN_EV_FG(Aaa, Abb, Qij, Qji, emat);
+	if constexpr(N2==1) {
+	    mmev = MIN_EV_FG(Aaa, Abb, Qij, Qji, emat);
+	  }
+	else {
+	  mmev = MIN_EV_FG2<ENERGY, N2>(Aaa, Abb, Qij, Qji, emat);
+	  // mmev = MIN_EV_FG(Aaa, Abb, Qij, Qji, emat);
+	}
 	// cout << " geo " << mmev << " , harm " << mmev_h << endl;
 	// mmev *= sqrt(NA*NB);
 	mmev *= sqrt(max(NA, NB)/min(NA, NB));
@@ -1398,8 +1412,10 @@ namespace amg
       auto vneibs = econ.GetRowIndices(v);
       auto eids = econ.GetRowValues(v);
       double fac = 2;
-      if ( (!geom) && (agg.members().Size() == 1) )
-	{ fac = 1.5; } // leave half the contrib of first edge in
+      if (use_stab_ecw_hack  && (agg.members().Size() == 1) )
+	{ fac = 1.5; }
+      // if ( (!geom) && (agg.members().Size() == 1) )
+	// { fac = 1.5; } // leave half the contrib of first edge in
       for (auto j : Range(vneibs)) {
 	auto neib = vneibs[j];
 	auto pos = find_in_sorted_array(neib, agg.members());

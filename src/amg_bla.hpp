@@ -135,6 +135,50 @@ namespace amg
     return MEV<N>(L, R);
   }
 
+  template<class ENERGY, int N>
+  INLINE double MIN_EV_FG_ONE_SIDE2 (const Mat<N,N,double> & A, const Mat<N,N,double> & B,
+				     const Mat<N,N,double> & Qij, const Mat<N,N,double> & Qji,
+				     const Mat<N,N,double> & R)
+  {
+    static LocalHeap lh ( 5 * 9 * sizeof(double) * N * N, "mmev", false); // about 5 x used mem
+    HeapReset hr(lh);
+
+    FlatMatrix<double> evecs(N,N,lh);
+    FlatVector<double> evals(N, lh);
+    TimedLapackEigenValuesSymmetric(B, evals, evecs);
+
+    double eps2 = 0; for (auto v : evals) { eps2 += v; } eps2 = 1e-12 * eps2;
+    int first_nz = N-1;
+    for (auto k : Range(N))
+      if (evals(k) > eps2)
+	{ first_nz = min2(first_nz, k); }
+    int M = first_nz; // probably 1 or zero most of the time
+    
+    static Mat<N,N,double> TMP, I_MINUS_STUFF, L;
+    double mev = -1;
+    Switch<N>(M, [&](auto am){
+	constexpr int ceM = am; // const expression M
+	constexpr int NmM = N - ceM; // N minus M
+	if (M == 0)
+	  { mev =  MEV<N>(A, R); }
+	else {
+	  // static Mat<NmM,NmM,double> Lp, Rp;
+	  static Mat<ceM, ceM, double> VtAV;
+	  auto VK = evecs.Rows(0, M); // kernel-evecs ov B
+	  VtAV = VK * A * Trans(VK);
+	  CalcPseudoInverse<ceM>(VtAV);
+	  TMP = -1 * Trans(VK) * VtAV * VK;
+	  I_MINUS_STUFF = TMP * A;
+	  Iterate<N>([&](auto i) { I_MINUS_STUFF(i.value, i.value) += 1.0; });
+	  L = A * I_MINUS_STUFF;
+	  mev = MEV<N>(L, R);
+	}
+      });
+
+    return mev;
+  }
+
+
   template<int N>
   INLINE double MIN_EV_FG (const Mat<N,N,double> & A, const Mat<N,N,double> & B,
 			    const Mat<N,N,double> & Qij, const Mat<N,N,double> & Qji,
@@ -145,6 +189,23 @@ namespace amg
     double mev_a = fabs(MIN_EV_FG_ONE_SIDE(A, B, Qij, Qji, R)); // -eps
 
     double mev_b = fabs(MIN_EV_FG_ONE_SIDE(B, A, Qji, Qij, R)); // -eps
+    
+    return sqrt(mev_a * mev_b);
+  }
+
+
+  INLINE double MIN_EV_FG2 (double A, double B, double Qij, double Qji, double R) { return MIN_EV_FG(A, B, Qij, Qji, R); }
+
+  template<class ENERGY, int N>
+  INLINE double MIN_EV_FG2 (const Mat<N,N,double> & A, const Mat<N,N,double> & B,
+			    const Mat<N,N,double> & Qij, const Mat<N,N,double> & Qji,
+			    const Mat<N,N,double> & R, bool prtms = false)
+  {
+    static Timer t("EV_FG"); RegionTimer rt(t);
+
+    double mev_a = fabs(MIN_EV_FG_ONE_SIDE2<ENERGY, N>(A, B, Qij, Qji, R)); // -eps
+
+    double mev_b = fabs(MIN_EV_FG_ONE_SIDE2<ENERGY, N>(B, A, Qji, Qij, R)); // -eps
     
     return sqrt(mev_a * mev_b);
   }
