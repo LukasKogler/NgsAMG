@@ -333,6 +333,7 @@ namespace amg
       { if (vmap[vnr] != -1) perow[vnr] = 1; }
 
     // cout << "vmap: " << endl; prow2(vmap); cout << endl;
+    // cout << "vmap: " << endl; prow(vmap); cout << endl;
 
     auto prol = make_shared<TSPM_TM>(perow, NCV);
 
@@ -451,6 +452,8 @@ namespace amg
 	    { is_ok = false; break; }
 	  insert_into_sorted_array_nodups(cvj, cols);
 	}
+	else
+	  { is_ok = false; }
       }
       is_ok &= (cols.Size() <= MAX_PER_ROW);
       return is_ok;
@@ -577,7 +580,8 @@ namespace amg
       if (ris.Size() == 1) {
 	// cout << " c-triv " << endl;
 	// rvs[0] = pwprol->GetRowIndices(fvnr)[0];
-	SetIdentity(rvs[0]);
+	// SetIdentity(rvs[0]);
+	rvs[0] = pwprol(fvnr, ris[0]);
 	nt++;
 	return;
       }
@@ -612,12 +616,16 @@ namespace amg
 	if (colind == -1) // Dirichlet - TODO: cleaner would be finding an aux-ext to diri DOFs first
 	  { continue; }
 	// cout << j << " " << col << " " << colind << endl;
+	// if (fvj == fvnr)
+	  // { rvs[colind] += omo * pwprol(fvj, col); }
+	// else {
+	  // od_pwp = fmrvs[j] * pwprol(fvj, col);
+	  // rvs[colind] -= omega * d * od_pwp;
+	// }
 	if (fvj == fvnr)
-	  { rvs[colind] += omo * pwprol(fvj, col); }
-	else {
-	  od_pwp = fmrvs[j] * pwprol(fvj, col);
-	  rvs[colind] -= omega * d * od_pwp;
-	}
+	  { rvs[colind] += pwprol(fvj, col); }
+	od_pwp = fmrvs[j] * pwprol(fvj, col);
+	rvs[colind] -= omega * d * od_pwp;
       }
     }; // fill_sprol_classic
 
@@ -633,7 +641,8 @@ namespace amg
       if ( ris.Size() == 1) {
 	// cout << " a-triv " << endl;
 	// rvs[0] = pwprol.GetRowIndices(fvnr)[0];
-	SetIdentity(rvs[0]);
+	// SetIdentity(rvs[0]);
+	rvs[0] = pwprol(fvnr, ris[0]);
 	nt++;
 	return;
       }
