@@ -627,19 +627,23 @@ namespace amg
       auto afs = MakeSingleStep(dof_steps.Part(1));
       if (afs == nullptr) { /** No idea how this would happen. **/
 	c_lev->cap->mat = dof_steps[0]->AssembleMatrix(f_lev->cap->mat);
+	dof_steps[0]->Finalize();
 	return dof_steps[0];
       }
       else { /** Use all steps except embedding for coarse level matrix. **/
 	c_lev->cap->mat = afs->AssembleMatrix(f_lev->cap->mat);
 	Array<shared_ptr<BaseDOFMapStep>> ds2( { dof_steps[0], afs } );
 	auto final_step = MakeSingleStep(ds2);
+	final_step->Finalize();
 	return final_step;
       }
     }
     else { /** Fine level matrix is not embedded, or there is no embedding. **/
       auto final_step = MakeSingleStep(dof_steps);
-      if (final_step != nullptr)
-	{ c_lev->cap->mat = final_step->AssembleMatrix(f_lev->cap->mat); }
+      if (final_step != nullptr) {
+	c_lev->cap->mat = final_step->AssembleMatrix(f_lev->cap->mat);
+	final_step->Finalize();
+      }
       return final_step;
     }
   } // BaseAMGFactory::MapLevel
