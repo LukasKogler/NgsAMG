@@ -237,6 +237,9 @@ namespace amg
     if (options->log_file.size() > 0)
       { logger->PrintToFile(options->log_file); }
 
+    if (dof_map->GetNSteps() == 0)
+      { throw Exception("NgsAMG failed to construct any coarse levels!"); }
+
     logger = nullptr;
     delete state;
   } // BaseAMGFactory::SetUpLevels
@@ -622,6 +625,8 @@ namespace amg
 
   shared_ptr<BaseDOFMapStep> BaseAMGFactory :: MapLevel (FlatArray<shared_ptr<BaseDOFMapStep>> dof_steps, shared_ptr<AMGLevel> & f_lev, shared_ptr<AMGLevel> & c_lev)
   {
+    if (c_lev->cap->mesh == f_lev->cap->mesh)
+      { return nullptr; }
     if ( (dof_steps.Size() > 1) && (f_lev->embed_map != nullptr) && (f_lev->embed_done) ) {
       /** The fine level matrix is already embedded! **/
       auto afs = MakeSingleStep(dof_steps.Part(1));
