@@ -1003,12 +1003,12 @@ namespace amg
     tol = 1e-12 * tol; tol = max2(tol, 1e-15);
     int DK = 0; // dim kernel
     for (auto & v : evals) {
-      if (v > tol) {
-	v = 1/sqrt(v);
+      if (v > tol)
+	{ v = 1/sqrt(v); }
+      else {
 	DK++;
+	v = 0;
       }
-      else
-	{ v = 0; }
     }
     int NS = N-DK;
     for (auto i : Range(N))

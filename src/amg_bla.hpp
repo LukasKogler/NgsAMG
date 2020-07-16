@@ -276,13 +276,13 @@ namespace amg
 	{ M++; }
     if (M == 0)
       { return 0; }
-    const int NS = N-M;
+    const int NS = M; M = N - NS;
     for (auto k : Range(NS))
       { evals(M+k) = 1.0/sqrt(evals(M+k)); }
-    auto Q = evals.Rows(N-M, N); // non-kernel space of LHS (condition is always fulfilled on kernel of LHS)
+    auto Q = evecs.Rows(N-NS, N); // non-kernel space of LHS (condition is always fulfilled on kernel of LHS)
 
     /** QT R Q **/
-    FlatMatrix<double> RQ(NS, NS, lh), QTRQ(NS, NS, lh);
+    FlatMatrix<double> RQ(N, NS, lh), QTRQ(NS, NS, lh);
     RQ = aR * Trans(Q);
     QTRQ = Q * RQ;
     for (auto k : Range(NS))

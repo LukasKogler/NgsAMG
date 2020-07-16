@@ -1385,7 +1385,7 @@ namespace amg
       if (geom)
 	{ mmev = MIN_EV_FG2(Aaa, Abb, emat); }
       else
-	{ mmev = MIN_EV_HARM(Aaa, Abb, emat); }
+	{ mmev = MIN_EV_HARM2(Aaa, Abb, emat); }
       return mmev;
     };
 
