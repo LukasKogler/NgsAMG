@@ -1454,72 +1454,104 @@ namespace amg
       }
     };
     
-    auto CalcSOC1 = [&](auto ca, FlatArray<int> memsa, const auto & diaga,
-			auto cb, FlatArray<int> memsb, const auto & diagb,
-			bool common_neib_boost) LAMBDA_INLINE {
-      /** Transformed diagonal matrices **/
-      TVD H_data = ENERGY::CalcMPData(vdata[ca], vdata[cb]);
-      ModQHh(H_data, vdata[ca], Q);
-      Aaa = AT_B_A(Q, diaga);
-      ModQHh(H_data, vdata[cb], Q);
-      Abb = AT_B_A(Q, diagb);
-      /** Calc edge matrix connecting agglomerates **/
-      calc_emat(H_data, ca, memsa, cb, memsb, common_neib_boost);
-      return calc_soc_mats();
-    };
+    // auto CalcSOC1 = [&](auto ca, FlatArray<int> memsa, const auto & diaga,
+    // 			auto cb, FlatArray<int> memsb, const auto & diagb,
+    // 			bool common_neib_boost) LAMBDA_INLINE {
+    // };
 
 
-    auto CalcSOC2 = [&](auto ca, FlatArray<int> memsa, const auto & diaga,
-			auto cb, FlatArray<int> memsb, const auto & diagb,
-			bool common_neib_boost) LAMBDA_INLINE {
-      constexpr int N2 = mat_traits<TMU>::HEIGHT;
-      /** Transformed diagonal matrices **/
-      TVD H_data = ENERGY::CalcMPData(vdata[ca], vdata[cb]);
-      ModQHh(H_data, vdata[ca], Q);
-      Aaa = AT_B_A(Q, diaga);
-      ModQHh(H_data, vdata[cb], Q);
-      Abb = AT_B_A(Q, diagb);
-      /** Calc edge matrix connecting agglomerates **/
-      calc_emat(H_data, ca, memsa, cb, memsb, common_neib_boost);
-      double mtr = 0;
-      for (auto amem : memsa) { // get max trace of edge mat leading outwards
-	auto rvs = econ.GetRowValues(amem);
-	iterate_anotb(econ.GetRowIndices(amem), memsa, [&](auto inda) LAMBDA_INLINE {
-	    mtr = max2(mtr, calc_trace(edata[int(rvs[inda])]));
-	  });
-      }
-      for (auto bmem : memsb) { // get max trace of edge mat leading outwards
-	auto rvs = econ.GetRowValues(bmem);
-	iterate_anotb(econ.GetRowIndices(bmem), memsb, [&](auto indb) LAMBDA_INLINE {
-	    mtr = max2(mtr, calc_trace(edata[int(rvs[indb])]));
-	  });
-      }
-      double soc_scal = calc_trace(emat) / mtr;
-      /** If scalar SOC is already bad, do not bother to compute something more expensive **/
-      if constexpr(N2 == 1) {
-	  return soc_scal;
-	}
-      else {
-	if (soc_scal < MIN_ECW)
-	  { return soc_scal; }
-	else {  /** Do the more expensive computation, but put all traces to 1! **/
-	  Aaa /= calc_trace(Aaa);
-	  Abb /= calc_trace(Abb);
-	  emat /= calc_trace(emat);
-	  double soc_mat = calc_soc_mats();
-	  return min(soc_scal, soc_mat);
-	}
-      }
-    }; // CalcSOC2
+    // auto CalcSOC2 = [&](auto ca, FlatArray<int> memsa, const auto & diaga,
+    // 			auto cb, FlatArray<int> memsb, const auto & diagb,
+    // 			bool common_neib_boost) LAMBDA_INLINE {
+    //   constexpr int N2 = mat_traits<TMU>::HEIGHT;
+    //   /** Transformed diagonal matrices **/
+    //   TVD H_data = ENERGY::CalcMPData(vdata[ca], vdata[cb]);
+    //   ModQHh(H_data, vdata[ca], Q);
+    //   Aaa = AT_B_A(Q, diaga);
+    //   ModQHh(H_data, vdata[cb], Q);
+    //   Abb = AT_B_A(Q, diagb);
+    //   /** Calc edge matrix connecting agglomerates **/
+    //   calc_emat(H_data, ca, memsa, cb, memsb, common_neib_boost);
+    //   double mtr = 0;
+    //   for (auto amem : memsa) { // get max trace of edge mat leading outwards
+    // 	auto rvs = econ.GetRowValues(amem);
+    // 	iterate_anotb(econ.GetRowIndices(amem), memsa, [&](auto inda) LAMBDA_INLINE {
+    // 	    mtr = max2(mtr, calc_trace(edata[int(rvs[inda])]));
+    // 	  });
+    //   }
+    //   for (auto bmem : memsb) { // get max trace of edge mat leading outwards
+    // 	auto rvs = econ.GetRowValues(bmem);
+    // 	iterate_anotb(econ.GetRowIndices(bmem), memsb, [&](auto indb) LAMBDA_INLINE {
+    // 	    mtr = max2(mtr, calc_trace(edata[int(rvs[indb])]));
+    // 	  });
+    //   }
+    //   double soc_scal = calc_trace(emat) / mtr;
+    //   /** If scalar SOC is already bad, do not bother to compute something more expensive **/
+    //   if constexpr(N2 == 1) {
+    // 	  return soc_scal;
+    // 	}
+    //   else {
+    // 	if (soc_scal < MIN_ECW)
+    // 	  { return soc_scal; }
+    // 	else {  /** Do the more expensive computation, but put all traces to 1! **/
+    // 	  Aaa /= calc_trace(Aaa);
+    // 	  Abb /= calc_trace(Abb);
+    // 	  emat /= calc_trace(emat);
+    // 	  double soc_mat = calc_soc_mats();
+    // 	  return min(soc_scal, soc_mat);
+    // 	}
+    //   }
+    // }; // CalcSOC2
 
     auto CalcSOC = [&](auto ca, FlatArray<int> memsa, const auto & diaga,
 		       auto cb, FlatArray<int> memsb, const auto & diagb,
 		       bool common_neib_boost) LAMBDA_INLINE {
-      double mmev = 0;
-      if (use_minmax_soc)
-	{ mmev = CalcSOC2(ca, memsa, diaga, cb, memsb, diagb, common_neib_boost); }
-      else
-	{ mmev = CalcSOC1(ca, memsa, diaga, cb, memsb, diagb, common_neib_boost); }
+      /** Transformed diagonal matrices **/
+      TVD H_data = ENERGY::CalcMPData(vdata[ca], vdata[cb]);
+      ModQHh(H_data, vdata[ca], Q);
+      SetQtMQ(Aaa, Q, diaga);
+      // Aaa = AT_B_A(Q, diaga);
+      ModQHh(H_data, vdata[cb], Q);
+      SetQtMQ(Abb, Q, diagb);
+      // Abb = AT_B_A(Q, diagb);
+      /** Calc edge matrix connecting agglomerates **/
+      calc_emat(H_data, ca, memsa, cb, memsb, common_neib_boost);
+      /** This is a bit ugly, but i want to avoid CalcSOC1/2, that compiles too long. Here, calc_soc_mats is only called ONCE!**/
+      double mmev = 1;
+      if (use_minmax_soc) {
+	double mtr = 0;
+	for (auto amem : memsa) { // get max trace of edge mat leading outwards
+	  auto rvs = econ.GetRowValues(amem);
+	  iterate_anotb(econ.GetRowIndices(amem), memsa, [&](auto inda) LAMBDA_INLINE {
+	      mtr = max2(mtr, calc_trace(edata[int(rvs[inda])]));
+	    });
+	}
+	for (auto bmem : memsb) { // get max trace of edge mat leading outwards
+	  auto rvs = econ.GetRowValues(bmem);
+	  iterate_anotb(econ.GetRowIndices(bmem), memsb, [&](auto indb) LAMBDA_INLINE {
+	      mtr = max2(mtr, calc_trace(edata[int(rvs[indb])]));
+	    });
+	}
+	mmev = calc_trace(emat) / mtr;
+      }
+      constexpr int N2 = mat_traits<TMU>::HEIGHT;
+      if constexpr(N2 == 1) {
+	  if (!use_minmax_soc)
+	    { mmev = calc_soc_mats(); }
+	}
+      else {
+	if (use_minmax_soc) {
+	  Aaa /= calc_trace(Aaa);
+	  Abb /= calc_trace(Abb);
+	  emat /= calc_trace(emat);
+	}
+	double soc_mat = calc_soc_mats();
+	mmev = min2(mmev, soc_mat);
+      }
+      // if (use_minmax_soc)
+	// { mmev = CalcSOC2(ca, memsa, diaga, cb, memsb, diagb, common_neib_boost); }
+      // else
+	// { mmev = CalcSOC1(ca, memsa, diaga, cb, memsb, diagb, common_neib_boost); }
       /** Admittedly crude hack for l2 weights **/
       double vw0 = get_vwt(ca);
       double vw1 = get_vwt(cb);

@@ -152,12 +152,14 @@ namespace amg
 	{ Qij = Qji = 1; }
     }
 
-    template<class TMU> INLINE void QtMQ (const TMU & Q, TMU & M)
+    template<class TMU> INLINE void SetQtMQ (TMU & A, const TMU & Q, const TMU & M)
     {
       // if constexpr(std::is_same<TMU, TM>::value)
 	// { ENERGY::QtMQ(Q, M); }
-      if constexpr(std::is_same<TMU, TM>::value) 
-	{ M = AT_B_A (Q, M); }
+      if constexpr(std::is_same<TMU, TM>::value)
+	{ ENERGY::SetQtMQ(1.0, A, Q, M); }
+      else // scalar
+	{ A = M; }
     }
 
     template<class TMU> INLINE void ModQs (const TVD & di, const TVD & dj, TMU & Qij, TMU & Qji)
