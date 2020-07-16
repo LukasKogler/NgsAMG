@@ -107,6 +107,7 @@ namespace amg
       bool neib_boost = true;
       bool print_aggs = false;
       xbool use_stab_ecw_hack = maybe;
+      xbool use_minmax_soc = maybe;
     };
 
   protected:
@@ -149,6 +150,16 @@ namespace amg
 	{ ENERGY::CalcQs(di, dj, Qij, Qji); }
       else
 	{ Qij = Qji = 1; }
+    }
+
+    template<class TMU> INLINE void SetQtMQ (TMU & A, const TMU & Q, const TMU & M)
+    {
+      // if constexpr(std::is_same<TMU, TM>::value)
+	// { ENERGY::QtMQ(Q, M); }
+      if constexpr(std::is_same<TMU, TM>::value)
+	{ ENERGY::SetQtMQ(1.0, A, Q, M); }
+      else // scalar
+	{ A = M; }
     }
 
     template<class TMU> INLINE void ModQs (const TVD & di, const TVD & dj, TMU & Qij, TMU & Qji)

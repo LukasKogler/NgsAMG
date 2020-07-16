@@ -1148,6 +1148,8 @@ namespace amg
     const bool enable_neib_boost = settings.neib_boost;
     /** use if explicitely turned on, or if harmonic mean and not turned off **/
     const bool use_stab_ecw_hack = settings.use_stab_ecw_hack.IsTrue() || ( (!settings.use_stab_ecw_hack.IsFalse()) && (!geom) );
+    /** use if explicitely turned on, or if not turned off and geometric mean is used **/
+    const bool use_minmax_soc = settings.use_minmax_soc.IsTrue() || ( (!settings.use_minmax_soc.IsFalse()) && geom );
 
     FlatArray<TVD> vdata = get<0>(tm_mesh->Data())->Data();
     FlatArray<TMU> edata = GetEdgeData<TMU>();
@@ -1241,141 +1243,324 @@ namespace amg
     }; // add_neib_edge
     /** Calculate the strength of connection between two agglomerates
 	(or an agglomerate and a vertex, or two vertices) **/
-    auto CalcSOC = [&](auto ca, FlatArray<int> memsa, const auto & diaga,
-		       auto cb, FlatArray<int> memsb, const auto & diagb,
-		       bool common_neib_boost) LAMBDA_INLINE {
-      // bool doout = ( (ca == 154) || (cb == 154) ) && (NV == 192);
-      // if ( ( (ca == 154) || (cb == 154) ) && (NV == 192) )
-	// { common_neib_boost = false; }
-      // cout << " calc SOC, ca " << ca << " with " << memsa.Size() << " mems " << endl;
-      // prow2(memsa, cout); cout << endl;
-      // prt_evv<N>(diaga, "diag ca", false);
-      // cout << " diag: " << diaga << endl;
-      // cout << " v data " << vdata[ca] << endl;
-      // cout << " calc SOC, cb " << cb << " with " << memsb.Size() << " mems " << endl;
-      // prow2(memsb, cout); cout << endl;
-      // cout << " diag: " << diagb << endl;
-      // cout << " v data " << vdata[cb] << endl;
-      // if (doout) {
-      // prt_evv<N>(diagb, "diag cb", false);
-      // }
-      constexpr int N2 = mat_traits<TMU>::HEIGHT;
+
+    // auto CalcSOCold = [&](auto ca, FlatArray<int> memsa, const auto & diaga,
+    // 			auto cb, FlatArray<int> memsb, const auto & diagb,
+    // 			bool common_neib_boost) LAMBDA_INLINE {
+    //   // bool doout = ( (ca == 154) || (cb == 154) ) && (NV == 192);
+    //   // if ( ( (ca == 154) || (cb == 154) ) && (NV == 192) )
+    // 	// { common_neib_boost = false; }
+    //   // cout << " calc SOC, ca " << ca << " with " << memsa.Size() << " mems " << endl;
+    //   // prow2(memsa, cout); cout << endl;
+    //   // prt_evv<N>(diaga, "diag ca", false);
+    //   // cout << " diag: " << diaga << endl;
+    //   // cout << " v data " << vdata[ca] << endl;
+    //   // cout << " calc SOC, cb " << cb << " with " << memsb.Size() << " mems " << endl;
+    //   // prow2(memsb, cout); cout << endl;
+    //   // cout << " diag: " << diagb << endl;
+    //   // cout << " v data " << vdata[cb] << endl;
+    //   // if (doout) {
+    //   // prt_evv<N>(diagb, "diag cb", false);
+    //   // }
+    //   constexpr int N2 = mat_traits<TMU>::HEIGHT;
+    //   const auto memsas = memsa.Size();
+    //   const auto memsbs = memsb.Size();
+    //   bool vv_case = (memsas == memsbs) && (memsas == 1);
+    //   // TVD H_data = FACTORY::CalcMPData(vdata[ca], vdata[cb]);
+    //   TVD H_data = ENERGY::CalcMPData(vdata[ca], vdata[cb]);
+    //   ModQHh(H_data, vdata[ca], Q);
+    //   // Aaa = Trans(Q) * diaga * Q;
+    //   Aaa = AT_B_A(Q, diaga);
+    //   ModQHh(H_data, vdata[cb], Q);
+    //   // Abb = Trans(Q) * diagb * Q;
+    //   Abb = AT_B_A(Q, diagb);
+    //   double max_wt = 0;
+    //   int NA = 1, NB = 1;
+    //   common_neibs.SetSize0();
+    //   if ( vv_case ) {// simple vertex-vertex case
+    // 	int eid = int(econ(ca, cb));
+    // 	emat = edata[eid]; max_wt = 1;
+    // 	intersect_sorted_arrays(econ.GetRowIndices(ca), econ.GetRowIndices(cb), common_neibs);
+    // 	NA = econ.GetRowIndices(ca).Size();
+    // 	NB = econ.GetRowIndices(cb).Size();
+    // 	// cout << " edge data " << emat << endl;
+    // 	// prt_evv<N>(emat, "no boost emat", false);
+    // 	// cout << " boost from neibs: "; prow(common_neibs); cout << endl;
+    // 	// prt_evv<N>(emat, "pure emat");
+    // 	if (enable_neib_boost && common_neib_boost) { // on the finest level, this is porbably 0 in most cases, but still expensive
+    // 	  for (auto v : common_neibs) {
+    // 	    add_neib_edge(H_data, memsa, memsb, v, emat);
+    // 	    // prt_evv<N>(emat, string("emat with boost from") + to_string(v), false);
+    // 	  }
+    // 	}
+    //   }
+    //   else { // find all edges connecting the agglomerates and most shared neibs
+    // 	emat = 0;
+    // 	for (auto amem : memsa) { // add up emat contributions
+    // 	  intersect_sorted_arrays(econ.GetRowIndices(amem), memsb, common_neibs);
+    // 	  for (auto bmem : common_neibs) {
+    // 	    int eid = int(econ(amem, bmem));
+    // 	    // TVD h_data = FACTORY::CalcMPData(vdata[amem], vdata[bmem]);
+    // 	    TVD h_data = ENERGY::CalcMPData(vdata[amem], vdata[bmem]);
+    // 	    ModQHh (H_data, h_data, Q);
+    // 	    // emat += Trans(Q) * edata[eid] * Q;
+    // 	    Add_AT_B_A(1.0, emat, Q, edata[eid]);
+    // 	    max_wt = max2(max_wt, ecw[eid]);
+    // 	  }
+    // 	}
+    // 	NA = econ.GetRowIndices(ca).Size(); // (!) not really correct, need # of all edges from ca to outside ca
+    // 	NB = econ.GetRowIndices(cb).Size(); // (!) not really correct, need # of all edges from cb to outside cb
+    // 	// prt_evv<N>(emat, "pure emat");
+    // 	if (enable_neib_boost && common_neib_boost) {
+    // 	  // if ( (ca != 5) || (cb != 62) ) { // contribs from common neighbors
+    // 	  auto get_all_neibs = [&](auto mems, auto & ntab, auto & out) LAMBDA_INLINE {
+    // 	    ntab.SetSize0(); ntab.SetSize(mems.Size());
+    // 	    for (auto k : Range(mems))
+    // 	      { ntab[k].Assign(econ.GetRowIndices(mems[k])); }
+    // 	    merge_arrays(ntab, out, [&](const auto & i, const auto & j) LAMBDA_INLINE { return i < j; });
+    // 	  };
+    // 	  // cout << " memsa " << memsa.Size(); cout << " "; prow(memsa); cout << endl;
+    // 	  get_all_neibs(memsa, neib_tab, aneibs); NA = aneibs.Size();
+    // 	  get_all_neibs(memsb, neib_tab, bneibs); NB = bneibs.Size();
+    // 	  intersect_sorted_arrays(aneibs, bneibs, common_neibs); // can contain members of a/b
+    // 	  // prt_evv<N>(emat, "no boost emat", false);
+    // 	  // cout << " boost from neibs: ";
+    // 	  for (auto N : common_neibs) {
+    // 	    auto pos = find_in_sorted_array(N, memsa);
+    // 	    if (pos == -1) {
+    // 	      pos = find_in_sorted_array(N, memsb);
+    // 	      if (pos == -1) {
+    // 		// cout << N << " -> " << emat << " // ";
+    // 		add_neib_edge(H_data, memsa, memsb, N, emat);
+    // 		// cout << N << " -> " << emat << " // ";
+    // 	      }
+    // 	    }
+    // 	  }
+    // 	  // cout << endl;
+    // 	}
+    //   }
+    //   // prt_evv<N>(Aaa, "Ai", false);
+    //   // prt_evv<N>(Abb, "Aj", false);
+    //   // prt_evv<N>(emat, "emat", false);
+    //   double mmev = -1;
+    //   if (geom) {
+    // 	// auto mmev_h = MIN_EV_HARM(Aaa, Abb, emat);
+    // 	// cout << " harm " << mmev_h << endl;
+    // 	// FACTORY::CalcQs(vdata[ca], vdata[cb], Qij, Qji);
+    // 	ModQs(vdata[ca], vdata[cb], Qij, Qji);
+    // 	// mmev = MIN_EV_FG(Aaa, Abb, Qij, Qji, emat);
+    // 	if constexpr(N2==1) {
+    // 	    mmev = MIN_EV_FG(Aaa, Abb, Qij, Qji, emat);
+    // 	  }
+    // 	else {
+    // 	  mmev = MIN_EV_FG2<ENERGY, N2>(Aaa, Abb, Qij, Qji, emat);
+    // 	  // mmev = MIN_EV_FG(Aaa, Abb, Qij, Qji, emat);
+    // 	}
+    // 	// cout << " geo " << mmev << " , harm " << mmev_h << endl;
+    // 	// mmev *= sqrt(NA*NB);
+    // 	mmev *= sqrt(max(NA, NB)/min(NA, NB));
+    // 	// cout << " geo, neib adjusted " << mmev << endl;
+    //   }
+    //   else {
+    // 	mmev = MIN_EV_HARM(Aaa, Abb, emat);
+    // 	// cout << " harm " << mmev << endl;
+    // 	// FACTORY::CalcQs(vdata[ca], vdata[cb], Qij, Qji);
+    // 	// auto mmev_g = MIN_EV_FG(Aaa, Abb, Qij, Qji, emat);
+    // 	// cout << " geo " << mmev_g << " , harm " << mmev << endl;
+    //   }
+    //   double vw0 = get_vwt(ca);
+    //   double vw1 = get_vwt(cb);
+    //   double maxw = max(vw0, vw1);
+    //   double minw = min(vw0, vw1);
+    //   double fac = (fabs(maxw) < 1e-15) ? 1.0 : (0.1+minw)/(0.1+maxw);
+    //   // double fac = (fabs(maxw) < 1e-15) ? 1.0 : (minw)/(maxw);
+    //   // double fac = 1.0;
+    //   // cout << " mmev fac ret " << mmev << " * " << fac << " = " <<  fac * min2(mmev, max_wt) << endl;
+    //   return fac * min2(mmev, max_wt);
+    //   // return fac * mmev;
+    // }; // CalcSOCold
+
+    auto calc_soc_mats = [&]() LAMBDA_INLINE {
+      double mmev;
+      if (geom)
+	{ mmev = MIN_EV_FG2(Aaa, Abb, emat); }
+      else
+	{ mmev = MIN_EV_HARM(Aaa, Abb, emat); }
+      return mmev;
+    };
+
+    auto calc_emat = [&](TVD & H_data,
+			 auto ca, FlatArray<int> memsa, auto cb, FlatArray<int> memsb,
+			 bool common_neib_boost) LAMBDA_INLINE {
       const auto memsas = memsa.Size();
       const auto memsbs = memsb.Size();
       bool vv_case = (memsas == memsbs) && (memsas == 1);
-      // TVD H_data = FACTORY::CalcMPData(vdata[ca], vdata[cb]);
-      TVD H_data = ENERGY::CalcMPData(vdata[ca], vdata[cb]);
-      ModQHh(H_data, vdata[ca], Q);
-      // Aaa = Trans(Q) * diaga * Q;
-      Aaa = AT_B_A(Q, diaga);
-      ModQHh(H_data, vdata[cb], Q);
-      // Abb = Trans(Q) * diagb * Q;
-      Abb = AT_B_A(Q, diagb);
-      double max_wt = 0;
-      int NA = 1, NB = 1;
-      common_neibs.SetSize0();
       if ( vv_case ) {// simple vertex-vertex case
-	int eid = int(econ(ca, cb));
-	emat = edata[eid]; max_wt = 1;
-	intersect_sorted_arrays(econ.GetRowIndices(ca), econ.GetRowIndices(cb), common_neibs);
-	NA = econ.GetRowIndices(ca).Size();
-	NB = econ.GetRowIndices(cb).Size();
-	// cout << " edge data " << emat << endl;
-	// prt_evv<N>(emat, "no boost emat", false);
-	// cout << " boost from neibs: "; prow(common_neibs); cout << endl;
-	// prt_evv<N>(emat, "pure emat");
-	if (enable_neib_boost && common_neib_boost) { // on the finest level, this is porbably 0 in most cases, but still expensive
-	  for (auto v : common_neibs) {
-	    add_neib_edge(H_data, memsa, memsb, v, emat);
-	    // prt_evv<N>(emat, string("emat with boost from") + to_string(v), false);
-	  }
-	}
+    	int eid = int(econ(ca, cb));
+    	emat = edata[eid];
+    	// cout << " edge data " << emat << endl;
+    	// prt_evv<N>(emat, "no boost emat", false);
+    	// cout << " boost from neibs: "; prow(common_neibs); cout << endl;
+    	// prt_evv<N>(emat, "pure emat");
+    	if (enable_neib_boost && common_neib_boost) { // on the finest level, this is porbably 0 in most cases, but still expensive
+	  intersect_sorted_arrays(econ.GetRowIndices(ca), econ.GetRowIndices(cb), common_neibs);
+    	  for (auto v : common_neibs) {
+    	    add_neib_edge(H_data, memsa, memsb, v, emat);
+    	    // prt_evv<N>(emat, string("emat with boost from") + to_string(v), false);
+    	  }
+    	}
       }
       else { // find all edges connecting the agglomerates and most shared neibs
-	emat = 0;
-	for (auto amem : memsa) { // add up emat contributions
-	  intersect_sorted_arrays(econ.GetRowIndices(amem), memsb, common_neibs);
-	  for (auto bmem : common_neibs) {
-	    int eid = int(econ(amem, bmem));
-	    // TVD h_data = FACTORY::CalcMPData(vdata[amem], vdata[bmem]);
-	    TVD h_data = ENERGY::CalcMPData(vdata[amem], vdata[bmem]);
-	    ModQHh (H_data, h_data, Q);
-	    // emat += Trans(Q) * edata[eid] * Q;
-	    Add_AT_B_A(1.0, emat, Q, edata[eid]);
-	    max_wt = max2(max_wt, ecw[eid]);
-	  }
-	}
-	NA = econ.GetRowIndices(ca).Size(); // (!) not really correct, need # of all edges from ca to outside ca
-	NB = econ.GetRowIndices(cb).Size(); // (!) not really correct, need # of all edges from cb to outside cb
-	// prt_evv<N>(emat, "pure emat");
-	if (enable_neib_boost && common_neib_boost) {
-	  // if ( (ca != 5) || (cb != 62) ) { // contribs from common neighbors
-	  auto get_all_neibs = [&](auto mems, auto & ntab, auto & out) LAMBDA_INLINE {
-	    ntab.SetSize0(); ntab.SetSize(mems.Size());
-	    for (auto k : Range(mems))
-	      { ntab[k].Assign(econ.GetRowIndices(mems[k])); }
-	    merge_arrays(ntab, out, [&](const auto & i, const auto & j) LAMBDA_INLINE { return i < j; });
-	  };
-	  // cout << " memsa " << memsa.Size(); cout << " "; prow(memsa); cout << endl;
-	  get_all_neibs(memsa, neib_tab, aneibs); NA = aneibs.Size();
-	  get_all_neibs(memsb, neib_tab, bneibs); NB = bneibs.Size();
-	  intersect_sorted_arrays(aneibs, bneibs, common_neibs); // can contain members of a/b
-	  // prt_evv<N>(emat, "no boost emat", false);
-	  // cout << " boost from neibs: ";
-	  for (auto N : common_neibs) {
-	    auto pos = find_in_sorted_array(N, memsa);
-	    if (pos == -1) {
-	      pos = find_in_sorted_array(N, memsb);
-	      if (pos == -1) {
-		// cout << N << " -> " << emat << " // ";
-		add_neib_edge(H_data, memsa, memsb, N, emat);
-		// cout << N << " -> " << emat << " // ";
-	      }
-	    }
-	  }
-	  // cout << endl;
-	}
+    	emat = 0;
+    	for (auto amem : memsa) { // add up emat contributions
+    	  intersect_sorted_arrays(econ.GetRowIndices(amem), memsb, common_neibs);
+    	  for (auto bmem : common_neibs) {
+    	    int eid = int(econ(amem, bmem));
+    	    // TVD h_data = FACTORY::CalcMPData(vdata[amem], vdata[bmem]);
+    	    TVD h_data = ENERGY::CalcMPData(vdata[amem], vdata[bmem]);
+    	    ModQHh (H_data, h_data, Q);
+    	    // emat += Trans(Q) * edata[eid] * Q;
+    	    Add_AT_B_A(1.0, emat, Q, edata[eid]);
+    	  }
+    	}
+    	// prt_evv<N>(emat, "pure emat");
+    	if (enable_neib_boost && common_neib_boost) {
+    	  // if ( (ca != 5) || (cb != 62) ) { // contribs from common neighbors
+    	  auto get_all_neibs = [&](auto mems, auto & ntab, auto & out) LAMBDA_INLINE {
+    	    ntab.SetSize0(); ntab.SetSize(mems.Size());
+    	    for (auto k : Range(mems))
+    	      { ntab[k].Assign(econ.GetRowIndices(mems[k])); }
+    	    merge_arrays(ntab, out, [&](const auto & i, const auto & j) LAMBDA_INLINE { return i < j; });
+    	  };
+    	  // cout << " memsa " << memsa.Size(); cout << " "; prow(memsa); cout << endl;
+    	  get_all_neibs(memsa, neib_tab, aneibs);
+    	  get_all_neibs(memsb, neib_tab, bneibs);
+    	  intersect_sorted_arrays(aneibs, bneibs, common_neibs); // can contain members of a/b
+    	  // prt_evv<N>(emat, "no boost emat", false);
+    	  // cout << " boost from neibs: ";
+    	  for (auto N : common_neibs) {
+    	    auto pos = find_in_sorted_array(N, memsa);
+    	    if (pos == -1) {
+    	      pos = find_in_sorted_array(N, memsb);
+    	      if (pos == -1) {
+    		// cout << N << " -> " << emat << " // ";
+    		add_neib_edge(H_data, memsa, memsb, N, emat);
+    		// cout << N << " -> " << emat << " // ";
+    	      }
+    	    }
+    	  }
+    	  // cout << endl;
+    	}
       }
-      // prt_evv<N>(Aaa, "Ai", false);
-      // prt_evv<N>(Abb, "Aj", false);
-      // prt_evv<N>(emat, "emat", false);
-      double mmev = -1;
-      if (geom) {
-	// auto mmev_h = MIN_EV_HARM(Aaa, Abb, emat);
-	// cout << " harm " << mmev_h << endl;
-	// FACTORY::CalcQs(vdata[ca], vdata[cb], Qij, Qji);
-	ModQs(vdata[ca], vdata[cb], Qij, Qji);
-	// mmev = MIN_EV_FG(Aaa, Abb, Qij, Qji, emat);
-	if constexpr(N2==1) {
-	    mmev = MIN_EV_FG(Aaa, Abb, Qij, Qji, emat);
-	  }
-	else {
-	  mmev = MIN_EV_FG2<ENERGY, N2>(Aaa, Abb, Qij, Qji, emat);
-	  // mmev = MIN_EV_FG(Aaa, Abb, Qij, Qji, emat);
+    };
+    
+    // auto CalcSOC1 = [&](auto ca, FlatArray<int> memsa, const auto & diaga,
+    // 			auto cb, FlatArray<int> memsb, const auto & diagb,
+    // 			bool common_neib_boost) LAMBDA_INLINE {
+    // };
+
+
+    // auto CalcSOC2 = [&](auto ca, FlatArray<int> memsa, const auto & diaga,
+    // 			auto cb, FlatArray<int> memsb, const auto & diagb,
+    // 			bool common_neib_boost) LAMBDA_INLINE {
+    //   constexpr int N2 = mat_traits<TMU>::HEIGHT;
+    //   /** Transformed diagonal matrices **/
+    //   TVD H_data = ENERGY::CalcMPData(vdata[ca], vdata[cb]);
+    //   ModQHh(H_data, vdata[ca], Q);
+    //   Aaa = AT_B_A(Q, diaga);
+    //   ModQHh(H_data, vdata[cb], Q);
+    //   Abb = AT_B_A(Q, diagb);
+    //   /** Calc edge matrix connecting agglomerates **/
+    //   calc_emat(H_data, ca, memsa, cb, memsb, common_neib_boost);
+    //   double mtr = 0;
+    //   for (auto amem : memsa) { // get max trace of edge mat leading outwards
+    // 	auto rvs = econ.GetRowValues(amem);
+    // 	iterate_anotb(econ.GetRowIndices(amem), memsa, [&](auto inda) LAMBDA_INLINE {
+    // 	    mtr = max2(mtr, calc_trace(edata[int(rvs[inda])]));
+    // 	  });
+    //   }
+    //   for (auto bmem : memsb) { // get max trace of edge mat leading outwards
+    // 	auto rvs = econ.GetRowValues(bmem);
+    // 	iterate_anotb(econ.GetRowIndices(bmem), memsb, [&](auto indb) LAMBDA_INLINE {
+    // 	    mtr = max2(mtr, calc_trace(edata[int(rvs[indb])]));
+    // 	  });
+    //   }
+    //   double soc_scal = calc_trace(emat) / mtr;
+    //   /** If scalar SOC is already bad, do not bother to compute something more expensive **/
+    //   if constexpr(N2 == 1) {
+    // 	  return soc_scal;
+    // 	}
+    //   else {
+    // 	if (soc_scal < MIN_ECW)
+    // 	  { return soc_scal; }
+    // 	else {  /** Do the more expensive computation, but put all traces to 1! **/
+    // 	  Aaa /= calc_trace(Aaa);
+    // 	  Abb /= calc_trace(Abb);
+    // 	  emat /= calc_trace(emat);
+    // 	  double soc_mat = calc_soc_mats();
+    // 	  return min(soc_scal, soc_mat);
+    // 	}
+    //   }
+    // }; // CalcSOC2
+
+    auto CalcSOC = [&](auto ca, FlatArray<int> memsa, const auto & diaga,
+		       auto cb, FlatArray<int> memsb, const auto & diagb,
+		       bool common_neib_boost) LAMBDA_INLINE {
+      /** Transformed diagonal matrices **/
+      TVD H_data = ENERGY::CalcMPData(vdata[ca], vdata[cb]);
+      ModQHh(H_data, vdata[ca], Q);
+      SetQtMQ(Aaa, Q, diaga);
+      // Aaa = AT_B_A(Q, diaga);
+      ModQHh(H_data, vdata[cb], Q);
+      SetQtMQ(Abb, Q, diagb);
+      // Abb = AT_B_A(Q, diagb);
+      /** Calc edge matrix connecting agglomerates **/
+      calc_emat(H_data, ca, memsa, cb, memsb, common_neib_boost);
+      /** This is a bit ugly, but i want to avoid CalcSOC1/2, that compiles too long. Here, calc_soc_mats is only called ONCE!**/
+      double mmev = 1;
+      if (use_minmax_soc) {
+	double mtr = 0;
+	for (auto amem : memsa) { // get max trace of edge mat leading outwards
+	  auto rvs = econ.GetRowValues(amem);
+	  iterate_anotb(econ.GetRowIndices(amem), memsa, [&](auto inda) LAMBDA_INLINE {
+	      mtr = max2(mtr, calc_trace(edata[int(rvs[inda])]));
+	    });
 	}
-	// cout << " geo " << mmev << " , harm " << mmev_h << endl;
-	// mmev *= sqrt(NA*NB);
-	mmev *= sqrt(max(NA, NB)/min(NA, NB));
-	// cout << " geo, neib adjusted " << mmev << endl;
+	for (auto bmem : memsb) { // get max trace of edge mat leading outwards
+	  auto rvs = econ.GetRowValues(bmem);
+	  iterate_anotb(econ.GetRowIndices(bmem), memsb, [&](auto indb) LAMBDA_INLINE {
+	      mtr = max2(mtr, calc_trace(edata[int(rvs[indb])]));
+	    });
+	}
+	mmev = calc_trace(emat) / mtr;
       }
+      constexpr int N2 = mat_traits<TMU>::HEIGHT;
+      if constexpr(N2 == 1) {
+	  if (!use_minmax_soc)
+	    { mmev = calc_soc_mats(); }
+	}
       else {
-	mmev = MIN_EV_HARM(Aaa, Abb, emat);
-	// cout << " harm " << mmev << endl;
-	// FACTORY::CalcQs(vdata[ca], vdata[cb], Qij, Qji);
-	// auto mmev_g = MIN_EV_FG(Aaa, Abb, Qij, Qji, emat);
-	// cout << " geo " << mmev_g << " , harm " << mmev << endl;
+	if (use_minmax_soc) {
+	  Aaa /= calc_trace(Aaa);
+	  Abb /= calc_trace(Abb);
+	  emat /= calc_trace(emat);
+	}
+	double soc_mat = calc_soc_mats();
+	mmev = min2(mmev, soc_mat);
       }
+      // if (use_minmax_soc)
+	// { mmev = CalcSOC2(ca, memsa, diaga, cb, memsb, diagb, common_neib_boost); }
+      // else
+	// { mmev = CalcSOC1(ca, memsa, diaga, cb, memsb, diagb, common_neib_boost); }
+      /** Admittedly crude hack for l2 weights **/
       double vw0 = get_vwt(ca);
       double vw1 = get_vwt(cb);
       double maxw = max(vw0, vw1);
       double minw = min(vw0, vw1);
-      double fac = (fabs(maxw) < 1e-15) ? 1.0 : (0.1+minw)/(0.1+maxw);
-      // double fac = (fabs(maxw) < 1e-15) ? 1.0 : (minw)/(maxw);
-      // double fac = 1.0;
-      // cout << " mmev fac ret " << mmev << " * " << fac << " = " <<  fac * min2(mmev, max_wt) << endl;
-      return fac * min2(mmev, max_wt);
-      // return fac * mmev;
+      double fac = (fabs(maxw) < 1e-12) ? 1.0 : (0.1+minw)/(0.1+maxw);
+      return fac * mmev;
     }; // CalcSOC
+
 
     Array<int> dummya(1), dummyb(1);
     auto CalcSOC_av = [&](const auto & agg, auto v, auto cnb) LAMBDA_INLINE {

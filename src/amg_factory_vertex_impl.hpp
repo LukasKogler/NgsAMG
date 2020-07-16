@@ -32,6 +32,8 @@ namespace amg
     /** General coarsening **/
     bool ecw_geom = true;                       // use geometric instead of harmonic mean when determining strength of connection
     bool ecw_robust = true;                     // use more expensive, but also more robust edge weights
+    xbool ecw_minmax = maybe;
+    xbool ecw_stab_hack = maybe;
     double min_ecw = 0.05;
     double min_vcw = 0.3;
     bool sp_aux_only = false;                   // smooth prolongation using only auxiliary matrix
@@ -75,6 +77,8 @@ namespace amg
 
       set_bool(ecw_geom, "ecw_geom");
       set_bool(ecw_robust, "ecw_robust");
+      ecw_minmax = flags.GetDefineFlagX(prefix + "ecw_minmax");
+      ecw_stab_hack = flags.GetDefineFlagX(prefix + "ecw_stab_hack");
 
       set_num(min_ecw, "edge_thresh");
       set_num(min_vcw, "vert_thresh");
@@ -157,6 +161,8 @@ namespace amg
     agg_opts.cw_geom = O.ecw_geom;
     agg_opts.neib_boost = O.agg_neib_boost;
     agg_opts.robust = O.ecw_robust;
+    agg_opts.use_stab_ecw_hack = O.ecw_stab_hack;
+    agg_opts.use_minmax_soc = O.ecw_minmax;
     agg_opts.dist2 = ( state.level[1] == 0 ) && ( state.level[0] < O.n_levels_d2_agg );
     agg_opts.print_aggs = O.print_aggs;
     // auto agglomerator = make_shared<Agglomerator<FACTORY>>(mesh, state.free_nodes, move(agg_opts));

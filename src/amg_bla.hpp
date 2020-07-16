@@ -135,9 +135,8 @@ namespace amg
     return MEV<N>(L, R);
   }
 
-  template<class ENERGY, int N>
+  template<int N>
   INLINE double MIN_EV_FG_ONE_SIDE2 (const Mat<N,N,double> & A, const Mat<N,N,double> & B,
-				     const Mat<N,N,double> & Qij, const Mat<N,N,double> & Qji,
 				     const Mat<N,N,double> & R)
   {
     static LocalHeap lh ( 5 * 9 * sizeof(double) * N * N, "mmev", false); // about 5 x used mem
@@ -153,27 +152,27 @@ namespace amg
       if (evals(k) > eps2)
 	{ first_nz = min2(first_nz, k); }
     int M = first_nz; // probably 1 or zero most of the time
-    
+
     static Mat<N,N,double> TMP, I_MINUS_STUFF, L;
-    double mev = -1;
-    Switch<N>(M, [&](auto am){
-	constexpr int ceM = am; // const expression M
-	constexpr int NmM = N - ceM; // N minus M
-	if (M == 0)
-	  { mev =  MEV<N>(A, R); }
-	else {
-	  // static Mat<NmM,NmM,double> Lp, Rp;
-	  static Mat<ceM, ceM, double> VtAV;
-	  auto VK = evecs.Rows(0, M); // kernel-evecs ov B
-	  VtAV = VK * A * Trans(VK);
+
+    double mev = -1; // case M==N should return 0, not 1 I think [other one will return 1...]
+    if(M == 0) // no B kernel
+      { mev =  MEV<N>(A, R); }
+    else if (M < N) {
+      FlatMatrix<double> VtAV(M, M, lh);
+      auto VK = evecs.Rows(0, M); // kernel-evecs ov B
+      VtAV = VK * A * Trans(VK);
+      Switch<N>(M, [&](auto ceM) {
 	  CalcPseudoInverse<ceM>(VtAV);
-	  TMP = -1 * Trans(VK) * VtAV * VK;
-	  I_MINUS_STUFF = TMP * A;
-	  Iterate<N>([&](auto i) { I_MINUS_STUFF(i.value, i.value) += 1.0; });
-	  L = A * I_MINUS_STUFF;
-	  mev = MEV<N>(L, R);
-	}
-      });
+	});
+      TMP = -1 * Trans(VK) * VtAV * VK;
+      I_MINUS_STUFF = TMP * A;
+      Iterate<N>([&](auto i) { I_MINUS_STUFF(i.value, i.value) += 1.0; });
+      L = A * I_MINUS_STUFF;
+      mev = MEV<N>(L, R);
+    }
+    else
+      { mev = 0; }
 
     return mev;
   }
@@ -194,18 +193,17 @@ namespace amg
   }
 
 
-  INLINE double MIN_EV_FG2 (double A, double B, double Qij, double Qji, double R) { return MIN_EV_FG(A, B, Qij, Qji, R); }
+  INLINE double MIN_EV_FG2 (double A, double B, double R) { return R / sqrt(A*B); }
 
-  template<class ENERGY, int N>
+  template<int N>
   INLINE double MIN_EV_FG2 (const Mat<N,N,double> & A, const Mat<N,N,double> & B,
-			    const Mat<N,N,double> & Qij, const Mat<N,N,double> & Qji,
 			    const Mat<N,N,double> & R, bool prtms = false)
   {
     static Timer t("EV_FG"); RegionTimer rt(t);
 
-    double mev_a = fabs(MIN_EV_FG_ONE_SIDE2<ENERGY, N>(A, B, Qij, Qji, R)); // -eps
+    double mev_a = fabs(MIN_EV_FG_ONE_SIDE2<N>(A, B, R)); // -eps
 
-    double mev_b = fabs(MIN_EV_FG_ONE_SIDE2<ENERGY, N>(B, A, Qji, Qij, R)); // -eps
+    double mev_b = fabs(MIN_EV_FG_ONE_SIDE2<N>(B, A, R)); // -eps
     
     return sqrt(mev_a * mev_b);
   }
@@ -238,6 +236,66 @@ namespace amg
   } // MIN_EV_HARM
 
 
+  INLINE double MIN_EV_HARM2 (double A, double B, double R) { return 0.5 * R * (A+B)/(A*B); }
+  template<int N>
+  INLINE double MIN_EV_HARM2 (const Mat<N,N,double> & A, const Mat<N,N,double> & B, const Mat<N,N,double> & aR)
+  {
+    /**
+       \alpha^{-1} (0.5 * A^{\dagger} + 0.5 * B^{\dagger})^{\dagger} \leq R
+       SVD of LHS:
+         (0.5 * A^{\dagger} + 0.5 * B^{\dagger})^{\dagger} = Q Sigma QT
+
+       Then
+         \alpha^{-1} Q Sigma QT \leq R
+       We only care about non-kernel of LHS! So Q now non-kernel cols of Q.
+         \alpha^{-1} QTQ Sigma QTQ \leq QTRQ
+         \alpha^{-1} Sigma_small \leq QTRQ
+     **/
+    static LocalHeap lh ( 5 * 9 * sizeof(double) * N * N, "mmev", false); // about 5 x used mem
+    HeapReset hr(lh);
+
+    /** A(A+B)^{-1}B = (A^{-1}+B^{-1})^{-1}**/
+    FlatMatrix<double> L(N, N, lh);
+    L = A + B;
+    CalcPseudoInverseFM(L, lh); // Is CPI<3,3,6> valid in 3d ??
+    FlatMatrix<double> SB(N, N, lh);
+    SB = L * B;
+    L = 2 * A * SB;
+
+    /** Q, Sigma^{\dagger} **/
+    FlatMatrix<double> evecs(N, N, lh);
+    FlatVector<double> evals(N, lh);
+    TimedLapackEigenValuesSymmetric(L, evals, evecs);
+    double tol = 0;
+    for (auto v : evals)
+      { tol += fabs(v); }
+    tol = max2(1e-12 * tol, 1e-15);
+    int M = 0;
+    for (auto k : Range(N))
+      if (evals(k) > tol)
+	{ M++; }
+    if (M == 0)
+      { return 0; }
+    const int NS = N-M;
+    for (auto k : Range(NS))
+      { evals(M+k) = 1.0/sqrt(evals(M+k)); }
+    auto Q = evals.Rows(N-M, N); // non-kernel space of LHS (condition is always fulfilled on kernel of LHS)
+
+    /** QT R Q **/
+    FlatMatrix<double> RQ(NS, NS, lh), QTRQ(NS, NS, lh);
+    RQ = aR * Trans(Q);
+    QTRQ = Q * RQ;
+    for (auto k : Range(NS))
+      for (auto j : Range(NS))
+	{ QTRQ(k, j) *= evals(M+k)*evals(M+j); }
+
+    FlatMatrix<double> evecs_small(NS, NS, lh);
+    FlatVector<double> evals_small(NS, lh);
+    TimedLapackEigenValuesSymmetric(QTRQ, evals_small, evecs_small);
+    return evals_small(0);
+  }
+
+
   template<int IMIN, int H, int JMIN, int W, class TMAT>
   class FlatMat : public MatExpr<FlatMat<IMIN, H, JMIN, W, TMAT>>
   {
@@ -259,7 +317,7 @@ namespace amg
     {
       Iterate<H>([&](auto i) {
 	  Iterate<W>([&](auto j) {
-	      basemat(IMIN + i.value, JMIN + j.value) = m(i.value, j.value);
+	      basemat(IMIN + i.value, JMIN + j.value) = m.Spec()(i, j);
 	    });
 	});
       return *this;
@@ -269,10 +327,10 @@ namespace amg
     INLINE FlatMat & operator+= (const Expr<TB> & m)
     {
       Iterate<H>([&](auto i) {
-	  Iterate<W>([&](auto j) {
-	      basemat(IMIN + i.value, JMIN + j.value) += m(i.value, j.value);
-	    });
-	});
+      	  Iterate<W>([&](auto j) {
+      	      basemat(IMIN + i.value, JMIN + j.value) += m.Spec()(i, j);
+      	    });
+      	});
       return *this;
     }
 

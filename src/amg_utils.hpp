@@ -991,6 +991,35 @@ namespace amg
     m = Trans(evecs) * evecs;
   }
 
+  INLINE void CalcPseudoInverseFM (FlatMatrix<double> & M, LocalHeap & lh)
+  {
+    static Timer t("CalcPseudoInverseFM"); RegionTimer rt(t);
+    // static Timer tl("CalcPseudoInverse - Lapck");
+    const int N = M.Height();
+    FlatMatrix<double> evecs(N, N, lh);
+    FlatVector<double> evals(N, lh);
+    TimedLapackEigenValuesSymmetric(M, evals, evecs);
+    double tol = 0; for (auto v : evals) tol += v;
+    tol = 1e-12 * tol; tol = max2(tol, 1e-15);
+    int DK = 0; // dim kernel
+    for (auto & v : evals) {
+      if (v > tol) {
+	v = 1/sqrt(v);
+	DK++;
+      }
+      else
+	{ v = 0; }
+    }
+    int NS = N-DK;
+    for (auto i : Range(N))
+      for (auto j : Range(N))
+	evecs(i,j) *= evals(i);
+    if (DK > 0)
+      { M = Trans(evecs.Rows(DK, N)) * evecs.Rows(DK, N); }
+    else
+      { M = Trans(evecs) * evecs; }
+  }
+
   template<int IMIN, int N, int NN> INLINE void RegTM (Mat<NN,NN,double> & m, double maxadd = -1)
   {
     // static Timer t(string("RegTM<") + to_string(IMIN) + string(",") + to_string(3) + string(",") + to_string(6) + string(">")); RegionTimer rt(t);
