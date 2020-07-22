@@ -15,10 +15,11 @@ namespace amg
   class BaseAMGFactory
   {
   public:
-    class Logger;      // logging/printing
-    class Options;     // configurable from outside
-    struct State;      // internal book-keeping
-    struct AMGLevel;   // contains one "level"
+    class Logger;         // logging/printing
+    class Options;        // configurable from outside
+    struct State;         // internal book-keeping
+    struct LevelCapsule;  // Contains everything for one level on it's own - at least a mesh and pardofs.
+    struct AMGLevel;      // Contains one LevelCapsule, plus maps leading to the next level, plus potentially an embedding on the finest level
 
   protected:
 
@@ -29,54 +30,153 @@ namespace amg
 
     BaseAMGFactory (shared_ptr<Options> _opts);
 
-    void SetUpLevels (Array<AMGLevel> & finest_level, shared_ptr<DOFMap> & dmap);
+    void SetUpLevels (Array<shared_ptr<AMGLevel>> & finest_level, shared_ptr<DOFMap> & dmap);
 
     virtual shared_ptr<ParallelDofs> BuildParallelDofs (shared_ptr<TopologicMesh> amesh) const = 0;
 
+    virtual shared_ptr<LevelCapsule> AllocCap () const; // weird, but I need to call this from PC
+
   protected:
 
-    void RSU (Array<AMGLevel> & amg_levels, shared_ptr<DOFMap> & dof_map, State & state);
+    void RSU (Array<shared_ptr<AMGLevel>> & amg_levels, shared_ptr<DOFMap> & dof_map, State & state);
 
     static void SetOptionsFromFlags (Options& opts, const Flags & flags, string prefix = "ngs_amg_");
 
-    virtual shared_ptr<BaseDOFMapStep> DoStep (AMGLevel & f_lev, AMGLevel & c_lev, State & state);
+    virtual void MapLevel2 (shared_ptr<BaseDOFMapStep> & dof_step, shared_ptr<AMGLevel> & f_cap, shared_ptr<AMGLevel> & c_cap);
+    virtual shared_ptr<BaseDOFMapStep> MapLevel (FlatArray<shared_ptr<BaseDOFMapStep>> dof_steps,
+						 shared_ptr<AMGLevel> & f_cap, shared_ptr<AMGLevel> & c_cap);
+
+    virtual shared_ptr<BaseDOFMapStep> DoStep (shared_ptr<AMGLevel> & f_lev, shared_ptr<AMGLevel> & c_lev, State & state);
 
     /** Used for controlling coarse levels and deciding on redistributing **/
     virtual size_t ComputeMeshMeasure (const TopologicMesh & m) const = 0;
     virtual double ComputeLocFrac (const TopologicMesh & m) const = 0;
 
-    virtual State* NewState (AMGLevel & lev);
+    virtual State* NewState (shared_ptr<AMGLevel> & lev);
     virtual State* AllocState () const = 0;
-    virtual void InitState (State & state, AMGLevel & lev) const ;
+    virtual void InitState (State & state, shared_ptr<AMGLevel> & lev) const;
 
     /** Discard **/
     virtual bool TryDiscardStep (State & state) = 0;
     // virtual shared_ptr<BaseDiscardMap> BuildDiscardMap (State & state);
 
     /** Coarse **/
-    virtual size_t ComputeGoal (const AMGLevel & f_lev, State & state) = 0;
+    virtual size_t ComputeGoal (const shared_ptr<AMGLevel> & f_lev, State & state) = 0;
     virtual bool TryCoarseStep (State & state);
-    virtual shared_ptr<BaseCoarseMap> BuildCoarseMap (State & state) = 0;
-    virtual shared_ptr<BaseDOFMapStep> PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<ParallelDofs> fpds, shared_ptr<ParallelDofs> cpds) = 0;
-    virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<TopologicMesh> fmesh) = 0;
-    virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap) = 0;
+    virtual shared_ptr<BaseCoarseMap> BuildCoarseMap (State & state, shared_ptr<LevelCapsule> & mapped_cap) = 0;
+    virtual shared_ptr<BaseDOFMapStep> PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<LevelCapsule> fcap, shared_ptr<LevelCapsule> ccap) = 0;
+    virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<LevelCapsule> fcap) = 0;
+    virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap, shared_ptr<LevelCapsule> fcap) = 0;
 
     /** Redist **/
     virtual bool TryContractStep (State & state);
     virtual double FindRDFac (shared_ptr<TopologicMesh> cmesh);
-    virtual shared_ptr<BaseGridMapStep> BuildContractMap (double factor, shared_ptr<TopologicMesh> mesh) const = 0;
-    virtual shared_ptr<BaseDOFMapStep> BuildDOFContractMap (shared_ptr<BaseGridMapStep> cmap, shared_ptr<ParallelDofs> fpd) const = 0;
+    virtual shared_ptr<BaseGridMapStep> BuildContractMap (double factor, shared_ptr<TopologicMesh> mesh, shared_ptr<LevelCapsule> & mapped_cap) const = 0;
+    virtual shared_ptr<BaseDOFMapStep> BuildDOFContractMap (shared_ptr<BaseGridMapStep> cmap, shared_ptr<ParallelDofs> fpd, shared_ptr<LevelCapsule> & mapped_cap) const = 0;
 
   }; // BaseAMGFactory
 
 
   /** Options **/
 
+  template<class OC>
+  struct SpecOpt
+  {
+  public:
+    OC default_opt;
+    Array<OC> spec_opt;
+    SpecOpt () : spec_opt(0) { ; }
+    SpecOpt (OC _default_opt) : default_opt(_default_opt), spec_opt(0) { ; }
+    SpecOpt (OC _default_opt, Array<OC> & _spec_opt) : default_opt(_default_opt), spec_opt(_spec_opt) { ; }
+    SpecOpt (OC _default_opt, Array<OC> _spec_opt) : default_opt(_default_opt), spec_opt(_spec_opt) { ; }
+    SpecOpt (const SpecOpt<OC> & other) : default_opt(default_opt), spec_opt(other.spec_opt) { ; }
+    SpecOpt (SpecOpt<OC> && other) : default_opt(other.default_opt), spec_opt(move(other.spec_opt)) { ; }
+    SpecOpt (const Flags & flags, OC defopt, string defkey, string speckey, Array<string> optkeys)
+      : SpecOpt(defopt)
+    { SetFromFlagsEnum(flags, defkey, speckey, move(optkeys)); }
+    SpecOpt<OC> & operator = (OC defoc) {
+      default_opt = defoc;
+      spec_opt.SetSize0();
+      return *this;
+    }
+    SpecOpt<OC> & operator = (const SpecOpt<OC> & other) {
+      default_opt = other.default_opt;
+      spec_opt.SetSize(other.spec_opt.Size());
+      spec_opt = other.spec_opt;
+      return *this;
+    }
+    void SetFromFlagsEnum (const Flags & flags, string defkey, string speckey, Array<string> optkeys)
+    {
+      auto setoc = [&](auto & oc, string val) {
+	int index;
+	if ( (index = optkeys.Pos(val)) != -1)
+	  { oc = OC(index); }
+      };
+      setoc(default_opt, flags.GetStringFlag(defkey, ""));
+      auto & specfa = flags.GetStringListFlag(speckey);
+      spec_opt.SetSize(specfa.Size()); spec_opt = default_opt;
+      for (auto k : Range(spec_opt))
+	{ setoc(spec_opt[k], specfa[k]); }
+    }
+    INLINE void SetFromFlags (const Flags & flags, string key);
+    OC GetOpt (int level) const { return (level < spec_opt.Size()) ? spec_opt[level] : default_opt; }
+  }; // struct SpecOpt
+
+  template<class OC>
+  void SpecOpt<OC> :: SetFromFlags (const Flags & flags, string key)
+  {
+    throw Exception("SFF not overloaded!!");
+  } // SpecOpt::SetFromFlags
+
+  template<>
+  void SpecOpt<bool> :: SetFromFlags (const Flags & flags, string key)
+  {
+    if (default_opt) { default_opt = !flags.GetDefineFlagX(key).IsFalse(); }
+    else { default_opt = flags.GetDefineFlagX(key).IsTrue(); }
+    auto & arr = flags.GetNumListFlag(key+"_spec");
+    spec_opt.SetSize(arr.Size()); spec_opt = default_opt;
+    for (auto k : Range(spec_opt))
+      { spec_opt[k] = (arr[k] != 0); }
+  } // SpecOpt<bool>::SetFromFlags
+
+  template<>
+  void SpecOpt<xbool> :: SetFromFlags (const Flags & flags, string key)
+  {
+    default_opt = flags.GetDefineFlagX(key);
+    auto & arr = flags.GetNumListFlag(key+"_spec");
+    spec_opt.SetSize(arr.Size()); spec_opt = default_opt;
+    for (auto k : Range(spec_opt))
+      { spec_opt[k] = (arr[k] == 0) ? false : true; }
+  } // SpecOpt<bool>::SetFromFlags
+
+  template<>
+  void SpecOpt<double> :: SetFromFlags (const Flags & flags, string key)
+  {
+    default_opt = flags.GetNumFlag(key, default_opt);
+    auto & arr = flags.GetNumListFlag(key+"_spec");
+    spec_opt.SetSize(arr.Size()); spec_opt = default_opt;
+    for (auto k : Range(spec_opt))
+      { spec_opt[k] = int(arr[k]); }
+  } // SpecOpt<bool>::SetFromFlags
+
+
+  template<>
+  void SpecOpt<int> :: SetFromFlags (const Flags & flags, string key)
+  {
+    default_opt = int(flags.GetNumFlag(key, double(default_opt)));
+    auto & arr = flags.GetNumListFlag(key+"_spec");
+    spec_opt.SetSize(arr.Size()); spec_opt = default_opt;
+    for (auto k : Range(spec_opt))
+      { spec_opt[k] = arr[k]; }
+  } // SpecOpt<bool>::SetFromFlags
+
+
   class BaseAMGFactory :: Options
   {
   public:
     /** General Level-Control **/
     size_t max_n_levels = 10;                   // maximun number of multigrid levels (counts first level, so at least 2)
+    size_t min_meas = 0;                        // minimum measure of coarsest mesh
     size_t max_meas = 50;                       // maximal maesure of coarsest mesh
 
     /** Coarsening **/
@@ -87,6 +187,8 @@ namespace amg
     double first_aaf = 0.05;                    // (static crs ratio) (smaller) factor for first level. -1 for dont use
     double aaf_scale = 1;                       // (static crs ratio) scale aaf, e.g if 2:   first_aaf, aaf, 2*aaf, 4*aaf, .. (or aaf, 2*aaf, ...)
     bool enable_dyn_crs = true;                 // use dynamic coarsening ratios
+    SpecOpt<bool> d2_agg =                      // do this many levels MIS(2)-like aggregates (afterwards MIS(1)-like)
+      SpecOpt<bool>(false, { true });
 
     /** Contract (Re-Distribute) **/
     bool enable_redist = true;                  // allow re-distributing on coarse levels
@@ -139,13 +241,11 @@ namespace amg
   {
     INT<3> level;
     /** most "current" objects **/
-    shared_ptr<TopologicMesh> curr_mesh;
-    shared_ptr<ParallelDofs> curr_pds;
+    shared_ptr<BaseAMGFactory::LevelCapsule> curr_cap;
     /** built maps **/
     shared_ptr<BaseDOFMapStep> dof_map;
     shared_ptr<BaseDiscardMap> disc_map;
     shared_ptr<BaseCoarseMap> crs_map;
-    shared_ptr<BitArray> free_nodes;
     /** book-keeping **/
     bool first_redist_used = false;
     size_t last_redist_meas = 0;
@@ -157,19 +257,33 @@ namespace amg
 
   /** AMGLevel **/
 
+  struct BaseAMGFactory::LevelCapsule
+  {
+    int baselevel = 0; // TODO: this is jsut a placeholder. I want this to be the level of the last "full" AMGLevel
+    shared_ptr<EQCHierarchy> eqc_h = nullptr;
+    shared_ptr<TopologicMesh> mesh = nullptr;
+    shared_ptr<ParallelDofs> pardofs = nullptr;
+    shared_ptr<BaseSparseMatrix> mat = nullptr;
+    shared_ptr<BitArray> free_nodes = nullptr;
+
+    virtual ~LevelCapsule () { ; } // so we can cast down to child classes
+  }; // struct BaseAMGFactory::LevelCapsule
+
+  /** END AMGLevel **/
+
+
+  /** AMGLevel **/
+
   struct BaseAMGFactory::AMGLevel
   {
     int level;
-    shared_ptr<TopologicMesh> mesh = nullptr;
-    shared_ptr<EQCHierarchy> eqc_h = nullptr;
-    shared_ptr<ParallelDofs> pardofs = nullptr;
-    shared_ptr<BaseSparseMatrix> mat = nullptr;
+    shared_ptr<BaseAMGFactory::LevelCapsule> cap;
     shared_ptr<BaseDOFMapStep> embed_map = nullptr; // embedding
+    bool embed_done = false;
     // map to next level: embed -> disc -> crs (-> ctr)
     shared_ptr<BaseDiscardMap> disc_map = nullptr;
     shared_ptr<BaseCoarseMap> crs_map = nullptr;
-    shared_ptr<BitArray> free_nodes = nullptr;
-  }; // BaseAMGFactory::AMGLevel
+  }; // struct BaseAMGFactory::AMGLevel
 
   /** END AMGLevel**/
 

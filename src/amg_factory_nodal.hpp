@@ -25,10 +25,10 @@ namespace amg
     virtual size_t ComputeMeshMeasure (const TopologicMesh & m) const override;
     virtual double ComputeLocFrac (const TopologicMesh & m) const override;
 
-    virtual size_t ComputeGoal (const AMGLevel & f_lev, State & state) override;
+    virtual size_t ComputeGoal (const shared_ptr<AMGLevel> & f_lev, State & state) override;
 
-    virtual shared_ptr<BaseGridMapStep> BuildContractMap (double factor, shared_ptr<TopologicMesh> mesh) const override;
-    virtual shared_ptr<BaseDOFMapStep> BuildDOFContractMap (shared_ptr<BaseGridMapStep> cmap, shared_ptr<ParallelDofs> fpd) const override;
+    virtual shared_ptr<BaseGridMapStep> BuildContractMap (double factor, shared_ptr<TopologicMesh> mesh, shared_ptr<LevelCapsule> & mapped_cap) const override;
+    virtual shared_ptr<BaseDOFMapStep> BuildDOFContractMap (shared_ptr<BaseGridMapStep> cmap, shared_ptr<ParallelDofs> fpd, shared_ptr<LevelCapsule> & mapped_cap) const override;
   }; // NodalAMGFactory
 
 } // namespace amg

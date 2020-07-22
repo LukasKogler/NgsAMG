@@ -15,7 +15,7 @@ namespace amg
 
   /** Options **/
 
-  void BaseAMGPC::Options :: SetFromFlags (const Flags & flags, string prefix)
+  void BaseAMGPC::Options :: SetFromFlags (shared_ptr<FESpace> fes, const Flags & flags, string prefix)
   {
     auto set_enum_opt = [&] (auto & opt, string key, Array<string> vals, auto default_val) {
       string val = flags.GetStringFlag(prefix + key, "");
@@ -49,6 +49,8 @@ namespace amg
       set_opt_sv(opt, flag_opt, keys, vals);
     };
 
+    set_enum_opt(mg_cycle, "mg_cycle", {"V", "W", "BS"}, Options::MG_CYCLE::V_CYCLE);
+
     set_enum_opt(clev, "clev", {"inv", "sm", "none"}, Options::CLEVEL::INV_CLEV);
 
     set_opt_kv(cinv_type, "cinv_type", { "masterinverse", "mumps" }, Array<INVERSETYPE>({ MASTERINVERSE, MUMPS }));
@@ -56,17 +58,19 @@ namespace amg
     set_opt_kv(cinv_type_loc, "cinv_type_loc", { "pardiso", "pardisospd", "sparsecholesky", "superlu", "superlu_dist", "mumps", "umfpack" },
 	       Array<INVERSETYPE>({ PARDISO, PARDISOSPD, SPARSECHOLESKY, SUPERLU, SUPERLU_DIST, MUMPS, UMFPACK }));
 
-    Array<string> sm_names ( { "gs", "bgs" } );
-    Array<Options::SM_TYPE> sm_types ( { Options::SM_TYPE::GS, Options::SM_TYPE::BGS } );
-    set_enum_opt(sm_type, "sm_type", { "gs", "bgs" }, Options::SM_TYPE::GS);
-    auto & spec_sms = flags.GetStringListFlag(prefix + "spec_sm_types");
-    spec_sm_types.SetSize(spec_sms.Size());
-    for (auto k : Range(spec_sms.Size()))
-      { set_opt_sv(spec_sm_types[k], spec_sms[k], sm_names, sm_types); }
+    sm_type.SetFromFlagsEnum(flags, prefix+"sm_type", prefix+"spec_sm_types", { "gs", "bgs" });
+    // Array<string> sm_names ( { "gs", "bgs" } );
+    // Array<Options::SM_TYPE> sm_types ( { Options::SM_TYPE::GS, Options::SM_TYPE::BGS } );
+    // set_enum_opt(sm_type, "sm_type", { "gs", "bgs" }, Options::SM_TYPE::GS);
+    // auto & spec_sms = flags.GetStringListFlag(prefix + "spec_sm_types");
+    // spec_sm_types.SetSize(spec_sms.Size());
+    // for (auto k : Range(spec_sms.Size()))
+    //   { set_opt_sv(spec_sm_types[k], spec_sms[k], sm_names, sm_types); }
 
     gs_ver = Options::GS_VER(max(0, min(3, int(flags.GetNumFlag(prefix + "gs_ver", 3) - 1))));
 
     set_bool(sm_symm, "sm_symm");
+    sm_steps = flags.GetNumFlag(prefix + "sm_steps", 1);
     set_bool(sm_mpi_overlap, "sm_mpi_overlap");
     set_bool(sm_mpi_thread, "sm_mpi_thread");
     set_bool(sm_shm, "sm_shm");
@@ -76,6 +80,9 @@ namespace amg
     set_bool(do_test, "do_test");
     set_bool(smooth_lo_only, "smooth_lo_only");
     set_bool(regularize_cmats, "regularize_cmats");
+    set_bool(force_ass_flmat, "faflm");
+
+    set_enum_opt(energy, "energy", { "triv", "alg", "elmat" }, Options::ENERGY::ALG_ENERGY);
 
   } // Options::SetFromFlags
 
@@ -217,7 +224,7 @@ namespace amg
 
   void BaseAMGPC :: SetOptionsFromFlags (Options& O, const Flags & flags, string prefix)
   {
-    O.SetFromFlags(flags, prefix);
+    O.SetFromFlags(bfa->GetFESpace(), flags, prefix);
   } //BaseAMGPC::SetOptionsFromFlags
 
 
@@ -268,7 +275,9 @@ namespace amg
 
     auto dof_map = make_shared<DOFMap>();
 
-    Array<BaseAMGFactory::AMGLevel> amg_levels(1); InitFinestLevel(amg_levels[0]);
+    Array<shared_ptr<BaseAMGFactory::AMGLevel>> amg_levels(1);
+    amg_levels[0] = make_shared<BaseAMGFactory::AMGLevel>();
+    InitFinestLevel(*amg_levels[0]);
 
     if (options->sync)
       { RegionTimer rt(tsync); dof_map->GetParDofs(0)->GetCommunicator().Barrier(); }
@@ -276,21 +285,18 @@ namespace amg
     factory->SetUpLevels(amg_levels, dof_map);
 
     /** Smoothers **/
-    Array<shared_ptr<BaseSmoother>> smoothers(amg_levels.Size() - 1);
-    for (int k = 0; k < amg_levels.Size() - 1; k++) {
-      if ( (k > 0) && O.regularize_cmats) // Regularize coarse level matrices
-	{ RegularizeMatrix(amg_levels[k].mat, amg_levels[k].pardofs); }
-      smoothers[k] = BuildSmoother(amg_levels[k]);
-    }
+    Array<shared_ptr<BaseSmoother>> smoothers = BuildSmoothers(amg_levels, dof_map);
 
     amg_mat = make_shared<AMGMatrix> (dof_map, smoothers);
+    amg_mat->SetSTK(O.sm_steps);
+    amg_mat->SetVWB(O.mg_cycle);
 
     /** Coarsest level inverse **/
     if (O.sync)
       { RegionTimer rt(tsync); dof_map->GetParDofs(0)->GetCommunicator().Barrier(); }
     
 
-    if ( (amg_levels.Size() > 1) && (amg_levels.Last().mat != nullptr) ) { // otherwise, dropped out
+    if ( (amg_levels.Size() > 1) && (amg_levels.Last()->cap->mat != nullptr) ) { // otherwise, dropped out
       switch(O.clev) {
       case(Options::CLEVEL::INV_CLEV) : {
 	static Timer t("CoarseInv"); RegionTimer rt(t);
@@ -298,14 +304,14 @@ namespace amg
 	auto & c_lev = amg_levels.Last();
 	auto cpds = dof_map->GetMappedParDofs();
 	auto comm = cpds->GetCommunicator();
-	auto cspm = c_lev.mat;
+	auto cspm = c_lev->cap->mat;
 
 	// auto cspmtm = dynamic_pointer_cast<SparseMatrixTM<Mat<3,3,double>>>(cspm);
 	// cout << " Coarse mat: " << endl;
 	// print_tm_spmat(cout, *cspmtm);
 
 	if (O.regularize_cmats)
-	  {  RegularizeMatrix(cspm, cpds); }
+	  { RegularizeMatrix(cspm, cpds); }
 
 	shared_ptr<BaseMatrix> coarse_inv = nullptr;
       
@@ -321,6 +327,7 @@ namespace amg
 		  ( (comm.Size() == 2) && (comm.Rank() == 1) ) ) { // local inverse
 	  cspm->SetInverseType(O.cinv_type_loc);
 	  auto cinv = cspm->InverseMatrix();
+	  // cout << " coarse inv: " << endl << *cinv << endl;
 	  if (comm.Size() > 1)
 	    { coarse_inv = make_shared<ParallelMatrix> (cinv, cpds, cpds, C2C); } // dummy parmat
 	  else
@@ -351,24 +358,50 @@ namespace amg
   } // BaseAMGPC::BuildAMGMAt
 
 
+  Array<shared_ptr<BaseSmoother>> BaseAMGPC :: BuildSmoothers (FlatArray<shared_ptr<BaseAMGFactory::AMGLevel>> amg_levels,
+							       shared_ptr<DOFMap> dof_map)
+  {
+    auto & O(*options);
+
+    Array<shared_ptr<BaseSmoother>> smoothers(amg_levels.Size() - 1);
+
+    for (int k = 0; k < amg_levels.Size() - 1; k++) {
+      if ( (k > 0) && O.regularize_cmats) // Regularize coarse level matrices
+	{ RegularizeMatrix(amg_levels[k]->cap->mat, amg_levels[k]->cap->pardofs); }
+      smoothers[k] = BuildSmoother(*amg_levels[k]);
+    }
+
+    return smoothers;
+  } // BaseAMGPC :: BuildSmoothers
+
+
   void BaseAMGPC :: InitFinestLevel (BaseAMGFactory::AMGLevel & finest_level)
   {
-    auto finest_mesh = BuildInitialMesh();
-
-    // cout << "init mesh: " << endl << finest_mesh << endl;
-    // if (finest_mesh != nullptr)
-      // cout << *finest_mesh << endl;
-    // else
-      // { throw Exception("HAVE NOT BUILT FINEST MESH CORRECTLY!!!!"); }
 
     finest_level.level = 0;
-    finest_level.mesh = finest_mesh; // TODO: get out of factory??
-    finest_level.eqc_h = finest_level.mesh->GetEQCHierarchy();
-    finest_level.pardofs = finest_mat->GetParallelDofs();
+    finest_level.cap = factory->AllocCap();
+
+    finest_level.cap->mesh = BuildInitialMesh(); // TODO: get out of factory??
+
+    finest_level.cap->eqc_h = finest_level.cap->mesh->GetEQCHierarchy();
+
     auto fpm = dynamic_pointer_cast<ParallelMatrix>(finest_mat);
-    finest_level.mat = (fpm == nullptr) ? dynamic_pointer_cast<BaseSparseMatrix>(finest_mat)
+    finest_level.cap->mat = (fpm == nullptr) ? dynamic_pointer_cast<BaseSparseMatrix>(finest_mat)
       : dynamic_pointer_cast<BaseSparseMatrix>(fpm->GetMatrix());
-    finest_level.embed_map = BuildEmbedding(finest_mesh);
+
+    finest_level.embed_map = BuildEmbedding(finest_level);
+
+    if (finest_level.embed_map == nullptr)
+      { finest_level.cap->pardofs = finest_mat->GetParallelDofs(); }
+    else {
+      /** Explicitely assemble matrix associated with the finest mesh. **/
+      if (options->force_ass_flmat) {
+	finest_level.cap->mat = finest_level.embed_map->AssembleMatrix(finest_level.cap->mat);
+	finest_level.embed_done = true;
+      }
+      /** Either way, pardofs associated with the mesh are the mapped pardofs of the embed step **/
+      finest_level.cap->pardofs = finest_level.embed_map->GetMappedParDofs();
+    }
   } // BaseAMGPC::InitFinestLevel
 
 
@@ -378,17 +411,25 @@ namespace amg
     
     shared_ptr<BaseSmoother> smoother = nullptr;
 
-    // cout << " smoother, mat " << amg_level.mat->Height() << " x " << amg_level.mat->Width() << endl;
-    // cout << " pds " << amg_level.pardofs->GetNDofLocal() << endl;
+    // cout << " smoother, mat " << amg_level.cap->mat->Height() << " x " << amg_level.cap->mat->Width() << endl;
+    // cout << " pds " << amg_level.cap->pardofs->GetNDofLocal() << endl;
 
-    Options::SM_TYPE sm_type = O.sm_type;
+    Options::SM_TYPE sm_type = O.sm_type.GetOpt(amg_level.level);
+    // if (O.spec_sm_types.Size() > amg_level.level)
+    //   { sm_type = O.spec_sm_types[amg_level.level]; }
 
-    if (O.spec_sm_types.Size() > amg_level.level)
-      { sm_type = O.spec_sm_types[amg_level.level]; }
+    shared_ptr<ParallelDofs> pardofs = (amg_level.level == 0) ? finest_mat->GetParallelDofs() : amg_level.cap->pardofs;
+    shared_ptr<BaseSparseMatrix> spmat;
+    if (amg_level.level == 0) { /** This makes a difference with force_ass_flmat **/
+      auto fpm = dynamic_pointer_cast<ParallelMatrix>(finest_mat);
+      spmat = (fpm == nullptr) ? dynamic_pointer_cast<BaseSparseMatrix>(finest_mat) : dynamic_pointer_cast<BaseSparseMatrix>(fpm->GetMatrix());
+    }
+    else
+      { spmat = amg_level.cap->mat; }
 
     switch(sm_type) {
-    case(Options::SM_TYPE::GS)  : { smoother = BuildGSSmoother(amg_level.mat, amg_level.pardofs, amg_level.eqc_h, GetFreeDofs(amg_level)); break; }
-    case(Options::SM_TYPE::BGS) : { smoother = BuildBGSSmoother(amg_level.mat, amg_level.pardofs, amg_level.eqc_h, move(GetGSBlocks(amg_level))); break; }
+    case(Options::SM_TYPE::GS)  : { smoother = BuildGSSmoother(spmat, pardofs, amg_level.cap->eqc_h, GetFreeDofs(amg_level)); break; }
+    case(Options::SM_TYPE::BGS) : { smoother = BuildBGSSmoother(spmat, pardofs, amg_level.cap->eqc_h, move(GetGSBlocks(amg_level))); break; }
     default : { throw Exception("Invalid Smoother type!"); break; }
     }
 
@@ -462,7 +503,7 @@ namespace amg
     if (amg_level.level == 0)
       { return finest_freedofs; }
     else
-      { return amg_level.free_nodes; }
+      { return amg_level.cap->free_nodes; }
   } // BaseAMGPC::GetFreeDofs
 
 
@@ -542,7 +583,7 @@ namespace amg
     auto ma = fes->GetMeshAccess();
     auto pfit = [&](string x) LAMBDA_INLINE { return prefix + x; };
 
-    BaseAMGPC::Options::SetFromFlags(flags, prefix);
+    BaseAMGPC::Options::SetFromFlags(fes, flags, prefix);
 
     set_enum_opt(subset, "on_dofs", {"range", "select"});
 
@@ -699,8 +740,6 @@ namespace amg
 
     set_enum_opt(topo, "edges", { "alg", "mesh", "elmat" });
     set_enum_opt(v_pos, "vpos", { "vertex", "given" } );
-    set_enum_opt(energy, "energy", { "triv", "alg", "elmat" });
-
   } // VertexAMGPCOptions::SetOptionsFromFlags
 
   /** END VertexAMGPCOptions **/

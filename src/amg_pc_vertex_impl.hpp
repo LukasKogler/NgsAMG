@@ -84,8 +84,6 @@ namespace amg
       { throw Exception("Invalid Opts!"); }
     Options & O(*myO);
 
-    // cout << " VertexAMGPC::SetOptionsFromFlags " << endl;
-    
     O.SetFromFlags(bfa->GetFESpace(), flags, prefix);
   } // VertexAMGPC<FACTORY> :: SetOptionsFromFlags
 
@@ -317,8 +315,10 @@ namespace amg
 
 
   template<class FACTORY>
-  shared_ptr<BaseDOFMapStep> VertexAMGPC<FACTORY> :: BuildEmbedding (shared_ptr<TopologicMesh> mesh)
+  shared_ptr<BaseDOFMapStep> VertexAMGPC<FACTORY> :: BuildEmbedding (BaseAMGFactory::AMGLevel & level)
   {
+    shared_ptr<TopologicMesh> mesh = level.cap->mesh;
+
     static Timer t("BuildEmbedding"); RegionTimer rt(t);
     auto & O(static_cast<Options&>(*options));
 
@@ -764,7 +764,8 @@ namespace amg
   void VertexAMGPC<FACTORY> :: InitFinestLevel (BaseAMGFactory::AMGLevel & finest_level)
   {
     BaseAMGPC::InitFinestLevel(finest_level);
-    finest_level.free_nodes = free_verts;
+    /** Explicitely assemble matrix associated with the finest mesh. **/
+    finest_level.cap->free_nodes = free_verts;
   }
 
 

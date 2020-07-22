@@ -23,14 +23,33 @@ namespace amg
     bool has_crs_inv = false;
     size_t n_levels = 0;
     size_t n_levels_glob = 0;
+    int stk = 1;
     shared_ptr<BaseMatrix> crs_inv;
+    int vwb = 0;
 
   public:
     AMGMatrix (shared_ptr<DOFMap> _map, FlatArray<shared_ptr<BaseSmoother>> _smoothers);
 
     void SetCoarseInv (shared_ptr<BaseMatrix> _crs_inv);
     
+    INLINE void Smooth (BaseVector & x, const BaseVector & b) const {
+      switch(vwb) {
+      case(0) : { SmoothV(x, b); break; }
+      case(1) : { SmoothW(x, b); break; }
+      case(2) : { SmoothBS(x, b); break; }
+      }
+    }
+
     void SmoothV (BaseVector & x, const BaseVector & b) const;
+    void SmoothW (BaseVector & x, const BaseVector & b) const;
+    void SmoothBS (BaseVector & x, const BaseVector & b) const;
+
+    void SmoothVFromLevel (int startlevel, BaseVector  &x, const BaseVector &b, BaseVector  &res,
+			   bool res_updated, bool update_res, bool x_zero) const;
+
+    virtual void SetSTK (int _stk) { stk = _stk; }
+    virtual void SetVWB (int _vwb) { vwb = _vwb; }
+    virtual int GetVWB () const { return vwb; }
 
     virtual void MultTrans (const BaseVector & b, BaseVector & x) const override;
     virtual void Mult (const BaseVector & b, BaseVector & x) const override;
@@ -54,6 +73,7 @@ namespace amg
 
     shared_ptr<DOFMap> GetMap () const { return map; }
     FlatArray<shared_ptr<const BaseSmoother>> GetSmoothers () const { return smoothers; }
+    shared_ptr<const BaseSmoother> GetSmoother (int k) const { return smoothers[k]; }
     shared_ptr<BaseMatrix> GetCINV () const { return crs_inv; }
 
   }; // class AMGMatrix
@@ -67,11 +87,15 @@ namespace amg
     shared_ptr<BaseDOFMapStep> ds;
     shared_ptr<BaseVector> res;
     shared_ptr<BaseVector> xbuf;
+    int stk = 1;
 
   public:
     EmbeddedAMGMatrix (shared_ptr<BaseSmoother> _fls, shared_ptr<AMGMatrix> _clm, shared_ptr<BaseDOFMapStep> _ds)
       : fls(_fls), clm(_clm), ds(_ds)
     { res = ds->CreateVector(); xbuf = ds->CreateVector(); }
+
+    virtual void SetSTK_outer (int _stk) { stk = _stk; }
+    virtual void SetSTK_inner (int _stk) { clm->SetSTK(_stk); }
 
     virtual void MultTrans (const BaseVector & b, BaseVector & x) const override;
     virtual void Mult (const BaseVector & b, BaseVector & x) const override;
@@ -95,8 +119,41 @@ namespace amg
     shared_ptr<BaseDOFMapStep> GetEmbedding () const { return ds; }
     shared_ptr<BaseSmoother> GetFLS () const { return fls; }
     shared_ptr<AMGMatrix> GetAMGMatrix () const { return clm; }
-  };
+  }; // class EmbeddedAMGMatrix
 
+
+  /** AMG as a smoother **/
+  class AMGSmoother : public BaseSmoother
+  {
+  protected:
+    int start_level;
+    shared_ptr<AMGMatrix> amg_mat;
+  public:
+
+    AMGSmoother (shared_ptr<AMGMatrix> _amg_mat, int _start_level = 0)
+      : BaseSmoother(_amg_mat->GetSmoother(_start_level)->GetAMatrix()),
+	start_level(_start_level), amg_mat(_amg_mat)
+    { ; }
+
+    ~AMGSmoother () { ; }
+
+    virtual void Smooth (BaseVector  &x, const BaseVector &b,
+    			 BaseVector  &res, bool res_updated = false,
+    			 bool update_res = true, bool x_zero = false) const override
+    {
+      amg_mat->SmoothVFromLevel(start_level, x, b, res, res_updated, update_res, x_zero);
+    }
+
+    virtual void SmoothBack (BaseVector  &x, const BaseVector &b,
+    			     BaseVector &res, bool res_updated = false,
+    			     bool update_res = true, bool x_zero = false) const override
+    {
+      amg_mat->SmoothVFromLevel(start_level, x, b, res, res_updated, update_res, x_zero);
+    }
+
+  }; // class AMGSmoother
+
+  
 } // namespace amg
 
 #endif

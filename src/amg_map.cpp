@@ -34,13 +34,36 @@ namespace amg
   }
 
 
+  void DOFMap :: TransferAtoB (int la, int lb, const BaseVector * vin, BaseVector * vout) const
+  {
+    if (la > lb)
+      { ConcDMS(steps.Range(lb, la)).TransferC2F(vout, vin); }
+    else if (la < lb)
+      { ConcDMS(steps.Range(la, lb)).TransferF2C(vin, vout); }
+    else
+      { *vout = *vin; }
+  } // DOFMap::TransferAtoB
+
+
+  shared_ptr<DOFMap> DOFMap :: SubMap (int from, int to)
+  {
+    auto submap = make_shared<DOFMap>();
+    int kmax = (to == -1) ? steps.Size() : to;
+    for (auto k : Range(from, kmax))
+      { submap->AddStep(steps[k]); }
+    return submap;
+  }
+
+  /** END DofMap **/
+
 
   /** ConcDMS **/
 
-  ConcDMS :: ConcDMS (Array<shared_ptr<BaseDOFMapStep>> & _sub_steps)
+  ConcDMS :: ConcDMS (FlatArray<shared_ptr<BaseDOFMapStep>> _sub_steps)
     : BaseDOFMapStep(_sub_steps[0]->GetParDofs(), _sub_steps.Last()->GetMappedParDofs()),
-      sub_steps(_sub_steps)
+      sub_steps(_sub_steps.Size())
   {
+    sub_steps = _sub_steps;
     spvecs.SetSize(sub_steps.Size()-1);
     if(sub_steps.Size()>1) // TODO: test this out -> i think Range(1,0) is broken??
       for(auto k : Range(size_t(1),sub_steps.Size()))
@@ -50,6 +73,12 @@ namespace amg
       { vecs[k] = spvecs[k].get(); }
   }
 
+
+  void ConcDMS :: Finalize ()
+  {
+    for (auto step : sub_steps)
+      { step->Finalize(); }
+  } // ConcDMS::Finalize
 
   // bool ConcDMS :: CanPullBack (shared_ptr<BaseDOFMapStep> other)
   // {
@@ -158,16 +187,35 @@ namespace amg
   /** ProlMap **/
 
   template<class TMAT>
+  void ProlMap<TMAT> :: Finalize ()
+  {
+    this->BuildPT();
+    if (dynamic_pointer_cast<SPM_P>(prol) == nullptr)
+      { prol = make_shared<SPM_P>(move(*prol)); }
+    if (dynamic_pointer_cast<trans_spm<SPM_P>>(prol_trans) == nullptr)
+      { prol_trans = make_shared<trans_spm<SPM_P>>(move(*prol_trans)); }
+  } // ProlMap::Finalize
+
+
+  template<class TMAT>
   void ProlMap<TMAT> :: TransferF2C (const BaseVector * x_fine, BaseVector * x_coarse) const
   {
 #ifdef USE_TAU
     TAU_PROFILE("ProlMap::TransferF2C", TAU_CT(*this), TAU_DEFAULT);
 #endif
 
+    // cout << " prol f2c " << endl;
+    // cout << " f c lens " << x_fine->Size() << " " << x_coarse->Size() << endl;
+    // cout << " prolt dims " << prol_trans->Height() << " x " << prol_trans->Width() << endl;
+
     RegionTimer rt(timer_hack_prol_f2c());
     x_fine->Distribute();
+    // cout << " prol f2c " << endl;
     prol_trans->Mult(*x_fine, *x_coarse);
+    // cout << " prol f2c " << endl;
     x_coarse->SetParallelStatus(DISTRIBUTED);
+
+    // cout << " prol f2c done " << endl;
 
     // cout << "fine: " << endl << *x_fine << endl;
     // cout << "coarse: " << endl << *x_coarse << endl;
@@ -222,6 +270,10 @@ namespace amg
     // cout << endl;
     // print_tm_spmat(cout, *prol);
     // cout << endl;
+
+    // cout << "x coarse/fine sizes " << endl << x_coarse->Size() << " " << x_fine->Size() << endl;
+    // cout << " prol dims " << prol->Height() << " x " << prol->Width() << endl;
+    // cout << "x caorse " << endl << x_coarse->FVDouble() << endl;
 
     // cout << "x caorse " << endl << x_coarse->FVDouble() << endl;
 
@@ -295,24 +347,170 @@ namespace amg
     }
 
     auto& self = const_cast<ProlMap<TMAT>&>(*this);
-    if (prol_trans == nullptr)
-      { self.BuildPT(); }
-    self.prol = make_shared<SPM_P>(move(*prol));
-    self.prol_trans = make_shared<trans_spm<SPM_P>>(move(*prol_trans));
+    self.Finalize();
     
     // if (prol->Width() < 100) {
-    //   cout << " fmat: " << endl; print_tm_spmat(cout, *tfmat); cout << endl<< endl;
-    //   cout << " prol: " << endl; print_tm_spmat(cout, *prol); cout << endl<< endl;
+      // cout << " fmat: " << endl; print_tm_spmat(cout, *tfmat); cout << endl<< endl;
+      // cout << " prol: " << endl; print_tm_spmat(cout, *prol); cout << endl<< endl;
     // }
 
     // auto spm_tm = RestrictMatrixTM<SPM_TM_F, TMAT> (*prol_trans, *tfmat, *prol);
     shared_ptr<SPM_TM_C> spm_tm = RestrictMatrixTM<SPM_TM_F, TMAT> (*prol_trans, *tfmat, *prol);
 
     // if (prol->Width() < 100)
-    //   { cout << " cmat: " << endl; print_tm_spmat(cout, *spm_tm); cout << endl<< endl; }
+      // { cout << " cmat: " << endl; print_tm_spmat(cout, *spm_tm); cout << endl<< endl; }
 
     return make_shared<SPM_C>(move(*spm_tm));
   }
+
+
+  /** MultiDofMapStep **/
+
+  MultiDofMapStep :: MultiDofMapStep (FlatArray<shared_ptr<BaseDOFMapStep>> _maps)
+    : BaseDOFMapStep(_maps[0]->GetParDofs(), _maps[0]->GetMappedParDofs())
+  {
+    maps.SetSize(_maps.Size());
+    maps = _maps;
+  }
+
+
+  void MultiDofMapStep :: Finalize ()
+  {
+    for (auto map : maps)
+      { map->Finalize(); }
+  } // MultiDofMapStep::Finalize
+
+
+  void MultiDofMapStep :: TransferF2C (const BaseVector * x_fine, BaseVector * x_coarse) const
+  { GetPrimMap()->TransferF2C(x_fine, x_coarse); } // MultiDofMapStep :: TransferF2C
+
+
+  void MultiDofMapStep :: AddF2C (double fac, const BaseVector * x_fine, BaseVector * x_coarse) const
+  { 
+    GetPrimMap()->AddF2C(fac, x_fine, x_coarse);
+  } // MultiDofMapStep :: AddF2C
+
+
+  void MultiDofMapStep :: TransferC2F (BaseVector * x_fine, const BaseVector * x_coarse) const
+  {
+    GetPrimMap()->TransferC2F(x_fine, x_coarse);
+  } // MultiDofMapStep :: TransferC2F
+
+
+  void MultiDofMapStep :: AddC2F (double fac, BaseVector * x_fine, const BaseVector * x_coarse) const
+  {
+    GetPrimMap()->AddC2F(fac, x_fine, x_coarse);
+  } // MultiDofMapStep :: AddC2F
+
+
+  bool MultiDofMapStep :: CanConcatenate (shared_ptr<BaseDOFMapStep> other)
+  {
+    if (auto mdms = dynamic_pointer_cast<MultiDofMapStep>(other)) {
+      bool cc = mdms->GetNMaps() == GetNMaps();
+      for (auto k : Range(maps))
+	{ cc &= GetMap(k)->CanConcatenate(mdms->GetMap(k)); }
+      return cc;
+    }
+    else if (GetNMaps() == 1)
+      { return maps[0]->CanConcatenate(other); }
+    else
+      { return false; }
+  } // MultiDofMapStep :: CanConcatenate
+
+
+  shared_ptr<BaseDOFMapStep> MultiDofMapStep :: Concatenate (shared_ptr<BaseDOFMapStep> other)
+  {
+    if (!CanConcatenate(other))
+      { return nullptr; }
+    if (auto mdms = dynamic_pointer_cast<MultiDofMapStep>(other)) {
+      Array<shared_ptr<BaseDOFMapStep>> cmaps(GetNMaps());
+      for (auto k : Range(cmaps))
+	{ cmaps[k] = GetMap(k)->Concatenate(mdms->GetMap(k)); }
+      return make_shared<MultiDofMapStep>(cmaps);
+    }
+    else if (GetNMaps() == 1)
+      { return maps[0]->Concatenate(other); }
+    return nullptr;
+  } // MultiDofMapStep :: Concatenate
+
+
+  shared_ptr<BaseDOFMapStep> MultiDofMapStep :: PullBack (shared_ptr<BaseDOFMapStep> other)
+  {
+    if (auto mdms = dynamic_pointer_cast<MultiDofMapStep>(other)) {
+      Array<shared_ptr<BaseDOFMapStep>> cmaps(GetNMaps());
+      for (auto k : Range(cmaps)) {
+	  cmaps[k] = GetMap(k)->PullBack(mdms->GetMap(k));
+	if (cmaps[k] == nullptr)
+	  { throw Exception("MultiDofMapStep could not pull back a component!"); }
+      }
+      return make_shared<MultiDofMapStep>(cmaps);
+    }
+    else if (GetNMaps() == 1)
+      { return maps[0]->PullBack(other); }
+    return maps[0]->PullBack(other);
+  } // MultiDofMapStep :: PullBack
+
+
+  shared_ptr<BaseSparseMatrix> MultiDofMapStep :: AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const
+  {
+    return maps[0]->AssembleMatrix(mat);
+  } // MultiDofMapStep :: AssembleMatrix
+
+  /** END MultiDofMapStep **/
+
+  shared_ptr<BaseDOFMapStep> MakeSingleStep2 (FlatArray<shared_ptr<BaseDOFMapStep>> init_steps)
+  {
+    const int iss = init_steps.Size();
+    if (iss == 0)
+      { return nullptr; }
+    Array<shared_ptr<BaseDOFMapStep>> sub_steps(iss); sub_steps.SetSize0();
+    for (int k = 0; k < iss; k++) {
+      shared_ptr<BaseDOFMapStep> conc_step = init_steps[k];
+      int j = k+1;
+      for ( ; j < iss; j++)
+	if (auto x = conc_step->Concatenate(init_steps[j]))
+	  { conc_step = x; k++; }
+	else
+	  { break; }
+      sub_steps.Append(conc_step);
+    }
+    shared_ptr<BaseDOFMapStep> final_step = nullptr;
+    if (sub_steps.Size() == 1)
+      { return sub_steps[0]; }
+    else
+      { return make_shared<ConcDMS>(sub_steps); }
+  } // MakeSingleStep2
+
+
+  shared_ptr<BaseDOFMapStep> MakeSingleStep (FlatArray<shared_ptr<BaseDOFMapStep>> sub_steps)
+  {
+    int nmaps = 0, nss = sub_steps.Size();
+
+    if (nss == 0)
+      { return nullptr; }
+
+    for (int k = 0; (k < nss) & (nmaps != -1); k++) {
+      if (auto mdms = dynamic_pointer_cast<MultiDofMapStep>(sub_steps[k])) {
+	if (nmaps == 0)
+	  { nmaps = mdms->GetNMaps(); }
+	else
+	  { nmaps = (mdms->GetNMaps() == nmaps) ? nmaps : -1; }
+      }
+      else
+	{ nmaps = -1; }
+    }
+    if (nmaps != -1) {
+      Array<shared_ptr<BaseDOFMapStep>> multi_subs(nmaps), jmaps(nss);
+      for (auto k : Range(nmaps)) {
+	for (auto j : Range(nss))
+	  { jmaps[j] = dynamic_pointer_cast<MultiDofMapStep>(sub_steps[j])->GetMap(k); }
+	multi_subs[k] =  MakeSingleStep2(jmaps);
+      }
+      return make_shared<MultiDofMapStep>(multi_subs);
+    }
+    else
+      { return MakeSingleStep2(sub_steps); }
+  } // MakeSingleStep
 
 } // namespace amg
 

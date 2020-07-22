@@ -25,8 +25,13 @@ namespace amg
 
   /** StokesMesh **/
 
-  template<int DIM> using GGStokesMesh = BlockAlgMesh<AttachedSVD<GGSVD<DIM>>,
-						      AttachedSED<GGSED<DIM>> >;
+  // template<int DIM> using GGStokesMesh = BlockAlgMesh<AttachedSVD<GGSVD<DIM>>, AttachedSED<GGSED<DIM>> >;
+
+  // template<int DIM> using GGStokesMesh = StokesMesh<BlockAlgMesh<AttachedSVD<GGSVD<DIM>>,
+								 // AttachedSED<GGSED<DIM>>> >;
+
+  template<int DIM> using GGStokesMesh = StokesMesh<AttachedSVD<GGSVD<DIM>>,
+						    AttachedSED<GGSED<DIM>>>;
 
   /** END StokesMesh **/
 
@@ -46,10 +51,16 @@ namespace amg
     cdata.SetSize(cmap.template GetMappedNN<NT_VERTEX>()); cdata = 0.0;
     static_cast<TMESH*>(mesh)->CumulateData(); // lmao ...
     auto vmap = cmap.template GetMap<NT_VERTEX>();
+    const auto fecon = *mesh->GetEdgeCM();
     mesh->template Apply<NT_VERTEX>([&](auto v) {
 	auto cv = vmap[v];
 	if (cv != -1) {
-	  cdata[cv].vol += data[v].vol;
+	  if (cdata[cv].vol >= 0) {
+	    if (data[v].vol > 0)
+	      { cdata[cv].vol += data[v].vol; }
+	    else
+	      { cdata[cv].vol = -1; }
+	  }
 	  cdata[cv].vd += data[v].vd;
 	}
       }, true);
@@ -112,7 +123,7 @@ namespace amg
     // actually, not sure what to do here ... in triv case, nothing I guess
     auto fdata = get<1>(alg_mesh->Data())->Data();
 
-    // TODO: PARSTAT is NOT yet correct - we shoudl check wether we are master of facet everywhere
+    // TODO: PARSTAT is NOT yet correct - we should check wether we are master of facet everywhere
     auto edata = get<1>(alg_mesh->Data())->Data();
     auto flows = aux_sys->CalcFacetFlow();
     auto edges = alg_mesh->template GetNodes<NT_EDGE>();
@@ -121,6 +132,7 @@ namespace amg
     Array<int> elnums;
     auto comm = aux_sys->GetAuxParDofs()->GetCommunicator();
     auto f2a_facet = aux_sys->GetFMapF2A();
+    auto aux_free = aux_sys->GetAuxFreeDofs();
     for (auto k : Range(f2a_facet)) {
       auto facet_nr = f2a_facet[k];
       auto enr = esort[f2a_facet[k]]; // TODO: garbage with MPI
@@ -134,6 +146,7 @@ namespace amg
 	  { fac = -1; }
 	else
 	  { throw Exception("ummm .. WTF??"); }
+	edata[enr].edi = 1; edata[enr].edj = 1;
       }
       else {
 	// I think GetDistantProcs for non-parallel mesh just segfaults ...
@@ -142,15 +155,103 @@ namespace amg
 	}
 	else {
 	  fac = (vsort[elnums[0]] == edge.v[0]) ? 1.0 : -1.0; // should only flip if surface vertex is sorted before vol vertex - never without MPI??
+	  if (aux_free->Test(k))
+	    { edata[enr].edi = 1; edata[enr].edj = 1; }
+	  else
+	    { edata[enr].edi = 1e-3; edata[enr].edj = 1e-3; }
 	}
       }
       edata[enr].flow = fac * flows[k];
-      edata[enr].edi = 1;
-      edata[enr].edj = 1;
     }
 
     return alg_mesh;
   } // StokesAMGPC::BuildAlgMesh_TRIV
+
+  template<class FACTORY, class AUX_SYS> shared_ptr<typename StokesAMGPC<FACTORY, AUX_SYS>::TMESH>
+  StokesAMGPC<FACTORY, AUX_SYS> :: BuildAlgMesh_ALG (shared_ptr<BlockTM> top_mesh) const
+  {
+    constexpr int DIM = FACTORY::ENERGY::DIM;
+
+    const auto & A = *aux_sys->GetAuxMat();
+
+    /** we already get an ALG-Mesh, but it only has some algebraic data (v-pos and v-vol) **/
+    auto alg_mesh = dynamic_pointer_cast<TMESH>(top_mesh);
+
+    // actually, not sure what to do here ... in triv case, nothing I guess
+    auto fdata = get<1>(alg_mesh->Data())->Data();
+
+    // TODO: PARSTAT is NOT yet correct - we should check wether we are master of facet everywhere
+    auto edata = get<1>(alg_mesh->Data())->Data();
+    auto flows = aux_sys->CalcFacetFlow();
+    auto edges = alg_mesh->template GetNodes<NT_EDGE>();
+    FlatArray<int> vsort = node_sort[NT_VERTEX];
+    FlatArray<int> esort = node_sort[NT_EDGE];
+    Array<int> elnums;
+    auto comm = aux_sys->GetAuxParDofs()->GetCommunicator();
+    auto f2a_facet = aux_sys->GetFMapF2A();
+    auto a2f_facet = aux_sys->GetFMapA2F();
+    auto calc_wt = [&](auto fnr, auto dnr, auto elnr, auto tr) {
+      // cout << " fnr " << fnr << ", dnr " << dnr << ", elnr " << elnr << endl;
+      auto facets0 = ma->GetElFacets(ElementId(VOL, elnr));
+      double w0 = 0; int cnt = 0;
+      for (auto kj : facets0) {
+	// cout << "kj "  << kj;
+	if (kj != fnr) {
+	  int dj = a2f_facet[kj];
+	  // cout << " dj " << dj << endl;
+	  w0 = max2(w0, fabs(calc_trace(A(dnr, dj))));
+	  cnt++;
+	}
+	else
+	  { cout << endl; }
+      }
+      // cout << " facet-nr " << fnr << ", dnr " << dnr << ", w0 " << w0 << ", tr " << tr << endl;
+      return w0 / tr;
+    };
+    for (auto k : Range(f2a_facet)) {
+      auto facet_nr = f2a_facet[k];
+      auto enr = esort[f2a_facet[k]]; // TODO: garbage with MPI
+      const auto & edge = edges[enr];
+      ma->GetFacetElements(facet_nr, elnums);
+      double fac = 1.0;
+      if (elnums.Size() == 2) {
+	double trd = calc_trace(A(k,k));
+	double w0 = calc_wt(facet_nr, k, elnums[0], trd);
+	double w1 = calc_wt(facet_nr, k, elnums[1], trd);
+	if (vsort[elnums[0]] == edge.v[0])
+	  { fac = 1.0;  SetScalIdentity(w0, edata[enr].edi); SetScalIdentity(w1, edata[enr].edj); }
+	else if (vsort[elnums[0]] == edge.v[1])
+	  { fac = -1.0; SetScalIdentity(w1, edata[enr].edi); SetScalIdentity(w0, edata[enr].edj); }
+	else
+	  { throw Exception("ummm .. WTF??"); }
+      }
+      else {
+	// I think GetDistantProcs for non-parallel mesh just segfaults ...
+	if ( ( comm.Size() > 1 ) && ma->GetDistantProcs(NodeId(NT_FACET, facet_nr)).Size() ) {
+	  throw Exception("I dont even know ...");
+	}
+	else {
+	  double trd = calc_trace(A(k,k));
+	  double w0 = calc_wt(facet_nr, k, elnums[0], trd);
+	  if (vsort[elnums[0]] == edge.v[0])
+	    { fac = 1; SetScalIdentity(w0, edata[enr].edi); SetScalIdentity(w0, edata[enr].edj); }
+	  else
+	    { fac = 1; SetScalIdentity(w0, edata[enr].edj); SetScalIdentity(w0, edata[enr].edi); }
+	}
+      }
+      edata[enr].flow = fac * flows[k];
+    }
+
+    // cout << " EDATA: " << endl;
+    // for (auto k : Range(edata))
+    //   {
+    // 	cout << k << ": " << endl;
+    // 	cout << "-- " << edata[k].edi << endl;
+    // 	cout << "-- " << edata[k].edj << endl;
+    //   }
+
+    return alg_mesh;
+  } // StokesAMGPC::BuildAlgMesh_ALG
 
   /** END StokesAMGPC **/
 

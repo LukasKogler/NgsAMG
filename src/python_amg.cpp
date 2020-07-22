@@ -31,6 +31,7 @@ namespace amg {
 
 #ifdef STOKES
   extern void ExportStokes_gg_2d (py::module & m);
+  extern void ExportNCSpace (py::module &m);
 #endif // STOKES
 }
 
@@ -58,6 +59,7 @@ PYBIND11_MODULE (ngs_amg, m) {
 
 #ifdef STOKES
   amg::ExportStokes_gg_2d(m);
+  amg::ExportNCSpace (m);
 #endif // STOKES
 
 } // PYBIND11_MODULE

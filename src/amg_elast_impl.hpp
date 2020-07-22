@@ -106,7 +106,7 @@ namespace amg
     O.crs_alg = Options::CRS_ALG::AGG;
     O.ecw_geom = false;
     O.ecw_robust = false;
-    O.n_levels_d2_agg = 1;
+    O.d2_agg = SpecOpt<bool>(false, { true });
     O.agg_neib_boost = false; // might be worth it
 
     /** Smoothed Prolongation **/
@@ -189,8 +189,8 @@ namespace amg
   void VertexAMGPC<FCC> :: ModifyOptions (BaseAMGPC::Options & aO, const Flags & flags, string prefix)
   {
     auto & O(static_cast<Options&>(aO));
-    if ( (O.sm_type == Options::SM_TYPE::BGS) ||
-	 (O.spec_sm_types.Pos(Options::SM_TYPE::BGS) != -1) )
+    if ( (O.sm_type.default_opt == Options::SM_TYPE::BGS) ||
+	 (O.sm_type.spec_opt.Pos(Options::SM_TYPE::BGS) != -1) )
       { O.keep_grid_maps = true; }
   } // VertexAMGPC::ModifyOptions
 

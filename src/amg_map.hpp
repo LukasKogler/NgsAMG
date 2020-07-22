@@ -86,6 +86,7 @@ namespace amg {
     shared_ptr<ParallelDofs> GetParDofs () const { return pardofs; }
     shared_ptr<ParallelDofs> GetMappedParDofs () const { return mapped_pardofs; }
     virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const = 0;
+    virtual void Finalize () { ; }
   };
 
 
@@ -131,6 +132,8 @@ namespace amg {
     INLINE void AddC2F (size_t lev_dest, double fac, BaseVector *x_fine, const BaseVector * x_coarse) const
     { steps[lev_dest]->AddC2F(fac, x_fine, x_coarse);}
 
+    void TransferAtoB (int la, int lb, const BaseVector * vin, BaseVector * vout) const;
+
     shared_ptr<BaseVector> CreateVector (size_t l) const
     { return (l>steps.Size()) ? nullptr : ((l==steps.Size()) ? steps.Last()->CreateMappedVector() : steps[l]->CreateVector()); }
 
@@ -140,6 +143,7 @@ namespace amg {
 
     Array<shared_ptr<BaseSparseMatrix>> AssembleMatrices (shared_ptr<BaseSparseMatrix> finest_mat) const;
 
+    shared_ptr<DOFMap> SubMap (int from, int to = -1);
   }; // DOFMap
 
 
@@ -152,7 +156,7 @@ namespace amg {
     Array<BaseVector*> vecs;
 
   public:
-    ConcDMS (Array<shared_ptr<BaseDOFMapStep>> & _sub_steps);
+    ConcDMS (FlatArray<shared_ptr<BaseDOFMapStep>> _sub_steps);
     
     virtual void TransferF2C (const BaseVector * x_fine, BaseVector * x_coarse) const override;
     virtual void AddF2C (double fac, const BaseVector * x_fine, BaseVector * x_coarse) const override;
@@ -161,6 +165,11 @@ namespace amg {
 
     virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const override;
 
+    INLINE int GetNSteps () const { return sub_steps.Size(); }
+    INLINE shared_ptr<BaseDOFMapStep> GetStep (int k) const { return sub_steps[k]; }
+    INLINE FlatArray<shared_ptr<BaseDOFMapStep>> GetSteps () const { return sub_steps; }
+
+    virtual void Finalize () override;
     // virtual bool CanPullBack (shared_ptr<BaseDOFMapStep> other) override;
     // virtual shared_ptr<BaseDOFMapStep> PullBack (shared_ptr<BaseDOFMapStep> other) override;
   };
@@ -220,14 +229,46 @@ namespace amg {
     INLINE void SetProl (shared_ptr<TMAT> aprol) { prol = aprol; }
 
     void BuildPT (bool force = false);
+    virtual void Finalize () override;
 
   protected:
 
     shared_ptr<TMAT> prol;
     shared_ptr<trans_spm_tm<TMAT>> prol_trans;
-  };
-
+  }; // class ProlMap
   
+
+  /** One primal DOF map with some attached secundary ones. Useful for potential spaces. **/
+  class MultiDofMapStep : public BaseDOFMapStep
+  {
+  protected:
+    Array<shared_ptr<BaseDOFMapStep>> maps;
+  public:
+    MultiDofMapStep (FlatArray<shared_ptr<BaseDOFMapStep>> _maps);
+
+    virtual ~MultiDofMapStep () { ; }
+
+    INLINE int GetNMaps () const { return maps.Size(); }
+    const shared_ptr<BaseDOFMapStep> & GetPrimMap () const { return maps[0]; }
+    const shared_ptr<BaseDOFMapStep> & GetMap (int k) const { return maps[k]; }
+
+    virtual void TransferF2C (const BaseVector * x_fine, BaseVector * x_coarse) const override;
+    virtual void AddF2C (double fac, const BaseVector * x_fine, BaseVector * x_coarse) const override;
+    virtual void TransferC2F (BaseVector * x_fine, const BaseVector * x_coarse) const override;
+    virtual void AddC2F (double fac, BaseVector * x_fine, const BaseVector * x_coarse) const override;
+
+    virtual bool CanConcatenate (shared_ptr<BaseDOFMapStep> other) override;
+    virtual shared_ptr<BaseDOFMapStep> Concatenate (shared_ptr<BaseDOFMapStep> other) override;
+    /** "me - other" -> "new other - new me" **/
+    virtual shared_ptr<BaseDOFMapStep> PullBack (shared_ptr<BaseDOFMapStep> other) override;
+    virtual shared_ptr<BaseSparseMatrix> AssembleMatrix (shared_ptr<BaseSparseMatrix> mat) const;
+    virtual void Finalize () override; 
+ };
+
+
+  shared_ptr<BaseDOFMapStep> MakeSingleStep (FlatArray<shared_ptr<BaseDOFMapStep>> sub_steps);
+  shared_ptr<BaseDOFMapStep> MakeSingleStep2 (FlatArray<shared_ptr<BaseDOFMapStep>> sub_steps);
+
 }
 
 

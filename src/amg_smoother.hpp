@@ -8,14 +8,25 @@ namespace amg {
   /** Base class for all smoothers to be used with any AMG preconditioner **/
   class BaseSmoother : public BaseMatrix
   {
-  public:
-    BaseSmoother (){}
+  protected:
+    shared_ptr<BaseMatrix> sysmat;
 
-    BaseSmoother (const shared_ptr<ParallelDofs> & par_dofs)
-      : BaseMatrix(par_dofs) {}
+    void SetSysMat (shared_ptr<BaseMatrix> _sysmat) { sysmat = _sysmat; }
+
+  public:
+    BaseSmoother (shared_ptr<BaseMatrix> _sysmat, shared_ptr<ParallelDofs> par_dofs)
+      : BaseMatrix(par_dofs), sysmat(_sysmat)
+    { ; }
+
+    BaseSmoother (shared_ptr<BaseMatrix> _sysmat)
+      : BaseSmoother(_sysmat, _sysmat->GetParallelDofs())
+    { ; }
+    
+    BaseSmoother (shared_ptr<ParallelDofs> par_dofs)
+      : BaseSmoother(nullptr, par_dofs)
+    { ; }
 
     virtual ~BaseSmoother(){}
-
 
     /**
        res_updated: is residuum up to date??
@@ -29,15 +40,93 @@ namespace amg {
     			     BaseVector &res, bool res_updated = false,
     			     bool update_res = true, bool x_zero = false) const = 0;
 
+    virtual void SmoothK (int k, BaseVector  &x, const BaseVector &b,
+    			 BaseVector  &res, bool res_updated = false,
+    			 bool update_res = true, bool x_zero = false) const
+    {
+      Smooth(x, b, res, res_updated, update_res, x_zero);
+      for (auto j : Range(k-1))
+	{ Smooth(x, b, res, update_res, update_res, false); }
+    }
+
+    virtual void SmoothBackK (int k, BaseVector  &x, const BaseVector &b,
+			      BaseVector &res, bool res_updated = false,
+			      bool update_res = true, bool x_zero = false) const
+    {
+      SmoothBack(x, b, res, res_updated, update_res, x_zero);
+      for (auto j : Range(k-1))
+	{ SmoothBack(x, b, res, update_res, update_res, false); }
+    }
+
     virtual Array<MemoryUsage> GetMemoryUsage() const override { return Array<MemoryUsage>(); }
     // virtual Array<MemoryUsage> GetMemoryUsage() const override = 0;
 
     virtual void Finalize() { ; }
 
+    virtual shared_ptr<BaseMatrix> GetAMatrix() const
+    { return sysmat; }
+
     // return the underlying matrix
     // virtual shared_ptr<BaseMatrix> GetMatrix () const = 0;
+
+    virtual AutoVector CreateRowVector () const override { return GetAMatrix()->CreateRowVector(); };
+    virtual AutoVector CreateColVector () const override { return GetAMatrix()->CreateColVector(); };
+
   };
   
+
+  /** HiptMairSmoother **/
+
+  class HiptMairSmoother : public BaseSmoother
+  {
+  protected:
+
+    /** sm .. smoother in pre-image of G, smrange .. smoother in image of G **/
+    shared_ptr<BaseSmoother> smpot, smrange;
+    shared_ptr<BaseMatrix> Apot, Arange, D, DT;
+    shared_ptr<BaseVector> solpot, respot, rhspot;
+
+  public:
+
+    HiptMairSmoother (shared_ptr<BaseSmoother> _smpot, shared_ptr<BaseSmoother> _smrange,
+		      shared_ptr<BaseMatrix> _Apot, shared_ptr<BaseMatrix> _Arange,
+		      shared_ptr<BaseMatrix> _D, shared_ptr<BaseMatrix> _DT)
+      : BaseSmoother(_Arange), smpot(_smpot), smrange(_smrange), Apot(_Apot), Arange(_Arange), D(_D), DT(_DT)
+    {
+      solpot = smpot->CreateColVector();
+      respot = smpot->CreateColVector();
+      rhspot = smpot->CreateColVector();
+    }
+
+    ~HiptMairSmoother () { ; }
+
+    virtual void Smooth (BaseVector  &x, const BaseVector &b,
+			 BaseVector  &res, bool res_updated = false,
+    			 bool update_res = true, bool x_zero = false) const override;
+    virtual void SmoothBack (BaseVector  &x, const BaseVector &b,
+    			     BaseVector &res, bool res_updated = false,
+    			     bool update_res = true, bool x_zero = false) const override;
+
+    virtual int VHeight () const override { return Arange->Height(); }
+    virtual int VWidth () const override { return Arange->Width(); }
+    virtual AutoVector CreateVector () const override { return Arange->CreateColVector(); };
+    virtual AutoVector CreateRowVector () const override { return Arange->CreateRowVector(); };
+    virtual AutoVector CreateColVector () const override { return Arange->CreateColVector(); };
+
+    virtual shared_ptr<BaseMatrix> GetAMatrix() const override { return Arange; }
+
+    shared_ptr<BaseSmoother> GetSMPot () { return smpot; }
+    shared_ptr<BaseSmoother> GetSMRange () { return smrange; }
+    shared_ptr<BaseMatrix> GetAPot () { return Apot; }
+    shared_ptr<BaseMatrix> GetARange () { return Arange; }
+    shared_ptr<BaseMatrix> GetD () { return D; }
+    shared_ptr<BaseMatrix> GetDT () { return DT; }
+
+  }; // class HiptMairSmoother
+
+  /** END HiptMairSmoother **/
+
+
   /** 
       HybridGSS means (block-) Gauss-Seidel, applied for each subdomain-diagonal block
       of the matrix seperately.

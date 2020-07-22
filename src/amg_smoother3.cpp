@@ -91,6 +91,7 @@ namespace amg
 
   template<class TM>
   GSS3<TM> :: GSS3 (shared_ptr<SparseMatrix<TM>> mat, shared_ptr<BitArray> subset)
+    : BaseSmoother(mat)
   {
     SetUp(mat, subset);
     CalcDiags();
@@ -99,6 +100,7 @@ namespace amg
 
   template<class TM>
   GSS3<TM> :: GSS3 (shared_ptr<SparseMatrix<TM>> mat, FlatArray<TM> repl_diag, shared_ptr<BitArray> subset)
+    : BaseSmoother(mat)
   {
     SetUp(mat, subset);
     dinv.SetSize(repl_diag.Size());
@@ -183,7 +185,7 @@ namespace amg
 
     // cout << " smooth size " << x.Size() << ", subset " << first << " " << next << endl;
 
-    static Timer t(string("GSS2<bs=")+to_string(BS())+">::SmoothRHS");
+    static Timer t(string("GSS3<bs=")+to_string(BS())+">::SmoothRHS");
     RegionTimer rt(t);
 
     const auto& A(*spmat);
@@ -254,7 +256,7 @@ namespace amg
     TAU_PROFILE("SmoothRESInternal", TAU_CT(*this), TAU_DEFAULT);
 #endif
 
-    static Timer t(string("GSS2<bs=")+to_string(BS())+">::SmoothRES");
+    static Timer t(string("GSS3<bs=")+to_string(BS())+">::SmoothRES");
     RegionTimer rt(t);
 
     const auto& A(*spmat);
@@ -665,6 +667,8 @@ namespace amg
     TAU_PROFILE("StartCO2CU", TAU_CT(*this), TAU_DEFAULT);
 #endif
 
+    // static Timer t("StartCO2CU"); RegionTimer rt(t);
+
     if (vec.GetParallelStatus() != DISTRIBUTED)
       { return; }
 
@@ -878,11 +882,19 @@ namespace amg
 
     auto neqcs = eqc_h->GetNEQCS();
     auto comm = eqc_h->GetCommunicator();
-    auto ex_procs = eqc_h->GetDistantProcs();
+
+    /** This is a subtle but IMPORTANT difference. eqc_h can have more distprocs than pardofs.
+     Happens e.g. when two procs share only one single vertex on a dirichlet boundary. This vertex drops
+     from the first coarse level, it is not a distproc of the coarse paralleldofs anymore but it's eqc is still in eqchierarchy! **/
+    // auto ex_procs = eqc_h->GetDistantProcs();
+    auto ex_procs = pardofs->GetDistantProcs();
+
     auto nexp = ex_procs.Size();
 
-    // cout << " ChunkedDCCMap on EQCH: " << endl << *eqc_h << endl;
-    
+    // cout << " ChunkedDCCMap on EQCH: " << eqc_h << endl << *eqc_h << endl;
+    // cout << " ChunkedDCCMap on PDS: " << pardofs << endl << *pardofs << endl;
+    // cout << " ChunkedDCCMap EX_PROCS = "; prow2(ex_procs);	cout << endl;					    
+
     // clear non-local dofs from master_of, and split into eqc-blocks
     m_dofs = make_shared<BitArray>(pardofs->GetNDofLocal()); m_dofs->Set();
     Table<int> eq_ex_dofs;
@@ -940,8 +952,8 @@ namespace amg
 	    //   { chunk_so[k][(start + j) % nmems] = chunk_size + ( (j < rest) ? 1 : 0 ); }
 
 	    if (chunk_so[k].Size()) {
-	      chunk_so[k].Last() = exds;
-	      // chunk_so[k][0] = exds;
+	      // chunk_so[k].Last() = exds;
+	      chunk_so[k][0] = exds;
 	    }
 	    
 	  }
@@ -968,6 +980,9 @@ namespace amg
 	    auto dps = eqc_h->GetDistantProcs(k);
 	    auto dofsk = eq_ex_dofs[k];
 	    int offset = 0;
+	    // cout << "eqc " << k << ", dps "; prow2(dps); cout << endl;
+	    // cout << ", member "; prow2(memsk); cout << endl;
+	    // cout << " dofsk "; prow2(dofsk); cout << endl;
 	    for (auto j : Range(csk)) {
 	      // cout << "chunk for mem mem " << j << " has sz " << csk[j] << endl;
 	      if (csk[j] > 0) {
@@ -976,7 +991,8 @@ namespace amg
 		if (exp == comm.Rank()) { // MY chunk!
 		  // cout << " thats me!" << endl;
 		  for (auto p : dps) {
-		    auto kp = find_in_sorted_array(p, ex_procs);
+		    auto kp = find_in_sorted_array(p, ex_procs); /** If the chunk size is > 0, p HAS to be in ex_procs of pardofs! **/
+		    // cout << " p " << p << " is kp " << kp << " in "; prow2(ex_procs); cout << endl;
 		    for (auto l : Range(csk[j])) {
 		      c_m_exd.Add(kp, dofsk[offset + l]);
 		      // cout << " my dof, set " << dofsk[offset + l] << endl;
@@ -1049,10 +1065,20 @@ namespace amg
     auto& A(*anA);
     auto& pds(*pardofs);
 
+    // cout << " MAKE HYBRIG MAT: " << endl;
+    // print_tm_spmat(cout, A); cout << endl;
+
+
     auto H = A.Height();
     NgsAMG_Comm comm(pds.GetCommunicator());
     auto ex_procs = pds.GetDistantProcs();
     auto nexp = ex_procs.Size();
+
+    // cout << " COMM R " << comm.Rank() << " S " << comm.Size() << endl;
+    // cout << " PDS ND L " << pds.GetNDofLocal() << " G " << pds.GetNDofGlobal() << endl;
+    // cout << " HYBM EX_PROCS = "; prow2(ex_procs); cout << endl;
+    // cout << " PDS ARE " << pardofs << endl;
+    // cout << " PDS ARE " << endl << pds << endl;
 
     if (nexp == 0) {
       // we are still not "dummy", because we are still working with parallel vectors
@@ -1102,6 +1128,8 @@ namespace amg
       for (auto kp : Range(nexp))
 	{
 	  comm.Recv(recv_mats[kp], ex_procs[kp], MPI_TAG_AMG);
+	  // cout << " MAT FROM kp " << kp << " proc " << ex_procs[kp] << endl;
+	  // print_tm_spmat(cout, *recv_mats[kp]); cout << endl;
 	}
     }
 
@@ -1133,13 +1161,17 @@ namespace amg
 		at_row[kp]++;
 	      }
 	      all_cols.SetSize0(); all_cols.SetSize(1+row_matis.Size()); // otherwise tries to copy FA I think
-	      for (auto k:Range(all_cols.Size()-1)) {
+	      for (auto k : Range(all_cols.Size()-1)) {
 		auto kp = row_matis[k];
 		auto cols = recv_mats[kp]->GetRowIndices(at_row[kp]-1);
 		if (map_exd) { // !!! <- remap col-nrs of received rows, only do this ONCE!!
 		  auto mxd = dcc_map->GetMDOFs(kp);
-		  for (auto j:Range(cols.Size()))
+		  // cout << "k " << k << ", kp " << kp << ", proc = " << ex_procs[kp] << endl;
+		  // cout << "cols = "; prow2(cols); cout << endl;
+		  // cout << "mxd  = "; prow2(mxd); cout << endl;
+		  for (auto j : Range(cols.Size()))
 		    { cols[j] = mxd[cols[j]]; }
+		  // cout << " was ok " << endl;
 		}
 		all_cols[k].Assign(cols);
 	      }
@@ -1362,7 +1394,7 @@ namespace amg
   template<class TM>
   HybridSmoother2<TM> :: HybridSmoother2 (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h,
 					  bool _overlap, bool _in_thread)
-    : overlap(_overlap), in_thread(_in_thread)
+    : BaseSmoother(_A->GetParallelDofs()), overlap(_overlap), in_thread(_in_thread)
   {
 
     shared_ptr<DCCMap<typename mat_traits<TM>::TSCAL>> dcc_map = nullptr;
@@ -1379,7 +1411,10 @@ namespace amg
     // }
 
     A = make_shared<HybridMatrix2<TM>> (_A, dcc_map);
-    origA = _A;
+
+    // origA = _A; // keep it for debugging purposes, but don't set it
+
+    SetSysMat(A);
 
     auto pardofs = A->GetParallelDofs();
 
@@ -1426,10 +1461,10 @@ namespace amg
   {
 
     static Timer t(string("HybSm<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::Smooth");
-    RegionTimer rt(t);
-
-    static Timer tpre(string("HybSm<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::S - pre");
-    static Timer tpost(string("HybSm<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::S - post");
+    static Timer tpre(string("HybSm<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::pre");
+    static Timer tpost(string("HybSm<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::post");
+    static Timer tprep(string("HybSm<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::prep1");
+    static Timer tprep2(string("HybSm<bs=")+to_string(mat_traits<TM>::HEIGHT)+">>::prep12");
 
     /** most of the time RU == UR, if not, reduce to such a case **/
     if (res_updated && !update_res) { // RU && !UR
@@ -1438,10 +1473,12 @@ namespace amg
     }
     else if (!res_updated && update_res) { // !RU + UR
       // should happen very infrequently - we can affort mat x vector 
+      tprep.Start();
       if (x_zero)
   	{ res = b; }
       else
   	{ res = b - *A * x; } // what about freedofs?
+      tprep.Stop();
       SmoothInternal(type, x, b, res, true, update_res, x_zero);
       return;
     }
@@ -1456,6 +1493,8 @@ namespace amg
       SmoothInternal(0, x, b, res, res_updated, update_res, false);
       return;
     }
+
+    RegionTimer rt(t);
 
 #ifdef USE_TAU
     TAU_PROFILE("", TAU_CT(*this), TAU_DEFAULT)
@@ -1474,6 +1513,8 @@ namespace amg
     //   return;
     // }
 
+      tprep2.Start();
+      
     auto dcc_map = A->GetMap();
     const auto H = A->Height();
     auto G = A->GetG();
@@ -1484,7 +1525,9 @@ namespace amg
     auto & resloc = *get_loc_ptr(res);
     auto & Gxloc = *Gx;
 
-    /** 
+    tprep2.Stop();
+
+      /** 
 	!MPI &  RES           -> use res
 	!MPI & !RES           -> use b
 	 MPI &  RES           -> use res
@@ -1599,7 +1642,7 @@ namespace amg
 
     smooth_stage(0);
 
-    // DAWARI: wenn nicht need_d2c, also res CUMU, und update_res,
+    // TODO: wenn nicht need_d2c, also res CUMU, und update_res,
     // mach ich unten res.distribute, was die falschen werte loescht!
     if (need_d2c) {
       if (overlap) {

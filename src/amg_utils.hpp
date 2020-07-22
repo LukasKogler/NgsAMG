@@ -4,6 +4,13 @@
 namespace amg
 {
 
+  enum AVG_TYPE : char { MIN,    // min(a,b)
+			 GEOM,   // sqrt(ab)
+			 HARM,   // 2 (ainv + binv)^{-1}
+			 ALG,    // (a+b)/2
+			 MAX     // max(a,b)
+  };
+
   template<int D> INLINE void GetNodePos (NodeId id, const MeshAccess & ma, Vec<D> & pos, Vec<D> & t) {
     auto set_pts = [&](auto pnums) LAMBDA_INLINE {
       pos = 0;
@@ -82,7 +89,7 @@ namespace amg
     size_t first(0), last(a.Size());
     if (last==0) return 0; // handle special cases so we still get -1 if garbage
     else if (elem<a[0]) return 0;
-    else if (elem>a.Last()) return last; 
+    else if (elem>=a.Last()) return last; 
     while (last > first+5) {
       size_t mid = (last+first)/2; // mid>0!
       if ( a[mid] <= elem ) { first = mid; } // search right
@@ -93,6 +100,16 @@ namespace amg
       if (a[i] > elem) { return i; }
     return (typename remove_reference<decltype(a[0])>::type)(-1);
   };
+
+  template<typename T>
+  INLINE bool insert_into_sorted_array_nodups (T elem, Array<T> & a)
+  {
+    int pos = merge_pos_in_sorted_array(elem, a);
+    if ( (pos == -1) || ((pos > 0) && (a[pos-1] == elem) ))
+      {  return false; }
+    else
+      {  a.Insert(pos, elem); return true; }
+  }
 
   template<typename T>
   INLINE void insert_into_sorted_array (T elem, Array<T> & a)
@@ -274,7 +291,25 @@ namespace amg
     return out;
   }
 
-  // TODO: coutl this be binary_op_table?
+  /** binary_op table **/
+  template<class T, class TLAM> INLINE Array<typename tab_scal_trait<T>::type> bop_table (T & tab, TLAM lam)
+  {
+    Array<typename tab_scal_trait<T>::type> out;
+    auto nrows = tab.Size();
+    if (nrows == 0) return out;
+    auto row_s = tab[0].Size();
+    if (row_s == 0) return out;
+    out.SetSize(row_s); out = tab[0];
+    if (nrows == 1) { return out; }
+    for (size_t k = 1; k < tab.Size(); k++) {
+      auto row = tab[k];
+      for (auto l : Range(row_s))
+	{ lam(out[l], row[l]); }
+    }
+    return out;
+  }
+
+
   template<class T> INLINE Array<typename tab_scal_trait<T>::type> sum_table (T & tab)
   {
     Array<typename tab_scal_trait<T>::type> out;
@@ -324,6 +359,10 @@ namespace amg
     }
     return out;
   }
+
+  template<typename TA, typename TB> INLINE ostream & operator << (ostream &os, const tuple<TA, TB>& t)
+  { return os << "t<" << get<0>(t) << ", " << get<1>(t) << ">" ; }
+    
 
   template<typename T> ostream & operator << (ostream &os, const FlatTable<T>& t) {
     if (!t.Size()) return ( os << "empty flattable!!" << endl );
@@ -633,6 +672,12 @@ namespace amg
 	sum += fabs(x(k,j));
     return sum;
   }
+  INLINE double calc_trace (FlatMatrix<double> x) {
+    double sum = 0;
+    for (auto k : Range(x.Height()))
+      { sum += x(k,k); }
+    return sum;
+  }
 
   template<class A, class B, class TLAM>
   INLINE void iterate_intersection (const A & a, const B & b, TLAM lam)
@@ -859,6 +904,72 @@ namespace amg
       { m = 0; }
   }
 
+
+  INLINE void CalcStabPseudoInverse (double & M, LocalHeap & lh)
+  { M = (M == 0) ? 0 : 1.0/M; }
+
+  INLINE void CalcPseudoInverse2 (double & M, LocalHeap & lh)
+  { M = (M == 0) ? 0 : 1.0/M; }
+
+  INLINE void CalcPseudoInverse2 (FlatMatrix<double> M, LocalHeap & lh)
+  {
+    static Timer t("CalcPseudoInverse2"); RegionTimer rt(t);
+    const int N = M.Height();
+    FlatMatrix<double> evecs(N, N, lh);
+    FlatVector<double> evals(N, lh);
+    LapackEigenValuesSymmetric(M, evals, evecs);
+    double tol = 0; for (auto v : evals) tol += v;
+    tol = 1e-12 * tol; tol = max2(tol, 1e-15);
+    for (auto & v : evals)
+      { v = (v > tol) ? 1/sqrt(v) : 0; }
+    for (auto i : Range(N))
+      for (auto j : Range(N))
+	{ evecs(i, j) *= evals(i); }
+    M = Trans(evecs) * evecs;
+  }
+
+
+  INLINE void CalcStabPseudoInverse (FlatMatrix<double> mat, LocalHeap & lh)
+  {
+    static Timer t("CalcStabPseudoInverse2"); RegionTimer rt(t);
+    int N = mat.Height(), M = 0;
+    double tr = calc_trace(mat) / N;
+    double eps = 1e-8 * tr;
+    for (auto k : Range(N))
+      if (mat(k,k) > eps)
+	{ M++; }
+    FlatArray<double> mat_diags(M, lh);
+    FlatArray<double> mat_diag_invs(M, lh);
+    FlatArray<int> nzeros(M, lh);
+    M = 0;
+    for (auto k : Range(N)) {
+      if (mat(k,k) > eps) {
+	auto rt = sqrt(mat(k,k));
+	mat_diags[M] = rt;
+	mat_diag_invs[M] = 1.0/rt;
+	nzeros[M] = k;
+	M++;
+      }
+    }
+    FlatMatrix<double> small_mat(M, M, lh);
+    for (auto i : Range(M))
+      for (auto j : Range(M))
+	{ small_mat(i,j) = mat(nzeros[i], nzeros[j]) * mat_diag_invs[i] * mat_diag_invs[j]; }
+    CalcPseudoInverse2(small_mat, lh);
+    mat = 0;
+    for (auto i : Range(M))
+      for (auto j : Range(M))
+	{ mat(nzeros[i],nzeros[j]) = small_mat(i,j) * mat_diag_invs[i] * mat_diag_invs[j]; }
+  }
+
+  template<int N> INLINE void CalcStabPseudoInverse (Mat<N, N, double> & TM, LocalHeap & lh)
+  {
+    FlatMatrix<double> mat(N, N, lh);
+    mat = TM;
+    CalcStabPseudoInverse(mat, lh);
+    TM = mat;
+  }
+
   template<int N, class T> INLINE void CalcPseudoInverse (T & m)
   {
     static Timer t("CalcPseudoInverse"); RegionTimer rt(t);
@@ -886,6 +997,79 @@ namespace amg
     // cout << "rescaled evecs: " << endl << evecs << endl;
     m = Trans(evecs) * evecs;
   }
+
+  INLINE void CalcPseudoInverseFM (FlatMatrix<double> & M, LocalHeap & lh)
+  {
+    static Timer t("CalcPseudoInverseFM"); RegionTimer rt(t);
+    HeapReset hr(lh);
+    // static Timer tl("CalcPseudoInverse - Lapck");
+    const int N = M.Height();
+    FlatMatrix<double> evecs(N, N, lh);
+    FlatVector<double> evals(N, lh);
+    TimedLapackEigenValuesSymmetric(M, evals, evecs);
+    double tol = 0; for (auto v : evals) tol += v;
+    tol = 1e-12 * tol; tol = max2(tol, 1e-15);
+    int DK = 0; // dim kernel
+    for (auto & v : evals) {
+      if (v > tol)
+	{ v = 1/sqrt(v); }
+      else {
+	DK++;
+	v = 0;
+      }
+    }
+    int NS = N-DK;
+    for (auto i : Range(N))
+      for (auto j : Range(N))
+	evecs(i,j) *= evals(i);
+    if (DK > 0)
+      { M = Trans(evecs.Rows(DK, N)) * evecs.Rows(DK, N); }
+    else
+      { M = Trans(evecs) * evecs; }
+  }
+
+
+  template<class T>
+  INLINE void CalcPseudoInverse_impl (FlatMatrix<double> & M, T & out, LocalHeap & lh)
+  {
+    static Timer t("CalcPseudoInverse_impl"); RegionTimer rt(t);
+    // static Timer tl("CalcPseudoInverse - Lapck");
+    const int N = M.Height();
+    FlatMatrix<double> evecs(N, N, lh);
+    FlatVector<double> evals(N, lh);
+    TimedLapackEigenValuesSymmetric(M, evals, evecs);
+    double tol = 0; for (auto v : evals) tol += v;
+    tol = 1e-12 * tol; tol = max2(tol, 1e-15);
+    int DK = 0; // dim kernel
+    for (auto & v : evals) {
+      if (v > tol)
+	{ v = 1/sqrt(v); }
+      else {
+	DK++;
+	v = 0;
+      }
+    }
+    int NS = N-DK;
+    for (auto i : Range(N))
+      for (auto j : Range(N))
+	evecs(i,j) *= evals(i);
+    if (DK > 0)
+      { out = Trans(evecs.Rows(DK, N)) * evecs.Rows(DK, N); }
+    else
+      { out = Trans(evecs) * evecs; }
+  }
+
+
+  template<int N>
+  INLINE void CalcPseudoInverse (Mat<N, N, double> & M, LocalHeap & lh)
+  {
+    static Timer t("CalcPseudoInverse expr");
+    HeapReset hr(lh);
+    FlatMatrix<double> Mf(N,N,lh);
+    Mf = M;
+    CalcPseudoInverse_impl(Mf, M, lh);
+  }
+
 
   template<int IMIN, int N, int NN> INLINE void RegTM (Mat<NN,NN,double> & m, double maxadd = -1)
   {

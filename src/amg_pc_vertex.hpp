@@ -54,7 +54,7 @@ namespace amg
     virtual void InitFinestLevel (BaseAMGFactory::AMGLevel & finest_level) override;
     virtual Table<int> GetGSBlocks (const BaseAMGFactory::AMGLevel & amg_level) override;
     virtual shared_ptr<BaseAMGFactory> BuildFactory () override;
-    virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (shared_ptr<TopologicMesh> mesh) override;
+    virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (BaseAMGFactory::AMGLevel & mesh) override;
 
     virtual void RegularizeMatrix (shared_ptr<BaseSparseMatrix> mat, shared_ptr<ParallelDofs> & pardofs) const override;
 
@@ -157,12 +157,6 @@ namespace amg
 			   GIVEN_POS = 1 };   // supplied from outside
     POSITION v_pos = VERTEX_POS;
     FlatArray<Vec<3>> v_pos_array;
-
-    /** How do we compute the replacement matrix **/
-    enum ENERGY : char { TRIV_ENERGY = 0,     // uniform weights
-			 ALG_ENERGY = 1,      // from the sparse matrix
-			 ELMAT_ENERGY = 2 };  // from element matrices
-    ENERGY energy = ALG_ENERGY;
 
   public:
     

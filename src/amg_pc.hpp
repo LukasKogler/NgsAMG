@@ -64,9 +64,11 @@ namespace amg
     
     virtual void Finalize ();
     virtual void BuildAMGMat ();
+    virtual Array<shared_ptr<BaseSmoother>> BuildSmoothers (FlatArray<shared_ptr<BaseAMGFactory::AMGLevel>> levels,
+							    shared_ptr<DOFMap> dof_map);
 
     virtual void InitFinestLevel (BaseAMGFactory::AMGLevel & finest_level);
-    virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (shared_ptr<TopologicMesh> mesh) = 0;
+    virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (BaseAMGFactory::AMGLevel & finest_level) = 0;
 
     virtual shared_ptr<BaseSmoother> BuildSmoother (const BaseAMGFactory::AMGLevel & amg_level);
 
@@ -89,6 +91,12 @@ namespace amg
   {
   public:
 
+    /** Which AMG cycle to use **/
+    enum MG_CYCLE : char { V_CYCLE = 0,       // V cycle
+			   W_CYCLE = 1,       // W cycle
+			   BS_CYCLE = 2 };    // (hacky) Braess-Sarazin
+    MG_CYCLE mg_cycle = V_CYCLE;
+
     /** What we do on the coarsest level **/
     enum CLEVEL : char { INV_CLEV = 0,       // invert coarsest level
 			 SMOOTH_CLEV = 1,    // smooth coarsest level
@@ -103,8 +111,9 @@ namespace amg
     enum SM_TYPE : char /** available smoothers **/
       { GS = 0,     // (l1/hybrid - ) Gauss-Seidel
 	BGS = 1 };  // Block - (l1/hybrid - ) Gauss-Seidel 
-    SM_TYPE sm_type = SM_TYPE::GS;       // the default smoother type
-    Array<SM_TYPE> spec_sm_types;        // specific smoothers for levels
+    SpecOpt<SM_TYPE> sm_type = SM_TYPE::GS; // smoother type
+    // SM_TYPE sm_type = SM_TYPE::GS;       
+    // Array<SM_TYPE> spec_sm_types;        // specific smoothers for levels
 
     enum GS_VER : char /** different hybrid GS versions (mostly for testing) **/
       { VER1 = 0,    // old version
@@ -112,6 +121,7 @@ namespace amg
 	VER3 = 2 };  // newest, optional overlap
     GS_VER gs_ver = GS_VER::VER3;
 
+    int sm_steps = 1;                    // # of smoothing steps
     bool sm_symm = false;                // smooth symmetrically
     bool sm_mpi_overlap = true;          // overlap communication/computation (only VER3)
     bool sm_mpi_thread = false;          // do MPI-comm in seperate thread (only VER3)
@@ -123,12 +133,19 @@ namespace amg
     bool do_test = false;                // perform PC-test for amg_mat
     bool smooth_lo_only = false;         // smooth only on low order part -> AMG-PC is for the LO part only
     bool regularize_cmats = false;       // do we need to regularize coarse level matrices ?
+    bool force_ass_flmat = false;        // force assembling of matrix belonging to finest level (embedding)
+
+    /** How do we compute the replacement matrix **/
+    enum ENERGY : char { TRIV_ENERGY = 0,     // uniform weights
+			 ALG_ENERGY = 1,      // from the sparse matrix
+			 ELMAT_ENERGY = 2 };  // from element matrices
+    ENERGY energy = ALG_ENERGY;
 
   public:
 
     Options () { ; }
 
-    virtual void SetFromFlags (const Flags & flags, string prefix);
+    virtual void SetFromFlags (shared_ptr<FESpace> fes, const Flags & flags, string prefix);
   }; //BaseAMGPC::Options
 
   /** END Options **/

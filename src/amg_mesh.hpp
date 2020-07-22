@@ -7,6 +7,7 @@ namespace amg
 {
 
   class PairWiseCoarseMap;
+  class BaseGridMapStep;
   template<class TMESH> class VDiscardMap;
   template<class TMESH> class AgglomerateCoarseMap;
   
@@ -39,6 +40,7 @@ namespace amg
     void SetFreeNodes (shared_ptr<BitArray> _free_nodes) const { free_nodes = _free_nodes; }
     shared_ptr<BitArray> GetFreeNodes () const { return free_nodes; }
     friend std::ostream & operator<<(std::ostream &os, const TopologicMesh& p);
+    virtual void MapAdditionalData (const BaseGridMapStep & amap);
   protected:
     shared_ptr<EQCHierarchy> eqc_h;
     bool has_nodes[4] = {false, false, false, false};
@@ -192,6 +194,20 @@ namespace amg
       // 	  for (const auto& node : GetENodes<NT>(eqc)) lam(eqc, node);
       // 	  if constexpr(NT!=NT_VERTEX) for (const auto& node : GetCNodes<NT>(eqc)) lam(eqc, node);
       // 	}
+    }
+    template<NODE_TYPE NT, class TX, class TLAM>
+    INLINE void ApplyEQ2 (TX&& eqcs, TLAM lam, bool master_only = false) const {
+      for (auto eqc : eqcs) {
+	if ( !master_only || eqc_h->IsMasterOfEQC(eqc) ) {
+	  lam(eqc, GetENodes<NT>(eqc));
+	  if constexpr(NT != NT_VERTEX)
+	    { lam(eqc, GetCNodes<NT>(eqc)); }
+	}
+      }
+    }
+    template<NODE_TYPE NT, class TLAM>
+    INLINE void ApplyEQ2 (TLAM lam, bool master_only = false) const {
+      ApplyEQ2<NT>(Range(GetNEqcs()), lam, master_only);
     }
     // ugly stuff
     template<NODE_TYPE NT, class T>
@@ -680,8 +696,10 @@ namespace amg
       return cmesh;
     }
 
-    void MapDataNoAlloc (AgglomerateCoarseMap<BlockAlgMesh<T...>> & map) {
-      auto cmesh = static_pointer_cast<BlockAlgMesh<T...>> (map.GetMappedMesh());
+    template<class TMESH>
+    INLINE void MapDataNoAlloc (AgglomerateCoarseMap<TMESH> & map) {
+      static_assert(std::is_base_of<BlockAlgMesh<T...>, TMESH>::value, "MapDataNoAlloc called for invalid mesh type!");
+      auto cmesh = static_pointer_cast<TMESH> (map.GetMappedMesh());
       auto & cm_data = cmesh->Data();
       Iterate<count_ppack<T...>::value>([&](auto i){ get<i.value>(node_data)->map_data(map, *get<i.value>(cm_data)); });
     }

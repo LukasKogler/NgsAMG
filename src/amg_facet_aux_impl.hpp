@@ -139,6 +139,8 @@ namespace amg
   {
     comp_mat = _comp_mat;
 
+    cout << " aux_elmats " << &aux_elmats << " " << aux_elmats << endl;
+    
     if (!aux_elmats) {
       shared_ptr<SparseMatrixTM<double>> cspm = dynamic_pointer_cast<SparseMatrixTM<double>>(comp_mat);
       if (auto parmat = dynamic_pointer_cast<ParallelMatrix>(comp_mat)) {
@@ -315,9 +317,12 @@ namespace amg
   template<int DIM, class SPACEA, class SPACEB, class AUXFE>
   void FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: BuildPMat ()
   {
+    if (pmat != nullptr)
+     { return; }
+
     auto H = comp_fes->GetNDof();
     auto nfacets = ma->GetNFacets(); // ...
-    auto W = nfacets;
+    auto W = nfacets; // TODO: is this right ?? should I consider free facets etc. ??
     Array<int> perow_f(H), perow_d(H);
     perow_f = 0; perow_d = 0;
     const auto & free_facets = *comp_fds;
@@ -370,8 +375,9 @@ namespace amg
 	}
       });
 
-    // cout << "pmat: " << endl;
-    // print_tm_spmat(cout, *pmat); cout << endl;
+    cout << "pmat: " << endl;
+    print_tm_spmat(cout, *pmat); cout << endl;
+
   } // FacetAuxSystem::BuildPMat
 
 
@@ -543,7 +549,13 @@ namespace amg
   } // FacetAuxSystem::CalcFacetMat
 
 
-  template<int DIM, class SPACEA, class SPACEB, class AUXFE>
+  template<int DIM, class SPACEA, class SPACEB, class AUXFE> template<ELEMENT_TYPE ET> INLINE
+  void FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: CalcElTrafoMat (ElementId vol_elid, FlatMatrix<double> elmat, LocalHeap & lh)
+  {
+  } // FacetAuxSystem::CalcElTrafoMat
+
+
+    template<int DIM, class SPACEA, class SPACEB, class AUXFE>
   Array<Vec<FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE>::DPV, double>> FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: CalcFacetFlow ()
   {
     Array<Vec<DPV, double>> flow(f2a_facet.Size());
@@ -554,6 +566,7 @@ namespace amg
     auto nv_cf = NormalVectorCF(DIM);
     auto comm = aux_pds->GetCommunicator();
     for (auto kf : Range(flow)) {
+      HeapReset hr(lh);
       auto facet_nr = f2a_facet[kf];
       AUXFE auxfe (NodeId(FACET_NT(DIM), facet_nr), *ma);
       ma->GetFacetElements(facet_nr, elnums);
@@ -584,7 +597,7 @@ namespace amg
 	auxfe.CalcMappedShape(mip, auxval);
 	nv_cf->Evaluate(mip, nvval);
 	for (auto k : Range(DPV))
-	  { facet_flow[k] += fac * mip.GetMeasure() * InnerProduct(auxval.Row(k), nvval); }
+	  { facet_flow[k] += fac * mip.GetWeight() * InnerProduct(auxval.Row(k), nvval); }
       }
       flow[kf] = facet_flow;
     }
@@ -592,11 +605,125 @@ namespace amg
   } // FacetAuxSystem::CalcFlow
 
 
+  template<int DIM, class SPACEA, class SPACEB, class AUXFE>
+  Table<int> FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: CalcFacetLoops ()
+  {
+    if constexpr(DIM == 2) {
+	return CalcFacetLoops2d();
+      }
+    else {
+      return CalcFacetLoops3d();
+    }
+  } // FacetAuxSystem::CalcFacetLoops
+
+
+  template<int DIM, class SPACEA, class SPACEB, class AUXFE>
+  Table<int> FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: CalcFacetLoops3d ()
+  {
+    return Table<int>();
+  } // FacetAuxSystem::CalcFacetLoops3d
+
+
+  template<int DIM, class SPACEA, class SPACEB, class AUXFE>
+  Table<int> FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: CalcFacetLoops2d ()
+  {
+    auto NV = ma->GetNV();
+    Array<int> vels, vsels, edgels, selels;
+    Array<int> loop_sizes(NV);
+    for (auto vnr : Range(NV)) {
+      ma->GetVertexElements(vnr, vels);
+      ma->GetVertexSurfaceElements(vnr, vsels);
+      loop_sizes[vnr] = vels.Size();
+      if (vsels.Size()) {
+	// TODO: not true for SELs between two domains, MPI BNDs...
+	loop_sizes[vnr]++;
+      }
+    }
+    Table<int> loops(loop_sizes);
+    // Vec<2> vpos, epos, tvec;
+    for (auto vnr : Range(NV)) {
+      // cout << "loop for vertex " << vnr << endl;
+      /** Find initial element **/
+      int el0 = -1, e0 = -1, orient = -1;
+      /** If we are at the mesh boundary, we should start with an element at the boundary,
+	  so we can iterate through the loop in one go. **/
+      ma->GetVertexSurfaceElements(vnr, vsels);
+      if (vsels.Size()) {
+	auto selfacets = ma->GetElFacets(ElementId(BND, vsels[0]));
+	ma->GetFacetElements(selfacets[0], selels);
+	el0 = selels[0];
+	e0 = selfacets[0];
+	orient = -1;
+      }
+      else { /** Otherwise, for now, pick an arbitrary element **/
+	ma->GetVertexElements(vnr, vels);
+	if (el0 == -1)
+	  { el0 = vels[0]; }
+	/** Now locate the initial edge - it is the one of el0 that contains vnr**/
+	auto el0edges = ma->GetElEdges(ElementId(VOL, el0)); const int elos = el0edges.Size();
+	for (int j = 0; (j < elos) && (e0 == -1); j++) {
+	  auto enr = el0edges[j];
+	  auto edverts = ma->GetEdgePNums(enr);
+	  // for a "true" surf-facet orientation has to be -1
+	  if ( (edverts[0] == vnr) || (edverts[1] == vnr) )
+	    { e0 = enr; orient = -1; }
+	}
+      }
+      // cout << " loop len " << loop_sizes[vnr] << endl;
+      // cout << " start with el " << el0 << endl;
+      // cout << " first edge "  << e0 << endl;
+      /** Set loop start **/
+      auto & loop = loops[vnr];
+      const int loop_len = loop.Size();
+      ma->GetFacetElements(e0, edgels);
+      loop[0] = (edgels[0] == el0) ? -(1 + e0) : (1 + e0); // first edge should enter first el
+      // loop[0] = (ma->GetEdgePNums(e0)[1] == el0) ? (1 + e0) : -(1 + e0); // this way no problem with orientation of facet 0...
+      /** Iterate through the loop. **/
+      int curr_edg = e0, next_el = el0;
+      for (int k : Range(int(1), int(loop_len))) {
+	// find next edge: the one that contains the vertex vnr and is not curr_edg!
+	auto eledges = ma->GetElEdges(ElementId(VOL, next_el));
+	const int neles = eledges.Size();
+	int next_edg = -1;
+	// cout << " k = " << k << ", el " << next_el << ", edges = "; prow(eledges); cout << endl;
+	for (int j = 0; (j < neles) && (next_edg == -1); j++) {
+	  auto enr = eledges[j];
+	  if (enr != curr_edg) {
+	    auto everts = ma->GetEdgePNums(enr);
+	    if ( (everts[0] == vnr) || (everts[1] == vnr) ) {
+	      // cout << "  new edge " << enr << endl;
+	      next_edg = curr_edg = enr;
+	      ma->GetFacetElements(enr, edgels);
+	      // cout << "  els "; prow(edgels); cout << endl;
+	      loop[k] = (edgels[0] == next_el) ? (1 + enr) : -(1 + enr);
+	      if (edgels.Size() > 1)
+		{ next_el = (edgels[0] == next_el) ? edgels[1] : edgels[0]; }
+	      else {
+		// cout << " no more els! " << endl;
+		next_el = -1;
+	      }
+	    }
+	  }
+	}
+	// cout << "  okay, next el/edge: " << next_el << ", " << next_edg << endl;
+      }
+      // cout << "loop: "; prow(loop); cout << endl;
+    } // Range(NV)
+
+    // cout << "loops: " << endl << loops << endl;
+
+    return loops;
+  } // FacetAuxSystem::CalcFacetLoops2d
+
+
   /** Not sure what to do about BBND-elements (only relevant for some cases anyways) **/
   template<int DIM, class SPACEA, class SPACEB, class AUXFE>
   void FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
 								       ElementId ei, LocalHeap & lh)
   {
+    if (!aux_elmats)
+      { return; }
+
     ElementTransformation & eltrans = ma->GetTrafo (ei, lh);
     ELEMENT_TYPE et_vol = eltrans.GetElementType();
     if (DIM == 2) {
@@ -913,6 +1040,49 @@ namespace amg
   } // FacetAuxSystem::CreateAuxVector
 
 
+  template<int DIM, class SPACEA, class SPACEB, class AUXFE>
+  void FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: __hacky__set__Pmat ( shared_ptr<BaseMatrix> embA, shared_ptr<BaseMatrix> embB )
+  {
+    /** merge mats (!! project out dirichlet dofs !!) **/
+    auto mA = dynamic_pointer_cast<TPMAT_TM>(embA);
+    auto mB = dynamic_pointer_cast<TPMAT_TM>(embB);
+    if ( (mA == nullptr) || (mB == nullptr) )
+      { throw Exception(" invalid mats!"); }
+    Array<int> perow(comp_fes->GetNDof()); perow = 0;
+    auto comp_free = comp_fes->GetFreeDofs(true); // ... oh well
+    for (auto k : Range(mA->Height())) {
+      if (comp_free->Test(os_sa + k))
+	{ perow[os_sa + k] = mA->GetRowIndices(k).Size(); }
+    }
+    for (auto k : Range(mB->Height())) {
+      if (comp_free->Test(os_sb + k))
+	{ perow[os_sb + k] = mB->GetRowIndices(k).Size(); }
+    }
+    auto newP = make_shared<TPMAT>(perow, mA->Width());
+    for (auto k : Range(mA->Height())) {
+      int row = os_sa + k;
+      if (comp_free->Test(row)) {
+	auto ri = newP->GetRowIndices(row); auto ri2 = mA->GetRowIndices(k);
+	auto rv = newP->GetRowValues(row); auto rv2 = mA->GetRowValues(k);
+	ri = ri2;
+	rv = rv2;
+      }
+    }
+    for (auto k : Range(mB->Height())) {
+      int row = os_sb + k;
+      if (comp_free->Test(row)) {
+	auto ri = newP->GetRowIndices(row); auto ri2 = mB->GetRowIndices(k);
+	auto rv = newP->GetRowValues(row); auto rv2 = mB->GetRowValues(k);
+	ri = ri2;
+	rv = rv2;
+      }
+    }
+    // cout << " new P mat: " << endl;
+    // print_tm_spmat(cout, *newP); cout << endl;
+    pmat = newP;
+  } // FacetAuxSystem::__hacky__set__Pmat
+
+
   /** END FacetAuxSystem **/
 
 
@@ -1056,7 +1226,33 @@ namespace amg
   template<class AUX_SYS, class BASE>
   shared_ptr<BaseSmoother> AuxiliarySpacePreconditioner<AUX_SYS, BASE> :: BuildFLS () const
   {
-    return BuildFLS_EF();
+    const auto & O(static_cast<Options&>(*options));
+
+    shared_ptr<BaseSmoother> sm = nullptr;
+
+    cout << " comp_sm           = " << O.comp_sm << endl;
+    cout << " comp_sm_blocks    = " << O.comp_sm_blocks  << endl;
+    cout << " comp_sm_blocks_el = " << O.comp_sm_blocks_el  << endl;
+
+
+    if (O.comp_sm) {
+      if (O.comp_sm_blocks)
+	{ sm = BuildFLS_EF(); }
+      else {
+	auto comp_mat = aux_sys->GetCompMat();
+	shared_ptr<BaseSparseMatrix> comp_spmat;
+	if (auto parmat = dynamic_pointer_cast<ParallelMatrix>(comp_mat))
+	  { comp_spmat = dynamic_pointer_cast<SparseMatrix<double>>(parmat->GetMatrix()); }
+	else
+	  { comp_spmat = dynamic_pointer_cast<SparseMatrix<double>>(comp_mat); }
+	auto comp_pds = aux_sys->GetCompParDofs();
+	auto comp_fds = aux_sys->GetCompFreeDofs();
+	auto eqc_h = make_shared<EQCHierarchy>(comp_pds, false);
+	sm = const_cast<AuxiliarySpacePreconditioner<AUX_SYS, BASE>*>(this)->BuildGSSmoother(comp_spmat, comp_pds, eqc_h, comp_fds);
+      }
+    }
+
+    return sm;
   }
 
 
@@ -1078,7 +1274,7 @@ namespace amg
     auto free1 = aux_sys->GetCompFreeDofs(); // if BDDC this is the correct one
     auto free2 = comp_space->GetFreeDofs(bfa->UsesEliminateInternal()); // if el_int, this is the one
     auto is_free = [&](auto x) { return free1->Test(x) && free2->Test(x); };
-    size_t n_blocks = O.el_blocks ? ma->GetNE() : ma->GetNFacets();
+    size_t n_blocks = O.comp_sm_blocks_el ? ma->GetNE() : ma->GetNFacets();
     TableCreator<int> cblocks(n_blocks);
     Array<int> dnums;
     auto add_dofs = [&](auto os, auto block_num, auto & dnums) LAMBDA_INLINE {
@@ -1090,7 +1286,7 @@ namespace amg
       }
     };
     for (; !cblocks.Done(); cblocks++) {
-      if (O.el_blocks) {
+      if (O.comp_sm_blocks_el) {
 	for (auto el_nr : Range(n_blocks)) {
 	  spacea->GetDofNrs(ElementId(VOL, el_nr), dnums);
 	  add_dofs(os_sa, el_nr, dnums);
@@ -1164,6 +1360,7 @@ namespace amg
     auto pmatT = aux_sys->GetPMatT();
     auto ds = make_shared<ProlMap<typename AUX_SYS::TPMAT_TM>>(pmat, pmatT, comp_pds, aux_pds);
     emb_amg_mat = make_shared<EmbeddedAMGMatrix> (fls, amg_mat, ds);
+    emb_amg_mat->SetSTK_outer(O.comp_sm_steps);
 
     if (__hacky_test) {
       /** Aux space AMG + finest level smoother as a preconditioner for the bilinear-form **/
@@ -1185,6 +1382,14 @@ namespace amg
   {
     ;
   } // AuxiliarySpacePreconditioner::Update
+
+  template<class AUX_SYS, class BASE>
+  void AuxiliarySpacePreconditioner<AUX_SYS, BASE> :: AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
+									ElementId ei, LocalHeap & lh)
+  {
+    aux_sys->AddElementMatrix(dnums, elmat, ei, lh);
+  } // FacetAuxVertexAMGPC::AddElementMatrix
+
 
   /** END AuxiliarySpacePreconditioner **/
 
@@ -1260,7 +1465,7 @@ namespace amg
     O.crs_alg = AMG_CLASS::Options::CRS_ALG::AGG;
     O.ecw_geom = false;
     O.ecw_robust = false; // probably irrelevant as we are usually using this for MCS
-    O.n_levels_d2_agg = 1;
+    O.d2_agg = SpecOpt<bool>(false, { true });
     O.disc_max_bs = 1;
 
     /** Level-control **/
@@ -1301,8 +1506,9 @@ namespace amg
 
 
   template<int DIM, class AUX_SYS, class AMG_CLASS>
-  shared_ptr<BaseDOFMapStep> FacetAuxVertexAMGPC<DIM, AUX_SYS, AMG_CLASS> :: BuildEmbedding (shared_ptr<TopologicMesh> mesh)
+  shared_ptr<BaseDOFMapStep> FacetAuxVertexAMGPC<DIM, AUX_SYS, AMG_CLASS> :: BuildEmbedding (BaseAMGFactory::AMGLevel & finest_level)
   {
+    auto mesh = finest_level.cap->mesh;
 
     /** aux_mat is finest mat **/
     // shared_ptr<TPMAT_TM> emb_mat;
@@ -1336,13 +1542,6 @@ namespace amg
     ;
   } // FacetAuxVertexAMGPC::Update
 
-
-  template<int DIM, class AUX_SYS, class AMG_CLASS>
-  void FacetAuxVertexAMGPC<DIM, AUX_SYS, AMG_CLASS> :: AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
-									 ElementId ei, LocalHeap & lh)
-  {
-    aux_sys->AddElementMatrix(dnums, elmat, ei, lh);
-  } // FacetAuxVertexAMGPC::AddElementMatrix
 
   /** END FacetAuxVertexAMGPC **/
 

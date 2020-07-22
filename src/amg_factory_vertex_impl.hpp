@@ -30,17 +30,23 @@ namespace amg
     CRS_ALG crs_alg = AGG;
 
     /** General coarsening **/
-    bool ecw_geom = true;                       // use geometric instead of harmonic mean when determining strength of connection
-    bool ecw_robust = true;                     // use more expensive, but also more robust edge weights
-    double min_ecw = 0.05;
-    double min_vcw = 0.3;
+    SpecOpt<bool> ecw_geom = true;              // use geometric instead of harmonic mean when determining strength of connection
+    SpecOpt<bool> ecw_robust = true;            // use more expensive, but also more robust edge weights
+    SpecOpt<xbool> ecw_minmax = xbool(maybe);
+    SpecOpt<xbool> ecw_stab_hack = xbool(maybe);
+    SpecOpt<double> min_ecw = 0.05;
+    SpecOpt<double> min_vcw = 0.3;
+    SpecOpt<bool> sp_aux_only = false;          // smooth prolongation using only auxiliary matrix
+    SpecOpt<bool> newsp = true;
 
     /** Discard **/
     int disc_max_bs = 5;
 
     /** AGG **/
-    int n_levels_d2_agg = 1;                    // do this many levels MIS(2)-like aggregates (afterwards MIS(1)-like)
-    bool agg_neib_boost = false;
+    SpecOpt<bool> agg_neib_boost = false;
+    SpecOpt<bool> lazy_neib_boost = false;
+    SpecOpt<bool> print_aggs = false;                    // print agglomerates (for debugging purposes)
+    SpecOpt<AVG_TYPE> agg_minmax_avg;
 
   public:
 
@@ -59,26 +65,25 @@ namespace amg
 	}
       };
 
-      auto set_bool = [&](auto& v, string key) {
-	if (v) { v = !flags.GetDefineFlagX(prefix + key).IsFalse(); }
-	else { v = flags.GetDefineFlagX(prefix + key).IsTrue(); }
-      };
-
-      auto set_num = [&](auto& v, string key)
-	{ v = flags.GetNumFlag(prefix + key, v); };
-
       BaseAMGFactory::Options::SetFromFlags(flags, prefix);
 
       set_enum_opt(crs_alg, "crs_alg", {"ecol", "agg" });
 
-      set_bool(ecw_geom, "ecw_geom");
-      set_bool(ecw_robust, "ecw_robust");
+      ecw_geom.SetFromFlags(flags, prefix+"ecw_geom");
+      ecw_robust.SetFromFlags(flags, prefix+"ecw_robust");
+      ecw_minmax.SetFromFlags(flags, prefix+"ecw_minmax");
+      ecw_stab_hack.SetFromFlags(flags, prefix + "ecw_stab_hack");
+      agg_minmax_avg.SetFromFlagsEnum(flags, prefix + "agg_minmax_avg", prefix + "spec_minmax_avg", {"min", "geom", "harm", "alg", "max"});
 
-      set_num(min_ecw, "edge_thresh");
-      set_num(min_vcw, "vert_thresh");
-      set_num(min_vcw, "vert_thresh");
-      set_num(n_levels_d2_agg, "n_levels_d2_agg");
-      set_bool(agg_neib_boost, "agg_neib_boost");
+      min_ecw.SetFromFlags(flags, prefix+"edge_thresh");
+      min_vcw.SetFromFlags(flags, prefix+"vert_thresh");
+      min_vcw.SetFromFlags(flags, prefix+"vert_thresh");
+      agg_neib_boost.SetFromFlags(flags, prefix+"agg_neib_boost");
+      lazy_neib_boost.SetFromFlags(flags, prefix+"lazy_neib_boost");
+      print_aggs.SetFromFlags(flags, prefix+"print_aggs");
+
+      sp_aux_only.SetFromFlags(flags, prefix+"sp_aux_only");
+      newsp.SetFromFlags(flags, prefix+"newsp");
     } // VertexAMGFactoryOptions::SetFromFlags
 
   }; // VertexAMGFactoryOptions
@@ -112,7 +117,7 @@ namespace amg
 
 
   template<class ENERGY, class TMESH, int BS>
-  void VertexAMGFactory<ENERGY, TMESH, BS> :: InitState (BaseAMGFactory::State & state, BaseAMGFactory::AMGLevel & lev) const
+  void VertexAMGFactory<ENERGY, TMESH, BS> :: InitState (BaseAMGFactory::State & state, shared_ptr<BaseAMGFactory::AMGLevel> & lev) const
   {
     BASE_CLASS::InitState(state, lev);
 
@@ -122,15 +127,15 @@ namespace amg
 
 
   template<class ENERGY, class TMESH, int BS>
-  shared_ptr<BaseCoarseMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildCoarseMap (BaseAMGFactory::State & state)
+  shared_ptr<BaseCoarseMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildCoarseMap (BaseAMGFactory::State & state, shared_ptr<BaseAMGFactory::LevelCapsule> & mapped_cap)
   {
     auto & O(static_cast<Options&>(*options));
 
     Options::CRS_ALG calg = O.crs_alg;
 
     switch(calg) {
-    case(Options::CRS_ALG::AGG): { return BuildAggMap(state); break; }
-    case(Options::CRS_ALG::ECOL): { return BuildECMap(state); break; }
+    case(Options::CRS_ALG::AGG): { return BuildAggMap(state, mapped_cap); break; }
+    case(Options::CRS_ALG::ECOL): { return BuildECMap(state, mapped_cap); break; }
     default: { throw Exception("Invalid coarsen alg!"); break; }
     }
 
@@ -139,44 +144,60 @@ namespace amg
 
 
   template<class ENERGY, class TMESH, int BS>
-  shared_ptr<BaseCoarseMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildAggMap (BaseAMGFactory::State & state)
+  shared_ptr<BaseCoarseMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildAggMap (BaseAMGFactory::State & state, shared_ptr<BaseAMGFactory::LevelCapsule> & mapped_cap)
   {
     auto & O = static_cast<Options&>(*options);
     typedef Agglomerator<ENERGY, TMESH, ENERGY::NEED_ROBUST> AGG_CLASS;
     typename AGG_CLASS::Options agg_opts;
-    auto mesh = dynamic_pointer_cast<TMESH>(state.curr_mesh);
+    auto mesh = dynamic_pointer_cast<TMESH>(state.curr_cap->mesh);
     if (mesh == nullptr)
-      { throw Exception(string("Invalid mesh type ") + typeid(*state.curr_mesh).name() + string(" for BuildAggMap!")); }
-    agg_opts.edge_thresh = O.min_ecw;
-    agg_opts.vert_thresh = O.min_vcw;
-    agg_opts.cw_geom = O.ecw_geom;
-    agg_opts.neib_boost = O.agg_neib_boost;
-    agg_opts.robust = O.ecw_robust;
-    agg_opts.dist2 = ( state.level[1] == 0 ) && ( state.level[0] < O.n_levels_d2_agg );
+      { throw Exception(string("Invalid mesh type ") + typeid(*state.curr_cap->mesh).name() + string(" for BuildAggMap!")); }
+
+    const int level = state.level[0];
+
+    agg_opts.edge_thresh = O.min_ecw.GetOpt(level);
+    agg_opts.vert_thresh = O.min_vcw.GetOpt(level);
+    agg_opts.cw_geom = O.ecw_geom.GetOpt(level);
+    agg_opts.neib_boost = O.agg_neib_boost.GetOpt(level);
+    agg_opts.lazy_neib_boost = O.lazy_neib_boost.GetOpt(level);
+    agg_opts.robust = O.ecw_robust.GetOpt(level);
+    agg_opts.use_stab_ecw_hack = O.ecw_stab_hack.GetOpt(level);
+    agg_opts.use_minmax_soc = O.ecw_minmax.GetOpt(level);
+    agg_opts.dist2 = O.d2_agg.GetOpt(level);
+    agg_opts.print_aggs = O.print_aggs.GetOpt(level);
+    agg_opts.minmax_avg = O.agg_minmax_avg.GetOpt(level);
     // auto agglomerator = make_shared<Agglomerator<FACTORY>>(mesh, state.free_nodes, move(agg_opts));
-    auto agglomerator = make_shared<AGG_CLASS>(mesh, state.free_nodes, move(agg_opts));
+
+    auto agglomerator = make_shared<AGG_CLASS>(mesh, state.curr_cap->free_nodes, move(agg_opts));
+
+    /** Set mapped Capsule **/
+    auto cmesh = agglomerator->GetMappedMesh();
+    mapped_cap->eqc_h = cmesh->GetEQCHierarchy();
+    mapped_cap->mesh = cmesh;
+    mapped_cap->pardofs = this->BuildParallelDofs(cmesh);
+
     return agglomerator;
   } // VertexAMGFactory::BuildCoarseMap
 
 
   template<class ENERGY, class TMESH, int BS>
-  shared_ptr<BaseCoarseMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildECMap (BaseAMGFactory::State & astate)
+  shared_ptr<BaseCoarseMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildECMap (BaseAMGFactory::State & astate, shared_ptr<BaseAMGFactory::LevelCapsule> & mapped_cap)
   {
     // throw Exception("finish this up ...");
     auto & O = static_cast<Options&>(*options);
     auto & state(static_cast<State&>(astate));
-    auto mesh = dynamic_pointer_cast<TMESH>(state.curr_mesh);
+    auto mesh = dynamic_pointer_cast<TMESH>(state.curr_cap->mesh);
     if (mesh == nullptr)
-      { throw Exception(string("Invalid mesh type ") + typeid(*state.curr_mesh).name() + string(" for BuildECMap!")); }
+      { throw Exception(string("Invalid mesh type ") + typeid(*state.curr_cap->mesh).name() + string(" for BuildECMap!")); }
 
     shared_ptr<typename HierarchicVWC<TMESH>::Options> coarsen_opts;
 
     coarsen_opts = make_shared<typename HierarchicVWC<TMESH>::Options>();
-    coarsen_opts->free_verts = state.free_nodes;
-    coarsen_opts->min_vcw = O.min_vcw;
-    coarsen_opts->min_ecw = O.min_vcw;
+    coarsen_opts->free_verts = state.curr_cap->free_nodes;
+    coarsen_opts->min_vcw = O.min_vcw.GetOpt(100); // TODO: placeholder
+    coarsen_opts->min_ecw = O.min_vcw.GetOpt(100);
 
-    if (O.ecw_robust)
+    if (O.ecw_robust.GetOpt(100)) // TODO: placeholder
       { CalcECOLWeightsRobust (state, coarsen_opts->vcw, coarsen_opts->ecw); }
     else
       { CalcECOLWeightsSimple (state, coarsen_opts->vcw, coarsen_opts->ecw); }
@@ -184,6 +205,12 @@ namespace amg
     auto calg = make_shared<BlockVWC<TMESH>>(coarsen_opts);
 
     auto grid_step = calg->Coarsen(mesh);
+
+    /** Set mapped Capsule **/
+    auto cmesh = grid_step->GetMappedMesh();
+    mapped_cap->eqc_h = cmesh->GetEQCHierarchy();
+    mapped_cap->mesh = cmesh;
+    mapped_cap->pardofs = this->BuildParallelDofs(cmesh);
 
     return grid_step;
   } // VertexAMGFactory::BuildCoarseMap
@@ -194,7 +221,7 @@ namespace amg
   {
     const auto & O = static_cast<Options&>(*options);
 
-    auto mesh = dynamic_pointer_cast<TMESH>(state.curr_mesh);
+    auto mesh = dynamic_pointer_cast<TMESH>(state.curr_cap->mesh);
     const auto & M(*mesh); M.CumulateData();
 
     auto vdata = get<0>(M.Data())->Data();
@@ -213,7 +240,7 @@ namespace amg
     M.template AllreduceNodalData<NT_VERTEX>(vcw, [&](auto & in) { return sum_table(in); });
 
     M.template Apply<NT_VERTEX>([&](auto v) { vcw[v] = (vcw[v] == 0) ? 1.0 : ENERGY::GetApproxVWeight(vdata[v]) / vcw[v]; }, false);
-    if (O.ecw_geom) {
+    if (O.ecw_geom.GetOpt(100)) { // TODO::placeholder
       M.template Apply<NT_EDGE>([&](const auto & edge) {
 	  double vw0 = vcw[edge.v[0]], vw1 = vcw[edge.v[1]];
 	  ecw[edge.id] = ENERGY::GetApproxWeight(edata[edge.id]) / sqrt(vw0 * vw1);
@@ -240,7 +267,7 @@ namespace amg
       // #else
       const auto & O = static_cast<Options&>(*options);
 
-      auto mesh = dynamic_pointer_cast<TMESH>(state.curr_mesh);
+      auto mesh = dynamic_pointer_cast<TMESH>(state.curr_cap->mesh);
       const auto & M(*mesh); M.CumulateData();
 
       auto vdata = get<0>(M.Data())->Data();
@@ -264,7 +291,7 @@ namespace amg
       M.template AllreduceNodalData<NT_VERTEX>(diag_mats, [&](auto & in) { return sum_table(in); });
 
       TM A, B;
-      if (O.ecw_geom) {
+      if (O.ecw_geom.GetOpt(100)) { // TODO: placeholder
 	M.template Apply<NT_EDGE>([&](const auto & edge) {
 	    typename ENERGY::TVD &vdi = vdata[edge.v[0]], &vdj = vdata[edge.v[1]];
 	    ENERGY::ModQs(vdi, vdj, Qij, Qji);
@@ -292,9 +319,12 @@ namespace amg
   }
 
   template<class ENERGY, class TMESH, int BS>
-  shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<ParallelDofs> fpds, shared_ptr<ParallelDofs> cpds)
+  shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: PWProlMap (shared_ptr<BaseCoarseMap> cmap,
+									       shared_ptr<BaseAMGFactory::LevelCapsule> fcap, shared_ptr<BaseAMGFactory::LevelCapsule> ccap)
   {
     static Timer t("PWProlMap"); RegionTimer rt(t);
+
+    shared_ptr<ParallelDofs> fpds = fcap->pardofs, cpds = ccap->pardofs;
 
     const auto & rcmap(*cmap);
     const TMESH & fmesh = static_cast<TMESH&>(*rcmap.GetMesh()); fmesh.CumulateData();
@@ -310,6 +340,7 @@ namespace amg
       { if (vmap[vnr] != -1) perow[vnr] = 1; }
 
     // cout << "vmap: " << endl; prow2(vmap); cout << endl;
+    // cout << "vmap: " << endl; prow(vmap); cout << endl;
 
     auto prol = make_shared<TSPM_TM>(perow, NCV);
 
@@ -332,9 +363,449 @@ namespace amg
 
 
   template<class ENERGY, class TMESH, int BS>
-  shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<TopologicMesh> tfmesh)
+  shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap, shared_ptr<BaseAMGFactory::LevelCapsule> fcap)
   {
-    static Timer t("SmoothedProlMap"); RegionTimer rt(t);
+    Options &O (static_cast<Options&>(*options));
+    if (O.newsp.GetOpt(100)) // TODO: placeholder
+      return SmoothedProlMap_impl_v2(static_pointer_cast<ProlMap<TSPM_TM>>(pw_step), cmap, fcap);
+    else
+      return SmoothedProlMap_impl(pw_step, cmap, fcap);
+  } // VertexAMGFactory::SmoothedProlMap
+
+
+  template<class ENERGY, class TMESH, int BS>
+  shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: SmoothedProlMap_impl_v2 (shared_ptr<ProlMap<TSPM_TM>> pw_step, shared_ptr<BaseCoarseMap> cmap,
+											     shared_ptr<BaseAMGFactory::LevelCapsule> fcap)
+  {
+    static Timer t("SmoothedProlMap_hyb"); RegionTimer rt(t);
+    /** Use fine level matrix to smooth prolongation ("classic prol") where we can, that is whenever:
+	   I) We would not break MAX_PER_ROW, so if all algebraic neibs map to <= MAX_PER_ROW coarse verts.
+	  II) We would not break the hierarchy, so if all algebraic neibs map to coarse verts in the same, or higher EQCs
+	Where we cannot, smooth using the replacement matrix ("aux prol"). **/
+    Options &O (static_cast<Options&>(*options));
+
+    const double MIN_PROL_FRAC = O.sp_min_frac;
+    const int MAX_PER_ROW = O.sp_max_per_row;
+    const double omega = O.sp_omega;
+    const bool aux_only = O.sp_aux_only.GetOpt(100); // TODO:placeholder
+
+    // NOTE: something is funky with the meshes here ... 
+    const auto & FM = *static_pointer_cast<TMESH>(fcap->mesh);
+    const auto & CM = *static_pointer_cast<TMESH>(cmap->GetMappedMesh());
+    const auto & eqc_h = *FM.GetEQCHierarchy();
+    const int neqcs = eqc_h.GetNEQCS();
+    const auto & fecon = *FM.GetEdgeCM();
+    auto fpds = pw_step->GetParDofs();
+    auto cpds = pw_step->GetMappedParDofs();
+    
+    FM.CumulateData();
+    CM.CumulateData();
+
+    /** Because of embedding, this can be nullptr for level 0!
+	I think using pure aux on level 0 should not be an issue. **/
+    auto fmat = dynamic_pointer_cast<TSPM_TM>(fcap->mat);
+    /** "fmat" can be the pre-embedded matrix. In that case we can't use it for smoothing. **/
+    bool have_fmat = (fmat != nullptr);
+    /** if "fmat" has no pardofs, it is not the original finest level matrix, so fine to use! !**/
+    if (fmat->GetParallelDofs() != nullptr)
+      { have_fmat &= (fmat->GetParallelDofs() == fpds); }
+
+    // cout << " have fmat " << have_fmat << (fmat != nullptr) << (fmat->GetParallelDofs() == fpds) << endl;
+    // cout << " pds " << fmat->GetParallelDofs() << fpds << endl;
+    
+    const TSPM_TM & pwprol = *pw_step->GetProl();
+
+    auto vmap = cmap->GetMap<NT_VERTEX>();
+
+    const size_t FNV = FM.template GetNN<NT_VERTEX>(), CNV = CM.template GetNN<NT_VERTEX>();
+
+    LocalHeap lh(2000000, "muchmemory", false); // ~2 MB LocalHeap
+
+    /** Find Graph, decide if classic or aux prol. **/
+    Array<int> cols(20); cols.SetSize0();
+    BitArray use_classic(FNV); use_classic.Clear();
+    Array<int> proltype(FNV); proltype = 0;
+
+    auto fvdata = get<0>(FM.Data())->Data();
+    auto fedata = get<1>(FM.Data())->Data();
+
+    auto fedges = FM.template GetNodes<NT_EDGE>();
+
+    // cout << "FM: " << endl << FM << endl;
+    // cout << "fecon: " << endl << fecon << endl;
+
+    auto get_cols_classic = [&](auto eqc, auto fvnr) {
+      if (eqc != 0) // might still have non-hierarchic neibs on other side!
+	{ return false; }
+      auto ovs = fecon.GetRowIndices(fvnr);
+      int nniscv = 0; // number neibs in same cv
+      auto cvnr = vmap[fvnr];
+      for (auto v : ovs)
+	if (vmap[v] == cvnr)
+	  { nniscv++; }
+      if (nniscv == 0) { // no neib that maps to same coarse vertex - use pwprol!
+	cols.SetSize(1);
+	cols[0] = cvnr;
+	return true;
+      }
+      auto ris = fmat->GetRowIndices(fvnr);
+      cols.SetSize0();
+      bool is_ok = true;
+      for (auto j : Range(ris)) {
+	auto fvj = ris[j];
+	auto cvj = vmap[fvj];
+	if (cvj != -1) {
+	  auto eqcj = CM.template GetEqcOfNode<NT_VERTEX>(cvj);
+	  if (!eqc_h.IsLEQ(eqc, eqcj))
+	    { is_ok = false; break; }
+	  insert_into_sorted_array_nodups(cvj, cols);
+	}
+	else
+	  { is_ok = false; }
+      }
+      is_ok &= (cols.Size() <= MAX_PER_ROW);
+      return is_ok;
+    }; // get_cols_classic
+
+    /** Judge connection to coarse neibs by sum of fine connections. **/
+    Array<double> dg_wt(FNV); dg_wt = 0;
+    FM.template Apply<NT_EDGE>([&](auto & edge) LAMBDA_INLINE {
+	auto approx_wt = ENERGY::GetApproxWeight(fedata[edge.id]);
+	dg_wt[edge.v[0]] = max2(dg_wt[edge.v[0]], approx_wt);
+	dg_wt[edge.v[1]] = max2(dg_wt[edge.v[1]], approx_wt);
+      }, false );
+    FM.template AllreduceNodalData<NT_VERTEX>(dg_wt, [](auto & tab){return move(max_table(tab)); }, false);
+
+    Array<INT<2,double>> trow;
+    Array<int> tcv;
+    auto get_cols_aux = [&](auto EQ, auto V) {
+      cols.SetSize0();
+      auto CV = vmap[V];
+      if ( is_invalid(CV) )
+	{ return; }
+      trow.SetSize0(); tcv.SetSize0();
+      auto ovs = fecon.GetRowIndices(V);
+      int nniscv = 0; // number neibs in same cv
+      for (auto v : ovs)
+	if (vmap[v] == CV)
+	  { nniscv++; }
+      if (nniscv == 0) { // no neib that maps to same coarse vertex - use pwprol!
+	cols.SetSize(1);
+	cols[0] = CV;
+	return;
+      }
+      auto eis = fecon.GetRowValues(V);
+      size_t pos; double in_wt = 0;
+      for (auto j : Range(ovs.Size())) {
+	auto ov = ovs[j];
+	auto cov = vmap[ov];
+	if ( is_invalid(cov) )
+	  { continue; }
+	if (cov == CV) {
+	  // in_wt += self.template GetWeight<NT_EDGE>(fmesh, );
+	  in_wt += ENERGY::GetApproxWeight(fedata[int(eis[j])]);
+	  continue;
+	}
+	// auto oeq = fmesh.template GetEqcOfNode<NT_VERTEX>(ov);
+	auto oeq = CM.template GetEqcOfNode<NT_VERTEX>(cov);
+	if (eqc_h.IsLEQ(EQ, oeq)) {
+	  // auto wt = self.template GetWeight<NT_EDGE>(fmesh, all_fedges[int(eis[j])]);
+	  auto wt = ENERGY::GetApproxWeight(fedata[int(eis[j])]);
+	  if ( (pos = tcv.Pos(cov)) == size_t(-1)) {
+	    trow.Append(INT<2,double>(cov, wt));
+	    tcv.Append(cov);
+	  }
+	  else
+	    { trow[pos][1] += wt; }
+	}
+      }
+      QuickSort(trow, [](const auto & a, const auto & b) LAMBDA_INLINE { return a[1]>b[1]; });
+      double cw_sum = 0.2 * in_wt; // all edges in the same agg are automatically assembled (penalize so we dont pw-ize too many)
+      double dgwt = dg_wt[V];
+      cols.Append(CV);
+      size_t max_adds = min2(MAX_PER_ROW-1, int(trow.Size()));
+      for (auto j : Range(max_adds)) {
+	cw_sum += trow[j][1];
+	if ( ( !(trow[j][1] > MIN_PROL_FRAC * cw_sum) ) ||
+	     ( trow[j][1] < MIN_PROL_FRAC * dgwt ) )
+	  { break; }
+	cols.Append(trow[j][0]);
+      }
+      // NOTE: these cols are unsorted - they are sorted later!
+    }; // get_cols_aux
+
+    // cout << " vmap: " << endl; prow2(vmap); cout << endl;
+
+    auto itg = [&](auto lam) {
+      // AHHM das is bloedsinn, er nimmt da einfach die finest_mat her, die is mit MPI auf die pre-embedded mat gesetzt !
+      FM.template ApplyEQ2<NT_VERTEX>([&](auto eqc, auto nodes) {
+	  for (auto fvnr : nodes) {
+	    if (vmap[fvnr] == -1)
+	      { continue; }
+	    bool classic_ok = (have_fmat && (!aux_only)) ? get_cols_classic(eqc, fvnr) : false;
+	    if (!classic_ok)
+	      { get_cols_aux(eqc, fvnr); }
+	    lam(fvnr, classic_ok);
+	  }
+	}, true);
+    };
+    Array<int> perow(FNV); perow = 0;
+    itg([&](auto fvnr, bool cok) {
+	if (cok)
+	  { use_classic.SetBit(fvnr); }
+	perow[fvnr] = cols.Size();
+      });
+    /** Scatter Graph per row (col-vals are garbage for non-masters here! ) **/
+    // cout << " perow1: "; prow2(perow); cout << endl;
+    FM.template ScatterNodalData<NT_VERTEX>(perow);
+    // cout << " scattered perow: "; prow2(perow); cout << endl;
+    Table<int> graph(perow);
+    itg([&](auto fvnr, bool cok) {
+	if (!cok)
+	  { QuickSort(cols); }
+	graph[fvnr] = cols;
+      });
+
+    // cout << " graph: " << endl << graph << endl;
+
+    /** Alloc sprol **/
+    auto sprol = make_shared<TSPM_TM>(perow, CNV);
+    const auto & CSP = *sprol;
+
+    /** #classic, #aux, #triv **/
+    int nc = 0, na = 0, nt = 0;
+    double fc = 0, fa = 0, ft = 0;
+
+    const double omo = 1.0 - omega;
+    TM d;
+    auto fill_sprol_classic = [&](auto fvnr) {
+      // cout << " fill " << fvnr;
+      auto ris = CSP.GetRowIndices(fvnr);
+      if (ris.Size() == 0)
+	{ return; }
+      auto rvs = CSP.GetRowValues(fvnr);
+      ris = graph[fvnr];
+      if (ris.Size() == 1) {
+	// cout << " c-triv " << endl;
+	// rvs[0] = pwprol->GetRowIndices(fvnr)[0];
+	// SetIdentity(rvs[0]);
+	rvs[0] = pwprol(fvnr, ris[0]);
+	nt++;
+	return;
+      }
+      // cout << " classic " << endl;
+      // cout << " ris "; prow(ris); cout << endl;
+      nc++;
+      rvs = 0;
+      auto fmris = fmat->GetRowIndices(fvnr);
+      auto fmrvs = fmat->GetRowValues(fvnr);
+      // cout << " fmris "; prow(fmris); cout << endl;
+      // cout << " vmap fmris "; prow(vmap[fmris]); cout << endl;
+      // cout << " fmrvs "; prow(fmrvs); cout << endl;
+      d = fmrvs[find_in_sorted_array(fvnr, fmris)];
+      // cout << " diag " << endl;
+      // print_tm(cout, d);
+      if (BS == 1)
+	{ CalcInverse(d); }
+      else {
+	/** Normalize to trace of diagonal mat. More stable Pseudo inverse (?) **/
+	double trinv = double(BS) / calc_trace(d);
+	d *= trinv;
+	CalcStabPseudoInverse(d, lh);
+	d *= trinv;
+      }
+      // cout << " inv diag " << endl;
+      // print_tm(cout, d);
+      TM od_pwp;
+      for (auto j : Range(fmris)) {
+	auto fvj = fmris[j];
+	int col = vmap[fmris[j]];
+	int colind = find_in_sorted_array(col, ris);
+	if (colind == -1) // Dirichlet - TODO: cleaner would be finding an aux-ext to diri DOFs first
+	  { continue; }
+	// cout << j << " " << col << " " << colind << endl;
+	// if (fvj == fvnr)
+	  // { rvs[colind] += omo * pwprol(fvj, col); }
+	// else {
+	  // od_pwp = fmrvs[j] * pwprol(fvj, col);
+	  // rvs[colind] -= omega * d * od_pwp;
+	// }
+	if (fvj == fvnr)
+	  { rvs[colind] += pwprol(fvj, col); }
+	od_pwp = fmrvs[j] * pwprol(fvj, col);
+	rvs[colind] -= omega * d * od_pwp;
+      }
+    }; // fill_sprol_classic
+
+    TM Qij, Qji, QM;
+    auto fill_sprol_aux = [&](auto fvnr) {
+      // cout << " fill " << fvnr;
+      auto ris = CSP.GetRowIndices(fvnr);
+      if ( ris.Size() == 0)
+	{ return; }
+      ris = graph[fvnr];
+      auto rvs = CSP.GetRowValues(fvnr);
+      auto cvnr = vmap[fvnr];
+      if ( ris.Size() == 1) {
+	// cout << " a-triv " << endl;
+	// rvs[0] = pwprol.GetRowIndices(fvnr)[0];
+	// SetIdentity(rvs[0]);
+	rvs[0] = pwprol(fvnr, ris[0]);
+	nt++;
+	return;
+      }
+      // cout << " aux " << endl;
+      na++;
+      rvs = 0;
+      auto fneibs = fecon.GetRowIndices(fvnr);
+      auto fenrs = fecon.GetRowValues(fvnr);
+      int nufneibs = 0, pos = 0, cvj = 0;
+      /** Here we use any neibs that map to used coarse vertices. This means we can also unse non-hierarchic
+	  FINE edges (!). This does still give us a hierarchic prolongation in the end! **/
+      for (auto vj : fneibs)
+	if ( ( (cvj = vmap[vj]) != -1 ) &&
+	     ( (pos = find_in_sorted_array(vmap[vj], ris)) != -1 ) )
+	  { nufneibs++; }
+      nufneibs++; // the vertex itself
+      FlatArray<int> ufneibs(nufneibs, lh), ufenrs(nufneibs, lh);
+      nufneibs = 0;
+      int dcol = -1;
+      for (auto j : Range(fneibs)) {
+	auto vj = fneibs[j];
+	if ( ( (cvj = vmap[vj]) != -1 ) &&
+	     ( (pos = find_in_sorted_array(vmap[vj], ris)) != -1 ) ) {
+	  if ( (dcol == -1) && (vj > fvnr) ) {
+	    dcol = nufneibs;
+	    ufenrs[nufneibs] = -1;
+	    ufneibs[nufneibs++] = fvnr;
+	  }
+	  ufenrs[nufneibs] = fenrs[j];
+	  ufneibs[nufneibs++] = vj;
+	}
+      }
+      if ( (dcol == -1) ) {
+	dcol = nufneibs;
+	ufenrs[nufneibs] = -1;
+	ufneibs[nufneibs++] = fvnr;
+      }
+      // cout << " fneibs "; prow(fneibs); cout << endl;
+      // cout << "ufneibs "; prow(ufneibs); cout << endl;
+      FlatMatrix<TM> rmrow(1, nufneibs, lh); rmrow = 0;
+      for (auto j : Range(ufneibs)) {
+	if (j == dcol)
+	  { continue; }
+	const auto & edge = fedges[ufenrs[j]];
+	int l = (fvnr == edge.v[0]) ? 0 : 1;
+	ENERGY::CalcQs(fvdata[edge.v[l]], fvdata[edge.v[1-l]], Qij, Qji);
+	TM EM = ENERGY::GetEMatrix(fedata[ufenrs[j]]);
+	if constexpr(mat_traits<TM>::HEIGHT!=1) {
+	    if (vmap[edge.v[1-l]] == cvnr) {
+	      /** We regularize edge-matrices to other vertices in the same agglomerate.
+		  Yes, this is cheating. No, I do not care. **/
+	      RegTM<0, mat_traits<TM>::HEIGHT, mat_traits<TM>::HEIGHT>(EM);
+	    }
+	  }
+	QM = Trans(Qij) * EM;
+	rmrow(0, j) -= QM * Qji;
+	rmrow(0, dcol) += QM * Qij;
+      }
+      // cout << " rmrow: " << endl; print_tm_mat(cout, rmrow); cout << endl;
+      TM d = rmrow(0, dcol);
+      // cout << " diag " << endl;
+      // print_tm(cout, d);
+      if (BS == 1)
+	{ CalcInverse(d); }
+      else {
+	/** Normalize to trace of diagonal mat. More stable Pseudo inverse (?) **/
+	double trinv = double(BS) / calc_trace(d);
+	rmrow *= trinv;
+	d *= trinv;
+	// CalcStabPseudoInverse(d, lh);
+	CalcInverse(d);
+      }
+      // cout << " diag inv " << endl;
+      // print_tm(cout, d);
+      TM od_pwp;
+      for (auto j : Range(nufneibs)) {
+	auto fvj = ufneibs[j];
+	int col = vmap[fvj];
+	int colind = find_in_sorted_array(col, ris);
+	if (fvj == fvnr)
+	  { rvs[colind] += omo * pwprol(fvj, col); }
+	else {
+	  od_pwp = rmrow(0, j) * pwprol(fvj, col);
+	  rvs[colind] -= omega * d * od_pwp;
+	}
+      }
+    }; // fill_sprol_aux
+
+
+    /** Fill sprol **/
+    FM.template ApplyEQ2<NT_VERTEX>([&](auto eqc, auto nodes) {
+	for (auto fvnr : nodes) {
+	  HeapReset hr(lh);
+	  if (use_classic.Test(fvnr))
+	    { fill_sprol_classic(fvnr); }
+	  else
+	    { fill_sprol_aux(fvnr); }
+	}
+      }, true);
+
+
+    /** Scatter sprol colnrs & vals **/
+    if (neqcs > 1) {
+      Array<int> eqc_perow(neqcs); eqc_perow = 0;
+      FM.template ApplyEQ<NT_VERTEX>( Range(1, neqcs), [&](auto EQC, auto V) {
+	  eqc_perow[EQC] += perow[V];
+	}, false); // all!
+      Table<INT<2,int>> ex_ris(eqc_perow);
+      Table<TM> ex_rvs(eqc_perow); eqc_perow = 0;
+      FM.template ApplyEQ<NT_VERTEX>( Range(1, neqcs), [&](auto EQC, auto V) {
+	  auto rvs = sprol->GetRowValues(V);
+	  auto ris = sprol->GetRowIndices(V);
+	  for (auto j : Range(ris)) {
+	    int jeq = CM.template GetEqcOfNode<NT_VERTEX>(ris[j]);
+	    int jeq_id = eqc_h.GetEQCID(jeq);
+	    int jlc = CM.template MapENodeToEQC<NT_VERTEX>(jeq, ris[j]);
+	    ex_ris[EQC][eqc_perow[EQC]] = INT<2,int>({ jeq_id, jlc });
+	    ex_rvs[EQC][eqc_perow[EQC]++] = rvs[j];
+	  }
+	}, true); // master!
+      auto reqs = eqc_h.ScatterEQCData(ex_ris);
+      reqs += eqc_h.ScatterEQCData(ex_rvs);
+      MyMPI_WaitAll(reqs);
+      eqc_perow = 0;
+      FM.template ApplyEQ<NT_VERTEX>( Range(1, neqcs), [&](auto EQC, auto V) {
+	  auto rvs = CSP.GetRowValues(V);
+	  auto ris = CSP.GetRowIndices(V);
+	  for (auto j : Range(ris)) {
+	    auto tup = ex_ris[EQC][eqc_perow[EQC]];
+	    ris[j] = CM.template MapENodeFromEQC<NT_VERTEX>(tup[1], eqc_h.GetEQCOfID(tup[0]));
+	    rvs[j] = ex_rvs[EQC][eqc_perow[EQC]++];
+	  }
+	}, false); // master!
+    }
+
+    if ( ( (eqc_h.GetCommunicator().Size() == 1) || (eqc_h.GetCommunicator().Rank() == 1) ) &&
+	 ( FNV > 0 ) ) {
+      cout << "NV,   nc/na/nt " << FNV << ", " << nc << " " << na << " " << nt << endl;
+      cout << "fracs c/a/t    " << double(nc)/FNV << " " << double(na)/FNV << " " << double(nt)/FNV << endl;
+    }
+
+    // cout << " sprol: " << endl;
+    // print_tm_spmat(cout, *sprol);
+    // cout << endl;
+
+    return make_shared<ProlMap<TSPM_TM>>(sprol, fpds, cpds);
+  } // VertexAMGFactory::SmoothedProlMap_impl_v2
+
+
+  template<class ENERGY, class TMESH, int BS>
+  shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseAMGFactory::LevelCapsule> fcap)
+  {
+    static Timer t("SmoothedProlMap_cap"); RegionTimer rt(t);
+
+    shared_ptr<TopologicMesh> tfmesh = fcap->mesh;
 
     if (pw_step == nullptr)
       { throw Exception("Need pw-map for SmoothedProlMap!"); }
@@ -683,9 +1154,9 @@ namespace amg
 
 
   template<class ENERGY, class TMESH, int BS>
-  shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap)
+  shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: SmoothedProlMap_impl (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap, shared_ptr<BaseAMGFactory::LevelCapsule> fcap)
   {
-    static Timer t("SmoothedProlMap"); RegionTimer rt(t);
+    static Timer t("SmoothedProlMap_map"); RegionTimer rt(t);
 
     if (pw_step == nullptr)
       { throw Exception("Need pw-map for SmoothedProlMap!"); }
@@ -869,7 +1340,8 @@ namespace amg
 	    // cout << " l " << l << " L " << L << " edge " << edge << ", un " << une[l][0] << " " << une[l][1] << endl;
 	    ENERGY::CalcQs(vdata[edge.v[L]], vdata[edge.v[1-L]], Qij, Qji);
 	    // Q = Trans(Qij) * s_emats[used_edges[l]];
-	    TM EMAT = edata[une[l][1]];
+	    // TM EMAT = edata[une[l][1]];
+	    TM EMAT = ENERGY::GetEMatrix(edata[une[l][1]]);
 	    if constexpr(mat_traits<TM>::HEIGHT!=1) {
 		// RegTM<0, mat_traits<TM>::HEIGHT, mat_traits<TM>::HEIGHT>(EMAT);
 		// RegTM<0, FACTORY_CLASS::DIM, mat_traits<TM>::HEIGHT>(EMAT);
@@ -988,7 +1460,7 @@ namespace amg
     // print_tm_spmat(cout, *sprol); cout << endl;
 
     return make_shared<ProlMap<TSPM_TM>> (sprol, pw_step->GetParDofs(), pw_step->GetMappedParDofs());
-  } // VertexAMGFactory::SmoothedProlMap
+  } // VertexAMGFactory::SmoothedProlMap_impl
 
 
   template<class ENERGY, class TMESH, int BS>
@@ -997,18 +1469,18 @@ namespace amg
     if (!options->enable_disc)
       { return false; }
 
-    if (state.free_nodes != nullptr)
+    if (state.curr_cap->free_nodes != nullptr)
       { throw Exception("discard with dirichlet TODO!!"); }
 
-    shared_ptr<BaseDiscardMap> disc_map = BuildDiscardMap(state);
+    shared_ptr<BaseAMGFactory::LevelCapsule> c_cap = this->AllocCap();
+
+    shared_ptr<BaseDiscardMap> disc_map = BuildDiscardMap(state, c_cap);
 
     if (disc_map == nullptr)
       { return false; }
 
     auto n_d_v = disc_map->GetNDroppedNodes<NT_VERTEX>();
-    auto any_n_d_v = state.curr_mesh->GetEQCHierarchy()->GetCommunicator().AllReduce(n_d_v, MPI_SUM);
-
-    // cout << " disc dropped " << n_d_v << endl;
+    auto any_n_d_v = state.curr_cap->mesh->GetEQCHierarchy()->GetCommunicator().AllReduce(n_d_v, MPI_SUM);
 
     bool map_ok = any_n_d_v != 0; // someone somewhere eliminated some verices
 
@@ -1023,22 +1495,27 @@ namespace amg
 
     //TODO: disc prol map!!
 
+    auto disc_prol_map = PWProlMap(disc_map, state.curr_cap, c_cap);
+
     state.disc_map = disc_map;
-    state.curr_mesh = disc_map->GetMappedMesh();
-    state.curr_pds = this->BuildParallelDofs(state.curr_mesh);
-    state.free_nodes = nullptr;
-    // state.dof_map = disc_prol_map;
+    state.curr_cap = c_cap;
+    state.dof_map = disc_prol_map;
 
     return true;
   } // VertexAMGFactory::TryDiscardStep
 
 
   template<class ENERGY, class TMESH, int BS>
-  shared_ptr<BaseDiscardMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildDiscardMap (BaseAMGFactory::State & state)
+  shared_ptr<BaseDiscardMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildDiscardMap (BaseAMGFactory::State & state, shared_ptr<BaseAMGFactory::LevelCapsule> & c_cap)
   {
     auto & O(static_cast<Options&>(*options));
-    auto tm_mesh = dynamic_pointer_cast<TMESH>(state.curr_mesh);
+    auto tm_mesh = dynamic_pointer_cast<TMESH>(state.curr_cap->mesh);
     auto disc_map = make_shared<VDiscardMap<TMESH>> (tm_mesh, O.disc_max_bs);
+
+    c_cap->mesh = disc_map->GetMappedMesh();
+    c_cap->pardofs = this->BuildParallelDofs(c_cap->mesh);
+    c_cap->free_nodes = nullptr;
+
     return disc_map;
   } // VertexAMGFactory :: BuildDiscardMap
 

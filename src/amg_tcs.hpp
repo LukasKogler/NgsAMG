@@ -230,6 +230,11 @@ namespace amg
   InstProlMap(3,6);
   InstProlMap(6,6);
 #endif
+#ifdef STOKES
+  /** Need these for embed-prol to potential space! **/
+  InstProlMap(2,1);
+  InstProlMap(3,1);
+#endif
 #undef InstProLMap
 #endif
 #endif //  FILE_AMG_MAP
@@ -269,9 +274,11 @@ namespace amg
   /** [A \times B] Transpose **/
   InstTransMat(1,1);
   InstTransMat(1,2);
+  InstTransMat(2,1);
   InstTransMat(2,2);
   InstTransMat(3,3);
   InstTransMat(1,3);
+  InstTransMat(3,1);
   InstTransMat(2,3);
 #ifdef ELASTICITY
   InstTransMat(1,6);
@@ -284,7 +291,9 @@ namespace amg
   InstMultMat(2,2,2);
   InstMultMat(3,3,3);
   InstEmbedMults(1,2);
+  InstEmbedMults(2,1);
   InstEmbedMults(1,3);
+  InstEmbedMults(3,1);
   InstEmbedMults(2,3);
 #ifdef ELASTICITY
   InstMultMat(6,6,6);

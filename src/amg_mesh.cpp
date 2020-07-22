@@ -57,6 +57,13 @@ namespace amg
     return econ;
   }
 
+
+  void TopologicMesh :: MapAdditionalData (const BaseGridMapStep & amap)
+  {
+    ;
+  }
+
+
   template<typename T> void AssignArray (Array<T> & a, FlatArray<T> & b)
   {
     if (b.Size())

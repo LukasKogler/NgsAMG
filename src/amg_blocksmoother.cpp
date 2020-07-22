@@ -10,7 +10,7 @@ namespace amg
   template<class TM>
   BSmoother<TM> :: BSmoother (shared_ptr<SparseMatrix<TM>> _spmat,  Table<int> && _blocks, 
 			      bool _parallel, bool _use_sl2, FlatArray<TM> md)
-    : spmat(_spmat), blocks(move(_blocks)), parallel(_parallel), use_sl2(_use_sl2)
+    : BaseSmoother(_spmat), spmat(_spmat), blocks(move(_blocks)), parallel(_parallel), use_sl2(_use_sl2)
   {
     static Timer t("BSmoother"); RegionTimer rt(t);
     
@@ -139,7 +139,7 @@ namespace amg
   template<class TM>
   BSmoother<TM> :: BSmoother (shared_ptr<SparseMatrix<TM>> _spmat,  Table<int> && _blocks, Table<int> && _block_ext_dofs,
 			      bool _parallel, bool _use_sl2, FlatArray<TM> md)
-    : spmat(_spmat), blocks(move(_blocks)), parallel(_parallel), use_sl2(_use_sl2)
+    : BaseSmoother(_spmat), spmat(_spmat), blocks(move(_blocks)), parallel(_parallel), use_sl2(_use_sl2)
   {
     static Timer t("BSmoother"); RegionTimer rt(t);
 
@@ -156,7 +156,7 @@ namespace amg
     for (auto row : block_ext_dofs)
       { QuickSort(row); }
 
-    // cout << " BSmoother with " << n_blocks << " blocks! " << endl;
+    cout << " BSmoother with " << n_blocks << " blocks! " << endl;
 
     // for (auto k : Range(n_blocks)) {
     //   cout << endl << " block " << k << endl;
@@ -172,7 +172,7 @@ namespace amg
                       [&] (size_t i) { return sqr (blocks[i].Size()); },
                       [] (size_t a, size_t b) { return a+b; },
                       size_t(0));
-    // cout << " totmem = " << totmem << endl;
+    cout << " totmem = " << totmem << endl;
     buffer.SetSize(totmem);
     dinv.SetSize(n_blocks);
     auto otm = totmem;
@@ -234,7 +234,7 @@ namespace amg
 	 }
        } );
 
-    // cout << " have dinvs " << endl;
+    cout << " have dinvs " << endl;
 
     /** Do block coloring here for shm parallelization **/
     Table<int> ext_blocks;
@@ -272,7 +272,7 @@ namespace amg
     if (n_blocks > 0) /** need coloring even vor 1 thread b.c smooth/smoothback order of blocks **/
       { maxcolor = ComputeColoring( bcarray, A.Height(), [&](auto i) { return ext_blocks[i]; }); }
 
-    // cout << " blocks colored with " << maxcolor << " colors" << endl;
+    cout << " blocks colored with " << maxcolor << " colors" << endl;
     // cout << " blk colors: " << endl; prow2(bcarray); cout << endl;
 
     TableCreator<int> cbc(maxcolor+1);

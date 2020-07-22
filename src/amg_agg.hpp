@@ -42,7 +42,7 @@ namespace amg
   }
 
   template<class TMESH>
-  class AgglomerateCoarseMap : public BaseCoarseMap
+  class AgglomerateCoarseMap : virtual public BaseCoarseMap
   {
     friend class BlockTM;
 
@@ -59,6 +59,8 @@ namespace amg
     using BaseCoarseMap::node_maps, BaseCoarseMap::NN, BaseCoarseMap::mapped_NN;
 
     using BaseGridMapStep::mesh, BaseGridMapStep::mapped_mesh;
+
+    bool print_vmap = false;
 
     virtual void FormAgglomerates (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg) = 0;
 
@@ -103,6 +105,11 @@ namespace amg
       int min_new_aggs = 3;
       bool robust = true;
       bool neib_boost = true;
+      bool lazy_neib_boost = false;
+      bool print_aggs = false;
+      xbool use_stab_ecw_hack = maybe;
+      xbool use_minmax_soc = maybe;
+      AVG_TYPE minmax_avg = MIN;
     };
 
   protected:
@@ -116,9 +123,18 @@ namespace amg
     /** Used for simplified coarse weights **/
     Array<double> traces;
 
+    Table<int> fixed_aggs; // hacky for a test
+
   public:
 
-    Agglomerator (shared_ptr<TMESH> _mesh, shared_ptr<BitArray> _free_verts, Options && _opts);
+    Agglomerator (shared_ptr<TMESH> _mesh, shared_ptr<BitArray> _free_verts, Options && _settings);
+
+    Agglomerator (shared_ptr<TMESH> _mesh, shared_ptr<BitArray> _free_verts = nullptr);
+
+    void SetFreeVerts (shared_ptr<BitArray> _free_verts) { free_verts = _free_verts; }
+    Options & GetOpts () { return settings; }
+    void SetOpts (Options && _settings) { settings = move(_settings); }
+    void SetFixedAggs (Table<int> && _fixed_aggs);
 
   protected:
 
@@ -136,6 +152,27 @@ namespace amg
 	{ ENERGY::CalcQs(di, dj, Qij, Qji); }
       else
 	{ Qij = Qji = 1; }
+    }
+
+    template<class TMU> INLINE void SetQtMQ (TMU & A, const TMU & Q, const TMU & M)
+    {
+      // if constexpr(std::is_same<TMU, TM>::value)
+	// { ENERGY::QtMQ(Q, M); }
+      if constexpr(std::is_same<TMU, TM>::value)
+	{ ENERGY::SetQtMQ(1.0, A, Q, M); }
+      else // scalar
+	{ A = M; }
+    }
+
+    // A += fac * QT * M * Q
+    template<class TMU> INLINE void AddQtMQ (double fac, TMU & A, const TMU & Q, const TMU & M)
+    {
+      // if constexpr(std::is_same<TMU, TM>::value)
+	// { ENERGY::QtMQ(Q, M); }
+      if constexpr(std::is_same<TMU, TM>::value)
+	{ ENERGY::AddQtMQ(fac, A, Q, M); }
+      else // scalar
+	{ A += fac * M; }
     }
 
     template<class TMU> INLINE void ModQs (const TVD & di, const TVD & dj, TMU & Qij, TMU & Qji)

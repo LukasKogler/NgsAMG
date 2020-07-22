@@ -110,7 +110,7 @@ namespace amg
     shared_ptr<SPACEB> spaceb;
 
     /** Auxiliary space stuff **/
-    shared_ptr<ParallelDofs> aux_pds;      /** ParallelDofs for auxiliary space **/
+    shared_ptr<ParallelDofs> aux_pds;          /** ParallelDofs for auxiliary space **/
     shared_ptr<BitArray> aux_fds;              /** auxiliary space freedofs **/
     // shared_ptr<BitArray> aux_free_verts;    /** dirichlet-vertices in aux space **/
     shared_ptr<TPMAT> pmat;                    /** aux-to compound-embedding **/
@@ -118,15 +118,15 @@ namespace amg
     shared_ptr<TAUX> aux_mat;                  /** auxiliary space matrix **/
 
     /** book-keeping **/
-    int apf = 0, ape = 0, bpf = 0, bpe = 0; /** A/B-DOFs per facet/edge **/
+    int apf = 0, ape = 0, bpf = 0, bpe = 0;    /** A/B-DOFs per facet/edge **/
     bool has_e_ctrbs = false;
     bool has_a_e = false, has_b_e = false;
-    Table<int> flo_a_f, flo_a_e;            /** SpaceA DofNrs for each facet/edge/full facet **/
-    Table<int> flo_b_f, flo_b_e;            /** SpaceB DofNrs for each facet/edge/full facet **/
-    Array<double> facet_mat_data;           /** Facet matrix buffer **/
+    Table<int> flo_a_f, flo_a_e;               /** SpaceA DofNrs for each facet/edge/full facet **/
+    Table<int> flo_b_f, flo_b_e;               /** SpaceB DofNrs for each facet/edge/full facet **/
+    Array<double> facet_mat_data;              /** Facet matrix buffer **/
 
-    Array<int> a2f_facet, f2a_facet;        /** all facets <-> fine facets mappings **/
-    shared_ptr<BitArray> fine_facet;        /** is facet an "active" facet ? [[ definedon and refined can mess with this ]]**/
+    Array<int> a2f_facet, f2a_facet;           /** all facets <-> fine facets mappings **/
+    shared_ptr<BitArray> fine_facet;           /** is facet an "active" facet ? [[ definedon and refined can mess with this ]]**/
     
     /** Facet matrices: [a_e, a_f, a_e, a_f]^T \times [aux_f] **/
     Array<FlatMatrix<double>> facet_mat;
@@ -155,13 +155,19 @@ namespace amg
     shared_ptr<trans_spm_tm<TPMAT>> GetPMatT () const;
     shared_ptr<TAUX> GetAuxMat () const { return aux_mat; }
     shared_ptr<ParallelDofs> GetAuxParDofs () const { return aux_pds; }
-    shared_ptr<BitArray> GetAuxFreeDofs () const { return aux_fds; } // free_verts are after sorting
+    shared_ptr<BitArray> GetAuxFreeDofs () const { return aux_fds; } // after sorting, this becomes free_verts (for vertex-PC)
     Array<Array<shared_ptr<BaseVector>>> GetRBModes () const;
     shared_ptr<BitArray> GetFineFacets () const { return fine_facet; }
     FlatArray<int> GetFMapA2F () const { return a2f_facet; }
     FlatArray<int> GetFMapF2A () const { return f2a_facet; }
 
     Array<Vec<DPV, double>> CalcFacetFlow ();
+    Table<int> CalcFacetLoops ();
+
+    Table<int> CalcFacetLoops2d ();
+    Table<int> CalcFacetLoops3d ();
+
+    void __hacky__set__Pmat ( shared_ptr<BaseMatrix> embA, shared_ptr<BaseMatrix> embB);
 
     virtual shared_ptr<BaseVector> CreateAuxVector () const;
 
@@ -184,6 +190,9 @@ namespace amg
 
     template<ELEMENT_TYPE ET> INLINE
     void CalcFacetMat (ElementId vol_elid, int facet_nr, FlatMatrix<double> fmat, LocalHeap & lh);
+
+    template<ELEMENT_TYPE ET> INLINE
+    void CalcElTrafoMat (ElementId vol_elid, FlatMatrix<double> elmat, LocalHeap & lh);
 
     INLINE void Add_Facet (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
 			   ElementId ei, LocalHeap & lh);
@@ -225,7 +234,10 @@ namespace amg
       bool elmat_sc = false;            // Form schur-complements w.r.t aux-dofs on elmats
 
       /** Finest level Smoother **/
-      bool el_blocks = true;            // Use element-blocks (default is facet-blocks) [not great with MPI]
+      bool comp_sm = true;              // Also Smooth in Compound space
+      bool comp_sm_blocks = true;       // Use Block-Smoother in Compound space
+      bool comp_sm_blocks_el = false;   // Use element-blocks in Compound space (otherwise facet-blocks) [no benefit with MPI]
+      int comp_sm_steps = 1;            // # of smoothing steps in compound space
 
     public:
       Options () : BASE::Options() { ; }    
@@ -234,9 +246,15 @@ namespace amg
       {
 	BASE::Options::SetFromFlags(fes, flags, prefix);
 
-	aux_elmats = !flags.GetDefineFlagX("ngs_amg_aux_elmat_sc").IsFalse();
-	elmat_sc = flags.GetDefineFlagX("ngs_amg_aux_elmat_sc").IsTrue();
-	el_blocks = flags.GetDefineFlagX("ngs_amg_aux_el_blocks").IsTrue();
+	auto pfit = [&](string str) { return prefix + str; };
+
+	aux_elmats = !flags.GetDefineFlagX(pfit("aux_elmats")).IsFalse();
+	elmat_sc = flags.GetDefineFlagX(pfit("aux_elmat_sc")).IsTrue();
+
+	comp_sm           = !flags.GetDefineFlagX(pfit("comp_sm")).IsFalse();
+	comp_sm_blocks    = !flags.GetDefineFlagX(pfit("comp_sm_blocks")).IsFalse();
+	comp_sm_blocks_el =  flags.GetDefineFlagX(pfit("comp_sm_blocks_el")).IsTrue();
+	comp_sm_steps     =  flags.GetNumFlag(pfit("comp_sm_steps"), 1);
       } // BaseFacetAMGOptions :: SetFromFlags
 
     }; // class BaseAuxiliaryAMGOptions
@@ -281,6 +299,8 @@ namespace amg
     virtual void MultTransAdd (double s, const BaseVector & b, BaseVector & x) const override;
     virtual AutoVector CreateColVector () const override;
     virtual AutoVector CreateRowVector () const override;
+    virtual void AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
+				   ElementId ei, LocalHeap & lh) override;
 
     shared_ptr<EmbeddedAMGMatrix> GetEmbAMGMat () const;
 
@@ -350,16 +370,13 @@ namespace amg
 
     /** Inherited from AMG_CLASS **/
     virtual void SetUpMaps () override;
-    virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (shared_ptr<TopologicMesh> mesh) override;
+    virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (BaseAMGFactory::AMGLevel & finest_level) override;
     // virtual shared_ptr<BaseSmoother> BuildSmoother (const BaseAMGFactory::AMGLevel & amg_level) override;
     virtual shared_ptr<BaseAMGPC::Options> NewOpts () override;
     virtual void SetDefaultOptions (BaseAMGPC::Options& O) override;
     virtual void ModifyOptions (BaseAMGPC::Options & O, const Flags & flags, string prefix = "ngs_amg_") override;
 
-    virtual void AddElementMatrix (FlatArray<int> dnums, const FlatMatrix<double> & elmat,
-				   ElementId ei, LocalHeap & lh) override;
-
-  }; // class FacetWiseAuxiliarySpaceAMG
+  }; // class FacetAuxVertexAMGPC
 
   /** END FacetAuxVertexAMGPC **/
 
@@ -382,7 +399,7 @@ namespace amg
 
   template<class TSPACE, class TELEM, class TMIP> INLINE void CSDS (const TELEM & fel, const TMIP & mip, FlatMatrix<double> s, FlatMatrix<double> sd)
   {
-    fel.CalcMappedShape(mip, s);
+    fel.CalcMappedShape(mip, s); // why ??
     if constexpr (SPACE_DS_TRAIT<TSPACE>::value) {
 	fel.CalcDualShape(mip, sd);
       }

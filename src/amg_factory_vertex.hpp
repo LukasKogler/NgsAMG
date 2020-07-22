@@ -36,24 +36,30 @@ namespace amg
 
     /** State **/
     virtual BaseAMGFactory::State* AllocState () const override;
-    virtual void InitState (BaseAMGFactory::State & state, BaseAMGFactory::AMGLevel & lev) const override;
+    virtual void InitState (BaseAMGFactory::State & state, shared_ptr<BaseAMGFactory::AMGLevel> & lev) const override;
 
     /** Coarse **/
-    virtual shared_ptr<BaseCoarseMap> BuildCoarseMap (BaseAMGFactory::State & state) override;
-    virtual shared_ptr<BaseCoarseMap> BuildAggMap (BaseAMGFactory::State & state);
-    virtual shared_ptr<BaseCoarseMap> BuildECMap (BaseAMGFactory::State & state);
-    virtual shared_ptr<BaseDOFMapStep> PWProlMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<ParallelDofs> fpds, shared_ptr<ParallelDofs> cpds) override;
-    virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<TopologicMesh> fmesh) override;
-    virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap) override;
+    virtual shared_ptr<BaseCoarseMap> BuildCoarseMap (BaseAMGFactory::State & state, shared_ptr<BaseAMGFactory::LevelCapsule> & mapped_cap) override;
+    virtual shared_ptr<BaseCoarseMap> BuildAggMap (BaseAMGFactory::State & state, shared_ptr<BaseAMGFactory::LevelCapsule> & mapped_cap);
+    virtual shared_ptr<BaseCoarseMap> BuildECMap (BaseAMGFactory::State & state, shared_ptr<BaseAMGFactory::LevelCapsule> & mapped_cap);
+    virtual shared_ptr<BaseDOFMapStep> PWProlMap (shared_ptr<BaseCoarseMap> cmap,
+						  shared_ptr<BaseAMGFactory::LevelCapsule> fcap, shared_ptr<BaseAMGFactory::LevelCapsule> ccap) override;
+    virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseAMGFactory::LevelCapsule> fcap) override;
+    virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap, shared_ptr<BaseAMGFactory::LevelCapsule> fcap) override;
     // shared_ptr<BaseDOFMapStep> SP_impl (shared_ptr<ProlMap<TSPM_TM>> pw_prol, shared_ptr<TMESH> fmesh, FlatArray<int> vmap);
 
     virtual void CalcECOLWeightsSimple (BaseAMGFactory::State & state, Array<double> & vcw, Array<double> & ecw);
     virtual void CalcECOLWeightsRobust (BaseAMGFactory::State & state, Array<double> & vcw, Array<double> & ecw);
 
 
+    virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap_impl (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap,
+							     shared_ptr<BaseAMGFactory::LevelCapsule> fcap);
+    virtual shared_ptr<BaseDOFMapStep> SmoothedProlMap_impl_v2 (shared_ptr<ProlMap<TSPM_TM>> pw_step, shared_ptr<BaseCoarseMap> cmap,
+								shared_ptr<BaseAMGFactory::LevelCapsule> fcap);
+
     /** Discard **/
     virtual bool TryDiscardStep (BaseAMGFactory::State & state) override;
-    virtual shared_ptr<BaseDiscardMap> BuildDiscardMap (BaseAMGFactory::State & state);
+    virtual shared_ptr<BaseDiscardMap> BuildDiscardMap (BaseAMGFactory::State & state, shared_ptr<BaseAMGFactory::LevelCapsule> & c_cap);
 
   }; // VertexAMGFactory
     

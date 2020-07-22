@@ -476,9 +476,39 @@ namespace amg
   } // HierarchicVWC :: Collapse
 
 
+  // shared_ptr<BaseCoarseMap> BaseCoarseMap :: Concatenate (shared_ptr<BaseCoarseMap> right_map)
+  // {
+  //   auto cmap = make_shared<BaseCoarseMap>(this->mesh, right_map->mapped_mesh);
+  //   for ( NODE_TYPE NT : { NT_VERTEX, NT_EDGE, NT_FACE, NT_CELL } ) {
+  //     cmap->NN[NT] = this->NN[NT];
+  //     cmap->mapped_NN[NT] = right_map->mapped_NN[NT];
+  //     FlatArray<int> lmap = this->node_maps[NT], rmap = right_map->node_maps[NT];
+  //     Array<int> & cnm = cmap->node_maps[NT];
+  //     cnm.SetSize(this->NN[NT]);
+  //     // if (NT == NT_VERTEX) {
+  // 	// cout << "conc, lmap = "; prow2(lmap); cout << endl;
+  // 	// cout << "conc, rmap = "; prow2(rmap); cout << endl;
+  //     // }
+  //     for (auto k : Range(this->NN[NT])) {
+  // 	auto midnum = lmap[k];
+  // 	cnm[k] = (midnum == -1) ? -1 : rmap[midnum];
+  // 	// if (NT == NT_VERTEX)
+  // 	  // cout << k << "->" << midnum << "->" << cnm[k] << endl;
+  //     }
+  //   }
+  //   return cmap;
+  // } // BaseCoarseMap::Concatenate
+
+
   shared_ptr<BaseCoarseMap> BaseCoarseMap :: Concatenate (shared_ptr<BaseCoarseMap> right_map)
   {
     auto cmap = make_shared<BaseCoarseMap>(this->mesh, right_map->mapped_mesh);
+    SetConcedMap(right_map, cmap);
+    return cmap;
+  } // BaseCoarseMap::Concatenate
+
+  void BaseCoarseMap :: SetConcedMap (shared_ptr<BaseCoarseMap> right_map, shared_ptr<BaseCoarseMap> cmap)
+  {
     for ( NODE_TYPE NT : { NT_VERTEX, NT_EDGE, NT_FACE, NT_CELL } ) {
       cmap->NN[NT] = this->NN[NT];
       cmap->mapped_NN[NT] = right_map->mapped_NN[NT];
@@ -496,8 +526,7 @@ namespace amg
 	  // cout << k << "->" << midnum << "->" << cnm[k] << endl;
       }
     }
-    return cmap;
-  } // BaseCoarseMap::Concatenate
+  } // BaseCoarseMap::SetConecMap
 
 
   template<class TMESH>
