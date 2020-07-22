@@ -1711,7 +1711,7 @@ namespace amg
     Array<int> neib_ecnt(30), qsis(30);
     Array<double> ntraces(30);
     auto init_agglomerate = [&](auto v, auto v_eqc, bool force) LAMBDA_INLINE {
-      cout << endl << " INIT AGG FOR " << v << " from eqc " << v_eqc << " (force " << force << ")" << endl;
+      // cout << endl << " INIT AGG FOR " << v << " from eqc " << v_eqc << " (force " << force << ")" << endl;
       auto agg_nr = agglomerates.Size();
       agglomerates.Append(Agglomerate(v, agg_nr)); // TODO: does this do an allocation??
       agg_diag.Append(repl_diag[v]);
@@ -1799,7 +1799,7 @@ namespace amg
 	// prow(neibs_v); cout << endl;
 	// prow(neib_ecnt); cout << endl;
 	// prow(qsis); cout << endl;
-	cout << endl;
+	// cout << endl;
 	while(qss>0) {
 	  auto n_ind = qsis[first_valid_ind + qss - 1]; 
 	  auto N = neibs_v[n_ind]; dummyb = N;
