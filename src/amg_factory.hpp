@@ -156,7 +156,7 @@ namespace amg
     auto & arr = flags.GetNumListFlag(key+"_spec");
     spec_opt.SetSize(arr.Size()); spec_opt = default_opt;
     for (auto k : Range(spec_opt))
-      { spec_opt[k] = int(arr[k]); }
+      { spec_opt[k] = arr[k]; }
   } // SpecOpt<bool>::SetFromFlags
 
 
