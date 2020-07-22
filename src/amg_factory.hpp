@@ -123,13 +123,13 @@ namespace amg
   }; // struct SpecOpt
 
   template<class OC>
-  void SpecOpt<OC> :: SetFromFlags (const Flags & flags, string key)
+  INLINE void SpecOpt<OC> :: SetFromFlags (const Flags & flags, string key)
   {
     throw Exception("SFF not overloaded!!");
   } // SpecOpt::SetFromFlags
 
   template<>
-  void SpecOpt<bool> :: SetFromFlags (const Flags & flags, string key)
+  INLINE void SpecOpt<bool> :: SetFromFlags (const Flags & flags, string key)
   {
     if (default_opt) { default_opt = !flags.GetDefineFlagX(key).IsFalse(); }
     else { default_opt = flags.GetDefineFlagX(key).IsTrue(); }
@@ -140,7 +140,7 @@ namespace amg
   } // SpecOpt<bool>::SetFromFlags
 
   template<>
-  void SpecOpt<xbool> :: SetFromFlags (const Flags & flags, string key)
+  INLINE void SpecOpt<xbool> :: SetFromFlags (const Flags & flags, string key)
   {
     default_opt = flags.GetDefineFlagX(key);
     auto & arr = flags.GetNumListFlag(key+"_spec");
@@ -150,7 +150,7 @@ namespace amg
   } // SpecOpt<bool>::SetFromFlags
 
   template<>
-  void SpecOpt<double> :: SetFromFlags (const Flags & flags, string key)
+  INLINE void SpecOpt<double> :: SetFromFlags (const Flags & flags, string key)
   {
     default_opt = flags.GetNumFlag(key, default_opt);
     auto & arr = flags.GetNumListFlag(key+"_spec");
@@ -161,7 +161,7 @@ namespace amg
 
 
   template<>
-  void SpecOpt<int> :: SetFromFlags (const Flags & flags, string key)
+  INLINE void SpecOpt<int> :: SetFromFlags (const Flags & flags, string key)
   {
     default_opt = int(flags.GetNumFlag(key, double(default_opt)));
     auto & arr = flags.GetNumListFlag(key+"_spec");
