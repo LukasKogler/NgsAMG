@@ -58,13 +58,14 @@ namespace amg
     set_opt_kv(cinv_type_loc, "cinv_type_loc", { "pardiso", "pardisospd", "sparsecholesky", "superlu", "superlu_dist", "mumps", "umfpack" },
 	       Array<INVERSETYPE>({ PARDISO, PARDISOSPD, SPARSECHOLESKY, SUPERLU, SUPERLU_DIST, MUMPS, UMFPACK }));
 
-    Array<string> sm_names ( { "gs", "bgs" } );
-    Array<Options::SM_TYPE> sm_types ( { Options::SM_TYPE::GS, Options::SM_TYPE::BGS } );
-    set_enum_opt(sm_type, "sm_type", { "gs", "bgs" }, Options::SM_TYPE::GS);
-    auto & spec_sms = flags.GetStringListFlag(prefix + "spec_sm_types");
-    spec_sm_types.SetSize(spec_sms.Size());
-    for (auto k : Range(spec_sms.Size()))
-      { set_opt_sv(spec_sm_types[k], spec_sms[k], sm_names, sm_types); }
+    sm_type.SetFromFlagsEnum(flags, prefix+"sm_type", prefix+"spec_sm_types", { "gs", "bgs" });
+    // Array<string> sm_names ( { "gs", "bgs" } );
+    // Array<Options::SM_TYPE> sm_types ( { Options::SM_TYPE::GS, Options::SM_TYPE::BGS } );
+    // set_enum_opt(sm_type, "sm_type", { "gs", "bgs" }, Options::SM_TYPE::GS);
+    // auto & spec_sms = flags.GetStringListFlag(prefix + "spec_sm_types");
+    // spec_sm_types.SetSize(spec_sms.Size());
+    // for (auto k : Range(spec_sms.Size()))
+    //   { set_opt_sv(spec_sm_types[k], spec_sms[k], sm_names, sm_types); }
 
     gs_ver = Options::GS_VER(max(0, min(3, int(flags.GetNumFlag(prefix + "gs_ver", 3) - 1))));
 
@@ -413,10 +414,9 @@ namespace amg
     // cout << " smoother, mat " << amg_level.cap->mat->Height() << " x " << amg_level.cap->mat->Width() << endl;
     // cout << " pds " << amg_level.cap->pardofs->GetNDofLocal() << endl;
 
-    Options::SM_TYPE sm_type = O.sm_type;
-
-    if (O.spec_sm_types.Size() > amg_level.level)
-      { sm_type = O.spec_sm_types[amg_level.level]; }
+    Options::SM_TYPE sm_type = O.sm_type.GetOpt(amg_level.level);
+    // if (O.spec_sm_types.Size() > amg_level.level)
+    //   { sm_type = O.spec_sm_types[amg_level.level]; }
 
     shared_ptr<ParallelDofs> pardofs = (amg_level.level == 0) ? finest_mat->GetParallelDofs() : amg_level.cap->pardofs;
     shared_ptr<BaseSparseMatrix> spmat;

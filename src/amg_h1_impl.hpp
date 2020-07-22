@@ -205,8 +205,8 @@ namespace amg {
   void VertexAMGPC<FCC> :: ModifyOptions (BaseAMGPC::Options & aO, const Flags & flags, string prefix)
   {
     auto & O(static_cast<Options&>(aO));
-    if ( (O.sm_type == Options::SM_TYPE::BGS) ||
-	 (O.spec_sm_types.Pos(Options::SM_TYPE::BGS) != -1) )
+    if ( (O.sm_type.default_opt == Options::SM_TYPE::BGS) ||
+	 (O.sm_type.spec_opt.Pos(Options::SM_TYPE::BGS) != -1) )
       { O.keep_grid_maps = true; }
   } // VertexAMGPC::ModifyOptions
 

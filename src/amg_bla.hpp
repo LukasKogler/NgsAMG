@@ -83,7 +83,11 @@ namespace amg
       for (auto j : Range(M))
 	{ projR(k,j) *= inv_diags[k] * inv_diags[j]; }
 
-    FlatMatrix<double> evecsPR(M, M, lh);
+    // FlatMatrix<double> evecsPR(M, M, lh);
+    // FlatVector<double> evalsPR(M, lh);
+    // TimedLapackEigenValuesSymmetric(projR, evalsPR, evecsPR);
+
+    FlatMatrix<double> evecsPR(0, 0, lh);
     FlatVector<double> evalsPR(M, lh);
     TimedLapackEigenValuesSymmetric(projR, evalsPR, evecsPR);
 
@@ -358,7 +362,6 @@ namespace amg
   template<int IMIN, int H, int JMIN, int W, class TMAT>
   FlatMat<IMIN, H, JMIN, W, TMAT> MakeFlatMat (const TMAT & m)
   { return FlatMat<IMIN,H,JMIN,W,TMAT>(m); }
-
 
 } // namespace amg
 

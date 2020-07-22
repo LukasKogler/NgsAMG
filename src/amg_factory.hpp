@@ -79,6 +79,40 @@ namespace amg
 
   /** Options **/
 
+  template<class OC>
+  struct SpecOpt
+  {
+  public:
+    OC default_opt;
+    Array<OC> spec_opt;
+    SpecOpt () : spec_opt(0) { ; }
+    SpecOpt (OC _default_opt) : default_opt(_default_opt), spec_opt(0) { ; }
+    SpecOpt (OC _default_opt, Array<OC> & _spec_opt) : default_opt(_default_opt), spec_opt(_spec_opt) { ; }
+    SpecOpt (SpecOpt<OC> && other) : default_opt(other.default_opt), spec_opt(move(other.spec_opt)) { ; }
+    SpecOpt (const Flags & flags, OC defopt, string defkey, string speckey, Array<string> optkeys)
+      : SpecOpt(defopt)
+    { SetFromFlagsEnum(flags, defkey, speckey, move(optkeys)); }
+    SpecOpt<OC> & operator = (OC defoc) {
+      default_opt = defoc;
+      spec_opt.SetSize0();
+      return *this;
+    }
+    void SetFromFlagsEnum (const Flags & flags, string defkey, string speckey, Array<string> optkeys)
+    {
+      auto setoc = [&](auto & oc, string val) {
+	int index;
+	if ( (index = optkeys.Pos(val)) != -1)
+	  { oc = OC(index); }
+      };
+      setoc(default_opt, flags.GetStringFlag(defkey, ""));
+      auto & specfa = flags.GetStringListFlag(speckey);
+      spec_opt.SetSize(specfa.Size()); spec_opt = default_opt;
+      for (auto k : Range(spec_opt))
+	{ setoc(spec_opt[k], specfa[k]); }
+    }
+    OC GetOpt (int level) { return (level < spec_opt.Size()) ? spec_opt[level] : default_opt; }
+  };
+
   class BaseAMGFactory :: Options
   {
   public:

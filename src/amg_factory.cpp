@@ -280,6 +280,10 @@ namespace amg
       f_lev->crs_map = nullptr;
     }
 
+    // cout << " CLEV ECON " << endl;
+    // cout << *c_lev->cap->mesh->GetEdgeCM() << endl;
+    // cout << endl;
+
     /** Recursive call (or return) **/
     if ( (c_lev->cap->mesh == nullptr) || (c_lev->cap->mat == nullptr) ) // dropped out (redundand "||" ?)
       { amg_levels.Append(move(c_lev)); return; }

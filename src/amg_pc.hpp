@@ -111,8 +111,9 @@ namespace amg
     enum SM_TYPE : char /** available smoothers **/
       { GS = 0,     // (l1/hybrid - ) Gauss-Seidel
 	BGS = 1 };  // Block - (l1/hybrid - ) Gauss-Seidel 
-    SM_TYPE sm_type = SM_TYPE::GS;       // the default smoother type
-    Array<SM_TYPE> spec_sm_types;        // specific smoothers for levels
+    SpecOpt<SM_TYPE> sm_type = SM_TYPE::GS; // smoother type
+    // SM_TYPE sm_type = SM_TYPE::GS;       
+    // Array<SM_TYPE> spec_sm_types;        // specific smoothers for levels
 
     enum GS_VER : char /** different hybrid GS versions (mostly for testing) **/
       { VER1 = 0,    // old version

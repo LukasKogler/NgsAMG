@@ -44,7 +44,9 @@ namespace amg
 
     /** AGG **/
     bool agg_neib_boost = false;
+    bool lazy_neib_boost = false;
     bool print_aggs = false;                    // print agglomerates (for debugging purposes)
+    SpecOpt<AVG_TYPE> agg_minmax_avg;
 
   public:
 
@@ -79,11 +81,13 @@ namespace amg
       set_bool(ecw_robust, "ecw_robust");
       ecw_minmax = flags.GetDefineFlagX(prefix + "ecw_minmax");
       ecw_stab_hack = flags.GetDefineFlagX(prefix + "ecw_stab_hack");
+      agg_minmax_avg.SetFromFlagsEnum(flags, prefix + "agg_minmax_avg", prefix + "spec_minmax_avg", {"min", "geom", "harm", "alg", "max"});
 
       set_num(min_ecw, "edge_thresh");
       set_num(min_vcw, "vert_thresh");
       set_num(min_vcw, "vert_thresh");
       set_bool(agg_neib_boost, "agg_neib_boost");
+      set_bool(lazy_neib_boost, "lazy_neib_boost");
       set_bool(print_aggs, "print_aggs");
 
       set_bool(sp_aux_only, "sp_aux_only");
@@ -156,15 +160,20 @@ namespace amg
     auto mesh = dynamic_pointer_cast<TMESH>(state.curr_cap->mesh);
     if (mesh == nullptr)
       { throw Exception(string("Invalid mesh type ") + typeid(*state.curr_cap->mesh).name() + string(" for BuildAggMap!")); }
+
+    const int level = state.level[0];
+
     agg_opts.edge_thresh = O.min_ecw;
     agg_opts.vert_thresh = O.min_vcw;
     agg_opts.cw_geom = O.ecw_geom;
     agg_opts.neib_boost = O.agg_neib_boost;
+    agg_opts.lazy_neib_boost = O.lazy_neib_boost;
     agg_opts.robust = O.ecw_robust;
     agg_opts.use_stab_ecw_hack = O.ecw_stab_hack;
     agg_opts.use_minmax_soc = O.ecw_minmax;
     agg_opts.dist2 = ( state.level[1] == 0 ) && ( state.level[0] < O.n_levels_d2_agg );
     agg_opts.print_aggs = O.print_aggs;
+    agg_opts.minmax_avg = O.agg_minmax_avg.GetOpt(level);
     // auto agglomerator = make_shared<Agglomerator<FACTORY>>(mesh, state.free_nodes, move(agg_opts));
 
     auto agglomerator = make_shared<AGG_CLASS>(mesh, state.curr_cap->free_nodes, move(agg_opts));
@@ -376,6 +385,7 @@ namespace amg
   shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: SmoothedProlMap_impl_v2 (shared_ptr<ProlMap<TSPM_TM>> pw_step, shared_ptr<BaseCoarseMap> cmap,
 											     shared_ptr<BaseAMGFactory::LevelCapsule> fcap)
   {
+    static Timer t("SmoothedProlMap_hyb"); RegionTimer rt(t);
     /** Use fine level matrix to smooth prolongation ("classic prol") where we can, that is whenever:
 	   I) We would not break MAX_PER_ROW, so if all algebraic neibs map to <= MAX_PER_ROW coarse verts.
 	  II) We would not break the hierarchy, so if all algebraic neibs map to coarse verts in the same, or higher EQCs
@@ -801,7 +811,7 @@ namespace amg
   template<class ENERGY, class TMESH, int BS>
   shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseAMGFactory::LevelCapsule> fcap)
   {
-    static Timer t("SmoothedProlMap"); RegionTimer rt(t);
+    static Timer t("SmoothedProlMap_cap"); RegionTimer rt(t);
 
     shared_ptr<TopologicMesh> tfmesh = fcap->mesh;
 
@@ -1154,7 +1164,7 @@ namespace amg
   template<class ENERGY, class TMESH, int BS>
   shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: SmoothedProlMap_impl (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap, shared_ptr<BaseAMGFactory::LevelCapsule> fcap)
   {
-    static Timer t("SmoothedProlMap"); RegionTimer rt(t);
+    static Timer t("SmoothedProlMap_map"); RegionTimer rt(t);
 
     if (pw_step == nullptr)
       { throw Exception("Need pw-map for SmoothedProlMap!"); }

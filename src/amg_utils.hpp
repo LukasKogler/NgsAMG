@@ -4,6 +4,13 @@
 namespace amg
 {
 
+  enum AVG_TYPE : char { MIN,    // min(a,b)
+			 GEOM,   // sqrt(ab)
+			 HARM,   // 2 (ainv + binv)^{-1}
+			 ALG,    // (a+b)/2
+			 MAX     // max(a,b)
+  };
+
   template<int D> INLINE void GetNodePos (NodeId id, const MeshAccess & ma, Vec<D> & pos, Vec<D> & t) {
     auto set_pts = [&](auto pnums) LAMBDA_INLINE {
       pos = 0;
@@ -994,6 +1001,7 @@ namespace amg
   INLINE void CalcPseudoInverseFM (FlatMatrix<double> & M, LocalHeap & lh)
   {
     static Timer t("CalcPseudoInverseFM"); RegionTimer rt(t);
+    HeapReset hr(lh);
     // static Timer tl("CalcPseudoInverse - Lapck");
     const int N = M.Height();
     FlatMatrix<double> evecs(N, N, lh);
@@ -1019,6 +1027,49 @@ namespace amg
     else
       { M = Trans(evecs) * evecs; }
   }
+
+
+  template<class T>
+  INLINE void CalcPseudoInverse_impl (FlatMatrix<double> & M, T & out, LocalHeap & lh)
+  {
+    static Timer t("CalcPseudoInverse_impl"); RegionTimer rt(t);
+    // static Timer tl("CalcPseudoInverse - Lapck");
+    const int N = M.Height();
+    FlatMatrix<double> evecs(N, N, lh);
+    FlatVector<double> evals(N, lh);
+    TimedLapackEigenValuesSymmetric(M, evals, evecs);
+    double tol = 0; for (auto v : evals) tol += v;
+    tol = 1e-12 * tol; tol = max2(tol, 1e-15);
+    int DK = 0; // dim kernel
+    for (auto & v : evals) {
+      if (v > tol)
+	{ v = 1/sqrt(v); }
+      else {
+	DK++;
+	v = 0;
+      }
+    }
+    int NS = N-DK;
+    for (auto i : Range(N))
+      for (auto j : Range(N))
+	evecs(i,j) *= evals(i);
+    if (DK > 0)
+      { out = Trans(evecs.Rows(DK, N)) * evecs.Rows(DK, N); }
+    else
+      { out = Trans(evecs) * evecs; }
+  }
+
+
+  template<int N>
+  INLINE void CalcPseudoInverse (Mat<N, N, double> & M, LocalHeap & lh)
+  {
+    static Timer t("CalcPseudoInverse expr");
+    HeapReset hr(lh);
+    FlatMatrix<double> Mf(N,N,lh);
+    Mf = M;
+    CalcPseudoInverse_impl(Mf, M, lh);
+  }
+
 
   template<int IMIN, int N, int NN> INLINE void RegTM (Mat<NN,NN,double> & m, double maxadd = -1)
   {

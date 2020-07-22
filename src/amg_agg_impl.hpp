@@ -1146,10 +1146,12 @@ namespace amg
     const bool geom = settings.cw_geom;
     const int MIN_NEW_AGG_SIZE = 2;
     const bool enable_neib_boost = settings.neib_boost;
+    const bool lazy_neib_boost = settings.lazy_neib_boost;
     /** use if explicitely turned on, or if harmonic mean and not turned off **/
     const bool use_stab_ecw_hack = settings.use_stab_ecw_hack.IsTrue() || ( (!settings.use_stab_ecw_hack.IsFalse()) && (!geom) );
     /** use if explicitely turned on, or if not turned off and geometric mean is used **/
     const bool use_minmax_soc = settings.use_minmax_soc.IsTrue() || ( (!settings.use_minmax_soc.IsFalse()) && geom );
+    const AVG_TYPE minmax_avg = settings.minmax_avg;
 
     FlatArray<TVD> vdata = get<0>(tm_mesh->Data())->Data();
     FlatArray<TMU> edata = GetEdgeData<TMU>();
@@ -1172,6 +1174,8 @@ namespace amg
     BitArray marked(M.template GetNN<NT_VERTEX>()); marked.Clear();
     Array<int> dist2agg(M.template GetNN<NT_VERTEX>()); dist2agg = -1;
     v_to_agg.SetSize(M.template GetNN<NT_VERTEX>()); v_to_agg = -1;
+
+    LocalHeap lh(10 * 1024 * 1024, "agglh", false);
 
     if (fixed_aggs.Size()) {
       for (auto k : Range(fixed_aggs.Size())) {
@@ -1202,7 +1206,71 @@ namespace amg
     SetIdentity(Esum); SetIdentity(addE); SetIdentity(Q2); SetIdentity(Aaa); SetIdentity(Abb);
     
     /** Add a contribution from a neighbour common to both vertices of an edge to the edge's matrix **/
+    // auto add_neib_edge = [&](const TVD & h_data, const auto & amems, const auto & bmems, auto N, auto & mat) LAMBDA_INLINE {
+    //   constexpr int N2 = mat_traits<TMU>::HEIGHT;
+    //   auto rowis = econ.GetRowIndices(N);
+    //   // cout << " add neib " << N << endl;
+    //   // cout << " amems "; prow(amems); cout << endl;
+    //   // cout << " bmems "; prow(bmems); cout << endl;
+    //   Ein = 0;
+    //   intersect_sorted_arrays(rowis, amems, neibs_in_agg);
+    //   // cout << " conections to a: "; prow(neibs_in_agg); cout << endl;
+    //   for (auto amem : neibs_in_agg) {
+    // 	ModQij(vdata[N], vdata[amem], Q2);
+    // 	// Ein += Trans(Q2) * edata[int(econ(amem,N))] * Q2;
+    // 	Add_AT_B_A(1.0, Ein, Q2, edata[int(econ(amem,N))]);
+    //   }
+    //   // prt_evv<N2>(Ein, "--- Ein", false);
+    //   Ejn = 0;
+    //   intersect_sorted_arrays(rowis, bmems, neibs_in_agg);
+    //   // cout << " conections to b: "; prow(neibs_in_agg); cout << endl;
+    //   for (auto bmem : neibs_in_agg) {
+    // 	ModQij(vdata[N], vdata[bmem], Q2);
+    // 	// Ejn += Trans(Q2) * edata[int(econ(bmem,N))] * Q2;
+    // 	Add_AT_B_A(1.0, Ejn, Q2, edata[int(econ(bmem,N))]);
+    //   }
+    //   // prt_evv<N2>(Ejn, "--- Ejn", false);
+    //   Esum = Ein + Ejn;
+    //   // prt_evv<N2>(Esum, "--- Esum", false);
+    //   if constexpr(is_same<TMU, double>::value) { CalcInverse(Esum); }
+    //   else { CalcPseudoInverse<mat_traits<TMU>::HEIGHT>(Esum); } // CalcInverse(Esum); // !! pesudo inv for 3d elast i think !!
+    //   // addE = Ein * Esum * Ejn;
+    //   addE = TripleProd(Ein, Esum, Ejn);
+    //   // prt_evv<N2>(addE, "--- addE", false);
+    //   ModQHh(h_data, vdata[N], Q2); // QHN
+    //   // mat += 2 * Trans(Q2) * addE * Q2;
+    //   Add_AT_B_A (2.0, mat, Q2, addE);
+    //   // TM update = 2 * Trans(Q2) * addE * Q2;
+    //   // prt_evv<N2>(update, "--- update", false);
+    //   // cout << " UPDATED MAT EVS: " << endl;
+    //   // prt_evv<N2>(mat, "intermed. emat");
+    // }; // add_neib_edge
+
+
+    /** Add a contribution from a neighbour common to both vertices of an edge to the edge's matrix.
+	Lazy version where we only compute traces and multiply by a factor. **/
+    auto add_neib_edge_lazy = [&](const TVD & h_data, const auto & amems, const auto & bmems, auto N, auto & mat) LAMBDA_INLINE {
+      double Ein = 0, Ejn = 0;
+      constexpr int N2 = mat_traits<TMU>::HEIGHT;
+      auto rowis = econ.GetRowIndices(N);
+      intersect_sorted_arrays(rowis, amems, neibs_in_agg);
+      for (auto amem : neibs_in_agg)
+	{ Ein += calc_trace(edata[int(econ(amem,N))]); }
+      Ejn = 0;
+      intersect_sorted_arrays(rowis, bmems, neibs_in_agg);
+      for (auto bmem : neibs_in_agg)
+	{ Ejn += calc_trace(edata[int(econ(bmem,N))]); }
+      /** tr(fac*mat) = tr(mat + hm*Id) **/
+      double hm = 2.0 * (Ein * Ejn) / (Ein + Ejn);
+      mat *= (1 + hm/calc_trace(mat));
+    };
+
+    /** Add a contribution from a neighbour common to both vertices of an edge to the edge's matrix **/
     auto add_neib_edge = [&](const TVD & h_data, const auto & amems, const auto & bmems, auto N, auto & mat) LAMBDA_INLINE {
+      if (lazy_neib_boost) {
+	add_neib_edge_lazy(h_data, amems, bmems, N, mat);
+	return;
+      }
       constexpr int N2 = mat_traits<TMU>::HEIGHT;
       auto rowis = econ.GetRowIndices(N);
       // cout << " add neib " << N << endl;
@@ -1214,7 +1282,8 @@ namespace amg
       for (auto amem : neibs_in_agg) {
 	ModQij(vdata[N], vdata[amem], Q2);
 	// Ein += Trans(Q2) * edata[int(econ(amem,N))] * Q2;
-	Add_AT_B_A(1.0, Ein, Q2, edata[int(econ(amem,N))]);
+	// Add_AT_B_A(1.0, Ein, Q2, edata[int(econ(amem,N))]);
+	AddQtMQ(1.0, Ein, Q2, edata[int(econ(amem,N))]);
       }
       // prt_evv<N2>(Ein, "--- Ein", false);
       Ejn = 0;
@@ -1223,24 +1292,33 @@ namespace amg
       for (auto bmem : neibs_in_agg) {
 	ModQij(vdata[N], vdata[bmem], Q2);
 	// Ejn += Trans(Q2) * edata[int(econ(bmem,N))] * Q2;
-	Add_AT_B_A(1.0, Ejn, Q2, edata[int(econ(bmem,N))]);
+	// Add_AT_B_A(1.0, Ejn, Q2, edata[int(econ(bmem,N))]);
+	AddQtMQ(1.0, Ejn, Q2, edata[int(econ(bmem,N))]);
       }
       // prt_evv<N2>(Ejn, "--- Ejn", false);
       Esum = Ein + Ejn;
+
       // prt_evv<N2>(Esum, "--- Esum", false);
+      // if constexpr(is_same<TMU, double>::value) { CalcInverse(Esum); }
+      // else { CalcPseudoInverse<mat_traits<TMU>::HEIGHT>(Esum); } // CalcInverse(Esum); // !! pesudo inv for 3d elast i think !!
+
       if constexpr(is_same<TMU, double>::value) { CalcInverse(Esum); }
-      else { CalcPseudoInverse<mat_traits<TMU>::HEIGHT>(Esum); } // CalcInverse(Esum); // !! pesudo inv for 3d elast i think !!
+      else { CalcPseudoInverse(Esum, lh); } // CalcInverse(Esum); // !! pesudo inv for 3d elast i think !!
+
       // addE = Ein * Esum * Ejn;
       addE = TripleProd(Ein, Esum, Ejn);
       // prt_evv<N2>(addE, "--- addE", false);
       ModQHh(h_data, vdata[N], Q2); // QHN
       // mat += 2 * Trans(Q2) * addE * Q2;
-      Add_AT_B_A (2.0, mat, Q2, addE);
+      // Add_AT_B_A (2.0, mat, Q2, addE);
+      AddQtMQ (2.0, mat, Q2, addE);
       // TM update = 2 * Trans(Q2) * addE * Q2;
       // prt_evv<N2>(update, "--- update", false);
       // cout << " UPDATED MAT EVS: " << endl;
       // prt_evv<N2>(mat, "intermed. emat");
     }; // add_neib_edge
+
+
     /** Calculate the strength of connection between two agglomerates
 	(or an agglomerate and a vertex, or two vertices) **/
 
@@ -1420,7 +1498,8 @@ namespace amg
     	    TVD h_data = ENERGY::CalcMPData(vdata[amem], vdata[bmem]);
     	    ModQHh (H_data, h_data, Q);
     	    // emat += Trans(Q) * edata[eid] * Q;
-    	    Add_AT_B_A(1.0, emat, Q, edata[eid]);
+    	    // Add_AT_B_A(1.0, emat, Q, edata[eid]);
+    	    AddQtMQ(1.0, emat, Q, edata[eid]);
     	  }
     	}
     	// prt_evv<N>(emat, "pure emat");
@@ -1519,18 +1598,26 @@ namespace amg
       /** This is a bit ugly, but i want to avoid CalcSOC1/2, that compiles too long. Here, calc_soc_mats is only called ONCE!**/
       double mmev = 1;
       if (use_minmax_soc) {
-	double mtr = 0;
+	double mtra = 0, mtrb = 0;
 	for (auto amem : memsa) { // get max trace of edge mat leading outwards
 	  auto rvs = econ.GetRowValues(amem);
 	  iterate_anotb(econ.GetRowIndices(amem), memsa, [&](auto inda) LAMBDA_INLINE {
-	      mtr = max2(mtr, calc_trace(edata[int(rvs[inda])]));
+	      mtra = max2(mtra, calc_trace(edata[int(rvs[inda])]));
 	    });
 	}
 	for (auto bmem : memsb) { // get max trace of edge mat leading outwards
 	  auto rvs = econ.GetRowValues(bmem);
 	  iterate_anotb(econ.GetRowIndices(bmem), memsb, [&](auto indb) LAMBDA_INLINE {
-	      mtr = max2(mtr, calc_trace(edata[int(rvs[indb])]));
+	      mtrb = max2(mtrb, calc_trace(edata[int(rvs[indb])]));
 	    });
+	}
+	double mtr = 0;;
+	switch(minmax_avg) {
+	case(MIN): { mtr = min(mtra, mtrb); break; }
+	case(GEOM): { mtr = sqrt(mtra * mtrb); break; }
+	case(HARM): { mtr = 2 * (mtra * mtrb) / (mtra + mtrb); break; }
+	case(ALG): { mtr = (mtra + mtrb) / 2; break; }
+	case(MAX): { mtr = max(mtra, mtrb); break; }
 	}
 	mmev = calc_trace(emat) / mtr;
       }
@@ -1624,7 +1711,7 @@ namespace amg
     Array<int> neib_ecnt(30), qsis(30);
     Array<double> ntraces(30);
     auto init_agglomerate = [&](auto v, auto v_eqc, bool force) LAMBDA_INLINE {
-      // cout << endl << " INIT AGG FOR " << v << " from eqc " << v_eqc << " (force " << force << ")" << endl;
+      cout << endl << " INIT AGG FOR " << v << " from eqc " << v_eqc << " (force " << force << ")" << endl;
       auto agg_nr = agglomerates.Size();
       agglomerates.Append(Agglomerate(v, agg_nr)); // TODO: does this do an allocation??
       agg_diag.Append(repl_diag[v]);
@@ -1651,8 +1738,8 @@ namespace amg
       for (auto j : Range(ntraces)) {
 	auto indN = qsis[j];
 	auto N = neibs_v[indN];
-	// cout << " try for first neib " << N << " with trace " << ntraces[indN] << endl;
 	if ( may_check_neib(N) ) {
+	  // cout << " try for first neib " << N << " with trace " << ntraces[indN] << endl;
 	  dummyb = N;
 	  auto soc = CalcSOC (v, agg.members(), aggd,
 			      N, dummyb, repl_diag[N],
@@ -1712,6 +1799,7 @@ namespace amg
 	// prow(neibs_v); cout << endl;
 	// prow(neib_ecnt); cout << endl;
 	// prow(qsis); cout << endl;
+	cout << endl;
 	while(qss>0) {
 	  auto n_ind = qsis[first_valid_ind + qss - 1]; 
 	  auto N = neibs_v[n_ind]; dummyb = N;
@@ -1826,9 +1914,11 @@ namespace amg
 	ModQs(vdata[edge.v[0]], vdata[edge.v[1]], Qij, Qji);
 	const auto & em = edata[edge.id];
 	// repl_diag[edge.v[0]] += Trans(Qij) * em * Qij;
-	Add_AT_B_A(1.0, repl_diag[edge.v[0]], Qij, em);
+	// Add_AT_B_A(1.0, repl_diag[edge.v[0]], Qij, em);
+	AddQtMQ(1.0, repl_diag[edge.v[0]], Qij, em);
 	// repl_diag[edge.v[1]] += Trans(Qji) * em * Qji;
-	Add_AT_B_A(1.0, repl_diag[edge.v[1]], Qji, em);
+	// Add_AT_B_A(1.0, repl_diag[edge.v[1]], Qji, em);
+	AddQtMQ(1.0, repl_diag[edge.v[1]], Qji, em);
       }, true); // only master, we cumulate this afterwards
     M.template AllreduceNodalData<NT_VERTEX>(repl_diag, [&](auto tab) LAMBDA_INLINE { return sum_table(tab); });
 

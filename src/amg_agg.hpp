@@ -105,9 +105,11 @@ namespace amg
       int min_new_aggs = 3;
       bool robust = true;
       bool neib_boost = true;
+      bool lazy_neib_boost = false;
       bool print_aggs = false;
       xbool use_stab_ecw_hack = maybe;
       xbool use_minmax_soc = maybe;
+      AVG_TYPE minmax_avg = MIN;
     };
 
   protected:
@@ -160,6 +162,17 @@ namespace amg
 	{ ENERGY::SetQtMQ(1.0, A, Q, M); }
       else // scalar
 	{ A = M; }
+    }
+
+    // A += fac * QT * M * Q
+    template<class TMU> INLINE void AddQtMQ (double fac, TMU & A, const TMU & Q, const TMU & M)
+    {
+      // if constexpr(std::is_same<TMU, TM>::value)
+	// { ENERGY::QtMQ(Q, M); }
+      if constexpr(std::is_same<TMU, TM>::value)
+	{ ENERGY::AddQtMQ(fac, A, Q, M); }
+      else // scalar
+	{ A += fac * M; }
     }
 
     template<class TMU> INLINE void ModQs (const TVD & di, const TVD & dj, TMU & Qij, TMU & Qji)
