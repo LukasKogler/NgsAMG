@@ -106,7 +106,7 @@ namespace amg
     O.crs_alg = Options::CRS_ALG::AGG;
     O.ecw_geom = false;
     O.ecw_robust = false;
-    O.n_levels_d2_agg = 1;
+    O.d2_agg = SpecOpt<bool>(false, { true });
     O.agg_neib_boost = false; // might be worth it
 
     /** Smoothed Prolongation **/

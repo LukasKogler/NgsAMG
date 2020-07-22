@@ -30,22 +30,22 @@ namespace amg
     CRS_ALG crs_alg = AGG;
 
     /** General coarsening **/
-    bool ecw_geom = true;                       // use geometric instead of harmonic mean when determining strength of connection
-    bool ecw_robust = true;                     // use more expensive, but also more robust edge weights
-    xbool ecw_minmax = maybe;
-    xbool ecw_stab_hack = maybe;
-    double min_ecw = 0.05;
-    double min_vcw = 0.3;
-    bool sp_aux_only = false;                   // smooth prolongation using only auxiliary matrix
-    bool newsp = true;
+    SpecOpt<bool> ecw_geom = true;              // use geometric instead of harmonic mean when determining strength of connection
+    SpecOpt<bool> ecw_robust = true;            // use more expensive, but also more robust edge weights
+    SpecOpt<xbool> ecw_minmax = xbool(maybe);
+    SpecOpt<xbool> ecw_stab_hack = xbool(maybe);
+    SpecOpt<double> min_ecw = 0.05;
+    SpecOpt<double> min_vcw = 0.3;
+    SpecOpt<bool> sp_aux_only = false;          // smooth prolongation using only auxiliary matrix
+    SpecOpt<bool> newsp = true;
 
     /** Discard **/
     int disc_max_bs = 5;
 
     /** AGG **/
-    bool agg_neib_boost = false;
-    bool lazy_neib_boost = false;
-    bool print_aggs = false;                    // print agglomerates (for debugging purposes)
+    SpecOpt<bool> agg_neib_boost = false;
+    SpecOpt<bool> lazy_neib_boost = false;
+    SpecOpt<bool> print_aggs = false;                    // print agglomerates (for debugging purposes)
     SpecOpt<AVG_TYPE> agg_minmax_avg;
 
   public:
@@ -65,33 +65,25 @@ namespace amg
 	}
       };
 
-      auto set_bool = [&](auto& v, string key) {
-	if (v) { v = !flags.GetDefineFlagX(prefix + key).IsFalse(); }
-	else { v = flags.GetDefineFlagX(prefix + key).IsTrue(); }
-      };
-
-      auto set_num = [&](auto& v, string key)
-	{ v = flags.GetNumFlag(prefix + key, v); };
-
       BaseAMGFactory::Options::SetFromFlags(flags, prefix);
 
       set_enum_opt(crs_alg, "crs_alg", {"ecol", "agg" });
 
-      set_bool(ecw_geom, "ecw_geom");
-      set_bool(ecw_robust, "ecw_robust");
-      ecw_minmax = flags.GetDefineFlagX(prefix + "ecw_minmax");
-      ecw_stab_hack = flags.GetDefineFlagX(prefix + "ecw_stab_hack");
+      ecw_geom.SetFromFlags(flags, prefix+"ecw_geom");
+      ecw_robust.SetFromFlags(flags, prefix+"ecw_robust");
+      ecw_minmax.SetFromFlags(flags, prefix+"ecw_minmax");
+      ecw_stab_hack.SetFromFlags(flags, prefix + "ecw_stab_hack");
       agg_minmax_avg.SetFromFlagsEnum(flags, prefix + "agg_minmax_avg", prefix + "spec_minmax_avg", {"min", "geom", "harm", "alg", "max"});
 
-      set_num(min_ecw, "edge_thresh");
-      set_num(min_vcw, "vert_thresh");
-      set_num(min_vcw, "vert_thresh");
-      set_bool(agg_neib_boost, "agg_neib_boost");
-      set_bool(lazy_neib_boost, "lazy_neib_boost");
-      set_bool(print_aggs, "print_aggs");
+      min_ecw.SetFromFlags(flags, prefix+"edge_thresh");
+      min_vcw.SetFromFlags(flags, prefix+"vert_thresh");
+      min_vcw.SetFromFlags(flags, prefix+"vert_thresh");
+      agg_neib_boost.SetFromFlags(flags, prefix+"agg_neib_boost");
+      lazy_neib_boost.SetFromFlags(flags, prefix+"lazy_neib_boost");
+      print_aggs.SetFromFlags(flags, prefix+"print_aggs");
 
-      set_bool(sp_aux_only, "sp_aux_only");
-      set_bool(newsp, "newsp");
+      sp_aux_only.SetFromFlags(flags, prefix+"sp_aux_only");
+      newsp.SetFromFlags(flags, prefix+"newsp");
     } // VertexAMGFactoryOptions::SetFromFlags
 
   }; // VertexAMGFactoryOptions
@@ -163,16 +155,16 @@ namespace amg
 
     const int level = state.level[0];
 
-    agg_opts.edge_thresh = O.min_ecw;
-    agg_opts.vert_thresh = O.min_vcw;
-    agg_opts.cw_geom = O.ecw_geom;
-    agg_opts.neib_boost = O.agg_neib_boost;
-    agg_opts.lazy_neib_boost = O.lazy_neib_boost;
-    agg_opts.robust = O.ecw_robust;
-    agg_opts.use_stab_ecw_hack = O.ecw_stab_hack;
-    agg_opts.use_minmax_soc = O.ecw_minmax;
-    agg_opts.dist2 = ( state.level[1] == 0 ) && ( state.level[0] < O.n_levels_d2_agg );
-    agg_opts.print_aggs = O.print_aggs;
+    agg_opts.edge_thresh = O.min_ecw.GetOpt(level);
+    agg_opts.vert_thresh = O.min_vcw.GetOpt(level);
+    agg_opts.cw_geom = O.ecw_geom.GetOpt(level);
+    agg_opts.neib_boost = O.agg_neib_boost.GetOpt(level);
+    agg_opts.lazy_neib_boost = O.lazy_neib_boost.GetOpt(level);
+    agg_opts.robust = O.ecw_robust.GetOpt(level);
+    agg_opts.use_stab_ecw_hack = O.ecw_stab_hack.GetOpt(level);
+    agg_opts.use_minmax_soc = O.ecw_minmax.GetOpt(level);
+    agg_opts.dist2 = O.d2_agg.GetOpt(level);
+    agg_opts.print_aggs = O.print_aggs.GetOpt(level);
     agg_opts.minmax_avg = O.agg_minmax_avg.GetOpt(level);
     // auto agglomerator = make_shared<Agglomerator<FACTORY>>(mesh, state.free_nodes, move(agg_opts));
 
@@ -202,10 +194,10 @@ namespace amg
 
     coarsen_opts = make_shared<typename HierarchicVWC<TMESH>::Options>();
     coarsen_opts->free_verts = state.curr_cap->free_nodes;
-    coarsen_opts->min_vcw = O.min_vcw;
-    coarsen_opts->min_ecw = O.min_vcw;
+    coarsen_opts->min_vcw = O.min_vcw.GetOpt(100); // TODO: placeholder
+    coarsen_opts->min_ecw = O.min_vcw.GetOpt(100);
 
-    if (O.ecw_robust)
+    if (O.ecw_robust.GetOpt(100)) // TODO: placeholder
       { CalcECOLWeightsRobust (state, coarsen_opts->vcw, coarsen_opts->ecw); }
     else
       { CalcECOLWeightsSimple (state, coarsen_opts->vcw, coarsen_opts->ecw); }
@@ -248,7 +240,7 @@ namespace amg
     M.template AllreduceNodalData<NT_VERTEX>(vcw, [&](auto & in) { return sum_table(in); });
 
     M.template Apply<NT_VERTEX>([&](auto v) { vcw[v] = (vcw[v] == 0) ? 1.0 : ENERGY::GetApproxVWeight(vdata[v]) / vcw[v]; }, false);
-    if (O.ecw_geom) {
+    if (O.ecw_geom.GetOpt(100)) { // TODO::placeholder
       M.template Apply<NT_EDGE>([&](const auto & edge) {
 	  double vw0 = vcw[edge.v[0]], vw1 = vcw[edge.v[1]];
 	  ecw[edge.id] = ENERGY::GetApproxWeight(edata[edge.id]) / sqrt(vw0 * vw1);
@@ -299,7 +291,7 @@ namespace amg
       M.template AllreduceNodalData<NT_VERTEX>(diag_mats, [&](auto & in) { return sum_table(in); });
 
       TM A, B;
-      if (O.ecw_geom) {
+      if (O.ecw_geom.GetOpt(100)) { // TODO: placeholder
 	M.template Apply<NT_EDGE>([&](const auto & edge) {
 	    typename ENERGY::TVD &vdi = vdata[edge.v[0]], &vdj = vdata[edge.v[1]];
 	    ENERGY::ModQs(vdi, vdj, Qij, Qji);
@@ -374,7 +366,7 @@ namespace amg
   shared_ptr<BaseDOFMapStep> VertexAMGFactory<ENERGY, TMESH, BS> :: SmoothedProlMap (shared_ptr<BaseDOFMapStep> pw_step, shared_ptr<BaseCoarseMap> cmap, shared_ptr<BaseAMGFactory::LevelCapsule> fcap)
   {
     Options &O (static_cast<Options&>(*options));
-    if (O.newsp)
+    if (O.newsp.GetOpt(100)) // TODO: placeholder
       return SmoothedProlMap_impl_v2(static_pointer_cast<ProlMap<TSPM_TM>>(pw_step), cmap, fcap);
     else
       return SmoothedProlMap_impl(pw_step, cmap, fcap);
@@ -395,7 +387,7 @@ namespace amg
     const double MIN_PROL_FRAC = O.sp_min_frac;
     const int MAX_PER_ROW = O.sp_max_per_row;
     const double omega = O.sp_omega;
-    const bool aux_only = O.sp_aux_only;
+    const bool aux_only = O.sp_aux_only.GetOpt(100); // TODO:placeholder
 
     // NOTE: something is funky with the meshes here ... 
     const auto & FM = *static_pointer_cast<TMESH>(fcap->mesh);

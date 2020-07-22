@@ -1465,7 +1465,7 @@ namespace amg
     O.crs_alg = AMG_CLASS::Options::CRS_ALG::AGG;
     O.ecw_geom = false;
     O.ecw_robust = false; // probably irrelevant as we are usually using this for MCS
-    O.n_levels_d2_agg = 1;
+    O.d2_agg = SpecOpt<bool>(false, { true });
     O.disc_max_bs = 1;
 
     /** Level-control **/

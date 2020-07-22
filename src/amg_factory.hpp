@@ -88,6 +88,8 @@ namespace amg
     SpecOpt () : spec_opt(0) { ; }
     SpecOpt (OC _default_opt) : default_opt(_default_opt), spec_opt(0) { ; }
     SpecOpt (OC _default_opt, Array<OC> & _spec_opt) : default_opt(_default_opt), spec_opt(_spec_opt) { ; }
+    SpecOpt (OC _default_opt, Array<OC> _spec_opt) : default_opt(_default_opt), spec_opt(_spec_opt) { ; }
+    SpecOpt (const SpecOpt<OC> & other) : default_opt(default_opt), spec_opt(other.spec_opt) { ; }
     SpecOpt (SpecOpt<OC> && other) : default_opt(other.default_opt), spec_opt(move(other.spec_opt)) { ; }
     SpecOpt (const Flags & flags, OC defopt, string defkey, string speckey, Array<string> optkeys)
       : SpecOpt(defopt)
@@ -95,6 +97,12 @@ namespace amg
     SpecOpt<OC> & operator = (OC defoc) {
       default_opt = defoc;
       spec_opt.SetSize0();
+      return *this;
+    }
+    SpecOpt<OC> & operator = (const SpecOpt<OC> & other) {
+      default_opt = other.default_opt;
+      spec_opt.SetSize(other.spec_opt.Size());
+      spec_opt = other.spec_opt;
       return *this;
     }
     void SetFromFlagsEnum (const Flags & flags, string defkey, string speckey, Array<string> optkeys)
@@ -110,8 +118,58 @@ namespace amg
       for (auto k : Range(spec_opt))
 	{ setoc(spec_opt[k], specfa[k]); }
     }
-    OC GetOpt (int level) { return (level < spec_opt.Size()) ? spec_opt[level] : default_opt; }
-  };
+    INLINE void SetFromFlags (const Flags & flags, string key);
+    OC GetOpt (int level) const { return (level < spec_opt.Size()) ? spec_opt[level] : default_opt; }
+  }; // struct SpecOpt
+
+  template<class OC>
+  void SpecOpt<OC> :: SetFromFlags (const Flags & flags, string key)
+  {
+    throw Exception("SFF not overloaded!!");
+  } // SpecOpt::SetFromFlags
+
+  template<>
+  void SpecOpt<bool> :: SetFromFlags (const Flags & flags, string key)
+  {
+    if (default_opt) { default_opt = !flags.GetDefineFlagX(key).IsFalse(); }
+    else { default_opt = flags.GetDefineFlagX(key).IsTrue(); }
+    auto & arr = flags.GetNumListFlag(key+"_spec");
+    spec_opt.SetSize(arr.Size()); spec_opt = default_opt;
+    for (auto k : Range(spec_opt))
+      { spec_opt[k] = (arr[k] != 0); }
+  } // SpecOpt<bool>::SetFromFlags
+
+  template<>
+  void SpecOpt<xbool> :: SetFromFlags (const Flags & flags, string key)
+  {
+    default_opt = flags.GetDefineFlagX(key);
+    auto & arr = flags.GetNumListFlag(key+"_spec");
+    spec_opt.SetSize(arr.Size()); spec_opt = default_opt;
+    for (auto k : Range(spec_opt))
+      { spec_opt[k] = (arr[k] == 0) ? false : true; }
+  } // SpecOpt<bool>::SetFromFlags
+
+  template<>
+  void SpecOpt<double> :: SetFromFlags (const Flags & flags, string key)
+  {
+    default_opt = flags.GetNumFlag(key, default_opt);
+    auto & arr = flags.GetNumListFlag(key+"_spec");
+    spec_opt.SetSize(arr.Size()); spec_opt = default_opt;
+    for (auto k : Range(spec_opt))
+      { spec_opt[k] = int(arr[k]); }
+  } // SpecOpt<bool>::SetFromFlags
+
+
+  template<>
+  void SpecOpt<int> :: SetFromFlags (const Flags & flags, string key)
+  {
+    default_opt = int(flags.GetNumFlag(key, double(default_opt)));
+    auto & arr = flags.GetNumListFlag(key+"_spec");
+    spec_opt.SetSize(arr.Size()); spec_opt = default_opt;
+    for (auto k : Range(spec_opt))
+      { spec_opt[k] = arr[k]; }
+  } // SpecOpt<bool>::SetFromFlags
+
 
   class BaseAMGFactory :: Options
   {
@@ -129,7 +187,8 @@ namespace amg
     double first_aaf = 0.05;                    // (static crs ratio) (smaller) factor for first level. -1 for dont use
     double aaf_scale = 1;                       // (static crs ratio) scale aaf, e.g if 2:   first_aaf, aaf, 2*aaf, 4*aaf, .. (or aaf, 2*aaf, ...)
     bool enable_dyn_crs = true;                 // use dynamic coarsening ratios
-    int n_levels_d2_agg = 1;                    // do this many levels MIS(2)-like aggregates (afterwards MIS(1)-like)
+    SpecOpt<bool> d2_agg =                      // do this many levels MIS(2)-like aggregates (afterwards MIS(1)-like)
+      SpecOpt<bool>(false, { true });
 
     /** Contract (Re-Distribute) **/
     bool enable_redist = true;                  // allow re-distributing on coarse levels
@@ -200,6 +259,7 @@ namespace amg
 
   struct BaseAMGFactory::LevelCapsule
   {
+    int baselevel = 0; // TODO: this is jsut a placeholder. I want this to be the level of the last "full" AMGLevel
     shared_ptr<EQCHierarchy> eqc_h = nullptr;
     shared_ptr<TopologicMesh> mesh = nullptr;
     shared_ptr<ParallelDofs> pardofs = nullptr;
