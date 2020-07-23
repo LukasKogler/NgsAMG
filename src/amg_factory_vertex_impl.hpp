@@ -38,6 +38,7 @@ namespace amg
     SpecOpt<double> min_vcw = 0.3;
     SpecOpt<bool> sp_aux_only = false;          // smooth prolongation using only auxiliary matrix
     SpecOpt<bool> newsp = true;
+    SpecOpt<int> sp_max_per_row_classic = 5;   // maximum entries per row (should be >= 2!) where " newst" uses classic
 
     /** Discard **/
     int disc_max_bs = 5;
@@ -69,21 +70,22 @@ namespace amg
 
       set_enum_opt(crs_alg, "crs_alg", {"ecol", "agg" });
 
-      ecw_geom.SetFromFlags(flags, prefix+"ecw_geom");
-      ecw_robust.SetFromFlags(flags, prefix+"ecw_robust");
-      ecw_minmax.SetFromFlags(flags, prefix+"ecw_minmax");
+      ecw_geom.SetFromFlags(flags, prefix + "ecw_geom");
+      ecw_robust.SetFromFlags(flags, prefix + "ecw_robust");
+      ecw_minmax.SetFromFlags(flags, prefix + "ecw_minmax");
       ecw_stab_hack.SetFromFlags(flags, prefix + "ecw_stab_hack");
       agg_minmax_avg.SetFromFlagsEnum(flags, prefix + "agg_minmax_avg", prefix + "minmax_avg_spec", {"min", "geom", "harm", "alg", "max"});
 
-      min_ecw.SetFromFlags(flags, prefix+"edge_thresh");
-      min_vcw.SetFromFlags(flags, prefix+"vert_thresh");
-      min_vcw.SetFromFlags(flags, prefix+"vert_thresh");
-      agg_neib_boost.SetFromFlags(flags, prefix+"agg_neib_boost");
-      lazy_neib_boost.SetFromFlags(flags, prefix+"lazy_neib_boost");
-      print_aggs.SetFromFlags(flags, prefix+"print_aggs");
+      min_ecw.SetFromFlags(flags, prefix + "edge_thresh");
+      min_vcw.SetFromFlags(flags, prefix + "vert_thresh");
+      min_vcw.SetFromFlags(flags, prefix + "vert_thresh");
+      agg_neib_boost.SetFromFlags(flags, prefix + "agg_neib_boost");
+      lazy_neib_boost.SetFromFlags(flags, prefix + "lazy_neib_boost");
+      print_aggs.SetFromFlags(flags, prefix + "print_aggs");
 
-      sp_aux_only.SetFromFlags(flags, prefix+"sp_aux_only");
-      newsp.SetFromFlags(flags, prefix+"newsp");
+      sp_aux_only.SetFromFlags(flags, prefix + "sp_aux_only");
+      newsp.SetFromFlags(flags, prefix + "newsp");
+      sp_max_per_row_classic.SetFromFlags(flags, prefix + "sp_max_per_row_classic");
     } // VertexAMGFactoryOptions::SetFromFlags
 
   }; // VertexAMGFactoryOptions
@@ -387,6 +389,7 @@ namespace amg
     const int baselevel = fcap->baselevel;
     const double MIN_PROL_FRAC = O.sp_min_frac.GetOpt(baselevel);
     const int MAX_PER_ROW = O.sp_max_per_row.GetOpt(baselevel);
+    const int MAX_PER_ROW_CLASSIC = O.sp_max_per_row_classic.GetOpt(baselevel);
     const double omega = O.sp_omega.GetOpt(baselevel);
     const bool aux_only = O.sp_aux_only.GetOpt(baselevel); // TODO:placeholder
 
@@ -464,7 +467,8 @@ namespace amg
 	else
 	  { is_ok = false; }
       }
-      is_ok &= (cols.Size() <= MAX_PER_ROW);
+      // is_ok &= (cols.Size() <= MAX_PER_ROW);
+      is_ok &= (cols.Size() <= MAX_PER_ROW_CLASSIC);
       return is_ok;
     }; // get_cols_classic
 
