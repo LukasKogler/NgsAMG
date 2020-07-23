@@ -27,7 +27,7 @@ namespace amg
     set_num(max_meas, "max_coarse_size");
     set_num(min_meas, "min_coarse_size");
 
-    set_bool(enable_multistep, "enable_multistep");
+    enable_multistep.SetFromFlags(flags, prefix + "enable_multistep");
     set_bool(enable_dyn_crs, "enable_dyn_crs");
     set_num(aaf, "aaf");
     set_num(first_aaf, "first_aaf");
@@ -46,13 +46,13 @@ namespace amg
     set_num(rd_seq_nv, "rd_seq_nv");
     set_num(rd_loc_gl, "rd_loc_gl");
 
-    set_bool(enable_disc, "enable_disc");
+    enable_disc.SetFromFlags(flags, prefix + "enable_disc");
 
-    set_bool(enable_sp, "enable_sp");
+    enable_sp.SetFromFlags(flags, prefix +  "enable_sp");
     set_bool(sp_needs_cmap, "sp_needs_cmap");
-    set_num(sp_min_frac, "sp_min_frac");
-    set_num(sp_max_per_row, "sp_max_per_row");
-    set_num(sp_omega, "sp_omega");
+    sp_min_frac.SetFromFlags(flags, prefix +  "sp_min_frac");
+    sp_max_per_row.SetFromFlags(flags, prefix +  "sp_max_per_row");
+    sp_omega.SetFromFlags(flags, prefix +  "sp_omega");
 
     set_bool(keep_grid_maps, "keep_grid_maps");
 
@@ -381,7 +381,7 @@ namespace amg
 	    else { // okay, use this step
 	      curr_meas = c_meas;
 	      cm_chunks.Append(move(state.crs_map));
-	      if (!O.enable_multistep) // not allowed to chain coarse steps
+	      if (!O.enable_multistep.GetOpt(f_lev->level)) // not allowed to chain coarse steps
 		{ goal_reached = true; }
 	    }
 	    if ( (!goal_reached) && could_recover)
@@ -464,7 +464,7 @@ namespace amg
       /** Smooth the first prol-step, using the first coarse-map if we need coarse-map for smoothing,
 	  or if it is preferrable to smoothing the concatenated prol with only fine mesh. **/
       bool sp_done = false, have_pwp = true;
-      if ( O.enable_sp ) {
+      if ( O.enable_sp.GetOpt(f_lev->level) ) {
 	// cout << " deal with sp!" << endl;
 	/** need cmap || only one coarse map **/
 	auto comm = mesh0->GetEQCHierarchy()->GetCommunicator();
@@ -556,7 +556,7 @@ namespace amg
 
       /** If not forced to before, smooth prol here.
 	  TODO: check if other version would be possible here (that one should be better anyways!)  **/
-      if ( O.enable_sp && (!sp_done) && (have_pwp) )
+      if ( O.enable_sp.GetOpt(f_lev->level) && (!sp_done) && (have_pwp) )
 	{ prol_map = SmoothedProlMap(prol_map, m0cap); }
 
       /** pack rd-maps into one step**/
@@ -612,7 +612,7 @@ namespace amg
 
     /** assemble coarse level matrix, set return vals, etc. **/
     c_lev->level = f_lev->level + 1;
-    c_lev->cap = state.curr_cap;
+    c_lev->cap = state.curr_cap; c_lev->cap->baselevel = c_lev->level;
     auto final_step = MapLevel(init_steps, f_lev, c_lev);
 
     // auto final_step = MakeSingleStep(init_steps);
@@ -669,6 +669,7 @@ namespace amg
     auto & O(*options);
 
     shared_ptr<LevelCapsule> c_cap = AllocCap();
+    c_cap->baselevel = state.level[0];
 
     /** build coarse map **/
     shared_ptr<BaseCoarseMap> cmap = BuildCoarseMap(state, c_cap);
@@ -795,6 +796,8 @@ namespace amg
     auto rd_factor = FindRDFac (state.curr_cap->mesh);
 
     shared_ptr<LevelCapsule> c_cap = AllocCap();
+    c_cap->baselevel = state.level[0];
+
     auto rd_map = BuildContractMap(rd_factor, state.curr_cap->mesh, c_cap);
 
     if (state.curr_cap->free_nodes != nullptr)

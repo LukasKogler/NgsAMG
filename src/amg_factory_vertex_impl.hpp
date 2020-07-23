@@ -384,10 +384,11 @@ namespace amg
 	Where we cannot, smooth using the replacement matrix ("aux prol"). **/
     Options &O (static_cast<Options&>(*options));
 
-    const double MIN_PROL_FRAC = O.sp_min_frac;
-    const int MAX_PER_ROW = O.sp_max_per_row;
-    const double omega = O.sp_omega;
-    const bool aux_only = O.sp_aux_only.GetOpt(100); // TODO:placeholder
+    const int baselevel = fcap->baselevel;
+    const double MIN_PROL_FRAC = O.sp_min_frac.GetOpt(baselevel);
+    const int MAX_PER_ROW = O.sp_max_per_row.GetOpt(baselevel);
+    const double omega = O.sp_omega.GetOpt(baselevel);
+    const bool aux_only = O.sp_aux_only.GetOpt(baselevel); // TODO:placeholder
 
     // NOTE: something is funky with the meshes here ... 
     const auto & FM = *static_pointer_cast<TMESH>(fcap->mesh);
@@ -818,9 +819,11 @@ namespace amg
 
     Options &O (static_cast<Options&>(*options));
 
-    const double MIN_PROL_FRAC = O.sp_min_frac;
-    const int MAX_PER_ROW = O.sp_max_per_row;
-    const double omega = O.sp_omega;
+    const int baselevel = fcap->baselevel;
+
+    const double MIN_PROL_FRAC = O.sp_min_frac.GetOpt(baselevel);
+    const int MAX_PER_ROW = O.sp_max_per_row.GetOpt(baselevel);
+    const double omega = O.sp_omega.GetOpt(baselevel);
 
     const TSPM_TM & pwprol = *prol_map->GetProl();
 
@@ -1184,10 +1187,12 @@ namespace amg
     // cout << " VDATA: " << endl; prow2(vdata); cout << endl << endl;
     // cout << " EDATA: " << endl; prow2(edata); cout << endl << endl;
 
+    const int baselevel = fcap->baselevel;
+
     Options &O (static_cast<Options&>(*options));
-    const double MIN_PROL_FRAC = O.sp_min_frac;
-    const int MAX_PER_ROW = O.sp_max_per_row;
-    const double omega = O.sp_omega;
+    const double MIN_PROL_FRAC = O.sp_min_frac.GetOpt(baselevel);
+    const int MAX_PER_ROW = O.sp_max_per_row.GetOpt(baselevel);
+    const double omega = O.sp_omega.GetOpt(baselevel);
 
     const size_t NFV = FM.template GetNN<NT_VERTEX>(), NCV = CM.template GetNN<NT_VERTEX>();
     auto vmap = cmap->template GetMap<NT_VERTEX>();
@@ -1466,13 +1471,14 @@ namespace amg
   template<class ENERGY, class TMESH, int BS>
   bool VertexAMGFactory<ENERGY, TMESH, BS> :: TryDiscardStep (BaseAMGFactory::State & state)
   {
-    if (!options->enable_disc)
+    if (!options->enable_disc.GetOpt(state.level[0]))
       { return false; }
 
     if (state.curr_cap->free_nodes != nullptr)
       { throw Exception("discard with dirichlet TODO!!"); }
 
     shared_ptr<BaseAMGFactory::LevelCapsule> c_cap = this->AllocCap();
+    c_cap->baselevel = state.level[0];
 
     shared_ptr<BaseDiscardMap> disc_map = BuildDiscardMap(state, c_cap);
 

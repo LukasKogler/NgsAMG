@@ -946,10 +946,10 @@ namespace amg
     auto cpds = prol_map->GetMappedParDofs();
 
     static constexpr int BS = mat_traits<TM>::HEIGHT;
-    const double MIN_PROL_FRAC = O.sp_min_frac;
-    const int MAX_PER_ROW = O.sp_max_per_row;
+    const double MIN_PROL_FRAC = O.sp_min_frac.GetOpt(100); // TODO:placeholder
+    const int MAX_PER_ROW = O.sp_max_per_row.GetOpt(100);
     const int MAX_NEIBS = MAX_PER_ROW - 1;
-    const double omega = O.sp_omega;
+    const double omega = O.sp_omega.GetOpt(100);
 
     /** fine mesh **/
     const auto & FM(*fmesh); FM.CumulateData();

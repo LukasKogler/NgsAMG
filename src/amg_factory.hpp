@@ -181,7 +181,7 @@ namespace amg
 
     /** Coarsening **/
     // TODO: deal with multistep/interleave properly
-    bool enable_multistep = false;              // allow chaining multiple coarsening steps
+    SpecOpt<bool> enable_multistep = false;              // allow chaining multiple coarsening steps
     bool use_static_crs = true;                 // use static coarsening ratio
     double aaf = 0.1;                           // (static crs ratio) chain edge-collapse maps until mesh is decreased by factor aaf
     double first_aaf = 0.05;                    // (static crs ratio) (smaller) factor for first level. -1 for dont use
@@ -205,14 +205,14 @@ namespace amg
     double rd_loc_gl = 0.8;                     // always try to redistribute such that at least this fraction will be local
 
     /** Discard **/
-    bool enable_disc = true;                    // enable discarding of vertices (should eliminate hanging nodes)
+    SpecOpt<bool> enable_disc = true;                    // enable discarding of vertices (should eliminate hanging nodes)
 
     /** Smoothed Prolongation **/
-    bool enable_sp = true;                      // enable prolongation-smoothing
+    SpecOpt<bool> enable_sp = true;                      // enable prolongation-smoothing
     bool sp_needs_cmap = true;                  // do we need the coarse map for smoothed prol?
-    double sp_min_frac = 0.1;                   // min. (relative) wt to include an edge
-    int sp_max_per_row = 3;                     // maximum entries per row (should be >= 2!)
-    double sp_omega = 1.0;                      // relaxation parameter for prol-smoothing
+    SpecOpt<double> sp_min_frac = 0.1;                   // min. (relative) wt to include an edge
+    SpecOpt<int> sp_max_per_row = 3;                     // maximum entries per row (should be >= 2!)
+    SpecOpt<double> sp_omega = 1.0;                      // relaxation parameter for prol-smoothing
 
     /** Output **/
     bool keep_grid_maps = false;                // do we need grid maps later on (e.g for building block-smoothers)?
