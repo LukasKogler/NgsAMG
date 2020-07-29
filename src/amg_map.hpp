@@ -69,13 +69,13 @@ namespace amg {
     virtual void AddF2C (double fac, const BaseVector * x_fine, BaseVector * x_coarse) const = 0;
     virtual void TransferC2F (BaseVector * x_fine, const BaseVector * x_coarse) const = 0;
     virtual void AddC2F (double fac, BaseVector * x_fine, const BaseVector * x_coarse) const = 0;
-    shared_ptr<BaseVector> CreateVector () const {
-      return make_shared<S_ParallelBaseVectorPtr<double>>
+    unique_ptr<BaseVector> CreateVector () const {
+      return make_unique<S_ParallelBaseVectorPtr<double>>
 	(pardofs->GetNDofLocal(), pardofs->GetEntrySize(), pardofs, DISTRIBUTED);
     }
-    shared_ptr<BaseVector> CreateMappedVector () const {
+    unique_ptr<BaseVector> CreateMappedVector () const {
       if (mapped_pardofs == nullptr) return nullptr;
-      return make_shared<S_ParallelBaseVectorPtr<double>>
+      return make_unique<S_ParallelBaseVectorPtr<double>>
 	(mapped_pardofs->GetNDofLocal(), mapped_pardofs->GetEntrySize(), mapped_pardofs, DISTRIBUTED);
     }
     /** "me - other" -> "conc" **/
@@ -134,7 +134,7 @@ namespace amg {
 
     void TransferAtoB (int la, int lb, const BaseVector * vin, BaseVector * vout) const;
 
-    shared_ptr<BaseVector> CreateVector (size_t l) const
+    unique_ptr<BaseVector> CreateVector (size_t l) const
     { return (l>steps.Size()) ? nullptr : ((l==steps.Size()) ? steps.Last()->CreateMappedVector() : steps[l]->CreateVector()); }
 
     shared_ptr<ParallelDofs> GetParDofs (size_t L = 0) const { return (L==steps.Size()) ? steps.Last()->GetMappedParDofs() : steps[L]->GetParDofs(); }
