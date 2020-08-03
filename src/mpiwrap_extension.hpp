@@ -8,20 +8,20 @@ namespace amg
 
   class BlockTM;
 
-  class NgsAMG_Comm : public NgsMPI_Comm
+  class NgsAMG_Comm : public NgMPI_Comm
   {
   public:
-    NgsAMG_Comm (const NgsMPI_Comm & c) : NgsMPI_Comm(c) { ; }
-    NgsAMG_Comm (NgsMPI_Comm && c) : NgsMPI_Comm(c) { ; }
+    NgsAMG_Comm (const NgMPI_Comm & c) : NgMPI_Comm(c) { ; }
+    NgsAMG_Comm (NgMPI_Comm && c) : NgMPI_Comm(c) { ; }
     NgsAMG_Comm (MPI_Comm comm, bool owns)
-      : NgsMPI_Comm(NgMPI_Comm(comm, owns)) { ; }
-    NgsAMG_Comm () : NgsAMG_Comm(NgsMPI_Comm(NgMPI_Comm())) { ; }
+      : NgMPI_Comm(NgMPI_Comm(comm, owns)) { ; }
+    NgsAMG_Comm () : NgsAMG_Comm(NgMPI_Comm(NgMPI_Comm())) { ; }
     ~NgsAMG_Comm () { ; }
 
-    using NgsMPI_Comm :: Send;
-    using NgsMPI_Comm :: Recv;
-    using NgsMPI_Comm :: ISend;
-    using NgsMPI_Comm :: IRecv;
+    using NgMPI_Comm :: Send;
+    using NgMPI_Comm :: Recv;
+    using NgMPI_Comm :: ISend;
+    using NgMPI_Comm :: IRecv;
 
   private:
     INLINE Timer& thack_send_tab () const { static Timer t("Send Table"); return t; }
@@ -157,6 +157,14 @@ namespace amg
     void Send (shared_ptr<BlockTM> & mesh, int dest, int tag) const;
     void Recv (shared_ptr<BlockTM> & mesh, int src,  int tag) const;
     
+    template<typename T, typename T2 = decltype(GetMPIType<T>())>
+    INLINE void Gather(T val, FlatArray<T> mem, int root)
+    {
+      if ((Rank() == root) && (mem.Size() < Size()) )
+	{ throw Exception("Not enough memory for MPI_Gather!"); }
+      MPI_Gather(&val, 1, GetMPIType<T>(), mem.Data(), mem.Size(), GetMPIType<T>(), root, comm);
+    }
+
     template<typename T>
     inline MPI_Request ISend (const FlatTable<T> tab, int dest, int tag)
     {
@@ -237,7 +245,7 @@ namespace ngstd
   
   // // this doesnt work!!
   // template<typename T>
-  // inline MPI_Request MyMPI_ISend(const ngla::SparseMatrixTM<T> & spm, int dest, int tag, NgsMPI_Comm comm)
+  // inline MPI_Request MyMPI_ISend(const ngla::SparseMatrixTM<T> & spm, int dest, int tag, NgMPI_Comm comm)
   // {
   //   MPI_Request req;
   //   /** send height, width & NZE **/

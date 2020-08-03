@@ -46,7 +46,7 @@ namespace amg
 
     INLINE bool IsMaster () const { return is_gm; }
 
-    // TODO: bad hack because NgsAMG_Comm -> MPI_Comm -> NgsMPI_Comm in pardofs constructor (ownership lost!)
+    // TODO: bad hack because NgsAMG_Comm -> MPI_Comm -> NgMPI_Comm in pardofs constructor (ownership lost!)
     NgsAMG_Comm _comm_keepalive_hack;
 
   protected:

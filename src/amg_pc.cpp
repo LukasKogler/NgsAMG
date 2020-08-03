@@ -255,7 +255,7 @@ namespace amg
     else {
       Array<int> perow (fine_spm->Height() ); perow = 0;
       Table<int> dps (perow);
-      NgsMPI_Comm c(MPI_COMM_WORLD);
+      NgMPI_Comm c(MPI_COMM_WORLD);
       MPI_Comm mecomm = (c.Size() == 1) ? MPI_COMM_WORLD : AMG_ME_COMM;
       fine_spm->SetParallelDofs(make_shared<ParallelDofs> ( mecomm , move(dps), GetEntryDim(fine_spm.get()), false));
     }

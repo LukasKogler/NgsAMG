@@ -156,7 +156,7 @@ namespace amg
     shared_ptr<TAUX> GetAuxMat () const { return aux_mat; }
     shared_ptr<ParallelDofs> GetAuxParDofs () const { return aux_pds; }
     shared_ptr<BitArray> GetAuxFreeDofs () const { return aux_fds; } // after sorting, this becomes free_verts (for vertex-PC)
-    Array<Array<shared_ptr<BaseVector>>> GetRBModes () const;
+    Array<Array<AutoVector>> GetRBModes () const;
     shared_ptr<BitArray> GetFineFacets () const { return fine_facet; }
     FlatArray<int> GetFMapA2F () const { return a2f_facet; }
     FlatArray<int> GetFMapF2A () const { return f2a_facet; }
@@ -169,7 +169,7 @@ namespace amg
 
     void __hacky__set__Pmat ( shared_ptr<BaseMatrix> embA, shared_ptr<BaseMatrix> embB);
 
-    virtual shared_ptr<BaseVector> CreateAuxVector () const;
+    virtual AutoVector CreateAuxVector () const;
 
     virtual void Initialize (shared_ptr<BitArray> freedofs);
     virtual void Finalize (shared_ptr<BaseMatrix> _comp_mat);

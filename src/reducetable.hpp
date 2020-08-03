@@ -42,7 +42,7 @@ namespace amg
   {
      //cout << "-------------" << "REDUCE TABLE; version 1" << "-------------" << endl;
 
-    NgsMPI_Comm comm = eqc_h->GetCommunicator();
+    NgMPI_Comm comm = eqc_h->GetCommunicator();
     int rank = comm.Rank();
     int np = comm.Size();
 

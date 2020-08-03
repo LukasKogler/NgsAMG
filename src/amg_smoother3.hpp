@@ -76,7 +76,7 @@ namespace amg
     virtual int VHeight () const override { return H; }
     virtual int VWidth () const override { return H; }
     virtual AutoVector CreateVector () const override
-    { return make_shared<VVector<typename strip_vec<Vec<BS(), double>>::type>>(H); };
+    { return make_unique<VVector<typename strip_vec<Vec<BS(), double>>::type>>(H); };
     virtual AutoVector CreateRowVector () const override { return CreateVector(); }
     virtual AutoVector CreateColVector () const override { return CreateVector(); }
 

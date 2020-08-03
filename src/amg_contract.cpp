@@ -35,7 +35,7 @@ namespace amg
     int root = 0;
     Array<size_t> all_nvs ( (comm.Rank()==root) ? comm.Size() : 0);
     size_t nv_loc = mesh.GetNN<NT_VERTEX>();
-    MyMPI_Gather(nv_loc, all_nvs, comm, root);
+    comm.Gather(nv_loc, all_nvs, root);
     // per dp: dist-PROC, NV_SHARED,NE that would become loc (second not used ATM)
     auto ex_procs = eqc_h.GetDistantProcs();
     Array<INT<3,size_t>> data (ex_procs.Size()); data = 0;
@@ -234,7 +234,7 @@ namespace amg
     auto& comm(pardofs->GetCommunicator());
     if (!is_gm) {
       if (fvf.Size() > 0)
-	{ MPI_Send(x_fine->Memory(), fvf.Size(), MyGetMPIType<TV>(), group[0], MPI_TAG_AMG, comm); }
+	{ MPI_Send(x_fine->Memory(), fvf.Size(), GetMPIType<TV>(), group[0], MPI_TAG_AMG, comm); }
       return;
     }
     x_coarse->Distribute();
@@ -274,7 +274,7 @@ namespace amg
     if (!is_gm)
       {
 	if (fvf.Size() > 0)
-	  { MPI_Recv(x_fine->Memory(), fvf.Size(), MyGetMPIType<TV>(), group[0], MPI_TAG_AMG, comm, MPI_STATUS_IGNORE); }
+	  { MPI_Recv(x_fine->Memory(), fvf.Size(), GetMPIType<TV>(), group[0], MPI_TAG_AMG, comm, MPI_STATUS_IGNORE); }
 	// cout << "short x: " << endl;
 	// prow(x_fine->FVDouble());
 	// cout << endl;
@@ -591,7 +591,7 @@ namespace amg
       ones.SetSize(max_s); ones = 1;
       for (auto k : Range(group.Size())) {
 	auto map = dof_maps[k]; auto ms = map.Size();
-	MPI_Type_indexed(ms, (ms == 0) ? NULL : &ones[0], (ms == 0) ? NULL : &map[0], MyGetMPIType<TV>(), &mpi_types[k]);
+	MPI_Type_indexed(ms, (ms == 0) ? NULL : &ones[0], (ms == 0) ? NULL : &map[0], GetMPIType<TV>(), &mpi_types[k]);
 	MPI_Type_commit(&mpi_types[k]);
       }
       reqs.SetSize(group.Size()); reqs = MPI_REQUEST_NULL;

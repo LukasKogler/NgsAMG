@@ -76,7 +76,7 @@ namespace amg
     virtual int VHeight () const override { return spmat->Height(); }
     virtual int VWidth () const override { return spmat->Height(); }
     virtual AutoVector CreateVector () const override
-    { return make_shared<VVector<TV>>(spmat->Height()); }
+    { return make_unique<VVector<TV>>(spmat->Height()); }
     virtual AutoVector CreateRowVector () const override { return CreateVector(); }
     virtual AutoVector CreateColVector () const override { return CreateVector(); }
 

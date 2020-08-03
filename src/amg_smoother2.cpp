@@ -570,9 +570,9 @@ namespace amg
   template<class TM> AutoVector HybridMatrix<TM> :: CreateVector () const
   {
     if (pardofs == nullptr)
-      { return make_shared<VVector<TV>>(M->Height()); }
+      { return make_unique<VVector<TV>>(M->Height()); }
     else
-      { return make_shared<ParallelVVector<TV>>(M->Height(), pardofs, DISTRIBUTED); }
+      { return make_unique<ParallelVVector<TV>>(M->Height(), pardofs, DISTRIBUTED); }
   } // HybridMatrix::CreateVector
 
 

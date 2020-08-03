@@ -563,13 +563,13 @@ namespace amg
     auto ex_procs = pardofs->GetDistantProcs();
     for (auto kp : Range(ex_procs)) {
       if (g_ex_dofs[kp].Size()) { // init G send/recv
-	MPI_Send_init( &g_buffer[kp][0], block_size * g_ex_dofs[kp].Size(), MyGetMPIType<TSCAL>(), ex_procs[kp], MPI_TAG_AMG + 4, comm, &g_send[cg]);
-	MPI_Recv_init( &g_buffer[kp][0], block_size * g_ex_dofs[kp].Size(), MyGetMPIType<TSCAL>(), ex_procs[kp], MPI_TAG_AMG + 5, comm, &g_recv[cg]);
+	MPI_Send_init( &g_buffer[kp][0], block_size * g_ex_dofs[kp].Size(), GetMPIType<TSCAL>(), ex_procs[kp], MPI_TAG_AMG + 4, comm, &g_send[cg]);
+	MPI_Recv_init( &g_buffer[kp][0], block_size * g_ex_dofs[kp].Size(), GetMPIType<TSCAL>(), ex_procs[kp], MPI_TAG_AMG + 5, comm, &g_recv[cg]);
 	cg++;
       }
       if (m_ex_dofs[kp].Size()) { // init G send/recv
-	MPI_Send_init( &m_buffer[kp][0], block_size * m_ex_dofs[kp].Size(), MyGetMPIType<TSCAL>(), ex_procs[kp], MPI_TAG_AMG + 5, comm, &m_send[cm]);
-	MPI_Recv_init( &m_buffer[kp][0], block_size * m_ex_dofs[kp].Size(), MyGetMPIType<TSCAL>(), ex_procs[kp], MPI_TAG_AMG + 4, comm, &m_recv[cm]);
+	MPI_Send_init( &m_buffer[kp][0], block_size * m_ex_dofs[kp].Size(), GetMPIType<TSCAL>(), ex_procs[kp], MPI_TAG_AMG + 5, comm, &m_send[cm]);
+	MPI_Recv_init( &m_buffer[kp][0], block_size * m_ex_dofs[kp].Size(), GetMPIType<TSCAL>(), ex_procs[kp], MPI_TAG_AMG + 4, comm, &m_recv[cm]);
 	cm++;
       }
     }
@@ -1372,9 +1372,9 @@ namespace amg
   template<class TM> AutoVector HybridMatrix2<TM> :: CreateVector () const
   {
     if (pardofs == nullptr)
-      { return make_shared<VVector<TV>>(M->Height()); }
+      { return make_unique<VVector<TV>>(M->Height()); }
     else
-      { return make_shared<ParallelVVector<TV>>(M->Height(), pardofs, DISTRIBUTED); }
+      { return make_unique<ParallelVVector<TV>>(M->Height(), pardofs, DISTRIBUTED); }
   } // HybridMatrix2::CreateVector
 
 

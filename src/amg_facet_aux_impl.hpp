@@ -37,7 +37,7 @@ namespace amg
     if (comp_pds == nullptr) {
       Array<int> perow (comp_fes->GetNDof()); perow = 0;
       Table<int> dps (perow);
-      NgsMPI_Comm c(MPI_COMM_WORLD);
+      NgMPI_Comm c(MPI_COMM_WORLD);
       MPI_Comm mecomm = (c.Size() == 1) ? MPI_COMM_WORLD : AMG_ME_COMM;
       comp_pds = make_shared<ParallelDofs> ( mecomm , move(dps), 1, false);
     }
@@ -970,9 +970,9 @@ namespace amg
 
 
   template<int DIM, class SPACEA, class SPACEB, class AUXFE>
-  Array<Array<shared_ptr<BaseVector>>> FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: GetRBModes () const
+  Array<Array<AutoVector>> FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: GetRBModes () const
   {
-    Array<Array<shared_ptr<BaseVector>>> rb_modes(2);
+    Array<Array<AutoVector>> rb_modes(2);
     auto bfa_mat = bfa->GetMatrixPtr();
     if (bfa_mat == nullptr)
       { throw Exception("mat not ready"); }
@@ -982,16 +982,16 @@ namespace amg
     /** displacements: (1,0,0), (0,1,0), (0,0,1) **/
     for (auto comp : Range(DIM)) {
       auto w = CreateAuxVector();
-      w->SetParallelStatus(CUMULATED);
-      auto fw = w->template FV<TV>();
+      w.SetParallelStatus(CUMULATED);
+      auto fw = w.template FV<TV>();
       auto v = bfa_mat->CreateRowVector();
       v.SetParallelStatus(CUMULATED);
       auto fv = v.template FV<double>();
       for (auto k : Range(fw.Size()))
 	{ fw(k) = 0; fw(k)(comp) = 1; }
       P.Mult(*w, *v);
-      rb_modes[0].Append(v);
-      rb_modes[1].Append(w);
+      rb_modes[0].Append(move(v));
+      rb_modes[1].Append(move(w));
     }
     /** rotations **/
     if constexpr(DIM == 3)
@@ -1003,8 +1003,8 @@ namespace amg
 	for (auto rnr : Range(3)) {
 	  r = 0; r(rnr) = 1;
 	  auto w = CreateAuxVector();
-	  w->SetParallelStatus(CUMULATED);
-	  auto fw = w->template FV<TV>();
+	  w.SetParallelStatus(CUMULATED);
+	  auto fw = w.template FV<TV>();
 	  auto v = bfa_mat->CreateRowVector();
 	  v.SetParallelStatus(CUMULATED);
 	  auto fv = v.template FV<double>();
@@ -1017,8 +1017,8 @@ namespace amg
 	    fw(k)(DIM + rnr) = 1;
 	  }
 	  P.Mult(*w, *v);
-	  rb_modes[0].Append(v);
-	  rb_modes[1].Append(w);
+	  rb_modes[0].Append(move(v));
+	  rb_modes[1].Append(move(w));
 	}
       }
     else
@@ -1031,12 +1031,12 @@ namespace amg
 
 
   template<int DIM, class SPACEA, class SPACEB, class AUXFE>
-  shared_ptr<BaseVector> FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: CreateAuxVector () const
+  AutoVector FacetAuxSystem<DIM, SPACEA, SPACEB, AUXFE> :: CreateAuxVector () const
   {
     if (aux_pds != nullptr)
-      { return make_shared<ParallelVVector<TV>> (pmat->Width(), aux_pds, DISTRIBUTED); }
+      { return make_unique<ParallelVVector<TV>> (pmat->Width(), aux_pds, DISTRIBUTED); }
     else
-      { return make_shared<VVector<TV>> (pmat->Width()); }
+      { return make_unique<VVector<TV>> (pmat->Width()); }
   } // FacetAuxSystem::CreateAuxVector
 
 
@@ -1554,6 +1554,18 @@ namespace amg
 
 namespace amg
 {
+  template <typename T>
+  py::list MakePyList2 (FlatArray<T> ao)
+  {
+    size_t s = ao.Size();
+    py::list l;
+    for (size_t i = 0; i < s; i++)
+      l.append (move(ao[i]));
+    // for (size_t i = 0; i < s; i++)
+      // l.append (move(ao.Data()[i]));
+    return l;
+  }
+
   template<class PCC, class TLAM> void ExportAuxiliaryAMG (py::module & m, string name, string descr, TLAM lam)
   {
     auto pyclass = py::class_<PCC, shared_ptr<PCC>, Preconditioner>(m, name.c_str(), descr.c_str());
@@ -1578,8 +1590,8 @@ namespace amg
     pyclass.def("GetRBModes", [](shared_ptr<PCC> pre) -> py::tuple {
 	auto rbms = pre->GetAuxSys()->GetRBModes();
 	auto tup = py::tuple(2);
-	tup[0] = MakePyList(rbms[0]);
-	tup[1] = MakePyList(rbms[1]);
+	tup[0] = MakePyList2(rbms[0]);
+	tup[1] = MakePyList2(rbms[1]);
 	return tup;
       });
     pyclass.def("GetNLevels", [](PCC &pre, size_t rank) {
