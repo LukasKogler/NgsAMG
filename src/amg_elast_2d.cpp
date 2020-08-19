@@ -24,6 +24,11 @@
 
 namespace amg
 {
+  template<>
+  void ElasticityAMGFactory<2> :: CheckKVecs (FlatArray<shared_ptr<BaseAMGFactory::AMGLevel>> amg_levels, shared_ptr<DOFMap> map)
+  {
+  }
+
   template class ElasticityAMGFactory<2>;
   template class VertexAMGPC<ElasticityAMGFactory<2>>;
   template class ElmatVAMG<ElasticityAMGFactory<2>, double, double>;
