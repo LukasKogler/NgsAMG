@@ -265,6 +265,22 @@ namespace amg
     TAU_PROFILE("CtrMap::TransferC2F", TAU_CT(*this), TAU_DEFAULT);
 #endif
 
+    auto prow4 = [&](auto v) {
+      for (auto k : Range(v.Size()))
+	{ cout << v(k) << " "; }
+    };
+
+    auto prow3 = [&](auto v) {
+      auto fv = v->template FV<TV>();
+      if constexpr(is_same<double, TV>::value) {
+      for (auto k : Range(fv.Size()))
+	{ cout << k << ": " << fv(k) << endl; }
+	} else {
+      for (auto k : Range(fv.Size()))
+	{ cout << k << ": "; prow4(fv(k)); cout << endl; }
+      }
+    };
+
     // cout << "CTR trans C2F" << endl;
 
     RegionTimer rt(timer_hack_ctr_c2f());
@@ -275,17 +291,18 @@ namespace amg
       {
 	if (fvf.Size() > 0)
 	  { MPI_Recv(x_fine->Memory(), fvf.Size(), GetMPIType<TV>(), group[0], MPI_TAG_AMG, comm, MPI_STATUS_IGNORE); }
-	// cout << "short x: " << endl;
-	// prow(x_fine->FVDouble());
-	// cout << endl;
+	cout << "short x: " << endl;
+	prow(x_fine->FVDouble());
+	cout << endl;
 	return;
       }
 
-    // cout << "long x: " << endl;
-    // prow(x_coarse->FVDouble());
-    // cout << endl;
-
     x_coarse->Cumulate();
+
+    cout << "long x: " << endl;
+    prow3(x_coarse);
+    cout << endl;
+
     auto fvc = x_coarse->FV<TV>();
     for (size_t kp = 1; kp < group.Size(); kp++) {
       if (dof_maps[kp].Size() > 0)
@@ -302,9 +319,9 @@ namespace amg
     // cout << endl;
     reqs[0] = MPI_REQUEST_NULL; MyMPI_WaitAll(reqs);
 
-    // cout << "short x: " << endl;
-    // prow(x_fine->FVDouble());
-    // cout << endl;
+    cout << "short x: " << endl;
+    prow3(x_fine);
+    cout << endl;
   }
 
 
@@ -834,6 +851,24 @@ namespace amg
     
     auto tm_mesh = static_pointer_cast<TMESH>(this->mesh);
 
+    auto intr = [&](auto tmmm) {
+      cout << endl;
+      auto mvd = get<0>(tmmm->Data())->Data();
+      cout << " eqc vs: " << endl;
+      tmmm->template ApplyEQ2<NT_VERTEX>([&](auto eqc, auto nodes) {
+	  if (nodes.Size() > 0)
+	    cout << " eqc " << eqc << " = [" << nodes[0] << " ... " << nodes.Last() << "]" << endl;
+	  else
+	    cout << " eqc " << eqc << " = []" << endl;
+	}, false);
+      cout << " v data: " << endl;
+      for (auto k : Range(mvd))
+	{ cout << k << " " << mvd[k] << endl; }
+      cout << endl;
+    };
+    cout << " UNCONTR MESH" << endl;
+    intr(static_pointer_cast<TMESH>(this->mesh));
+
     if (!is_gm) {
       auto btm = dynamic_pointer_cast<BlockTM>(this->mesh);
       // cout << "send mesh to " << my_group[0] << endl;
@@ -957,12 +992,12 @@ namespace amg
       }
     }
 
-    // cout << "contr vmap: " << endl;
-    // for (auto k : Range(my_group.Size())) {
-    //   cout << "map for " << k << ", rank " << my_group[k] << ":  ";
-    //   prow2(vmaps[k]); cout << endl;
-    // }
-    // cout << endl;
+    cout << "contr vmap: " << endl;
+    for (auto k : Range(my_group.Size())) {
+      cout << "map for " << k << ", rank " << my_group[k] << ":  ";
+      prow2(vmaps[k]); cout << endl;
+    }
+    cout << endl;
 
     /** 
 	Abandon hope all ye who enter here - this might
@@ -1320,11 +1355,11 @@ namespace amg
         mapped_mesh = move(p_c_mesh);
       }
     else {
-      // cout << "MAKE MAPPED ALGMESH!!" << endl;
+      cout << "MAKE MAPPED (contracted) ALGMESH!!" << endl;
       auto scd = static_pointer_cast<TMESH>(mesh)->MapData(*this);
       this->mapped_mesh = make_shared<TMESH> ( move(*p_c_mesh), scd );
-      // cout << "MAPPED ALGMESH: " << endl;
-      // cout << *mapped_mesh << endl;
+      cout << " CONTR MESH" << endl;
+      intr(static_pointer_cast<TMESH>(this->mapped_mesh));
     }
   } // GridContractMap::BuildNodeMaps
 

@@ -52,6 +52,7 @@ namespace amg
     mesh->Apply<NT_EDGE>(lam_e, master_only);
     ch1e.SetParallelStatus(DISTRIBUTED);
   } // H1EData :: map_data_impl
+
 } // namespace amg
 
 

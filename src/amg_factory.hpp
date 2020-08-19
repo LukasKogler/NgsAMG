@@ -74,6 +74,10 @@ namespace amg
     virtual shared_ptr<BaseGridMapStep> BuildContractMap (double factor, shared_ptr<TopologicMesh> mesh, shared_ptr<LevelCapsule> & mapped_cap) const = 0;
     virtual shared_ptr<BaseDOFMapStep> BuildDOFContractMap (shared_ptr<BaseGridMapStep> cmap, shared_ptr<ParallelDofs> fpd, shared_ptr<LevelCapsule> & mapped_cap) const = 0;
 
+  public:
+    /** Misc **/
+    virtual void CheckKVecs (FlatArray<shared_ptr<AMGLevel>> levels, shared_ptr<DOFMap> dof_map) { ; }
+
   }; // BaseAMGFactory
 
 
@@ -225,6 +229,9 @@ namespace amg
     LOG_LEVEL log_level = LOG_LEVEL::NORMAL;    // how much info do we collect
     bool print_log = true;                      // print log to shell
     string log_file = "";                       // which file to print log to (none if empty)
+
+    /** Misc **/
+    bool check_kvecs = false;            // check for consistency of kernel vec
 
     Options () { ; }
 

@@ -135,6 +135,7 @@ namespace amg
     bool regularize_cmats = false;       // do we need to regularize coarse level matrices ?
     bool force_ass_flmat = false;        // force assembling of matrix belonging to finest level (embedding)
 
+
     /** How do we compute the replacement matrix **/
     enum ENERGY : char { TRIV_ENERGY = 0,     // uniform weights
 			 ALG_ENERGY = 1,      // from the sparse matrix

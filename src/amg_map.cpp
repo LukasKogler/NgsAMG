@@ -139,17 +139,37 @@ namespace amg
     TAU_PROFILE("ConcDMS::TransferC2F", TAU_CT(*this), TAU_DEFAULT);
 #endif
 
-    // cout << "conc map transC2F " << endl;
-    // for (auto step : sub_steps)
-    //   { cout << typeid(*step).name() << endl; }
+    cout << "conc map transC2F " << endl;
+    for (auto step : sub_steps)
+      { cout << typeid(*step).name() << endl; }
+
+    auto prt = [&](auto vec, int bs, string name) {
+      cout << name << endl;
+      auto fv = vec->FVDouble();
+      int n = fv.Size();
+      if (n == 0)
+	{ return; }
+      n /= bs;
+      for (auto k : Range(n)) {
+	cout << k << " = ";
+	for (auto l : Range(bs))
+	  { cout << fv(k*bs+l) << " "; }
+	cout << endl;
+      }
+      cout << endl;
+    };
 
     if (sub_steps.Size() == 1)
       { sub_steps[0]->TransferC2F(x_fine, x_coarse); }
     else {
+      if (x_coarse != nullptr)
+	prt(x_coarse, 6, "coarse");
       sub_steps.Last()->TransferC2F(vecs.Last(), x_coarse);
+      prt(vecs.Last(), 6, "mid last");
       for (int l = sub_steps.Size()-2; l>0; l--)
-	sub_steps[l]->TransferC2F(vecs[l-1], vecs[l]);
+	{ sub_steps[l]->TransferC2F(vecs[l-1], vecs[l]); prt(vecs[l-1], 6, string("mid ") + to_string(l-1)); }
       sub_steps[0]->TransferC2F(x_fine, vecs[0]);
+      prt(x_fine, 6, "fine");
     }
   }
 
@@ -212,6 +232,7 @@ namespace amg
     x_fine->Distribute();
     // cout << " prol f2c " << endl;
     prol_trans->Mult(*x_fine, *x_coarse);
+    // prol->MultTrans(*x_fine, *x_coarse);
     // cout << " prol f2c " << endl;
     x_coarse->SetParallelStatus(DISTRIBUTED);
 
@@ -349,10 +370,13 @@ namespace amg
     auto& self = const_cast<ProlMap<TMAT>&>(*this);
     self.Finalize();
     
-    // if (prol->Width() < 100) {
+    if (prol->Width() < 500) {
       // cout << " fmat: " << endl; print_tm_spmat(cout, *tfmat); cout << endl<< endl;
-      // cout << " prol: " << endl; print_tm_spmat(cout, *prol); cout << endl<< endl;
-    // }
+      cout << " prol: " << prol->Height() << " x " << prol->Width() << endl;
+      print_tm_spmat(cout, *prol); cout << endl << endl;
+      cout << " prol trans : " << prol->Width() << " x " << prol->Height() << endl;
+      print_tm_spmat(cout, *prol_trans); cout << endl << endl;
+    }
 
     // auto spm_tm = RestrictMatrixTM<SPM_TM_F, TMAT> (*prol_trans, *tfmat, *prol);
     shared_ptr<SPM_TM_C> spm_tm = RestrictMatrixTM<SPM_TM_F, TMAT> (*prol_trans, *tfmat, *prol);

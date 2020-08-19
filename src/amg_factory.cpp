@@ -56,6 +56,8 @@ namespace amg
 
     set_bool(keep_grid_maps, "keep_grid_maps");
 
+    set_bool(check_kvecs, "check_kvecs");
+
     set_enum_opt(log_level, "log_level", {"none", "basic", "normal", "extra"});
     set_bool(print_log, "print_log");
     log_file = flags.GetStringFlag(prefix + string("log_file"), "");
@@ -239,6 +241,11 @@ namespace amg
 
     if (dof_map->GetNSteps() == 0)
       { throw Exception("NgsAMG failed to construct any coarse levels!"); }
+
+    if (options->check_kvecs)
+      { CheckKVecs(amg_levels, dof_map); }
+
+    cout << " done check kv " << endl;
 
     logger = nullptr;
     delete state;

@@ -459,7 +459,9 @@ namespace amg
       for(auto k : Range(A.Height())) {
 	// cout << " REG DIAG " << k << endl;
 	// RegTM<3,3,6>(A(k,k));
+	// cout << " unreg " << endl; print_tm(cout, A(k,k)); cout << endl;
 	RegTM<0,6,6>(A(k,k));
+	// cout << "   reg " << endl; print_tm(cout, A(k,k)); cout << endl;
       }
     }
   } // ElasticityAMGFactory<DIM>::RegularizeMatrix
