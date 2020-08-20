@@ -162,7 +162,7 @@ namespace amg
     {
       if ((Rank() == root) && (mem.Size() < Size()) )
 	{ throw Exception("Not enough memory for MPI_Gather!"); }
-      MPI_Gather(&val, 1, GetMPIType<T>(), mem.Data(), mem.Size(), GetMPIType<T>(), root, comm);
+      MPI_Gather(&val, 1, GetMPIType<T>(), mem.Data(), 1, GetMPIType<T>(), root, comm);
     }
 
     template<typename T>
