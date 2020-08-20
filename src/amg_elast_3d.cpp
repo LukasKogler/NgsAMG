@@ -115,7 +115,7 @@ namespace amg
       unique_ptr<BaseVector> cvec = move(map->CreateVector(nlevsloc-1));
       if ( (nlevsloc == nlevsglob) && (cvec != nullptr) )
 	{ set_kvec(*cvec, kvnr, *amg_levels[nlevsloc-1]); }
-      for (int lev = nlevsglob-2; lev >= 0; lev--) {
+      for (int lev = nlevsloc-2; lev >= 0; lev--) {
 	unique_ptr<BaseVector> fvec1 = map->CreateVector(lev), fvec2 = map->CreateVector(lev);
 	map->TransferC2F(lev, fvec1.get(), cvec.get());
 	set_kvec(*fvec2, kvnr, *amg_levels[lev]);
