@@ -90,18 +90,18 @@ namespace amg
 	  c++;
 	}
       }
-      idx_t nvts = idx_t(comm.Size());      // nr of vertices
-      idx_t ncon = 1;                       // nr of balancing constraints
-      idx_t* xadj = &(edge_firsti[0]);      // edge-firstis
-      idx_t* adjncy = &(edge_idx[0]);       // edge-connectivity
-      idx_t* vwgt = &(v_weights[0]);        // "computation cost"
-      idx_t* vsize = NULL;                  // "comm. cost"
-      idx_t* adjwgts = &(edge_wt[0]);       // edge-weights
+      idx_t nvts = idx_t(comm.Size());         // nr of vertices
+      idx_t ncon = 1;                          // nr of balancing constraints
+      idx_t* xadj = edge_firsti.Data();        // edge-firstis
+      idx_t* adjncy = edge_idx.Data();         // edge-connectivity
+      idx_t* vwgt = v_weights.Data();          // "computation cost"
+      idx_t* vsize = NULL;                     // "comm. cost"
+      idx_t* adjwgts = edge_wt.Data();         // edge-weights
       idx_t  m_nparts = sep_p0 ? nparts-1 : nparts; // nr of parts
-      real_t* tpwgts = NULL;                // weights for each part (equal if NULL)
-      real_t* ubvec = NULL;                 // tolerance
-      idx_t metis_options[METIS_NOPTIONS];  // metis-options
-      idx_t objval;                         // value of the edgecut/totalv of the partition
+      real_t* tpwgts = NULL;                   // weights for each part (equal if NULL)
+      real_t* ubvec = NULL;                    // tolerance
+      idx_t metis_options[METIS_NOPTIONS];     // metis-options
+      idx_t objval;                            // value of the edgecut/totalv of the partition
       idx_t * part = partition.Data();         // where to write the partition
       METIS_SetDefaultOptions(metis_options);
       metis_options[METIS_OPTION_OBJTYPE] = METIS_OBJTYPE_VOL;         // minimize communication volume
