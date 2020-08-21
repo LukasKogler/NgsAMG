@@ -28,6 +28,7 @@ namespace amg
   template<>
   void ElasticityAMGFactory<3> :: CheckKVecs (FlatArray<shared_ptr<BaseAMGFactory::AMGLevel>> amg_levels, shared_ptr<DOFMap> map)
   {
+    auto gcomm = amg_levels[0]->cap->eqc_h->GetCommunicator();
     auto intr = [&](auto tmmm) {
       cout << endl;
       auto mvd = get<0>(tmmm->Data())->Data();
@@ -56,7 +57,7 @@ namespace amg
       else
 	{ cout << " no cap " << endl; }
     }
-    auto chkab = [&](auto fva, auto fvb, int n, auto fnodes, string title) {
+    auto chkab = [&](auto fva, auto fvb, int n, shared_ptr<BitArray> fnodes, string title) {
       if ( n == 0)
 	{ return; }
       cout << " check " << title << endl;
@@ -81,8 +82,10 @@ namespace amg
       if (fnodes != nullptr)
 	{ cout << " fnodes non-set = " << fnodes->Size() - fnodes->NumSet() << endl; }
     };
-    auto set_kvec = [&](auto & vec, int kvnr, BaseAMGFactory::AMGLevel & alev) {
+    auto set_kvec = [&](auto & vec, int kvnr, BaseAMGFactory::AMGLevel & alev, shared_ptr<BitArray> free_nodes) {
       typename ENERGY::TVD opt(0); /** just an arbitrary point ... **/
+      for (auto l : Range(3))
+	{ opt.pos(0) = l * gcomm.Size() + gcomm.Rank(); }
       typename ENERGY::TM Q; SetIdentity(Q);
       Vec<BS, double> vcos, ovec;
       ovec = 0; ovec(kvnr) = 1;
@@ -96,30 +99,42 @@ namespace amg
 	int vbs = vec.FVDouble().Size()/mesh->template GetNN<NT_VERTEX>();
 	auto fv = vec.FVDouble();
 	for (auto vnr : Range(mesh->template GetNN<NT_VERTEX>())) {
-	  ENERGY::CalcQHh(opt, vdata[vnr], Q);
-	  vcos = Q * ovec;
-	  for (int l = 0; l < vbs; l++)
-	    { fv(vbs * vnr + l) = vcos(l); }
-	  cout << vnr << " = ";
-	  for (int l = 0; l < vbs; l++)
-	    cout << fv(l) << " ";
-	  cout << endl;
+	  if ( (free_nodes == nullptr) || (free_nodes->Test(vnr)) ) {
+	    ENERGY::CalcQHh(opt, vdata[vnr], Q);
+	    vcos = Q * ovec;
+	    for (int l = 0; l < vbs; l++)
+	      { fv(vbs * vnr + l) = vcos(l); }
+	    cout << vnr << " = ";
+	    for (int l = 0; l < vbs; l++)
+	      cout << fv(vbs * vnr + l) << " ";
+	    cout << endl;
+	  }
+	  else {
+	    for (int l = 0; l < vbs; l++)
+	      { fv(vbs * vnr + l) = 0.0; }
+	  }
 	}
 	cout << endl;
       }
     };
     for (int kvnr = 0; kvnr < BS; kvnr++) {
-      auto gcomm = amg_levels[0]->cap->eqc_h->GetCommunicator();
       int nlevsglob = gcomm.AllReduce(amg_levels.Size(), MPI_MAX);
       int nlevsloc = map->GetNLevels();
       unique_ptr<BaseVector> cvec = move(map->CreateVector(nlevsloc-1));
       if ( (nlevsloc == nlevsglob) && (cvec != nullptr) )
-	{ set_kvec(*cvec, kvnr, *amg_levels[nlevsloc-1]); }
+	{ set_kvec(*cvec, kvnr, *amg_levels[nlevsloc-1], nullptr); }
       for (int lev = nlevsloc-2; lev >= 0; lev--) {
-	unique_ptr<BaseVector> fvec1 = map->CreateVector(lev), fvec2 = map->CreateVector(lev);
+	bool havemb = (lev == 0) && (amg_levels[0]->embed_map != nullptr);
+	unique_ptr<BaseVector> fvec1 = map->CreateVector(lev), fvec2 = havemb ? amg_levels[0]->embed_map->CreateMappedVector() : map->CreateVector(lev);
 	map->TransferC2F(lev, fvec1.get(), cvec.get());
-	set_kvec(*fvec2, kvnr, *amg_levels[lev]);
-	chkab(fvec1->FVDouble(), fvec2->FVDouble(), amg_levels[lev]->cap->mesh->template GetNN<NT_VERTEX>(), amg_levels[lev]->cap->free_nodes,
+	set_kvec(*fvec2, kvnr, *amg_levels[lev], amg_levels[lev]->cap->free_nodes);
+	if ( havemb ) {
+	  cout << " use embed map! " << endl;
+	  unique_ptr<BaseVector> fvec3 = amg_levels[0]->embed_map->CreateVector();
+	  amg_levels[0]->embed_map->TransferC2F(fvec3.get(), fvec2.get());
+	  fvec2 = move(fvec3);
+	}
+	chkab(fvec1->FVDouble(), fvec2->FVDouble(), amg_levels[lev]->cap->mesh->template GetNN<NT_VERTEX>(), nullptr,
 	      string("kvec ") + to_string(kvnr) + string(" on lev ") + to_string(lev));
 	cvec = move(fvec2);
       }
