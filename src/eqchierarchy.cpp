@@ -2,20 +2,6 @@
 
 namespace amg {
 
-  NgsAMG_Comm make_me_comm () {
-    NgMPI_Comm wcomm(MPI_COMM_WORLD);
-    if (wcomm.Size() == 1)
-      { return NgsAMG_Comm(wcomm); }
-    else {
-      Array<int> me = { wcomm.Rank() };
-      auto ngc = wcomm.SubCommunicator(me);
-      return NgsAMG_Comm(ngc);
-    }
-  }
-
-  static NgsAMG_Comm mecomm (make_me_comm());
-  NgsAMG_Comm AMG_ME_COMM = mecomm;
-
   EQCHierarchy :: EQCHierarchy (const shared_ptr<MeshAccess> & ma, Array<NODE_TYPE> nts, bool do_cutunion)
     : comm(ma->GetCommunicator())
   {
@@ -556,7 +542,7 @@ namespace amg {
     os << "EQCHierarchy on comm " << eqc_h.comm << ", rank " << eqc_h.rank << " of " << eqc_h.np << endl;
     os << "NEQCS: loc=" << eqc_h.neqcs << ", glob=" << eqc_h.neqcs_glob << endl;
     os << "rank "<< eqc_h.rank << " of " << eqc_h.np << endl;
-    os << "rank in world : " << NgMPI_Comm(MPI_COMM_WORLD).Rank() << endl;
+    os << "rank in world : " << NgMPI_Comm(MPI_COMM_WORLD, false).Rank() << endl;
     os << "EQCS: id   || dps " << endl;
     for (auto k:Range(eqc_h.neqcs)) {
       os << k << ": " << eqc_h.eqc_ids[k] << "  || ";
