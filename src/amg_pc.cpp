@@ -314,7 +314,7 @@ namespace amg
 	if (O.regularize_cmats)
 	  { RegularizeMatrix(cspm, cpds); }
 
-	shared_ptr<BaseMatrix> coarse_inv = nullptr;
+	shared_ptr<BaseMatrix> coarse_inv = nullptr, coarse_mat = nullptr;
       
 	if (GetEntryDim(cspm.get()) > MAX_SYS_DIM) // when would this ever happen??
 	  { throw Exception("Cannot inv coarse level, MAX_SYS_DIM insufficient!"); }
