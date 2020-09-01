@@ -119,6 +119,11 @@ namespace amg
       for (auto k : Range(size_t(1), neqcs))
 	{ exds[k] = 3 + 2 * M.template GetENN<NT_VERTEX>(k); }
     exdata = Table<int> (exds);
+    // if (neqcs > 1)
+    //   for (auto eqc : Range(size_t(1), neqcs)) {
+    // 	if (eqc_h.IsMasterOfEQC(eqc)) { exdata[eqc] = -2; }
+    // 	else { exdata[eqc] = -3; }
+    //   }
     if (neqcs > 1) {
       for (auto eqc : Range(size_t(1), neqcs)) {
 	if (eqc_h.IsMasterOfEQC(eqc)) {
@@ -132,8 +137,10 @@ namespace amg
 	    auto v = eqc_verts[j];
 	    auto agg_nr = v_to_agg[v];
 	    // cout << "eqc j v agg_nr " << eqc << " " << j << " " << v << " " << agg_nr << endl;
-	    if (agg_nr == -1) // dirichlet
-	      { loc_map[2*j] = -1; }
+	    if (agg_nr == -1) { // dirichlet
+	      loc_map[2*j]   = -1;
+	      loc_map[2*j+1] = -1;
+	    }
 	    else { // not dirichlet
 	      auto & cid = agg_map[agg_nr];
 	      auto & ceq = agg_eqc[agg_nr];
@@ -159,6 +166,8 @@ namespace amg
     // cout << "(unred) exdata: " << endl << exdata << endl;
 
     auto reqs = eqc_h.ScatterEQCData(exdata);
+
+    // cout << "(red) exdata: " << endl << exdata << endl;
 
     /** map agglomerates that do not touch a subdomain boundary **/
     for (auto & agg : agglomerates) { // per definition I am master of all verts in this agg

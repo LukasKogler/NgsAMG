@@ -14,8 +14,8 @@ namespace amg
     NgsAMG_Comm (const NgMPI_Comm & c) : NgMPI_Comm(c) { ; }
     NgsAMG_Comm (NgMPI_Comm && c) : NgMPI_Comm(c) { ; }
     NgsAMG_Comm (MPI_Comm comm, bool owns)
-      : NgMPI_Comm(NgMPI_Comm(comm, owns)) { ; }
-    NgsAMG_Comm () : NgsAMG_Comm(NgMPI_Comm(NgMPI_Comm())) { ; }
+      : NgMPI_Comm(comm, owns) { ; }
+    NgsAMG_Comm () : NgsAMG_Comm(NgMPI_Comm()) { ; }
     ~NgsAMG_Comm () { ; }
 
     using NgMPI_Comm :: Send;
@@ -180,8 +180,6 @@ namespace amg
     }
 
   }; // class NgsAMG_Comm
-  
-  extern NgsAMG_Comm AMG_ME_COMM;
   
   template<class T, class TLAM>
   void MyAllReduceDofData (const ParallelDofs & pardofs, FlatArray<T> data, TLAM lam)

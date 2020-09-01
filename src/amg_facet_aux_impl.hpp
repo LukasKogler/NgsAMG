@@ -37,8 +37,9 @@ namespace amg
     if (comp_pds == nullptr) {
       Array<int> perow (comp_fes->GetNDof()); perow = 0;
       Table<int> dps (perow);
-      NgMPI_Comm c(MPI_COMM_WORLD);
-      MPI_Comm mecomm = (c.Size() == 1) ? MPI_COMM_WORLD : AMG_ME_COMM;
+      NgMPI_Comm c(MPI_COMM_WORLD, false);
+      Array<int> me({ c.Rank() });
+      NgMPI_Comm mecomm = (c.Size() == 1) ? c : c.SubCommunicator(me);
       comp_pds = make_shared<ParallelDofs> ( mecomm , move(dps), 1, false);
     }
 
