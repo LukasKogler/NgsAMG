@@ -307,7 +307,7 @@ namespace amg
 	auto comm = cpds->GetCommunicator();
 	auto cspm = c_lev->cap->mat;
 
-	// auto cspmtm = dynamic_pointer_cast<SparseMatrixTM<Mat<3,3,double>>>(cspm);
+	// auto cspmtm = dynamic_pointer_cast<SparseMatrixTM<Mat<6,6,double>>>(cspm);
 	// cout << " Coarse mat: " << endl;
 	// print_tm_spmat(cout, *cspmtm);
 
@@ -323,16 +323,17 @@ namespace amg
 	  auto parmat = make_shared<ParallelMatrix> (cspm, cpds, cpds, C2D);
 	  parmat->SetInverseType(O.cinv_type);
 	  coarse_inv = parmat->InverseMatrix();
+	  coarse_mat = parmat;
 	}
 	else if ( (comm.Size() == 1) ||
 		  ( (comm.Size() == 2) && (comm.Rank() == 1) ) ) { // local inverse
 	  cspm->SetInverseType(O.cinv_type_loc);
 	  auto cinv = cspm->InverseMatrix();
-	  // cout << " coarse inv: " << endl << *cinv << endl;
 	  if (comm.Size() > 1)
 	    { coarse_inv = make_shared<ParallelMatrix> (cinv, cpds, cpds, C2C); } // dummy parmat
 	  else
 	    { coarse_inv = cinv; }
+	  coarse_mat = cspm;
 	}
 	else if (comm.Rank() == 0) { // some dummy matrix
 	  Array<int> perow(0);
@@ -341,8 +342,9 @@ namespace amg
 	    { coarse_inv = make_shared<ParallelMatrix> (cinv, cpds, cpds, C2C); } // dummy parmat
 	  else
 	    { coarse_inv = cinv; }
+	  coarse_mat = cspm;
 	}
-	amg_mat->SetCoarseInv(coarse_inv);
+	amg_mat->SetCoarseInv(coarse_inv, coarse_mat);
 	break;
       }
       default : { break; }

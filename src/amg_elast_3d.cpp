@@ -78,14 +78,31 @@ namespace amg
 	  }
 	}
       }
-      cout << " done " << title << ", mismates = " << numdf << endl;
+      if (numdf > 0)
+	{ cout << " done " << title << ", mismatches = " << numdf << endl; }
       if (fnodes != nullptr)
 	{ cout << " fnodes non-set = " << fnodes->Size() - fnodes->NumSet() << endl; }
     };
+    auto prtv = [&](auto & vec, int nv, string title) {
+      if (nv == 0)
+	{ return; }
+      auto fv = vec.FVDouble();
+      int vbs = fv.Size()/nv;
+      cout << title << " = " << endl;
+      cout << "  stat = " << vec.GetParallelStatus() << endl;
+      cout << "  vals = " << endl;
+      for (auto vnr : Range(nv)) {
+	cout << "  " << vnr << " = ";
+	for (int l = 0; l < vbs; l++)
+	  cout << fv(vbs * vnr + l) << " ";
+	cout << endl;
+      }
+      cout << endl;
+    };
     auto set_kvec = [&](auto & vec, int kvnr, BaseAMGFactory::AMGLevel & alev, shared_ptr<BitArray> free_nodes) {
       typename ENERGY::TVD opt(0); /** just an arbitrary point ... **/
-      for (auto l : Range(3))
-	{ opt.pos(0) = l * gcomm.Size() + gcomm.Rank(); }
+      // for (auto l : Range(3))
+	// { opt.pos(0) = l * gcomm.Size() + gcomm.Rank(); }
       typename ENERGY::TM Q; SetIdentity(Q);
       Vec<BS, double> vcos, ovec;
       ovec = 0; ovec(kvnr) = 1;
@@ -117,25 +134,41 @@ namespace amg
 	cout << endl;
       }
     };
+    auto clcenrg = [&](auto & lev, auto & v, string title) {
+      cout << " mat type " << typeid(*lev.cap->mat).name() << endl;
+      auto pds = lev.embed_map != nullptr ? lev.embed_map->GetParDofs() : lev.cap->pardofs;
+      auto A = make_shared<ParallelMatrix>(lev.cap->mat, pds, pds, C2D);
+      prtv(v, lev.cap->mesh->template GetNN<NT_VERTEX>(), "vec v");
+      unique_ptr<BaseVector> Av = A->CreateColVector();
+      A->Mult(v, *Av);
+      prtv(*Av, lev.cap->mesh->template GetNN<NT_VERTEX>(), "vec Av");
+      double enrg = sqrt(fabs(InnerProduct(*Av, v)));
+      cout << title << ", energy = " << enrg << ", vv = " << InnerProduct(v,v) << ", relative = " << enrg/sqrt(InnerProduct(v, v)) << endl;
+    };
     for (int kvnr = 0; kvnr < BS; kvnr++) {
       int nlevsglob = gcomm.AllReduce(amg_levels.Size(), MPI_MAX);
       int nlevsloc = map->GetNLevels();
       unique_ptr<BaseVector> cvec = move(map->CreateVector(nlevsloc-1));
-      if ( (nlevsloc == nlevsglob) && (cvec != nullptr) )
-	{ set_kvec(*cvec, kvnr, *amg_levels[nlevsloc-1], nullptr); }
+      if ( (nlevsloc == nlevsglob) && (cvec != nullptr) ) {
+	set_kvec(*cvec, kvnr, *amg_levels[nlevsloc-1], nullptr);
+	clcenrg(*amg_levels[nlevsloc-1], *cvec,
+		string("kvec ") + to_string(kvnr) + string(" on lev ") + to_string(nlevsloc-1));
+      }
       for (int lev = nlevsloc-2; lev >= 0; lev--) {
 	bool havemb = (lev == 0) && (amg_levels[0]->embed_map != nullptr);
 	unique_ptr<BaseVector> fvec1 = map->CreateVector(lev), fvec2 = havemb ? amg_levels[0]->embed_map->CreateMappedVector() : map->CreateVector(lev);
 	map->TransferC2F(lev, fvec1.get(), cvec.get());
 	set_kvec(*fvec2, kvnr, *amg_levels[lev], amg_levels[lev]->cap->free_nodes);
 	if ( havemb ) {
-	  cout << " use embed map! " << endl;
 	  unique_ptr<BaseVector> fvec3 = amg_levels[0]->embed_map->CreateVector();
+	  amg_levels[0]->embed_map->Finalize(); // this can be  concatenated before crs grid projection!
 	  amg_levels[0]->embed_map->TransferC2F(fvec3.get(), fvec2.get());
 	  fvec2 = move(fvec3);
 	}
 	chkab(fvec1->FVDouble(), fvec2->FVDouble(), amg_levels[lev]->cap->mesh->template GetNN<NT_VERTEX>(), nullptr,
 	      string("kvec ") + to_string(kvnr) + string(" on lev ") + to_string(lev));
+	clcenrg(*amg_levels[lev], *fvec1,
+		string("kvec ") + to_string(kvnr) + string(" on lev ") + to_string(lev));
 	cvec = move(fvec2);
       }
     }
