@@ -220,7 +220,7 @@ namespace amg
 	T dof_val(0);
 	bool loc_done = false;
 	for (auto j : Range(dps)) {
-	  if (comm.Rank() < dps[j]) {
+	  if ( (comm.Rank() < dps[j]) && (!loc_done) ) {
 	    loc_done = true;
 	    lam(dof_val, data[dof_num]);
 	  }
