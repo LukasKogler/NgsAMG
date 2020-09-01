@@ -24,13 +24,13 @@ namespace amg
     size_t n_levels = 0;
     size_t n_levels_glob = 0;
     int stk = 1;
-    shared_ptr<BaseMatrix> crs_inv;
+    shared_ptr<BaseMatrix> crs_inv, crs_mat;
     int vwb = 0;
 
   public:
     AMGMatrix (shared_ptr<DOFMap> _map, FlatArray<shared_ptr<BaseSmoother>> _smoothers);
 
-    void SetCoarseInv (shared_ptr<BaseMatrix> _crs_inv);
+    void SetCoarseInv (shared_ptr<BaseMatrix> _crs_inv, shared_ptr<BaseMatrix> _crs_mat);
     
     INLINE void Smooth (BaseVector & x, const BaseVector & b) const {
       switch(vwb) {

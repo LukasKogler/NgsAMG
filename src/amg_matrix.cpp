@@ -27,8 +27,8 @@ namespace amg
   } // AMGMatrix::AMGMatrix
 
 
-  void AMGMatrix :: SetCoarseInv (shared_ptr<BaseMatrix> _crs_inv)
-  { crs_inv = _crs_inv; has_crs_inv = true; }
+  void AMGMatrix :: SetCoarseInv (shared_ptr<BaseMatrix> _crs_inv, shared_ptr<BaseMatrix> _crs_mat)
+  { crs_inv = _crs_inv; crs_mat = _crs_mat; has_crs_inv = true; }
 
 
   void AMGMatrix :: SmoothW (BaseVector & x, const BaseVector & b) const
@@ -450,14 +450,14 @@ namespace amg
     }
     for (int level = n_levels-2; level>=0; level--)
       map->TransferC2F(level, x_level[level].get(), x_level[level+1].get());
-    x_level[0] = tmp;
-    rhs_level[0] = tmp2;
-
     cout << endl << endl << "CINV --  finest level rhs/sol (len = " << rhs_level[0]->FVDouble().Size()<< "): " << endl;
     for (auto k : Range(rhs_level[0]->FVDouble().Size())) {
       cout << k << ": " << rhs_level[0]->FVDouble()[k] << " " << x_level[0]->FVDouble()[k] << endl;
     }
     cout << endl;
+
+    x_level[0] = tmp;
+    rhs_level[0] = tmp2;
   } // AMGMatrix::CINV
 
 
@@ -554,7 +554,7 @@ namespace amg
     auto comm = map->GetParDofs(0)->GetCommunicator();
     auto rank = comm.Rank();
     auto np = comm.Size();
-    cout << "GET BF " << level << " " << rank << " " << dof << endl;
+    cout << "GET BF " << level << " " << arank << " " << dof << endl;
     int input_notok = 1;
     if ( (arank<0) || (arank>np) )
       cout << "Invalid rank " << arank << ", only have " << np << endl;
@@ -582,7 +582,7 @@ namespace amg
       x_level[level]->FVDouble()[dof] = 1.0;
       x_level[level]->SetParallelStatus(DISTRIBUTED);
       x_level[level]->Cumulate();
-      cout << "SET x_level[" << level << "] [" << dof << "] to 1.0!!" << endl;
+      cout << "(L-)SET x_level[" << level << "] [" << dof << "] to 1.0!!" << endl;
     }
     else if ( (arank==0) && (my_max_level==level) ){
       auto pd = map->GetParDofs(level);
@@ -593,13 +593,18 @@ namespace amg
       Array<int> gdn;
       int gn;
       pd->EnumerateGlobally(all, gdn, gn);
+      if (dof == 0)
+	{ cout << " glob nrs: "; prow2(gdn); cout << endl; }
       size_t bdof = dof/BS;
       for (auto k : Range(n)) {
 	if (size_t(gdn[k])==bdof && pd->IsMasterDof(k)) {
-	  cout << "SET x_level[" << level << "] [" << BS*k+(dof%BS) << "] to 1.0!! (is global nr " << dof << ") " << endl;
+	  cout << "(G-)SET for dof/vnr " << dof << "/" << bdof << ", x_level[" << level << "] [" << "V" << k << "/" << (dof%BS) << "->" << BS*k+(dof%BS) << "] to 1.0!! (is global nr " << dof << ") " << endl;
 	  x_level[level]->FVDouble() = 0.0;
 	  x_level[level]->FVDouble()[BS*k+(dof%BS)] = 1.0;
 	}
+	else if (size_t(gdn[k]) == bdof)
+	  { cout << "(G-)SET for dof/vnr " << dof << "/" << bdof << ", x_level[" << level << "] [" << "V" << k << "/" << (dof%BS) << "->" << BS*k+(dof%BS) << "] NOT MASTER, shared with = ";
+	    prow(pd->GetDistantProcs(k)); cout << endl; }
       }
       x_level[level]->SetParallelStatus(DISTRIBUTED);
       x_level[level]->Cumulate();
