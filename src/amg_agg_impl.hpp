@@ -2030,14 +2030,11 @@ namespace amg
 	    if (neib_agg_id != -1) { // neib is in an agglomerate - I must also be master of N [do not check marked - might be diri!]
 	      auto & neib_agg = agglomerates[neib_agg_id];
 	      auto N_eqc = M.template GetEqcOfNode<NT_VERTEX>(N);
-	      bool could_add = eqa_to_eqb(eqc, N_eqc);
-	      bool can_add = (dist2agg[N] == 0); // (neib_agg.center() == N); // I think in this case this MUST be ok ??
-	      if ( could_add && (!can_add) ) { // otherwise, re-check SOC (but this should have been checked already)
+	      bool can_add = eqa_to_eqb(eqc, N_eqc);
+	      if (can_add) {
 		auto soc = CalcSOC_av (neib_agg, v, true);
-		if (soc > MIN_ECW)
-		  { can_add = true; }
+		can_add &= (soc > MIN_ECW);
 	      }
-	      can_add &= could_add;
 	      if (can_add) { // lucky!
 		// cout << " add hanging " << v << " to agg of " << N << " = " << neib_agg << endl;
 		marked.SetBit(v);
