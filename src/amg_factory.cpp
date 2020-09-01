@@ -242,6 +242,10 @@ namespace amg
     if (dof_map->GetNSteps() == 0)
       { throw Exception("NgsAMG failed to construct any coarse levels!"); }
 
+    if (options->check_kvecs)
+      { CheckKVecs(amg_levels, dof_map); }
+
+ 
     logger = nullptr;
     delete state;
   } // BaseAMGFactory::SetUpLevels
