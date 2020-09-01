@@ -56,6 +56,8 @@ namespace amg
 
     set_bool(keep_grid_maps, "keep_grid_maps");
 
+    set_bool(check_kvecs, "check_kvecs");
+
     set_enum_opt(log_level, "log_level", {"none", "basic", "normal", "extra"});
     set_bool(print_log, "print_log");
     log_file = flags.GetStringFlag(prefix + string("log_file"), "");

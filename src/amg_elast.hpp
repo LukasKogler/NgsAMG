@@ -166,6 +166,9 @@ namespace amg
       : BASE(_opts)
     { ; }
 
+    /** Misc **/
+    void CheckKVecs (FlatArray<shared_ptr<BaseAMGFactory::AMGLevel>> amg_levels, shared_ptr<DOFMap> map) override;
+
   }; // class ElasticityAMGFactory
 
   /** END Factory **/
