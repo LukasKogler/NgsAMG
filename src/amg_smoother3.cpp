@@ -30,7 +30,8 @@ namespace amg
       // cout << "--- woke up,  " << thread_ready << " " << thread_done << " " << end_thread << endl;
       if (!end_thread && !thread_done) {
 	thread_exec_fun();
-	thread_done = true; thread_ready = false;
+	/** if thread_exec_fun is a lambda, it can keep alive objects unnecessarily! **/
+	thread_exec_fun = [](){}; thread_done = true; thread_ready = false;
 	cv.notify_one();
       }
     }
