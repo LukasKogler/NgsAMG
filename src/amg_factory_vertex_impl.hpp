@@ -411,7 +411,7 @@ namespace amg
     /** "fmat" can be the pre-embedded matrix. In that case we can't use it for smoothing. **/
     bool have_fmat = (fmat != nullptr);
     /** if "fmat" has no pardofs, it is not the original finest level matrix, so fine to use! !**/
-    if (fmat->GetParallelDofs() != nullptr)
+    if ( have_fmat && (fmat->GetParallelDofs() != nullptr) )
       { have_fmat &= (fmat->GetParallelDofs() == fpds); }
 
     // cout << " have fmat " << have_fmat << (fmat != nullptr) << (fmat->GetParallelDofs() == fpds) << endl;
