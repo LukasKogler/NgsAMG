@@ -41,7 +41,7 @@ def test_2d_lo_ro2_R():
 
 if __name__ == "__main__":
     test_2d_lo()
-    test_2d_lo_ro()
+    # test_2d_lo_ro()
     test_2d_lo_R()
-    test_2d_lo_ro_R()
-    test_2d_lo_ro2_R()
+    # test_2d_lo_ro_R()
+    # test_2d_lo_ro2_R()

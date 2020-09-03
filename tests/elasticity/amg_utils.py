@@ -339,6 +339,7 @@ def setup_norot_elast(mesh, mu = 1, lam = 0, f_vol = None, multidim = True, reor
         V = ngs.VectorH1(mesh, order=order, dirichlet=diri, **fes_opts)
 
     if reorder:
+        raise Exception("reordered does not work anymore (now ordered by elements)!!")
         V = ngs.comp.Reorder(V)
         
     u,v = V.TnT()

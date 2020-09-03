@@ -38,6 +38,6 @@ def test_3d_ro2_lo_R():
 if __name__ == "__main__":
     test_3d_lo()
     test_3d_lo_R()
-    test_3d_ro_lo()
-    test_3d_ro_lo_R()
-    test_3d_ro2_lo_R()
+    # test_3d_ro_lo()
+    # test_3d_ro_lo_R()
+    # test_3d_ro2_lo_R()
