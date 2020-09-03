@@ -11,54 +11,70 @@
 namespace amg
 {
 
-  static mutex glob_mut;
-  static bool thread_ready = true, thread_done = false, end_thread = false;
-  static function<void(void)> thread_exec_fun = [](){};
-  static std::condition_variable cv;
 
-  
-  void thread_fpf () {
-#ifdef USE_TAU
-    TAU_REGISTER_THREAD();
-    TAU_PROFILE_SET_NODE(NgMPI_Comm(MPI_COMM_WORLD).Rank());
-#endif
-    while( !end_thread ) {
-      // cout << "--- ulock" << endl;
-      std::unique_lock<std::mutex> lk(glob_mut);
-      // cout << "--- wait" << endl;
-      cv.wait(lk, [&](){ return thread_ready; });
-      // cout << "--- woke up,  " << thread_ready << " " << thread_done << " " << end_thread << endl;
-      if (!end_thread && !thread_done) {
-	thread_exec_fun();
-	/** if thread_exec_fun is a lambda, it can keep alive objects unnecessarily! **/
-	thread_exec_fun = [](){}; thread_done = true; thread_ready = false;
-	cv.notify_one();
-      }
-    }
-    // cout << "--- am done!" << endl;
-  }
+  class BackgroundMPIThread
+  {
+  protected:
+    std::thread t;
+    mutex glob_mut;
+    bool thread_ready = true, thread_done = false, end_thread = false;
+    std::condition_variable cv;
+    function<void(void)> thread_exec_fun = [](){};
 
-  static std::thread glob_mpi_thread = std::thread(thread_fpf);
-
-  class ThreadGuard {
   public:
-    std::thread * t;
-    // ThreadGuard(std::thread* at) : t(at) { ; }
-    ThreadGuard(std::thread* at) : t(at) {
-      // cout << " MAKE class ThreadGuard !!!" << endl;
+    BackgroundMPIThread () : t([this](){ this->thread_fpf(); })
+    {
 #ifdef USE_TAU
-      // has nothing to do with the MPI thread itself
-      // TAU_ENABLE_INSTRUMENTATION();
-      // cout << " call reg thread main" << endl;
-      // TAU_REGISTER_THREAD();
-      // cout << " call set node main" << endl;
       TAU_PROFILE_SET_NODE(NgMPI_Comm(MPI_COMM_WORLD).Rank());
 #endif
-    }
-    ~ThreadGuard () { thread_ready = true; end_thread = true; cv.notify_one(); t->join(); }
-  };
+    } // BackgroundMPIThread (..)
 
-  static ThreadGuard tg(&glob_mpi_thread);
+    ~BackgroundMPIThread () { thread_ready = true; end_thread = true; cv.notify_one(); t.join(); }
+
+    void thread_fpf () {
+#ifdef USE_TAU
+      TAU_REGISTER_THREAD();
+      TAU_PROFILE_SET_NODE(NgMPI_Comm(MPI_COMM_WORLD).Rank());
+#endif
+      while( !end_thread ) {
+	// cout << "--- ulock" << endl;
+	std::unique_lock<std::mutex> lk(glob_mut);
+	// cout << "--- wait" << endl;
+	cv.wait(lk, [&](){ return thread_ready; });
+	// cout << "--- woke up,  " << thread_ready << " " << thread_done << " " << end_thread << endl;
+	if (!end_thread && !thread_done) {
+	  thread_exec_fun();
+	  /** if thread_exec_fun is a lambda, it can keep alive objects unnecessarily! **/
+	  thread_exec_fun = [](){}; thread_done = true; thread_ready = false;
+	  cv.notify_one();
+	}
+      }
+      // cout << "--- am done!" << endl;
+    }
+
+
+    void StartInThread (function<void(void)> _thread_exec_fun)
+    {
+      std::lock_guard<std::mutex> lk(glob_mut);
+      thread_done = false; thread_ready = true;
+      thread_exec_fun = _thread_exec_fun;
+      cv.notify_one();
+    } // BackgroundMPIThread::StartInThread
+
+    void WaitForThread ()
+    {
+      std::unique_lock<std::mutex> lk(glob_mut);
+      cv.wait(lk, [&]{ return thread_done; });
+    } // BackgroundMPIThread::WaitForThread
+
+  }; // class BackgroundMPIThread
+
+  shared_ptr<BackgroundMPIThread> GetGlobMPIThread () {
+    static shared_ptr<BackgroundMPIThread> glob_gt;
+    if (glob_gt == nullptr)
+      { glob_gt = make_shared<BackgroundMPIThread>(); }
+    return glob_gt;
+  }
 
 
   // like parallelvector.hpp, but force inline
@@ -1398,6 +1414,8 @@ namespace amg
     : BaseSmoother(_A->GetParallelDofs()), overlap(_overlap), in_thread(_in_thread)
   {
 
+    mpi_thread = in_thread ? GetGlobMPIThread() : nullptr;
+
     shared_ptr<DCCMap<typename mat_traits<TM>::TSCAL>> dcc_map = nullptr;
     if (auto pds = _A->GetParallelDofs())
       { dcc_map = make_shared<ChunkedDCCMap<typename mat_traits<TM>::TSCAL>>(eqc_h, pds, 10); }
@@ -1435,7 +1453,14 @@ namespace amg
     if (A->GetG() != nullptr)
       { Gx = make_shared<S_BaseVectorPtr<double>> (A->Height(), A->BS()); }
     
-  }
+  } // HybridSmoother2 (..)
+
+
+  template<class TM>
+  HybridSmoother2<TM> :: ~HybridSmoother2 ()
+  {
+    ;
+  } // ~HybridSmoother2
 
 
   template<class TM>
@@ -1616,19 +1641,25 @@ namespace amg
 
 
     BaseVector * mpivec = use_b ? &ncb : &res;
-    condition_variable* pcv = &cv;
     bool vals_buffered = false;
     bool need_d2c = mpivec->GetParallelStatus() == DISTRIBUTED;
 
     if (need_d2c) {
       if (overlap && in_thread) {
-	std::lock_guard<std::mutex> lk(glob_mut);
-	thread_done = false; thread_ready = true;
-	thread_exec_fun = [&]() {
+
+	// std::lock_guard<std::mutex> lk(glob_mut);
+	// thread_done = false; thread_ready = true;
+	// thread_exec_fun = [&]() {
+	//   dcc_map->StartDIS2CO(*mpivec);
+	//   dcc_map->WaitD2C();
+	// };
+	// cv.notify_one();
+
+	mpi_thread->StartInThread([&]() {
 	  dcc_map->StartDIS2CO(*mpivec);
 	  dcc_map->WaitD2C();
-	};
-	cv.notify_one();
+	});
+
       }
       else
 	{ dcc_map->StartDIS2CO(*mpivec); }
@@ -1648,8 +1679,9 @@ namespace amg
     if (need_d2c) {
       if (overlap) {
 	if (in_thread) {
-	  std::unique_lock<std::mutex> lk(glob_mut);
-	  cv.wait(lk, [&]{ return thread_done; });
+	  // std::unique_lock<std::mutex> lk(glob_mut);
+	  // cv.wait(lk, [&]{ return thread_done; });
+	  mpi_thread->WaitForThread();
 	}
 	else
 	  { dcc_map->WaitD2C(); }
@@ -1663,14 +1695,21 @@ namespace amg
     mpivec = &x;
 
     if (overlap && in_thread) {
-      std::lock_guard<std::mutex> lk(glob_mut); // get lock
-      thread_done = false; thread_ready = true;
-      thread_exec_fun = [mpivec, dcc_map] () {
+
+      // std::lock_guard<std::mutex> lk(glob_mut); // get lock
+      // thread_done = false; thread_ready = true;
+      // thread_exec_fun = [mpivec, dcc_map] () {
+      // 	dcc_map->StartCO2CU(*mpivec);
+      // 	dcc_map->ApplyCO2CU(*mpivec);
+      // 	dcc_map->FinishCO2CU(false); // probably dont take a shortcut ??
+      // };
+      // cv.notify_one();
+
+      mpi_thread->StartInThread([mpivec, dcc_map] () {
 	dcc_map->StartCO2CU(*mpivec);
 	dcc_map->ApplyCO2CU(*mpivec);
 	dcc_map->FinishCO2CU(false); // probably dont take a shortcut ??
-      };
-      cv.notify_one();
+	});
     }
     else
       { dcc_map->StartCO2CU(*mpivec); }
@@ -1684,8 +1723,9 @@ namespace amg
 
     if (overlap) {
       if (in_thread) {
-	std::unique_lock<std::mutex> lk(glob_mut);
-	cv.wait(lk, [&]{ return thread_done; });
+	// std::unique_lock<std::mutex> lk(glob_mut);
+	// cv.wait(lk, [&]{ return thread_done; });
+	mpi_thread->WaitForThread();
       }
       else {
 	dcc_map->ApplyCO2CU(*mpivec);

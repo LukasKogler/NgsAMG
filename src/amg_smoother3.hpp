@@ -8,6 +8,8 @@
 namespace amg
 {
 
+  class BackgroundMPIThread;
+
   /** Sequential Gauss-Seidel. Can update residual during computation. **/
   template<class TM>
   class GSS3 : public BaseSmoother
@@ -324,6 +326,7 @@ namespace amg
     HybridSmoother2 (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h,
 		     bool _overlap = false, bool _in_thread = false);
 
+    virtual ~HybridSmoother2 ();
 
     virtual void Smooth (BaseVector  &x, const BaseVector &b,
     			 BaseVector  &res, bool res_updated = false,
@@ -351,6 +354,7 @@ namespace amg
   protected:
     bool overlap = false;
     bool in_thread = false;
+    shared_ptr<BackgroundMPIThread> mpi_thread;
 
     // type: 0 - FW / 1 - BW / 2 - FW/BW / 3 - BW/FW
     virtual void SmoothInternal (int type, BaseVector  &x, const BaseVector &b, BaseVector &res,
