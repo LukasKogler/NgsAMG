@@ -30,14 +30,14 @@ def test_2d_lo():
 def test_2d_lo_R():
     do_test(True, False)
 
-def test_2d_lo_ro():    
-    do_test(False, True)
+# def test_2d_lo_ro():    
+#     do_test(False, True)
     
-def test_2d_lo_ro_R():
-    do_test(True, True)
+# def test_2d_lo_ro_R():
+#     do_test(True, True)
 
-def test_2d_lo_ro2_R():
-    do_test(True, "sep")
+# def test_2d_lo_ro2_R():
+#     do_test(True, "sep")
 
 if __name__ == "__main__":
     test_2d_lo()

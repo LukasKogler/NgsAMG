@@ -26,14 +26,14 @@ def test_3d_lo():
 def test_3d_lo_R():
     do_test (True, False)
 
-def test_3d_ro_lo():
-    do_test (False, True)
+# def test_3d_ro_lo():
+#     do_test (False, True)
 
-def test_3d_ro_lo_R():
-    do_test (True, True)
+# def test_3d_ro_lo_R():
+#     do_test (True, True)
 
-def test_3d_ro2_lo_R():
-    do_test (True, "sep")
+# def test_3d_ro2_lo_R():
+#     do_test (True, "sep")
     
 if __name__ == "__main__":
     test_3d_lo()

@@ -96,7 +96,7 @@ def test_3d_bddc():
 # BDDc reduces to p1+p2 DOFs, coarsening on all left
 def test_3d_bddc_np2():
     for R in [True, False]:
-        for reo in [True]#:, False, "sep"]:
+        for reo in [True]:#, False, "sep"]:
             do_test(rots=R, order=3, nodalp2=True, use_bddc=True, reo=reo)
 
 # BDDc reduces to p1 DOFs + edge bubbles, coarsening only on P1 dofs [no reorder!]

@@ -67,14 +67,14 @@ def test_32_comp():
 def test_33_comp():
     do_test_vec_h1(mesh_dim = 3, vec_dim = 3, maxh = 0.1, nref = 0, space = "compound", ms = 30)
     
-def test_22_reo():
-    do_test_vec_h1(mesh_dim = 2, vec_dim = 2, maxh = 0.05, nref = 0, space = "reo", ms = 30)
-def test_23_reo():
-    do_test_vec_h1(mesh_dim = 2, vec_dim = 3, maxh = 0.05, nref = 0, space = "reo", ms = 30)
-def test_32_reo():
-    do_test_vec_h1(mesh_dim = 3, vec_dim = 2, maxh = 0.1, nref = 0, space = "reo", ms = 30)
-def test_33_reo():
-    do_test_vec_h1(mesh_dim = 3, vec_dim = 3, maxh = 0.1, nref = 0, space = "reo", ms = 30)
+# def test_22_reo():
+#     do_test_vec_h1(mesh_dim = 2, vec_dim = 2, maxh = 0.05, nref = 0, space = "reo", ms = 30)
+# def test_23_reo():
+#     do_test_vec_h1(mesh_dim = 2, vec_dim = 3, maxh = 0.05, nref = 0, space = "reo", ms = 30)
+# def test_32_reo():
+#     do_test_vec_h1(mesh_dim = 3, vec_dim = 2, maxh = 0.1, nref = 0, space = "reo", ms = 30)
+# def test_33_reo():
+#     do_test_vec_h1(mesh_dim = 3, vec_dim = 3, maxh = 0.1, nref = 0, space = "reo", ms = 30)
 
 if __name__ == "__main__":
     test_22_mdim()
