@@ -72,7 +72,7 @@ def do_test (rots=False, nodalp2 = False, ms=100, order=3, reo = False, use_bddc
 # coarsen on p1 DOFs, smooth on others [no reorder!]
 def test_3d_ho():
     for R in [True, False]:
-        for reo in [True]:#, False, "sep"]:
+        for reo in [False]:#, True, "sep"]:
             do_test(rots=R)
 
 # coarsen on p2 DOFs (so all DOFs) 
