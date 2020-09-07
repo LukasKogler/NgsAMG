@@ -78,25 +78,25 @@ def test_3d_ho():
 # coarsen on p2 DOFs (so all DOFs) 
 def test_3d_np2():
     for R in [True, False]:
-        for reo in [True]:#, False, "sep"]:
+        for reo in [False]:#, True, "sep"]:
             do_test(rots=R, order=2, nodalp2=True, reo=reo)
 
 # coarsen on p2 DOFs, smooth on HO [no reorder]
 def test_3d_np2_ho():
     for R in [True, False]:
-        for reo in [True]:#, False, "sep"]:
+        for reo in [False]:#, True, "sep"]:
             do_test(rots=R, order=3, nodalp2=True)
 
 # BDDC reduces to p1 DOFs, coarsening on all left
 def test_3d_bddc():
     for R in [True, False]:
-        for reo in [True]:#, False, "sep"]:
+        for reo in [False]:#, True, "sep"]:
             do_test(rots=R, order=3, nodalp2=False, use_bddc=True, reo=reo, ho_wb=False, ms=200)
 
 # BDDc reduces to p1+p2 DOFs, coarsening on all left
 def test_3d_bddc_np2():
     for R in [True, False]:
-        for reo in [True]:#, False, "sep"]:
+        for reo in [False]:#, True, "sep"]:
             do_test(rots=R, order=3, nodalp2=True, use_bddc=True, reo=reo)
 
 # BDDc reduces to p1 DOFs + edge bubbles, coarsening only on P1 dofs [no reorder!]
