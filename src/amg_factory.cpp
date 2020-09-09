@@ -270,8 +270,10 @@ namespace amg
     if (c_lev->cap->mesh != nullptr) { // not dropped out
       if (ComputeMeshMeasure(*c_lev->cap->mesh) == 0)
 	{ step_bad = 1; } // e.g stokes: when coarsening down to 1 vertex, no more edges left!
-      if (ComputeMeshMeasure(*c_lev->cap->mesh) < O.min_meas)
+      else if (ComputeMeshMeasure(*c_lev->cap->mesh) < O.min_meas)
 	{ step_bad = 1; } // coarse grid is too small
+      else if (ComputeMeshMeasure(*c_lev->cap->mesh) == ComputeMeshMeasure(*f_lev->cap->mesh))
+	{ step_bad = 1; } // probably just a contract without coarse map
     }
 
     step_bad = f_lev->cap->eqc_h->GetCommunicator().AllReduce(step_bad, MPI_SUM);
