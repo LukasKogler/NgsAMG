@@ -1165,13 +1165,26 @@ namespace amg
     FlatArray<TVD> vdata = get<0>(tm_mesh->Data())->Data();
     FlatArray<TMU> edata = GetEdgeData<TMU>();
 
-    // cout << " agg coarsen params: " << endl;
-    // cout << "min_ecw = " << MIN_ECW << endl;
-    // cout << "dist2 = " << dist2 << endl;
-    // cout << "geom = " << geom << endl;
-    // cout << " min new agg size = " << MIN_NEW_AGG_SIZE << endl;
-    // cout << " neibs per v " << double(2 * M.template GetNN<NT_EDGE>())/NV << endl;
-    // cout << " ECON: " << endl << econ << endl;
+    if (settings.print_aggs) {
+      cout << " agg coarsen params: " << endl;
+      cout << " dist2 = " << dist2 << endl;
+      cout << " geom = " << geom << endl;
+      cout << " enable_neib_boost = " << enable_neib_boost << endl;
+      cout << " lazy_neib_boost = " << lazy_neib_boost << endl;
+      cout << " stab_ecw_hack = " << use_stab_ecw_hack << endl;
+      cout << " use_minmax_soc = " << use_minmax_soc << endl;
+      cout << " minmax_avg = " << minmax_avg << endl;
+      cout << " min new agg size = " << MIN_NEW_AGG_SIZE << endl;
+      cout << " neibs per v " << double(2 * M.template GetNN<NT_EDGE>())/NV << endl;
+      size_t mpr = 0;
+      for (auto k : Range(econ.Height()))
+	{ mpr = max2(mpr, econ.GetRowIndices(k).Size()); }
+      Array<int> pr(mpr+1); pr = 0;
+      for (auto k : Range(econ.Height()))
+	{ pr[econ.GetRowIndices(k).Size()]++; }
+      cout << " econ perow: " << endl; prow2(pr); cout << endl;
+      // cout << " ECON: " << endl << econ << endl;
+    }
 
     /** replacement-matrix diagonals **/
     Array<TMU> repl_diag(M.template GetNN<NT_VERTEX>()); repl_diag = 0;
