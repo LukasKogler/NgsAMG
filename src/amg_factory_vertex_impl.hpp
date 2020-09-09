@@ -74,7 +74,7 @@ namespace amg
       ecw_robust.SetFromFlags(flags, prefix + "ecw_robust");
       ecw_minmax.SetFromFlags(flags, prefix + "ecw_minmax");
       ecw_stab_hack.SetFromFlags(flags, prefix + "ecw_stab_hack");
-      agg_minmax_avg.SetFromFlagsEnum(flags, prefix + "agg_minmax_avg", prefix + "minmax_avg_spec", {"min", "geom", "harm", "alg", "max"});
+      agg_minmax_avg.SetFromFlagsEnum(flags, prefix + "agg_minmax_avg", {"min", "geom", "harm", "alg", "max"});
 
       min_ecw.SetFromFlags(flags, prefix + "edge_thresh");
       min_vcw.SetFromFlags(flags, prefix + "vert_thresh");

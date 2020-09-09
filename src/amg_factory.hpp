@@ -95,9 +95,9 @@ namespace amg
     SpecOpt (OC _default_opt, Array<OC> _spec_opt) : default_opt(_default_opt), spec_opt(_spec_opt) { ; }
     SpecOpt (const SpecOpt<OC> & other) : default_opt(default_opt), spec_opt(other.spec_opt) { ; }
     SpecOpt (SpecOpt<OC> && other) : default_opt(other.default_opt), spec_opt(move(other.spec_opt)) { ; }
-    SpecOpt (const Flags & flags, OC defopt, string defkey, string speckey, Array<string> optkeys)
+    SpecOpt (const Flags & flags, OC defopt, string defkey, Array<string> optkeys)
       : SpecOpt(defopt)
-    { SetFromFlagsEnum(flags, defkey, speckey, move(optkeys)); }
+    { SetFromFlagsEnum(flags, defkey, move(optkeys)); }
     SpecOpt<OC> & operator = (OC defoc) {
       default_opt = defoc;
       spec_opt.SetSize0();
@@ -109,7 +109,7 @@ namespace amg
       spec_opt = other.spec_opt;
       return *this;
     }
-    void SetFromFlagsEnum (const Flags & flags, string defkey, string speckey, Array<string> optkeys)
+    void SetFromFlagsEnum (const Flags & flags, string defkey, Array<string> optkeys)
     {
       auto setoc = [&](auto & oc, string val) {
 	int index;
@@ -117,7 +117,7 @@ namespace amg
 	  { oc = OC(index); }
       };
       setoc(default_opt, flags.GetStringFlag(defkey, ""));
-      auto & specfa = flags.GetStringListFlag(speckey);
+      auto & specfa = flags.GetStringListFlag(defkey + "_spec");
       spec_opt.SetSize(specfa.Size()); spec_opt = default_opt;
       for (auto k : Range(spec_opt))
 	{ setoc(spec_opt[k], specfa[k]); }

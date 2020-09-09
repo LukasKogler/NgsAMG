@@ -58,7 +58,7 @@ namespace amg
     set_opt_kv(cinv_type_loc, "cinv_type_loc", { "pardiso", "pardisospd", "sparsecholesky", "superlu", "superlu_dist", "mumps", "umfpack" },
 	       Array<INVERSETYPE>({ PARDISO, PARDISOSPD, SPARSECHOLESKY, SUPERLU, SUPERLU_DIST, MUMPS, UMFPACK }));
 
-    sm_type.SetFromFlagsEnum(flags, prefix+"sm_type", prefix+"sm_type_spec", { "gs", "bgs" });
+    sm_type.SetFromFlagsEnum(flags, prefix+"sm_type", { "gs", "bgs" });
     // Array<string> sm_names ( { "gs", "bgs" } );
     // Array<Options::SM_TYPE> sm_types ( { Options::SM_TYPE::GS, Options::SM_TYPE::BGS } );
     // set_enum_opt(sm_type, "sm_type", { "gs", "bgs" }, Options::SM_TYPE::GS);

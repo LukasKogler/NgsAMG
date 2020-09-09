@@ -305,8 +305,6 @@ namespace amg
       // at this point we go to the next level and we reset the sub-levels
       state.level =  { c_lev->level, 0, 0 };
       amg_levels.Append(move(c_lev));
-      // at this point we go to the next level and we reset the sub-levels
-      state.level =  { c_lev->level, 0, 0 };
       RSU (amg_levels, dof_map, state);
       return;
     }
