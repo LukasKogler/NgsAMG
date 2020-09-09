@@ -302,6 +302,8 @@ namespace amg
       return;
     }
     else { // more coarse levels
+      // at this point we go to the next level and we reset the sub-levels
+      state.level =  { c_lev->level, 0, 0 };
       amg_levels.Append(move(c_lev));
       RSU (amg_levels, dof_map, state);
       return;
@@ -831,7 +833,7 @@ namespace amg
 
   void BaseAMGFactory :: InitState (BaseAMGFactory::State& state, shared_ptr<AMGLevel> & lev) const
   {
-    state.level = { 0, 0, 0 };
+    state.level = { lev->level, 0, 0 };
 
     state.curr_cap = lev->cap;
 
