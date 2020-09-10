@@ -12,6 +12,7 @@
 #undef AMG_EXTERN_TEMPLATES
 
 #include <metis.h>
+// #include <parmetis.h>
 typedef idx_t idxtype;   
 
 
@@ -60,17 +61,37 @@ namespace amg
 	}
       }
     }
+
+    // O(1) "gather" calls. Should be log(NP) complexity I think.
+    Array<int> rcnts(comm.Rank() == root ? comm.Size() : 0);
+    Array<int> displs(comm.Rank() == root ? 1 + comm.Size() : 0);
+    int loc_data_size = data.Size();
+    comm.Gather(loc_data_size, rcnts, root);
+    size_t tds = 0;
+    displs[0] = 0;
+    for (auto k : Range(rcnts)) {
+      displs[k+1] = displs[k] + rcnts[k];
+      tds += rcnts[k];
+    }
+    Array<INT<3,size_t>> all_data(tds);
+    MPI_Gatherv(data.Data(), data.Size(), GetMPIType<INT<3,size_t>>(), all_data.Data(), rcnts.Data(), displs.Data(), GetMPIType<INT<3,size_t>>(), root, comm);
+
     if (comm.Rank() != root) {
       /** Send  data to root **/
-      comm.Send(data, root, MPI_TAG_AMG);
+      // comm.Send(data, root, MPI_TAG_AMG);
     }
     if (comm.Rank() == root) {
       /** Recv data from all ranks **/
-      Array<Array<INT<3,size_t>>> gdata(comm.Size());
-      gdata[root] = move(data);
-      for (auto k : Range(comm.Size())) {
-	if (k!=root) comm.Recv(gdata[k], k, MPI_TAG_AMG);
-      }
+      // NP receives
+      // Array<Array<INT<3,size_t>>> gdata(comm.Size());
+      // gdata[root] = move(data);
+      // for (auto k : Range(comm.Size())) {
+      // 	if (k!=root) comm.Recv(gdata[k], k, MPI_TAG_AMG);
+      // }
+      Array<FlatArray<INT<3,size_t>>> gdata(comm.Size());
+      for (auto k : Range(gdata))
+	{ gdata[k].Assign(FlatArray<INT<3,size_t>>(displs[k+1] - displs[k], all_data.Data() + displs[k])); }
+
       // generate metis graph structure
       Array<idx_t> partition (comm.Size()); partition = -1;
       Array<idx_t> v_weights(comm.Size());
