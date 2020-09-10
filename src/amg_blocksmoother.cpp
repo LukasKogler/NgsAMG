@@ -51,18 +51,51 @@ namespace amg
     ParallelJob
       ([&] (const TaskInfo & ti)
        {
+	 constexpr int BS = mat_traits<TM>::HEIGHT;
+	 LocalHeap lh(3*sqr(sizeof(double)*maxbs*mat_traits<TM>::HEIGHT), "AAA", false);
 	 for (int block_nr : sl) {
 	   auto block_dofs = blocks[block_nr];
 	   auto D = dinv[block_nr];
-	   for (int i : Range(block_dofs)) {
-	     for (int j : Range(block_dofs))
-	       { D(i,j) = A(block_dofs[i], block_dofs[j]); }
-	     if (md.Size())
-	       { D(i,i) = md[block_dofs[i]]; }
+	   /** For some reason, sometimes (I think for badly conditioned mats) CalcInverse with Mat<N,N> gives garbage wile it works with double entries **/
+	   if constexpr(BS>1) {
+	       lh.CleanUp();
+	       const int n = block_dofs.Size(); const int N = BS * n;
+	       FlatMatrix<double> flatD(N, N, lh);
+	       for (int i : Range(block_dofs)) {
+		 const int I = BS * i;
+		 /** TODO: these loops are not ideal... **/
+		 for (int j : Range(block_dofs)) {
+		   const int J = BS * j;
+		   const auto & aetr = A(block_dofs[i], block_dofs[j]);
+		   Iterate<BS>([&](auto ii){ Iterate<BS>([&](auto jj) { flatD(I+ii, J+jj) = aetr(ii,jj); }); });
+		 } // j
+		 if (md.Size()) {
+		   const auto & mdetr = md[block_dofs[i]];
+		   Iterate<BS>([&](auto ii){ flatD(I+ii, I+ii) = mdetr(ii,ii); });
+		 } // md.Size()
+	       } // i
+	       // cout << " diag " << block_nr << endl << flatD << endl;
+	       CalcInverse(flatD);
+	       // cout << " inv diag " << block_nr << endl << flatD << endl;
+	       for (int i : Range(block_dofs)) {
+		 const int I = BS * i;
+		 for (int j : Range(block_dofs)) {
+		   const int J = BS * j;
+		   Iterate<BS>([&](auto ii){ Iterate<BS>([&](auto jj) { D(i,j)(ii,jj) = flatD(I+ii, J+jj); }); });
+		 }
+	       }
+	     }
+	   else {
+	     for (int i : Range(block_dofs)) {
+	       for (int j : Range(block_dofs))
+		 { D(i,j) = A(block_dofs[i], block_dofs[j]); }
+	       if (md.Size())
+		 { D(i,i) = md[block_dofs[i]]; }
+	     }
+	     // cout << " diag " << block_nr << endl << D << endl;
+	     CalcInverse(D);
+	     // cout << "inv diag " << block_nr << endl << D << endl;
 	   }
-	   // cout << " diag " << block_nr << endl << D << endl;
-	   CalcInverse(D);
-	   // cout << "inv diag " << block_nr << endl << D << endl;
 	 }
        } );
 
