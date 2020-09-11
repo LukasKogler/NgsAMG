@@ -395,7 +395,7 @@ namespace amg
 	RegularizeMatrix(amg_levels[k]->cap->mat, amg_levels[k]->cap->pardofs);
       }
       if (gcomm.Rank() == 0 && O.log_level_pc > Options::LOG_LEVEL_PC::NORMAL)
-	{ cout << "  set up smoother on level" << endl; }
+	{ cout << "  set up smoother on level " << k << endl; }
       smoothers[k] = BuildSmoother(*amg_levels[k]);
     }
 
