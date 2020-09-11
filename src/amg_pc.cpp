@@ -84,6 +84,10 @@ namespace amg
 
     set_enum_opt(energy, "energy", { "triv", "alg", "elmat" }, Options::ENERGY::ALG_ENERGY);
 
+    set_enum_opt(log_level_pc, "log_level_pc", {"none", "basic", "normal", "extra"}, Options::LOG_LEVEL_PC::NONE);
+    set_bool(print_log_pc, "print_log_pc");
+    log_file_pc = flags.GetStringFlag(prefix + string("log_file_pc"), "");
+
   } // Options::SetFromFlags
 
   /** END Options**/
@@ -319,6 +323,13 @@ namespace amg
 	if (GetEntryDim(cspm.get()) > MAX_SYS_DIM) // when would this ever happen??
 	  { throw Exception("Cannot inv coarse level, MAX_SYS_DIM insufficient!"); }
 
+	auto gcomm = dof_map->GetParDofs()->GetCommunicator();
+
+	Array<shared_ptr<BaseSmoother>> smoothers(amg_levels.Size() - 1);
+
+	if (gcomm.Rank() == 0 && O.log_level_pc > Options::LOG_LEVEL_PC::NONE)
+	  { cout << " invert coarsest level matrix " << endl; }
+
 	if (comm.Size() > 2) {
 	  auto parmat = make_shared<ParallelMatrix> (cspm, cpds, cpds, C2D);
 	  parmat->SetInverseType(O.cinv_type);
@@ -345,6 +356,10 @@ namespace amg
 	  coarse_mat = cspm;
 	}
 	amg_mat->SetCoarseInv(coarse_inv, coarse_mat);
+
+	if (gcomm.Rank() == 0 && O.log_level_pc > Options::LOG_LEVEL_PC::NONE)
+	  { cout << " coarsest level matrix inverted" << endl << endl; }
+
 	break;
       }
       default : { break; }
@@ -366,13 +381,26 @@ namespace amg
   {
     auto & O(*options);
 
+    auto gcomm = dof_map->GetParDofs()->GetCommunicator();
+
     Array<shared_ptr<BaseSmoother>> smoothers(amg_levels.Size() - 1);
 
+    if (gcomm.Rank() == 0 && O.log_level_pc > Options::LOG_LEVEL_PC::NONE)
+      { cout << " set up smoothers " << endl; }
+
     for (int k = 0; k < amg_levels.Size() - 1; k++) {
-      if ( (k > 0) && O.regularize_cmats) // Regularize coarse level matrices
-	{ RegularizeMatrix(amg_levels[k]->cap->mat, amg_levels[k]->cap->pardofs); }
+      if ( (k > 0) && O.regularize_cmats) { // Regularize coarse level matrices
+	if (gcomm.Rank() == 0 && O.log_level_pc > Options::LOG_LEVEL_PC::NORMAL)
+	  { cout << "  regularize matrix on level " << k << endl; }
+	RegularizeMatrix(amg_levels[k]->cap->mat, amg_levels[k]->cap->pardofs);
+      }
+      if (gcomm.Rank() == 0 && O.log_level_pc > Options::LOG_LEVEL_PC::NORMAL)
+	{ cout << "  set up smoother on level" << endl; }
       smoothers[k] = BuildSmoother(*amg_levels[k]);
     }
+
+    if (gcomm.Rank() == 0 && O.log_level_pc > Options::LOG_LEVEL_PC::NONE)
+      { cout << " smoothers built" << endl; }
 
     return smoothers;
   } // BaseAMGPC :: BuildSmoothers

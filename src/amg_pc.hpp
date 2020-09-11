@@ -141,6 +141,15 @@ namespace amg
 			 ELMAT_ENERGY = 2 };  // from element matrices
     ENERGY energy = ALG_ENERGY;
 
+    /** Logging **/
+    enum LOG_LEVEL_PC : char { NONE   = 0,              // nothing
+			       BASIC  = 1,              // summary info
+			       NORMAL = 2,              // global level-wise info
+			       EXTRA  = 3};             // local level-wise info
+    LOG_LEVEL_PC log_level_pc = LOG_LEVEL_PC::NONE;   // how much info do we collect
+    bool print_log_pc = true;                           // print log to shell
+    string log_file_pc = "";                            // which file to print log to (none if empty)
+
   public:
 
     Options () { ; }
