@@ -1967,9 +1967,10 @@ namespace amg
 
     t1.Stop(); t2.Start();
 
-    /** Iterate through vertices and start new agglomerates if the vertex is at least at distance 1 from
-	any agglomerate (so distance 2 from any agg. center) **/
+    if constexpr(false)
     {
+      /** Iterate through vertices and start new agglomerates if the vertex is at least at distance 1 from
+	  any agglomerate (so distance 2 from any agg. center) **/
       Array<int> vqueue(M.template GetNN<NT_VERTEX>()); vqueue.SetSize0();
       BitArray checked(M.template GetNN<NT_VERTEX>()); checked.Clear();
       BitArray queued(M.template GetNN<NT_VERTEX>()); queued.Clear();
@@ -2010,6 +2011,21 @@ namespace amg
 	}
       }
     }
+    else {
+      /** Iterate through vertices by ascending #of edges. **/
+      size_t maxedges = 0;
+      for (int k = econ.Height()-1; k>=0; k--)
+	{ maxedges = max2(maxedges, econ.GetRowIndices(k).Size()); }
+      TableCreator<int> cvb(1+maxedges);
+      for ( ; !cvb.Done(); cvb++ )
+	for (int k = econ.Height()-1; k>=0; k--)
+	  { cvb.Add(econ.GetRowIndices(k).Size(), k); }
+      auto vbuckets = cvb.MoveTable();
+      for (auto vnum : vbuckets.AsArray())
+	{ check_v(vnum); }
+    }
+
+
 
     if (settings.print_aggs)
       {
