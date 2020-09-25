@@ -15,21 +15,22 @@ namespace amg
   class BackgroundMPIThread
   {
   protected:
-    std::thread t;
+    unique_ptr<std::thread> t;
     mutex glob_mut;
     bool thread_ready = true, thread_done = false, end_thread = false;
     std::condition_variable cv;
     function<void(void)> thread_exec_fun = [](){};
 
   public:
-    BackgroundMPIThread () : t([this](){ this->thread_fpf(); })
+    BackgroundMPIThread ()
     {
 #ifdef USE_TAU
       TAU_PROFILE_SET_NODE(NgMPI_Comm(MPI_COMM_WORLD).Rank());
 #endif
+      t = make_unique<std::thread>([this](){ this->thread_fpf(); });
     } // BackgroundMPIThread (..)
 
-    ~BackgroundMPIThread () { thread_ready = true; end_thread = true; cv.notify_one(); t.join(); }
+    ~BackgroundMPIThread () { thread_ready = true; end_thread = true; cv.notify_one(); t->join(); }
 
     void thread_fpf () {
 #ifdef USE_TAU
