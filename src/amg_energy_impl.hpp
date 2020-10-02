@@ -180,7 +180,7 @@ namespace amg
   template<int DIM, class TVD, class TED>
   INLINE typename EpsEpsEnergy<DIM, TVD, TED>::TVD EpsEpsEnergy<DIM, TVD, TED> :: CalcMPData (const TVD & da, const TVD & db)
   {
-    TVD o; o.pos = 0.5 * (da.pos + db.pos);
+    TVD o(0); o.pos = 0.5 * (da.pos + db.pos);
     return move(o);
   } // EpsEpsEnergy::CalcMPData
 
