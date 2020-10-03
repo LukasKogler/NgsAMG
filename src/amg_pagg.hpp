@@ -22,29 +22,28 @@ namespace amg
 
     struct Options
     {
-      bool robust = true;                       // use robust coarsening via EVPs
+      bool robust = true;                            // use robust coarsening via EVPs
       double edge_thresh = 0.025;
       double vert_thresh = 0.0;
-      int num_rounds = 3;                       // # of rounds of coarsening
-      enum CW_TYPE : char { HARMONIC,           // most stable
-			    GEOMETRIC,          // if it works, best condition, most restrictive
-			    MINMAX };           // best with unbalanced aggs (??) 
+      int num_rounds = 3;                            // # of rounds of coarsening
+      enum CW_TYPE : char { HARMONIC,                // most stable
+			    GEOMETRIC,               // if it works, best condition, most restrictive
+			    MINMAX };                // best with unbalanced aggs (??) 
       /** when picking neib **/
-      bool allrobust = false;                   // true: EVP to choose neib candidate, otherwise EVP only to confirm
-      CW_TYPE
-      /** when checking neib with small EVP **/
+      SpecOpt<bool> allrobust = false;               // true: EVP to choose neib candidate, otherwise EVP only to confirm
+      SpecOpt<CW_TYPE> cw_type_pick = HARMONIC;      // which kind of SOC to use here
+      SpecOpt<AVG_TYPE> pick_minmax_avg = HARMONIC;  // which averaging to use for MINMAX SOC (if EVP, only HARM/GEOM are valid)
+      /** when checking neib with small EVP (only relevant for robust && (!allrobust) **/
+      SpecOpt<CW_TYPE> cw_type_check = HARMONIC;     // which kind of SOC to use here
+      SpecOpt<AVG_TYPE> check_minmax_avg = HARMONIC; // which averaging to use for MINMAX SOC (only HARM/GEOM are valid)
       /** when checking neib with big EVP **/
-      bool checkbigsoc = true;                  // check big EVP is pos. def for agg-agg merge
-
-
-      SpecOpt<CW_TYPE> cw_type_scal = HARMONIC;
-      SpecOpt<CW_TYPE> cw_type_mat = HARMONIC;
-      SpecOpt<bool> neib_boost = false;         // use connections to common neibs to boost edge matrices
-      SpecOpt<bool> lazy_nb = false;            // to a "lazy" boost, which requires no EVPs (probably a bad idea)
-      SpecOpt<xbool> use_stab_ecw_hack = maybe; // useful to make HARMONIC behave a bit more like geometric 
-      SpecOpt<AVG_TYPE> minmax_avg = MIN;       // used with MINMAX
-      SpecOpt<AVG_TYPE> minmax_avg_mat = GEOM;  // must be GEOM or HARM
-      bool print_aggs = false;                  // output
+      bool checkbigsoc = true;                       // check big EVP is pos. def for agg-agg merge
+      /** used for EVPs **/
+      // SpecOpt<bool> neib_boost = false;              // use connections to common neibs to boost edge matrices
+      // SpecOpt<bool> lazy_nb = false;                 // to a "lazy" boost, which requires no EVPs (probably a bad idea)
+      SpecOpt<xbool> use_stab_ecw_hack = maybe;      // useful to make HARMONIC behave a bit more like geometric 
+      /** misc. **/
+      bool print_aggs = false;                       // output
     };
   protected:
     

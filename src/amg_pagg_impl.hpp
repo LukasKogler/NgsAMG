@@ -4,6 +4,48 @@
 namespace amg
 {
 
+
+  /** Calc a CMK ordering of vertices. Connectivity given by "econ". Only orders those where "skip" is not set **/
+  void CalcCMK (BitArray & skip, SparseMatrix<double> & econ, Array<int> & cmk)
+  {
+    size_t numtake = econ.Height() - skip.NumSet();
+    if (numtake == 0)
+      { cmk.SetSize0(); return; }
+    cmk.SetSize(numtake); cmk = -12;
+    size_t cnt = 0, cnt2 = 0;
+    BitArray handled(skip);
+    Array<int> neibs;
+    while (cnt < numtake) {
+      /** pick some minimum degree vertex to start with **/
+      int mnc = econ.Height(), nextvert = -1; // max # of possible cons should be H - 1
+      int ncons;
+      for (auto k : Range(econ.Height()))
+	if (!skip.Test(k))
+	  if ( (ncons = econ.GetRowIndices(k).Size()) < mnc )
+	    { mnc = ncons; nextvert = k; }
+      if (nextvert == -1) // all verts are fully connected (including to itself, which should be illegal)
+	for (auto k : Range(econ.Height()))
+	  if (!skip.Test(k))
+	    { nextvert = k; break; }
+      cmk[cnt++] = nextvert; handled.Set(nextvert);
+      while((cnt < numtake) && (cnt2 < cnt)) {
+	/** add (unadded) neibs of cmk[cnt2] to cmk, ordered by degree, until we run out of vertices
+	    to take neibs from - if that happens, we have to pick a new minimum degree vertex to start from! **/
+	int c = 0; auto ris = econ.GetRowIndices(cmk[cnt2]);
+	neibs.SetSize(ris.Size());
+	for(auto k : Range(ris))
+	  if (!handled.Test(k))
+	    { neibs[c++] = ris[k]; handled.Set(nextvert); }
+	neibs.SetSize(c);
+	QuickSort(neibs, [&](auto vi, auto vj) { return econ.GetRowIndices(vi.Size()) < econ.GetRowIndices(vj.Size()); });
+	for (auto l : Range(c))
+	  { cmk[cnt++] = neibs[l]; handled.Set(neibs[l]); }
+	cnt2++;
+      }
+    }
+  } // CalcCMK
+
+
   /** LocCoarseMap **/
 
   class LocCoarseMap : public BaseCoarseMap
@@ -170,18 +212,19 @@ namespace amg
 
 
   template<class ENERGY, class TMESH, bool ROBUST> template<class TMU>
-  INLINE void Agglomerator<ENERGY, TMESH, ROBUST> :: FormAgglomerates_impl (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg)
+  INLINE void SPAgglomerator<ENERGY, TMESH, ROBUST> :: FormAgglomerates_impl (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg)
   {
     static_assert ( (std::is_same<TMU, TM>::value || std::is_same<TMU, double>::value), "Only 2 options make sense!");
+
+    const bool print_params = options->print_aggs;  // parameters for every round
+    const bool print_summs = options->print_aggs;   // summary info
+    const bool print_aggs = options->print_aggs;    // actual aggs
 
     const int num_rounds = options->num_rounds;
 
     constexpr int BS = mat_traits<TM>::HEIGHT;
     constexpr int BSU = mat_traits<TMU>::HEIGHT;
     constexpr bool robust = (BS == BSU) && (BSU > 1);
-
-    const bool allrobust = robust && options->allrobust;
-    const bool checkbigsoc = options->checkbigsoc;
 
     auto tm_mesh = dynamic_pointer_cast<TMESH>(mesh);
     const auto & M = *tm_mesh; M.CumulateData();
@@ -191,11 +234,16 @@ namespace amg
     const auto NE = M.template GetNN<NT_EDGE>();
     const auto & econ = *M.GetEdgeCM();
     
-    
-    const Options::CW_TYPE cw_type = options->cw_type;
-    const AVG_TYPE minmax_avg_scal = options->minmax_avg;
-    const bool minmax_avg_mat_harm = options->minmax_avg_mat == HARM;
-    
+    const double MIN_ECW = options->edge_thresh;
+    const double MIN_VCW = options->vert_thresh;
+
+    if (print_params) {
+      cout << "SPAgglomerator::FormAgglomerates_impl, params are: " << endl;
+      cout << " ROBUST = " << robust << endl;
+      cout << " num_rounds = " << num_rounds << endl;
+      cout << " MIN_ECW = " << MIN_ECW << endl;
+      cout << " MIN_VCW = " << MIN_VCW << endl;
+    }
 
     shared_ptr<LocCoarseMap> conclocmap;
     
@@ -240,9 +288,14 @@ namespace amg
       }
     };
 
+    /** vertex coll wt. only computed in round 0 **/
+    auto calc_vcw = [&](auto v) {
+      return 0.0;
+    };
+
     /** Initial SOC to pick merge candidate. Can be EVP or scalar based. **/
     TMU da, db, dedge;
-    auto calc_soc_candidate = [&](auto vi, auto vj, const auto & fecon) LAMBDA_INLINE {
+    auto calc_soc_candidate = [&](auto vi, auto vj, const auto & fecon, Options::CW_TYPE cw_type, AVG_TYPE mm_avg) LAMBDA_INLINE {
       if (allrobust) // is actually robust && alrobust
 	{ return calc_soc_check1(); }
       /** calc_trace does nothing for scalar case **/
@@ -256,14 +309,14 @@ namespace amg
 	  { da = max2(da, calc_trace(fedata[int(eid)])); }
 	for (auto eid : fecon.GetRowValues(vj))
 	  { da = max2(da, calc_trace(fedata[int(eid)])); }
-	return dedge / calc_avg(da, db, minmax_avg_scal);
+	return dedge / calc_avg(da, db, mm_avg);
       }
       }
     };
 
     /** EVP based pairwise SOC. **/
     TM dma, dmb, dmedge, Q;
-    auto calc_soc_check1 = [&](auto vi, auto vj, const auto & fecon) LAMBDA_INLINE {
+    auto calc_soc_check1 = [&](auto vi, auto vj, const auto & fecon, Options::CW_TYPE cw_type, bool mm_avg_harm) LAMBDA_INLINE {
       if constexpr(!robust) // dummy - should never be called anyways!
 	{ return 1.0; }
       else {
@@ -291,7 +344,7 @@ namespace amg
 	    dma /= calc_trace(dma);
 	    dmb /= calc_trace(dmb);
 	    dmedge /= etrace;
-	    if (minmax_avg_mat_harm)
+	    if (mm_avg_harm)
 	      { soc = min2(soc, MIN_EV_HARM2(dma, dmb, dmedge)); }
 	    else
 	      { soc = min2(soc, MIN_EV_FG2(dma, dmb, dmedge)); }
@@ -300,13 +353,15 @@ namespace amg
 	}
 	}
 	return soc;
+      }
     };
 
     /** SOC for pair of agglomerates w.r.t original matrix **/
-    auto calc_soc_check2 = [&](auto memsi, auto memsj, const auto & fecon) LAMBDA_INLINE { };
+    auto calc_soc_check2 = [&](auto memsi, auto memsj, const auto & fecon) LAMBDA_INLINE { return 1.0; };
 
     /** Finds a neighbor to merge vertex v with. Returns -1 if no suitable ones found **/
-    auto find_neib = [&](auto v, const auto & fecon, auto get_mems, bool round_cbs) LAMBDA_INLINE {
+    auto find_neib = [&](auto v, const auto & fecon, auto get_mems, bool r_ar,
+			 bool r_, bool r_cbs) LAMBDA_INLINE {
       HeapReset hr(lh);
       /** SOC for all neibs **/
       double max_soc = 0, msn = -1;
@@ -339,7 +394,7 @@ namespace amg
 			     BitArray & handled,
 			     FlatArray<TMU> diags, FlatArray<TMU> emats,
 			     auto get_mems, auto allowed, auto set_pair,
-			     bool round_cbs
+			     bool r_,  bool r_checkbigsoc
 			     ) LAMBDA_INLINE {
       for (auto k : Range(num_verts)) {
 	auto vnr = get_vert(k);
@@ -354,10 +409,24 @@ namespace amg
 	  set_pair(vnr, neib);
 	}
       }
+      if (print_summs) {
+      }
+      if (print_aggs) {
+      }
     };
 
     // pair vertices
     for (int round : Range(num_rounds)) {
+      const bool r_ar = robust && options->allrobust.GetOpt(round);
+      const CW_TYPE r_cwtp = options->cw_type_pick.GetOpt(round);
+      const AVG_TYPE r_mmap = options->pick_type_minmax_avg.GetOpt(round);
+      const CW_TYPE r_cwtc = options->cw_type_check.GetOpt(round);
+      const AVG_TYPE r_mmac = options->check_minmax_avg.GetOpt(round);
+      const bool r_cbs = options->checkbigsoc;
+
+      if (print_params) {
+      }
+
       /** Set up a local map to represent this round of pairing vertices **/
       auto locmap = make_shared<LocCoarseMap>((round == 0) ? mesh : conclocmap->GetMappedMesh());
       auto vmap = conclocmap->template GetMap<NT_VERTEX>();
@@ -373,16 +442,34 @@ namespace amg
       size_t NCV = 0, NCE = 0;
 
       if (round == 0) {
+	/** dirichlet vertices **/
+	if (free_vertes != nullptr) {
+	  const auto & fvs = *free_verts;
+	  for (auto k : Range(vmap))
+	    if (!fvs.Test(k))
+	      { vmap[v] = -1; handled.SetBit(v); }
+	}
+	/** non-master vertices **/
+	M.template ApplyEQ2<NT_VERTEX>([&](auto eq, auto vs) {
+	    if (!eqc_h.IsMasterofEQC())
+	      for (auto v : vs)
+		{ vmap[v] = -1; handled.SetBit(v); }
+	  });
+	/** Fixed Aggs - set verts to diri, handle afterwards **/
+	for (auto row : fixed_aggs)
+	  for (auto v : row)
+	    { vmap[v] = -1; handled.SetBit(v); }
+	/** collapsed vertices **/
+	if (MIN_VCW > 0) { // otherwise, no point
+	  for(auto v : Rang(vmap)) {
+	    double cw = calc_vcw(v);
+	    if (cw > MIN_VCW)
+	      { vmap[v] = -1; handled.SetBit(v); }
+	  }
+	}
 	/** CMK ordering **/
 	Array<int> cmk;
-	CalcCMK(cmk, econ);
-
-	/** Fixed Aggs - set verts to diri, handle afterwards **/
-
-	/** dirichlet vertices **/
-
-	/** collapsed vertices **/
-
+	CalcCMK(handled, econ, cmk);
 	/** Find pairs for vertices **/
 	pair_vertices(vmap, NCV, cmk.Size(), [&](auto k) { return cmk[k]; }, fecon, handled, diags, emats,
 		      [&](auto v) { return v; }, // get_mems
@@ -390,7 +477,7 @@ namespace amg
 			int eqi = M.template GetEQCOfNode<NT_VERTEX>(vi), eqj = M.template GetEQCOfNode<NT_VERTEX>(vi);
 			return eqc_h.IsLEQ(eqi, eqj) || eqc_h.IsLEQ(eqj, eqi);
 		      }, // allowed
-		      false); // no big soc necessary
+		      r_ar, r_cwtp, r_mmap, r_cwtc, r_mmac, false); // no big soc necessary
       }
       else {
 	/** Find pairs for vertices **/
@@ -401,7 +488,7 @@ namespace amg
 		      DIAGS, EMATS,
 		      [&](auto v) LAMBDA_INLINE { return c2f[v]; }, // get_mems
 		      [&](auto vi, auto vj) LAMBDA_INLINE { return ; }, // allowed
-		      checkbigsoc); // check big soc if turned on
+		      r_ar, r_cwtp, r_mmap, r_cwtc, r_mmac, r_cbs);
       }
 
       if (round < num_rounds - 1) { /** proper concatenated map, with coarse mesh **/
