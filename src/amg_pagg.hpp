@@ -4,6 +4,7 @@
 #include "amg.hpp"
 #include "amg_map.hpp"
 #include "amg_coarsen.hpp"
+#include "amg_agg.hpp"
 
 namespace amg
 {
@@ -32,16 +33,18 @@ namespace amg
       /** when picking neib **/
       SpecOpt<bool> allrobust = false;               // true: EVP to choose neib candidate, otherwise EVP only to confirm
       SpecOpt<CW_TYPE> cw_type_pick = HARMONIC;      // which kind of SOC to use here
-      SpecOpt<AVG_TYPE> pick_minmax_avg = HARMONIC;  // which averaging to use for MINMAX SOC (if EVP, only HARM/GEOM are valid)
+      SpecOpt<AVG_TYPE> pick_mma_scal = HARMONIC;    // which averaging to use for MINMAX SOC 
+      SpecOpt<AVG_TYPE> pick_mma_mat = HARMONIC;     // which averaging to use for MINMAX SOC (only HARM/GEOM are valid)
       /** when checking neib with small EVP (only relevant for robust && (!allrobust) **/
       SpecOpt<CW_TYPE> cw_type_check = HARMONIC;     // which kind of SOC to use here
-      SpecOpt<AVG_TYPE> check_minmax_avg = HARMONIC; // which averaging to use for MINMAX SOC (only HARM/GEOM are valid)
+      SpecOpt<AVG_TYPE> check_mma_scal = HARMONIC;   // which averaging to use for traces in MINMAX SOC
+      SpecOpt<AVG_TYPE> check_mma_mat = HARMONIC;    // which averaging to use for mats in MINMAX SOC
       /** when checking neib with big EVP **/
       bool checkbigsoc = true;                       // check big EVP is pos. def for agg-agg merge
       /** used for EVPs **/
       // SpecOpt<bool> neib_boost = false;              // use connections to common neibs to boost edge matrices
       // SpecOpt<bool> lazy_nb = false;                 // to a "lazy" boost, which requires no EVPs (probably a bad idea)
-      SpecOpt<xbool> use_stab_ecw_hack = maybe;      // useful to make HARMONIC behave a bit more like geometric 
+      xbool use_stab_ecw_hack = maybe;               // useful to make HARMONIC behave a bit more like geometric 
       /** misc. **/
       bool print_aggs = false;                       // output
     };
@@ -63,10 +66,12 @@ namespace amg
 
     virtual void FormAgglomerates (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg) override;
 
-    template<class TMU> INLINE FlatArray<TMU> GetEdgeData (shared_ptr<TMESH> mesh);
+    template<class TMU> INLINE void GetEdgeData (FlatArray<TM> full_data, Array<TMU> & data);
 
     template<class TMU> void FormAgglomerates_impl (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg);
 
   }; // class SPAgglomerator
 
 } //namespace amg
+
+#endif

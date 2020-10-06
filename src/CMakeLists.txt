@@ -6,6 +6,7 @@ cmake_minimum_required(VERSION 3.8)
 add_ngsolve_python_module(ngs_amg SHARED
   nc2d.cpp
   amg_agg_h1scal.cpp amg_agg_el2d.cpp amg_agg_el3d.cpp
+  amg_pagg_el3d.cpp
   eqchierarchy.cpp amg_mesh.cpp amg_coarsen.cpp
   amg_factory.cpp python_amg.cpp amg_pc.cpp
   amg_h1_dim1.cpp amg_h1_dim2.cpp amg_h1_dim3.cpp
