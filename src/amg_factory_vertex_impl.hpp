@@ -25,9 +25,13 @@ namespace amg
   public:
 
     /** choice of coarsening algorithm **/
-    enum CRS_ALG : char { ECOL,                 // edge collapsing
-			  AGG };                // aggregaion
-    CRS_ALG crs_alg = AGG;
+    enum CRS_ALG : char { ECOL                  // edge collapsing
+			  , AGG                 // MIS-based aggregaion
+#ifdef PWAGG
+			  , SPWAGG                // successive pairwise aggregaion
+#endif
+    };
+    SpecOpt<CRS_ALG> crs_alg = AGG;
 
     /** General coarsening **/
     SpecOpt<bool> ecw_geom = true;              // use geometric instead of harmonic mean when determining strength of connection
@@ -36,9 +40,9 @@ namespace amg
     SpecOpt<xbool> ecw_stab_hack = xbool(maybe);
     SpecOpt<double> min_ecw = 0.05;
     SpecOpt<double> min_vcw = 0.3;
-    SpecOpt<bool> sp_aux_only = false;          // smooth prolongation using only auxiliary matrix
+    SpecOpt<bool> sp_aux_only = false;           // smooth prolongation using only auxiliary matrix
     SpecOpt<bool> newsp = true;
-    SpecOpt<int> sp_max_per_row_classic = 5;   // maximum entries per row (should be >= 2!) where " newst" uses classic
+    SpecOpt<int> sp_max_per_row_classic = 5;     // maximum entries per row (should be >= 2!) where " newst" uses classic
 
     /** Discard **/
     int disc_max_bs = 5;
@@ -46,7 +50,7 @@ namespace amg
     /** AGG **/
     SpecOpt<bool> agg_neib_boost = false;
     SpecOpt<bool> lazy_neib_boost = false;
-    SpecOpt<bool> print_aggs = false;                    // print agglomerates (for debugging purposes)
+    SpecOpt<bool> print_aggs = false;            // print agglomerates (for debugging purposes)
     SpecOpt<AVG_TYPE> agg_minmax_avg;
 
   public:
@@ -133,11 +137,14 @@ namespace amg
   {
     auto & O(static_cast<Options&>(*options));
 
-    Options::CRS_ALG calg = O.crs_alg;
+    Options::CRS_ALG calg = O.crs_alg.GetOpt(state.level[0]);
 
     switch(calg) {
     case(Options::CRS_ALG::AGG): { return BuildAggMap(state, mapped_cap); break; }
     case(Options::CRS_ALG::ECOL): { return BuildECMap(state, mapped_cap); break; }
+#ifdef SPWAGG
+    case(Options::CRS_ALG::SPWAGG): { return BuildSPWAggMap(state, mapped_cap); break; }
+#endif
     default: { throw Exception("Invalid coarsen alg!"); break; }
     }
 
@@ -180,6 +187,32 @@ namespace amg
 
     return agglomerator;
   } // VertexAMGFactory::BuildCoarseMap
+
+
+#ifdef SPWAGG
+  template<class ENERGY, class TMESH, int BS>
+  shared_ptr<BaseCoarseMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildSPWAggMap (BaseAMGFactory::State & state, shared_ptr<BaseAMGFactory::LevelCapsule> & mapped_cap)
+  {
+    auto & O = static_cast<Options&>(*options);
+    typedef SPWAgglomerator<ENERGY, TMESH, ENERGY::NEED_ROBUST> AGG_CLASS;
+    typename AGG_CLASS::Options agg_opts;
+    auto mesh = dynamic_pointer_cast<TMESH>(state.curr_cap->mesh);
+    if (mesh == nullptr)
+      { throw Exception(string("Invalid mesh type ") + typeid(*state.curr_cap->mesh).name() + string(" for BuildAggMap!")); }
+
+    const int level = state.level[0];
+
+    auto agglomerator = make_shared<AGG_CLASS>(mesh, state.curr_cap->free_nodes, move(agg_opts));
+
+    /** Set mapped Capsule **/
+    auto cmesh = agglomerator->GetMappedMesh();
+    mapped_cap->eqc_h = cmesh->GetEQCHierarchy();
+    mapped_cap->mesh = cmesh;
+    mapped_cap->pardofs = this->BuildParallelDofs(cmesh);
+
+    return agglomerator;
+  } // VertexAMGFactory::BuildSPWAggMap
+#endif
 
 
   template<class ENERGY, class TMESH, int BS>

@@ -1,6 +1,8 @@
 #ifndef FILE_AMG_PAGG_IMPL_HPP
 #define FILE_AMG_PAGG_IMPL_HPP
 
+#ifdef SPWAGG
+
 namespace amg
 {
 
@@ -51,7 +53,7 @@ namespace amg
 
   class LocCoarseMap : public BaseCoarseMap
   {
-    template<class ATENERGY, class ATMESH, bool AROBUST> friend class SPAgglomerator;
+    template<class ATENERGY, class ATMESH, bool AROBUST> friend class SSPWAgglomerator;
   public:
     LocCoarseMap (shared_ptr<TopologicMesh> mesh, shared_ptr<TopologicMesh> mapped_mesh = nullptr)
       : BaseCoarseMap(mesh, mapped_mesh)
@@ -193,10 +195,10 @@ namespace amg
   /** END LocCoarseMap **/
 
 
-  /** SPAgglomerator **/
+  /** SSPWAgglomerator **/
 
   template<class ENERGY, class TMESH, bool ROBUST> template<class TMU>
-  INLINE void SPAgglomerator<ENERGY, TMESH, ROBUST> :: GetEdgeData (FlatArray<TM> full_data, Array<TMU> & data)
+  INLINE void SSPWAgglomerator<ENERGY, TMESH, ROBUST> :: GetEdgeData (FlatArray<TM> full_data, Array<TMU> & data)
   {
     if constexpr(std::is_same<TMU, TM>::value)
       { data.FlatArray<TMU>::Assign(full_data); }
@@ -205,11 +207,11 @@ namespace amg
       for (auto k : Range(data))
 	{ data[k] = ENERGY::GetApproxWeight(full_data[k]); }
     }
-  } // SPAgglomerator::GetEdgeData
+  } // SSPWAgglomerator::GetEdgeData
 
 
   template<class ENERGY, class TMESH, bool ROBUST>
-  void SPAgglomerator<ENERGY, TMESH, ROBUST> :: FormAgglomerates (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg)
+  void SSPWAgglomerator<ENERGY, TMESH, ROBUST> :: FormAgglomerates (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg)
   {
     if constexpr (ROBUST) {
 	if (settings.robust) /** cheap, but not robust for some corner cases **/
@@ -219,7 +221,7 @@ namespace amg
       }
     else // do not even compile the robust version - saves a lot of ti
       { FormAgglomerates_impl<double> (agglomerates, v_to_agg); }
-  } // SPAgglomerator::FormAgglomerates
+  } // SSPWAgglomerator::FormAgglomerates
 
 
   template<class ENERGY, class TMESH, bool ROBUST> Timer & GetRoundTimer (int round) {
@@ -234,11 +236,11 @@ namespace amg
   } // GetRoundTimer
 
   template<class ENERGY, class TMESH, bool ROBUST> template<class TMU>
-  INLINE void SPAgglomerator<ENERGY, TMESH, ROBUST> :: FormAgglomerates_impl (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg)
+  INLINE void SSPWAgglomerator<ENERGY, TMESH, ROBUST> :: FormAgglomerates_impl (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg)
   {
     static_assert ( (std::is_same<TMU, TM>::value || std::is_same<TMU, double>::value), "Only 2 options make sense!");
 
-    static Timer t("SPAgglomerator::FormAgglomerates_impl"); RegionTimer rt(t);
+    static Timer t("SSPWAgglomerator::FormAgglomerates_impl"); RegionTimer rt(t);
     static Timer tfaggs("FormAgglomerates - finalize aggs");
     static Timer tmap("FormAgglomerates - map loc mesh");
     static Timer tprep("FormAgglomerates - prep");
@@ -269,7 +271,7 @@ namespace amg
     const double MIN_VCW = settings.vert_thresh;
 
     if (print_params) {
-      cout << "SPAgglomerator::FormAgglomerates_impl, params are: " << endl;
+      cout << "SSPWAgglomerator::FormAgglomerates_impl, params are: " << endl;
       cout << " ROBUST = " << robust << endl;
       cout << " num_rounds = " << num_rounds << endl;
       cout << " MIN_ECW = " << MIN_ECW << endl;
@@ -657,11 +659,13 @@ namespace amg
       { set_agg(n_aggs_p + k, fixed_aggs[k]); }
     tfaggs.Stop();
     
-  } // SPAgglomerator::FormAgglomerates_impl
+  } // SSPWAgglomerator::FormAgglomerates_impl
 
-  /** END SPAgglomerator **/
+  /** END SSPWAgglomerator **/
 
 
 } // namespace amg
+
+#endif // SPWAGG
 
 #endif

@@ -8,6 +8,7 @@ option( ENABLE_ELASTICITY_ROBUST_ECW   "Enable robust elasticity coarsening (com
 option( USE_TAU   "Enable TAU instrumentation" OFF)
 option( COMPILE_TIMING   "time compiling" OFF)
 option( AUX_AMG   "Enable auxiliary space AMG preconditioners." ON)
+option( SPWAGG "Enable successive pairwise agglomeration" ON)
 option( STOKES "Enable AMG preconditioners for divdiv-penalty (Stokes)" OFF)
 
 set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH}" "${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_modules")
@@ -68,6 +69,11 @@ if (AUX_AMG)
 else (AUX_AMG)
   message(STATUS "Turning OFF auxiliary space AMG.")
 endif (AUX_AMG)
+
+if (SPWAGG)
+  message(STATUS "Turning ON successive pairwise agglomeration (SPWAGG)")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DSPWAGG")
+endif (SPWAGG)
 
 if (STOKES)
   # if (NOT AUX_AMG)

@@ -41,6 +41,9 @@ namespace amg
     /** Coarse **/
     virtual shared_ptr<BaseCoarseMap> BuildCoarseMap (BaseAMGFactory::State & state, shared_ptr<BaseAMGFactory::LevelCapsule> & mapped_cap) override;
     virtual shared_ptr<BaseCoarseMap> BuildAggMap (BaseAMGFactory::State & state, shared_ptr<BaseAMGFactory::LevelCapsule> & mapped_cap);
+#ifdef PWAGG
+    virtual shared_ptr<BaseCoarseMap> BuildPWAggMap (BaseAMGFactory::State & state, shared_ptr<BaseAMGFactory::LevelCapsule> & mapped_cap);
+#endif
     virtual shared_ptr<BaseCoarseMap> BuildECMap (BaseAMGFactory::State & state, shared_ptr<BaseAMGFactory::LevelCapsule> & mapped_cap);
     virtual shared_ptr<BaseDOFMapStep> PWProlMap (shared_ptr<BaseCoarseMap> cmap,
 						  shared_ptr<BaseAMGFactory::LevelCapsule> fcap, shared_ptr<BaseAMGFactory::LevelCapsule> ccap) override;

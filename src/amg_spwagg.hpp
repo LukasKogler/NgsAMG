@@ -1,6 +1,8 @@
 #ifndef FILE_AMG_PAGG_HPP
 #define FILE_AMG_PAGG_HPP
 
+#ifdef SPWAGG
+
 #include "amg.hpp"
 #include "amg_map.hpp"
 #include "amg_coarsen.hpp"
@@ -11,7 +13,7 @@ namespace amg
 
   /** Successive pairwise agglomeration **/
   template<class ATENERGY, class ATMESH, bool AROBUST = true>
-  class SPAgglomerator : public AgglomerateCoarseMap<ATMESH> 
+  class SPWAgglomerator : public AgglomerateCoarseMap<ATMESH> 
   {
   public:
 
@@ -60,9 +62,9 @@ namespace amg
 
   public:
 
-    SPAgglomerator (shared_ptr<TMESH> _mesh, shared_ptr<BitArray> _free_verts, Options && _settings);
+    SPWAgglomerator (shared_ptr<TMESH> _mesh, shared_ptr<BitArray> _free_verts, Options && _settings);
 
-    SPAgglomerator (shared_ptr<TMESH> _mesh, shared_ptr<BitArray> _free_verts = nullptr);
+    SPWAgglomerator (shared_ptr<TMESH> _mesh, shared_ptr<BitArray> _free_verts = nullptr);
 
     virtual void FormAgglomerates (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg) override;
 
@@ -70,8 +72,10 @@ namespace amg
 
     template<class TMU> void FormAgglomerates_impl (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg);
 
-  }; // class SPAgglomerator
+  }; // class SPWAgglomerator
 
 } //namespace amg
+
+#endif // SPWAGG
 
 #endif
