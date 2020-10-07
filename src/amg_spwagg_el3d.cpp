@@ -1,7 +1,7 @@
 #ifdef ELASTICITY
 #ifdef SPWAGG
 
-#define FILE_PAGG_EL3D_CPP
+#define FILE_SPWAGG_EL3D_CPP
 
 #include "amg.hpp"
 #include "amg_bla.hpp"

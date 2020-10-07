@@ -1,5 +1,5 @@
-#ifndef FILE_AMG_PAGG_HPP
-#define FILE_AMG_PAGG_HPP
+#ifndef FILE_AMG_SPWAGG_HPP
+#define FILE_AMG_SPWAGG_HPP
 
 #ifdef SPWAGG
 
