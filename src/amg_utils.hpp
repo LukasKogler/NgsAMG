@@ -1418,6 +1418,25 @@ namespace amg
   } // SpecOpt<bool>::SetFromFlags
 
 
+  template<typename X>
+  void SetEnumOpt (const Flags & flags, X & opt, string key, Array<string> vals, Array<X> evals) {
+    string val = flags.GetStringFlag(key, "");
+    for (auto k : Range(vals)) {
+      if (val == vals[k])
+	{ opt = evals[k]; return; }
+    }
+  }
+
+  template<typename X>
+  void SetEnumOpt (const Flags & flags, X & opt, string key, Array<string> vals, Array<X> evals, X default_val) {
+    string val = flags.GetStringFlag(key, "");
+    for (auto k : Range(vals)) {
+      if (val == vals[k])
+	{ opt = evals[k]; return; }
+    }
+    opt = default_val;
+  }
+
 } // namespace amg
 
 #endif

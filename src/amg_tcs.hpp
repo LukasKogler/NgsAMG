@@ -163,14 +163,23 @@ namespace amg
   EXTERN template class Agglomerator<H1Energy<1, double, double>, H1Mesh, H1Energy<1, double, double>::NEED_ROBUST>;
   EXTERN template class Agglomerator<H1Energy<2, double, double>, H1Mesh, H1Energy<2, double, double>::NEED_ROBUST>;
   EXTERN template class Agglomerator<H1Energy<3, double, double>, H1Mesh, H1Energy<3, double, double>::NEED_ROBUST>;
+#ifdef SPWAGG
+  EXTERN template class SPWAgglomerator<H1Energy<1, double, double>, H1Mesh, H1Energy<1, double, double>::NEED_ROBUST>;
+  EXTERN template class SPWAgglomerator<H1Energy<2, double, double>, H1Mesh, H1Energy<2, double, double>::NEED_ROBUST>;
+  EXTERN template class SPWAgglomerator<H1Energy<3, double, double>, H1Mesh, H1Energy<3, double, double>::NEED_ROBUST>;
+#endif // SPWAGG
 #endif // FILE_AMGH1_HPP
 
 #define InstAgg(FCLASS) \
   EXTERN template class Agglomerator<FCLASS::ENERGY, FCLASS::TMESH, FCLASS::ENERGY::NEED_ROBUST>;
 
 #if defined(ELASTICITY) && defined(FILE_AMG_ELAST_HPP)
-  InstAgg(ElasticityAMGFactory<2>);
-  InstAgg(ElasticityAMGFactory<3>);
+  EXTERN template class Agglomerator<ElasticityAMGFactory<2>::ENERGY, ElasticityAMGFactory<2>::TMESH, ElasticityAMGFactory<2>::ENERGY::NEED_ROBUST>;
+  EXTERN template class Agglomerator<ElasticityAMGFactory<3>::ENERGY, ElasticityAMGFactory<3>::TMESH, ElasticityAMGFactory<3>::ENERGY::NEED_ROBUST>;
+#ifdef SPWAGG
+  EXTERN template class SPWAgglomerator<ElasticityAMGFactory<2>::ENERGY, ElasticityAMGFactory<2>::TMESH, ElasticityAMGFactory<2>::ENERGY::NEED_ROBUST>;
+  EXTERN template class SPWAgglomerator<ElasticityAMGFactory<3>::ENERGY, ElasticityAMGFactory<3>::TMESH, ElasticityAMGFactory<3>::ENERGY::NEED_ROBUST>;
+#endif // SPWAGG
 #endif // defined(ELASTICITY) && defined(FILE_AMG_ELAST_HPP)
 #endif // AMG_EXTERN_TEMPLATES
 #endif // FILE_AMGCRS2_HPP

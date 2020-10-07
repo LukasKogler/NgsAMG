@@ -9,13 +9,8 @@ namespace amg
 
   void BaseAMGFactory::Options :: SetFromFlags (const Flags & flags, string prefix)
   {
-    auto set_enum_opt = [&] (auto & opt, string key, Array<string> vals) {
-      string val = flags.GetStringFlag(prefix + key, "");
-      for (auto k : Range(vals)) {
-	if (val == vals[k])
-	  { opt = decltype(opt)(k); return; }
-      }
-    };
+    auto pfit = [&](string x) LAMBDA_INLINE { return prefix + x; };
+
     auto set_bool = [&](auto& v, string key) {
       if (v) { v = !flags.GetDefineFlagX(prefix + key).IsFalse(); }
       else { v = flags.GetDefineFlagX(prefix + key).IsTrue(); }
@@ -58,7 +53,7 @@ namespace amg
 
     set_bool(check_kvecs, "check_kvecs");
 
-    set_enum_opt(log_level, "log_level", {"none", "basic", "normal", "extra"});
+    SetEnumOpt(flags, log_level, pfit("log_level"), {"none", "basic", "normal", "extra"}, { NONE, BASIC, NORMAL, EXTRA });
     set_bool(print_log, "print_log");
     log_file = flags.GetStringFlag(prefix + string("log_file"), "");
   } // BaseAMGFactory::Options :: SetFromFlags
@@ -325,20 +320,24 @@ namespace amg
 
     if (f_lev->level == 0)
       { state.last_redist_meas = curr_meas; }
+      cout << " AA" << endl;
 
     shared_ptr<BaseDOFMapStep> embed_map = f_lev->embed_map, disc_map;
 
     // CalcCoarsenOpts(state); // TODO: proper update of coarse cols for ecol?
+    cout << " AA" << endl;
 
-    if ( O.enable_redist && (f_lev->level != 0) ) {
+    if ( O.enable_disc.GetOpt(f_lev->level) && (f_lev->level != 0) ) {
       if ( TryDiscardStep(state) ) {
 	disc_map = move(state.dof_map);
 	curr_meas = ComputeMeshMeasure(*state.curr_cap->mesh);
       }
     }
+      cout << " AA" << endl;
 
     if (O.keep_grid_maps)
       { f_lev->disc_map = state.disc_map; }
+      cout << " AA" << endl;
 
     shared_ptr<BaseDOFMapStep> prol_map, rd_map;
     { /** Coarse/Redist maps - constructed interleaved, but come out untangled. **/
@@ -353,6 +352,8 @@ namespace amg
       mesh0 = state.curr_cap->mesh; mesh_meas[0] = ComputeMeshMeasure(*mesh0);
       shared_ptr<LevelCapsule> m0cap = state.curr_cap;
       
+      cout << " AA" << endl;
+
       Array<shared_ptr<BaseDOFMapStep>> dof_maps;
       Array<int> prol_inds;
       shared_ptr<BaseCoarseMap> first_cmap;
@@ -361,6 +362,8 @@ namespace amg
 
       bool could_recover = O.enable_redist;
 	
+      cout << " AA" << endl;
+
       do { /** coarsen until goal reached or stuck **/
 	cm_chunks.SetSize0();
 	auto comm = static_cast<BlockTM&>(*state.curr_cap->mesh).GetEQCHierarchy()->GetCommunicator();
@@ -371,6 +374,7 @@ namespace amg
 	  if (doco)
 	    cout << " inner C loop, curr " << curr_meas << " -> " << goal_meas << endl;
 	  auto f_cap = state.curr_cap;
+      cout << " AA" << endl;
 	  if ( TryCoarseStep(state) ) { // coarse map constructed successfully
 	    state.level[1]++; state.level[2] = 0; // count up sub-coarse, reset redist
 	    size_t f_meas = ComputeMeshMeasure(*f_cap->mesh), c_meas = ComputeMeshMeasure(*state.curr_cap->mesh);
@@ -378,6 +382,7 @@ namespace amg
 	    if (doco)
 	      cout << " c step " << f_meas << " -> " << c_meas << ", frac = " << meas_fac << endl;
 	    goal_reached = (c_meas < goal_meas);
+      cout << " AA" << endl;
 	    if ( (goal_reached) && (cm_chunks.Size() > 0) && (f_meas * c_meas < sqr(goal_meas)) ) {
 	      if (doco)
 		cout << " roll back c!" << endl;
@@ -682,7 +687,9 @@ namespace amg
     c_cap->baselevel = state.level[0];
 
     /** build coarse map **/
+    cout << "BCM " << endl;
     shared_ptr<BaseCoarseMap> cmap = BuildCoarseMap(state, c_cap);
+    cout << "BCM END " << endl;
 
     if (cmap == nullptr) // could not build map
       { return false; }

@@ -26,10 +26,11 @@ namespace amg
   public:
 
     /** choice of coarsening algorithm **/
-    enum CRS_ALG : char { ECOL                  // edge collapsing
-			  , AGG                 // MIS-based aggregaion
+    enum CRS_ALG : char {
+      ECOL = 0,             // edge collapsing
+      AGG = 1               // MIS-based aggregaion
 #ifdef SPWAGG
-			  , SPW                 // successive pairwise aggregaion
+      , SPW = 2             // successive pairwise aggregaion
 #endif
     };
     SpecOpt<CRS_ALG> crs_alg = AGG;
@@ -41,6 +42,8 @@ namespace amg
     SpecOpt<xbool> ecw_stab_hack = xbool(maybe);
     SpecOpt<double> min_ecw = 0.05;
     SpecOpt<double> min_vcw = 0.3;
+
+    /** Smoothed Prolongation **/
     SpecOpt<bool> sp_aux_only = false;           // smooth prolongation using only auxiliary matrix
     SpecOpt<bool> newsp = true;
     SpecOpt<int> sp_max_per_row_classic = 5;     // maximum entries per row (should be >= 2!) where " newst" uses classic
@@ -54,6 +57,19 @@ namespace amg
     SpecOpt<bool> print_aggs = false;            // print agglomerates (for debugging purposes)
     SpecOpt<AVG_TYPE> agg_minmax_avg;
 
+#ifdef SPWAGG
+    /** SPW-AGG **/
+    SpecOpt<int> spw_rounds = 3;
+    SpecOpt<bool> spw_allrobust = true;
+    SpecOpt<bool> spw_checkbigsoc = true;
+    SpecOpt<SPW_CW_TYPE> spw_pick_cwt  = MINMAX;
+    SpecOpt<AVG_TYPE> spw_pick_mma_scal  = GEOM;
+    SpecOpt<AVG_TYPE> spw_pick_mma_mat  = GEOM;
+    SpecOpt<SPW_CW_TYPE> spw_check_cwt = HARMONIC;
+    SpecOpt<AVG_TYPE> spw_check_mma_scal  = GEOM;
+    SpecOpt<AVG_TYPE> spw_check_mma_mat  = GEOM;
+#endif // SPWAGG
+
   public:
 
     VertexAMGFactoryOptions ()
@@ -63,21 +79,15 @@ namespace amg
     virtual void SetFromFlags (const Flags & flags, string prefix) override
     {
 
-      auto set_enum_opt = [&] (auto & opt, string key, Array<string> vals) {
-	string val = flags.GetStringFlag(prefix + key, "");
-	for (auto k : Range(vals)) {
-	  if (val == vals[k])
-	    { opt = decltype(opt)(k); return; }
-	}
-      };
+      auto pfit = [&](string x) LAMBDA_INLINE { return prefix + x; };
 
       BaseAMGFactory::Options::SetFromFlags(flags, prefix);
 
 #ifdef SPWAGG
-      set_enum_opt(crs_alg, "crs_alg", {"ecol", "agg", "swpagg" });
+      SetEnumOpt(flags, crs_alg, pfit("crs_alg"), { "ecol", "agg", "spw" }, { ECOL, AGG, SPW });
 #else // SPWAGG
-      set_enum_opt(crs_alg, "crs_alg", {"ecol", "agg" });
-#endif // SWPAGG
+      SetEnumOpt(flags, crs_alg, pfit("crs_alg"), { "ecol", "agg" }, { ECOL, AGG });
+#endif // SPWAGG
 
       ecw_geom.SetFromFlags(flags, prefix + "ecw_geom");
       ecw_robust.SetFromFlags(flags, prefix + "ecw_robust");
@@ -95,6 +105,19 @@ namespace amg
       sp_aux_only.SetFromFlags(flags, prefix + "sp_aux_only");
       newsp.SetFromFlags(flags, prefix + "newsp");
       sp_max_per_row_classic.SetFromFlags(flags, prefix + "sp_max_per_row_classic");
+
+#ifdef SPWAGG
+      spw_rounds.SetFromFlags(flags, prefix + "spw_rounds");
+      spw_allrobust.SetFromFlags(flags, prefix +  "spw_check_robust");
+      spw_checkbigsoc.SetFromFlags(flags, prefix + "spw_checkbigsoc");
+      spw_pick_cwt.SetFromFlagsEnum(flags, prefix + "", {"harm", "geom", "mmx"});
+      spw_pick_mma_scal.SetFromFlagsEnum(flags, prefix + "", {"min", "geom", "harm", "alg", "max"});
+      spw_pick_mma_mat.SetFromFlagsEnum(flags, prefix + "", {"min", "geom", "harm", "alg", "max"});
+      spw_check_cwt.SetFromFlagsEnum(flags, prefix + "", {"harm", "geom", "mmx"});
+      spw_check_mma_scal.SetFromFlagsEnum(flags, prefix + "", {"min", "geom", "harm", "alg", "max"});
+      spw_check_mma_mat.SetFromFlagsEnum(flags, prefix + "", {"min", "geom", "harm", "alg", "max"});
+#endif // SPWAGG
+
     } // VertexAMGFactoryOptions::SetFromFlags
 
   }; // VertexAMGFactoryOptions
@@ -198,6 +221,7 @@ namespace amg
   template<class ENERGY, class TMESH, int BS>
   shared_ptr<BaseCoarseMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildSPWAggMap (BaseAMGFactory::State & state, shared_ptr<BaseAMGFactory::LevelCapsule> & mapped_cap)
   {
+    cout << " BuildSPWAggMap " << endl;
     auto & O = static_cast<Options&>(*options);
     typedef SPWAgglomerator<ENERGY, TMESH, ENERGY::NEED_ROBUST> AGG_CLASS;
     typename AGG_CLASS::Options agg_opts;
@@ -207,13 +231,32 @@ namespace amg
 
     const int level = state.level[0];
 
+    cout << " BuildSPWAggMap2 " << endl;
+    agg_opts.edge_thresh = O.min_ecw.GetOpt(level);
+    agg_opts.vert_thresh = O.min_vcw.GetOpt(level);
+    agg_opts.robust = O.ecw_robust.GetOpt(level);
+    agg_opts.num_rounds = O.spw_rounds.GetOpt(level);
+    agg_opts.allrobust = O.spw_allrobust.GetOpt(level);
+    agg_opts.pick_cw_type = O.spw_pick_cwt.GetOpt(level);
+    agg_opts.pick_mma_scal = O.spw_pick_mma_scal.GetOpt(level);
+    agg_opts.pick_mma_mat = O.spw_pick_mma_mat.GetOpt(level);
+    agg_opts.check_cw_type = O.spw_check_cwt.GetOpt(level);
+    agg_opts.check_mma_scal = O.spw_check_mma_scal.GetOpt(level);
+    agg_opts.check_mma_mat = O.spw_check_mma_mat.GetOpt(level);
+    agg_opts.print_aggs = O.print_aggs.GetOpt(level);
+    agg_opts.checkbigsoc = O.spw_checkbigsoc.GetOpt(level);
+    agg_opts.use_stab_ecw_hack = O.ecw_stab_hack.GetOpt(level);
+    
+    cout << " BuildSPWAggMap3 " << endl;
     auto agglomerator = make_shared<AGG_CLASS>(mesh, state.curr_cap->free_nodes, move(agg_opts));
 
+    cout << " BuildSPWAggMap4 " << endl;
     /** Set mapped Capsule **/
     auto cmesh = agglomerator->GetMappedMesh();
     mapped_cap->eqc_h = cmesh->GetEQCHierarchy();
     mapped_cap->mesh = cmesh;
     mapped_cap->pardofs = this->BuildParallelDofs(cmesh);
+    cout << " BuildSPWAggMap5 " << endl;
 
     return agglomerator;
   } // VertexAMGFactory::BuildSPWAggMap

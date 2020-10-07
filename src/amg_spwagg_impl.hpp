@@ -7,48 +7,6 @@ namespace amg
 {
 
 
-  /** Calc a CMK ordering of vertices. Connectivity given by "econ". Only orders those where "skip" is not set **/
-  void CalcCMK (const BitArray & skip, const SparseMatrix<double> & econ, Array<int> & cmk)
-  {
-    static Timer t("CalcCMK"); RegionTimer rt(t);
-    size_t numtake = econ.Height() - skip.NumSet();
-    if (numtake == 0)
-      { cmk.SetSize0(); return; }
-    cmk.SetSize(numtake); cmk = -12;
-    size_t cnt = 0, cnt2 = 0;
-    BitArray handled(skip);
-    Array<int> neibs;
-    while (cnt < numtake) {
-      /** pick some minimum degree vertex to start with **/
-      int mnc = econ.Height(), nextvert = -1; // max # of possible cons should be H - 1
-      int ncons;
-      for (auto k : Range(econ.Height()))
-	if (!handled.Test(k))
-	  if ( (ncons = econ.GetRowIndices(k).Size()) < mnc )
-	    { mnc = ncons; nextvert = k; }
-      if (nextvert == -1) // all verts are fully connected (including to itself, which should be illegal)
-	for (auto k : Range(econ.Height()))
-	  if (!handled.Test(k))
-	    { nextvert = k; break; }
-      cmk[cnt++] = nextvert; handled.SetBit(nextvert);
-      while((cnt < numtake) && (cnt2 < cnt)) {
-	/** add (unadded) neibs of cmk[cnt2] to cmk, ordered by degree, until we run out of vertices
-	    to take neibs from - if that happens, we have to pick a new minimum degree vertex to start from! **/
-	int c = 0; auto ris = econ.GetRowIndices(cmk[cnt2]);
-	neibs.SetSize(ris.Size());
-	for(auto k : Range(ris))
-	  if (!handled.Test(k))
-	    { neibs[c++] = ris[k]; handled.SetBit(nextvert); }
-	neibs.SetSize(c);
-	QuickSort(neibs, [&](auto vi, auto vj) { return econ.GetRowIndices(vi).Size() < econ.GetRowIndices(vj).Size(); });
-	for (auto l : Range(c))
-	  { cmk[cnt++] = neibs[l]; handled.SetBit(neibs[l]); }
-	cnt2++;
-      }
-    }
-  } // CalcCMK
-
-
   /** LocCoarseMap **/
 
   class LocCoarseMap : public BaseCoarseMap
@@ -197,6 +155,23 @@ namespace amg
 
   /** SPWAgglomerator **/
 
+  template<class ENERGY, class TMESH, bool ROBUST>
+  SPWAgglomerator<ENERGY, TMESH, ROBUST> ::SPWAgglomerator (shared_ptr<TMESH> _mesh, shared_ptr<BitArray> _free_verts, Options && _settings)
+    : BaseCoarseMap(_mesh), AgglomerateCoarseMap<TMESH>(_mesh), free_verts(_free_verts), settings(_settings)
+  {
+    cout << " SPW C 1 " << endl;
+    assert(mesh != nullptr); // obviously this would be bad
+  } // SPWAgglomerator(..)
+
+
+  template<class ENERGY, class TMESH, bool ROBUST>
+  SPWAgglomerator<ENERGY, TMESH, ROBUST> ::SPWAgglomerator (shared_ptr<TMESH> _mesh, shared_ptr<BitArray> _free_verts)
+    : BaseCoarseMap(_mesh), AgglomerateCoarseMap<TMESH>(_mesh), free_verts(_free_verts)
+  {
+    cout << " SPW C 2 " << endl;
+    assert(mesh != nullptr); // obviously this would be bad
+  } // SPWAgglomerator(..)
+
 
   template<class ENERGY, class TMESH, bool ROBUST> template<class ATD, class TMU>
   INLINE void SPWAgglomerator<ENERGY, TMESH, ROBUST> :: GetEdgeData (FlatArray<ATD> in_data, Array<TMU> & out_data)
@@ -255,6 +230,8 @@ namespace amg
     static Timer tsv("FormAgglomerates - spec verts");
     static Timer tvp("FormAgglomerates - pair verts");
     tprep.Start();
+
+    cout << " FORM SPW AGGLOMERATES " << endl;
 
     typedef typename Options::CW_TYPE CW_TYPE;
     const bool print_params = settings.print_aggs;  // parameters for every round
@@ -488,17 +465,17 @@ namespace amg
     // pair vertices
     for (int round : Range(num_rounds)) {
       const bool r_ar = robust && settings.allrobust.GetOpt(round);
-      const CW_TYPE r_cwtp = settings.cw_type_pick.GetOpt(round);
+      const CW_TYPE r_cwtp = settings.pick_cw_type.GetOpt(round);
       const AVG_TYPE r_pmmas = settings.pick_mma_scal.GetOpt(round);
       const AVG_TYPE r_pmmam = settings.pick_mma_mat.GetOpt(round);
-      const CW_TYPE r_cwtc = settings.cw_type_check.GetOpt(round);
+      const CW_TYPE r_cwtc = settings.check_cw_type.GetOpt(round);
       const AVG_TYPE r_cmmas = settings.check_mma_scal.GetOpt(round);
       const AVG_TYPE r_cmmam = settings.check_mma_mat.GetOpt(round);
       const bool r_cbs = settings.checkbigsoc;
       const bool use_hack_stab = settings.use_stab_ecw_hack.IsTrue() ||
 	( (!settings.use_stab_ecw_hack.IsFalse()) 
-	  && ( (   settings.allrobust.GetOpt(round)  && (settings.cw_type_pick.GetOpt(round)  == CW_TYPE::HARMONIC) ) ||
-	       ( (!settings.allrobust.GetOpt(round)) && (settings.cw_type_check.GetOpt(round) == CW_TYPE::HARMONIC)) ) ) ;
+	  && ( (   settings.allrobust.GetOpt(round)  && (settings.pick_cw_type.GetOpt(round)  == CW_TYPE::HARMONIC) ) ||
+	       ( (!settings.allrobust.GetOpt(round)) && (settings.check_cw_type.GetOpt(round) == CW_TYPE::HARMONIC)) ) ) ;
 
       if (print_params) {
 	cout << " round " << round << " of " << num_rounds << endl;
@@ -685,6 +662,49 @@ namespace amg
     tfaggs.Stop();
     
   } // SPWAgglomerator::FormAgglomerates_impl
+
+
+  template<class ENERGY, class TMESH, bool ROBUST>
+  void SPWAgglomerator<ENERGY, TMESH, ROBUST> :: CalcCMK (const BitArray & skip, const SparseMatrix<double> & econ, Array<int> & cmk)
+  {
+    /** Calc a CMK ordering of vertices. Connectivity given by "econ". Only orders those where "skip" is not set **/
+    static Timer t("CalcCMK"); RegionTimer rt(t);
+    size_t numtake = econ.Height() - skip.NumSet();
+    if (numtake == 0)
+      { cmk.SetSize0(); return; }
+    cmk.SetSize(numtake); cmk = -12;
+    size_t cnt = 0, cnt2 = 0;
+    BitArray handled(skip);
+    Array<int> neibs;
+    while (cnt < numtake) {
+      /** pick some minimum degree vertex to start with **/
+      int mnc = econ.Height(), nextvert = -1; // max # of possible cons should be H - 1
+      int ncons;
+      for (auto k : Range(econ.Height()))
+	if (!handled.Test(k))
+	  if ( (ncons = econ.GetRowIndices(k).Size()) < mnc )
+	    { mnc = ncons; nextvert = k; }
+      if (nextvert == -1) // all verts are fully connected (including to itself, which should be illegal)
+	for (auto k : Range(econ.Height()))
+	  if (!handled.Test(k))
+	    { nextvert = k; break; }
+      cmk[cnt++] = nextvert; handled.SetBit(nextvert);
+      while((cnt < numtake) && (cnt2 < cnt)) {
+	/** add (unadded) neibs of cmk[cnt2] to cmk, ordered by degree, until we run out of vertices
+	    to take neibs from - if that happens, we have to pick a new minimum degree vertex to start from! **/
+	int c = 0; auto ris = econ.GetRowIndices(cmk[cnt2]);
+	neibs.SetSize(ris.Size());
+	for(auto k : Range(ris))
+	  if (!handled.Test(k))
+	    { neibs[c++] = ris[k]; handled.SetBit(nextvert); }
+	neibs.SetSize(c);
+	QuickSort(neibs, [&](auto vi, auto vj) { return econ.GetRowIndices(vi).Size() < econ.GetRowIndices(vj).Size(); });
+	for (auto l : Range(c))
+	  { cmk[cnt++] = neibs[l]; handled.SetBit(neibs[l]); }
+	cnt2++;
+      }
+    }
+  } // SPWAgglomerator::CalcCMK
 
   /** END SPWAgglomerator **/
 

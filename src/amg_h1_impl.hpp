@@ -160,7 +160,7 @@ namespace amg {
     O.sp_omega = 1.0;
 
     /** Discard **/
-    O.enable_disc = true;
+    O.enable_disc = false;
     O.disc_max_bs = 5;
 
     /** Level-control **/

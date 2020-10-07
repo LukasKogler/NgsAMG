@@ -17,19 +17,8 @@ namespace amg
 
   void BaseAMGPC::Options :: SetFromFlags (shared_ptr<FESpace> fes, const Flags & flags, string prefix)
   {
-    auto set_enum_opt = [&] (auto & opt, string key, Array<string> vals, auto default_val) {
-      string val = flags.GetStringFlag(prefix + key, "");
-      bool found = false;
-      for (auto k : Range(vals)) {
-	if (val == vals[k]) {
-	  found = true;
-	  opt = decltype(opt)(k);
-	  break;
-	}
-      }
-      if (!found)
-	{ opt = default_val; }
-    };
+
+    auto pfit = [&](string x) LAMBDA_INLINE { return prefix + x; };
 
     auto set_bool = [&](auto& v, string key) {
       if (v) { v = !flags.GetDefineFlagX(prefix + key).IsFalse(); }
@@ -49,19 +38,16 @@ namespace amg
       set_opt_sv(opt, flag_opt, keys, vals);
     };
 
-    set_enum_opt(mg_cycle, "mg_cycle", {"V", "W", "BS"}, Options::MG_CYCLE::V_CYCLE);
-
-    set_enum_opt(clev, "clev", {"inv", "sm", "none"}, Options::CLEVEL::INV_CLEV);
-
-    set_opt_kv(cinv_type, "cinv_type", { "masterinverse", "mumps" }, Array<INVERSETYPE>({ MASTERINVERSE, MUMPS }));
-
-    set_opt_kv(cinv_type_loc, "cinv_type_loc", { "pardiso", "pardisospd", "sparsecholesky", "superlu", "superlu_dist", "mumps", "umfpack" },
+    SetEnumOpt(flags, mg_cycle, pfit("mg_cycle"), {"V", "W", "BS"}, { V_CYCLE, W_CYCLE, BS_CYCLE }, Options::MG_CYCLE::V_CYCLE);
+    SetEnumOpt(flags, clev, pfit("clev"), {"inv", "sm", "none"}, { INV_CLEV, SMOOTH_CLEV, NO_CLEV }, Options::CLEVEL::INV_CLEV);
+    SetEnumOpt(flags, cinv_type, pfit("cinv_type"), { "masterinverse", "mumps" }, Array<INVERSETYPE>({ MASTERINVERSE, MUMPS }));
+    SetEnumOpt(flags, cinv_type_loc, pfit("cinv_type_loc"), { "pardiso", "pardisospd", "sparsecholesky", "superlu", "superlu_dist", "mumps", "umfpack" },
 	       Array<INVERSETYPE>({ PARDISO, PARDISOSPD, SPARSECHOLESKY, SUPERLU, SUPERLU_DIST, MUMPS, UMFPACK }));
 
     sm_type.SetFromFlagsEnum(flags, prefix+"sm_type", { "gs", "bgs" });
     // Array<string> sm_names ( { "gs", "bgs" } );
     // Array<Options::SM_TYPE> sm_types ( { Options::SM_TYPE::GS, Options::SM_TYPE::BGS } );
-    // set_enum_opt(sm_type, "sm_type", { "gs", "bgs" }, Options::SM_TYPE::GS);
+    // SetEnumOpt(flags, sm_type, pfit("sm_type"), { "gs", "bgs" }, Options::SM_TYPE::GS);
     // auto & spec_sms = flags.GetStringListFlag(prefix + "spec_sm_types");
     // spec_sm_types.SetSize(spec_sms.Size());
     // for (auto k : Range(spec_sms.Size()))
@@ -82,9 +68,9 @@ namespace amg
     set_bool(regularize_cmats, "regularize_cmats");
     set_bool(force_ass_flmat, "faflm");
 
-    set_enum_opt(energy, "energy", { "triv", "alg", "elmat" }, Options::ENERGY::ALG_ENERGY);
+    SetEnumOpt(flags, energy, pfit("energy"), { "triv", "alg", "elmat" }, { TRIV_ENERGY, ALG_ENERGY, ELMAT_ENERGY }, Options::ENERGY::ALG_ENERGY);
 
-    set_enum_opt(log_level_pc, "log_level_pc", {"none", "basic", "normal", "extra"}, Options::LOG_LEVEL_PC::NONE);
+    SetEnumOpt(flags, log_level_pc, pfit("log_level_pc"), {"none", "basic", "normal", "extra"}, { NONE, BASIC, NORMAL, EXTRA }, Options::LOG_LEVEL_PC::NONE);
     set_bool(print_log_pc, "print_log_pc");
     log_file_pc = flags.GetStringFlag(prefix + string("log_file_pc"), "");
 
@@ -601,22 +587,12 @@ namespace amg
   void VertexAMGPCOptions :: SetFromFlags (shared_ptr<FESpace> fes, const Flags & flags, string prefix)
   {
 
-    auto set_enum_opt = [&] (auto & opt, string key, Array<string> vals) {
-      string val = flags.GetStringFlag(prefix + key, "");
-      for (auto k : Range(vals)) {
-	if (val == vals[k]) {
-	  opt = decltype(opt)(k);
-	  break;
-	}
-      }
-    };
-
     auto ma = fes->GetMeshAccess();
     auto pfit = [&](string x) LAMBDA_INLINE { return prefix + x; };
 
     BaseAMGPC::Options::SetFromFlags(fes, flags, prefix);
 
-    set_enum_opt(subset, "on_dofs", {"range", "select"});
+    SetEnumOpt(flags, subset, pfit("on_dofs"), {"range", "select"}, { RANGE_SUBSET, SELECTED_SUBSET });
 
     switch (subset) {
     case (RANGE_SUBSET) : {
@@ -695,8 +671,8 @@ namespace amg
       break;
     }
     case (SELECTED_SUBSET) : {
-      set_enum_opt(spec_ss, "subset", {"__DO_NOT_SET_THIS_FROM_FLAGS_PLEASE_I_DO_NOT_THINK_THAT_IS_A_GOOD_IDEA__",
-	    "free", "nodalp2"});
+      SetEnumOpt(flags, spec_ss, pfit("subset"), {"__DO_NOT_SET_THIS_FROM_FLAGS_PLEASE_I_DO_NOT_THINK_THAT_IS_A_GOOD_IDEA__",
+	    "free", "nodalp2"}, { SPECSS_NONE, SPECSS_FREE, SPECSS_NODALP2 });
       cout << IM(3) << "subset for coarsening defined by bitarray" << endl;
       // NONE - set somewhere else. FREE - set in initlevel 
       if (spec_ss == SPECSS_NODALP2) {
@@ -769,8 +745,8 @@ namespace amg
     default: { throw Exception("Not implemented"); break; }
     }
 
-    set_enum_opt(topo, "edges", { "alg", "mesh", "elmat" });
-    set_enum_opt(v_pos, "vpos", { "vertex", "given" } );
+    SetEnumOpt(flags, topo, pfit("edges"), { "alg", "mesh", "elmat" }, { ALG_TOPO, MESH_TOPO, ELMAT_TOPO });
+    SetEnumOpt(flags, v_pos, pfit("vpos"), { "vertex", "given" }, { VERTEX_POS, GIVEN_POS } );
   } // VertexAMGPCOptions::SetOptionsFromFlags
 
   /** END VertexAMGPCOptions **/
