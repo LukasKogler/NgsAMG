@@ -84,9 +84,9 @@ namespace amg
       BaseAMGFactory::Options::SetFromFlags(flags, prefix);
 
 #ifdef SPWAGG
-      SetEnumOpt(flags, crs_alg, pfit("crs_alg"), { "ecol", "agg", "spw" }, { ECOL, AGG, SPW });
+      crs_alg.SetFromFlagsEnum(flags, pfit("crs_alg"), { "ecol", "agg", "spw" }, { ECOL, AGG, SPW });
 #else // SPWAGG
-      SetEnumOpt(flags, crs_alg, pfit("crs_alg"), { "ecol", "agg" }, { ECOL, AGG });
+      crs_alg.SetFromFlagsEnum(flags, pfit("crs_alg"), { "ecol", "agg" }, { ECOL, AGG });
 #endif // SPWAGG
 
       ecw_geom.SetFromFlags(flags, prefix + "ecw_geom");
