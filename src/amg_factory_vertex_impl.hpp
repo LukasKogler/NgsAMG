@@ -93,7 +93,7 @@ namespace amg
       ecw_robust.SetFromFlags(flags, prefix + "ecw_robust");
       ecw_minmax.SetFromFlags(flags, prefix + "ecw_minmax");
       ecw_stab_hack.SetFromFlags(flags, prefix + "ecw_stab_hack");
-      agg_minmax_avg.SetFromFlagsEnum(flags, prefix + "agg_minmax_avg", {"min", "geom", "harm", "alg", "max"});
+      agg_minmax_avg.SetFromFlagsEnum(flags, prefix + "agg_minmax_avg", { "min", "geom", "harm", "alg", "max" }, { MIN, GEOM, HARM, ALG,MAX });
 
       min_ecw.SetFromFlags(flags, prefix + "edge_thresh");
       min_vcw.SetFromFlags(flags, prefix + "vert_thresh");
@@ -110,12 +110,12 @@ namespace amg
       spw_rounds.SetFromFlags(flags, prefix + "spw_rounds");
       spw_allrobust.SetFromFlags(flags, prefix +  "spw_check_robust");
       spw_checkbigsoc.SetFromFlags(flags, prefix + "spw_checkbigsoc");
-      spw_pick_cwt.SetFromFlagsEnum(flags, prefix + "", {"harm", "geom", "mmx"});
-      spw_pick_mma_scal.SetFromFlagsEnum(flags, prefix + "", {"min", "geom", "harm", "alg", "max"});
-      spw_pick_mma_mat.SetFromFlagsEnum(flags, prefix + "", {"min", "geom", "harm", "alg", "max"});
-      spw_check_cwt.SetFromFlagsEnum(flags, prefix + "", {"harm", "geom", "mmx"});
-      spw_check_mma_scal.SetFromFlagsEnum(flags, prefix + "", {"min", "geom", "harm", "alg", "max"});
-      spw_check_mma_mat.SetFromFlagsEnum(flags, prefix + "", {"min", "geom", "harm", "alg", "max"});
+      spw_pick_cwt.SetFromFlagsEnum(flags, prefix + "", { "harm", "geom", "mmx" }, { HARMONIC, GEOMETRIC, MINMAX });
+      spw_pick_mma_scal.SetFromFlagsEnum(flags, prefix + "", { "min", "geom", "harm", "alg", "max" }, { MIN, GEOM, HARM, ALG, MAX });
+      spw_pick_mma_mat.SetFromFlagsEnum(flags, prefix + "", { "min", "geom", "harm", "alg", "max" }, { MIN, GEOM, HARM, ALG, MAX });
+      spw_check_cwt.SetFromFlagsEnum(flags, prefix + "", { "harm", "geom", "mmx" }, { HARMONIC, GEOMETRIC, MINMAX });
+      spw_check_mma_scal.SetFromFlagsEnum(flags, prefix + "", { "min", "geom", "harm", "alg", "max" }, { MIN, GEOM, HARM, ALG, MAX });
+      spw_check_mma_mat.SetFromFlagsEnum(flags, prefix + "", { "min", "geom", "harm", "alg", "max" },  { MIN, GEOM, HARM, ALG, MAX });
 #endif // SPWAGG
 
     } // VertexAMGFactoryOptions::SetFromFlags
@@ -166,10 +166,14 @@ namespace amg
     auto & O(static_cast<Options&>(*options));
 
     Options::CRS_ALG calg = O.crs_alg.GetOpt(state.level[0]);
+    cout << " BCM, int(alg) = " << int(calg) << endl;
+    cout << " eqcs = " << ( calg == Options::CRS_ALG::ECOL ) << endl;
+    cout << " " << ( calg == Options::CRS_ALG::AGG ) << endl;
+    cout << " " << ( calg == Options::CRS_ALG::SPW ) << endl;
 
     switch(calg) {
-    case(Options::CRS_ALG::AGG): { return BuildAggMap(state, mapped_cap); break; }
     case(Options::CRS_ALG::ECOL): { return BuildECMap(state, mapped_cap); break; }
+    case(Options::CRS_ALG::AGG): { return BuildAggMap(state, mapped_cap); break; }
 #ifdef SPWAGG
     case(Options::CRS_ALG::SPW): { return BuildSPWAggMap(state, mapped_cap); break; }
 #endif

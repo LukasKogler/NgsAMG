@@ -44,7 +44,7 @@ namespace amg
     SetEnumOpt(flags, cinv_type_loc, pfit("cinv_type_loc"), { "pardiso", "pardisospd", "sparsecholesky", "superlu", "superlu_dist", "mumps", "umfpack" },
 	       Array<INVERSETYPE>({ PARDISO, PARDISOSPD, SPARSECHOLESKY, SUPERLU, SUPERLU_DIST, MUMPS, UMFPACK }));
 
-    sm_type.SetFromFlagsEnum(flags, prefix+"sm_type", { "gs", "bgs" });
+    sm_type.SetFromFlagsEnum(flags, prefix+"sm_type", { "gs", "bgs" }, { GS, BGS });
     // Array<string> sm_names ( { "gs", "bgs" } );
     // Array<Options::SM_TYPE> sm_types ( { Options::SM_TYPE::GS, Options::SM_TYPE::BGS } );
     // SetEnumOpt(flags, sm_type, pfit("sm_type"), { "gs", "bgs" }, Options::SM_TYPE::GS);
