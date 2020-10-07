@@ -2,6 +2,7 @@
 #define FILE_AMG_FACTORY_VERTEX_IMPL_HPP
 
 #include "amg_agg.hpp"
+#include "amg_spwagg.hpp"
 #include "amg_bla.hpp"
 
 namespace amg
@@ -27,8 +28,8 @@ namespace amg
     /** choice of coarsening algorithm **/
     enum CRS_ALG : char { ECOL                  // edge collapsing
 			  , AGG                 // MIS-based aggregaion
-#ifdef PWAGG
-			  , SPWAGG                // successive pairwise aggregaion
+#ifdef SPWAGG
+			  , SPW                 // successive pairwise aggregaion
 #endif
     };
     SpecOpt<CRS_ALG> crs_alg = AGG;
@@ -72,7 +73,11 @@ namespace amg
 
       BaseAMGFactory::Options::SetFromFlags(flags, prefix);
 
+#ifdef SPWAGG
+      set_enum_opt(crs_alg, "crs_alg", {"ecol", "agg", "swpagg" });
+#else // SPWAGG
       set_enum_opt(crs_alg, "crs_alg", {"ecol", "agg" });
+#endif // SWPAGG
 
       ecw_geom.SetFromFlags(flags, prefix + "ecw_geom");
       ecw_robust.SetFromFlags(flags, prefix + "ecw_robust");
@@ -143,7 +148,7 @@ namespace amg
     case(Options::CRS_ALG::AGG): { return BuildAggMap(state, mapped_cap); break; }
     case(Options::CRS_ALG::ECOL): { return BuildECMap(state, mapped_cap); break; }
 #ifdef SPWAGG
-    case(Options::CRS_ALG::SPWAGG): { return BuildSPWAggMap(state, mapped_cap); break; }
+    case(Options::CRS_ALG::SPW): { return BuildSPWAggMap(state, mapped_cap); break; }
 #endif
     default: { throw Exception("Invalid coarsen alg!"); break; }
     }

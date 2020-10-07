@@ -11,7 +11,7 @@
 
 namespace amg
 {
-  template class SPWAgglomerateCoarseMap<H1Mesh>;
+  extern template class AgglomerateCoarseMap<H1Mesh>;
   template class SPWAgglomerator<H1Energy<1, double, double>, H1Mesh, H1Energy<1, double, double>::NEED_ROBUST>;
   template class SPWAgglomerator<H1Energy<2, double, double>, H1Mesh, H1Energy<2, double, double>::NEED_ROBUST>;
   template class SPWAgglomerator<H1Energy<3, double, double>, H1Mesh, H1Energy<3, double, double>::NEED_ROBUST>;

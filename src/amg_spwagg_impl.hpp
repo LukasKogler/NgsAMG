@@ -53,7 +53,7 @@ namespace amg
 
   class LocCoarseMap : public BaseCoarseMap
   {
-    template<class ATENERGY, class ATMESH, bool AROBUST> friend class SSPWAgglomerator;
+    template<class ATENERGY, class ATMESH, bool AROBUST> friend class SPWAgglomerator;
   public:
     LocCoarseMap (shared_ptr<TopologicMesh> mesh, shared_ptr<TopologicMesh> mapped_mesh = nullptr)
       : BaseCoarseMap(mesh, mapped_mesh)
@@ -195,23 +195,31 @@ namespace amg
   /** END LocCoarseMap **/
 
 
-  /** SSPWAgglomerator **/
+  /** SPWAgglomerator **/
 
-  template<class ENERGY, class TMESH, bool ROBUST> template<class TMU>
-  INLINE void SSPWAgglomerator<ENERGY, TMESH, ROBUST> :: GetEdgeData (FlatArray<TM> full_data, Array<TMU> & data)
+
+  template<class ENERGY, class TMESH, bool ROBUST> template<class ATD, class TMU>
+  INLINE void SPWAgglomerator<ENERGY, TMESH, ROBUST> :: GetEdgeData (FlatArray<ATD> in_data, Array<TMU> & out_data)
   {
-    if constexpr(std::is_same<TMU, TM>::value)
-      { data.FlatArray<TMU>::Assign(full_data); }
-    else {
-      data.SetSize(full_data.Size());
-      for (auto k : Range(data))
-	{ data[k] = ENERGY::GetApproxWeight(full_data[k]); }
+    if constexpr(std::is_same<ATD, TMU>::value)
+      { out_data.FlatArray<TMU>::Assign(in_data); }
+    else if constexpr(std::is_same<TMU, double>::value) {
+      /** use trace **/
+	out_data.SetSize(in_data.Size());
+      for (auto k : Range(in_data))
+	{ out_data[k] = ENERGY::GetApproxWeight(in_data[k]); }
+      }
+    else { /** for h1, double -> TM extension is necessary pro forma **/
+      /** \lambda * Id **/
+      out_data.SetSize(in_data.Size());
+      for (auto k : Range(in_data))
+	{ SetIdentity(ENERGY::GetApproxWeight(in_data[k]), out_data[k]); }
     }
-  } // SSPWAgglomerator::GetEdgeData
+  } // SPWAgglomerator::GetEdgeData
 
 
   template<class ENERGY, class TMESH, bool ROBUST>
-  void SSPWAgglomerator<ENERGY, TMESH, ROBUST> :: FormAgglomerates (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg)
+  void SPWAgglomerator<ENERGY, TMESH, ROBUST> :: FormAgglomerates (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg)
   {
     if constexpr (ROBUST) {
 	if (settings.robust) /** cheap, but not robust for some corner cases **/
@@ -221,7 +229,7 @@ namespace amg
       }
     else // do not even compile the robust version - saves a lot of ti
       { FormAgglomerates_impl<double> (agglomerates, v_to_agg); }
-  } // SSPWAgglomerator::FormAgglomerates
+  } // SPWAgglomerator::FormAgglomerates
 
 
   template<class ENERGY, class TMESH, bool ROBUST> Timer & GetRoundTimer (int round) {
@@ -236,11 +244,11 @@ namespace amg
   } // GetRoundTimer
 
   template<class ENERGY, class TMESH, bool ROBUST> template<class TMU>
-  INLINE void SSPWAgglomerator<ENERGY, TMESH, ROBUST> :: FormAgglomerates_impl (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg)
+  INLINE void SPWAgglomerator<ENERGY, TMESH, ROBUST> :: FormAgglomerates_impl (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg)
   {
     static_assert ( (std::is_same<TMU, TM>::value || std::is_same<TMU, double>::value), "Only 2 options make sense!");
 
-    static Timer t("SSPWAgglomerator::FormAgglomerates_impl"); RegionTimer rt(t);
+    static Timer t("SPWAgglomerator::FormAgglomerates_impl"); RegionTimer rt(t);
     static Timer tfaggs("FormAgglomerates - finalize aggs");
     static Timer tmap("FormAgglomerates - map loc mesh");
     static Timer tprep("FormAgglomerates - prep");
@@ -271,7 +279,7 @@ namespace amg
     const double MIN_VCW = settings.vert_thresh;
 
     if (print_params) {
-      cout << "SSPWAgglomerator::FormAgglomerates_impl, params are: " << endl;
+      cout << "SPWAgglomerator::FormAgglomerates_impl, params are: " << endl;
       cout << " ROBUST = " << robust << endl;
       cout << " num_rounds = " << num_rounds << endl;
       cout << " MIN_ECW = " << MIN_ECW << endl;
@@ -281,25 +289,32 @@ namespace amg
     shared_ptr<LocCoarseMap> conclocmap;
     
     FlatArray<TVD> base_vdata = get<0>(tm_mesh->Data())->Data();
-    FlatArray<TM> base_edata_full = get<1>(tm_mesh->Data())->Data();
-    Array<TMU> base_edata; GetEdgeData<TMU>(base_edata_full, base_edata);
-    Array<TM> base_diags(M.template GetNN<NT_VERTEX>());
+    Array<TMU> base_edata_full; GetEdgeData<TED, TMU>(get<1>(tm_mesh->Data())->Data(), base_edata_full);
+    Array<double> base_edata; GetEdgeData<TMU, double>(base_edata_full, base_edata);
+    Array<TMU> base_diags(M.template GetNN<NT_VERTEX>());
     TM Qij, Qji; SetIdentity(Qij); SetIdentity(Qji);
     M.template Apply<NT_EDGE>([&](const auto & edge) LAMBDA_INLINE {
-	ENERGY::ModQs(base_vdata[edge.v[0]], base_vdata[edge.v[1]], Qij, Qji);
+	constexpr int rrobust = robust;
 	const auto & em = base_edata[edge.id];
-	ENERGY::AddQtMQ(1.0, base_diags[edge.v[0]], Qij, em);
-	ENERGY::AddQtMQ(1.0, base_diags[edge.v[1]], Qji, em);
+	if constexpr(rrobust) {
+	  ENERGY::ModQs(base_vdata[edge.v[0]], base_vdata[edge.v[1]], Qij, Qji);
+	  ENERGY::AddQtMQ(1.0, base_diags[edge.v[0]], Qij, em);
+	  ENERGY::AddQtMQ(1.0, base_diags[edge.v[1]], Qji, em);
+	}
+	else {
+	  base_diags[edge.v[0]] += em;
+	  base_diags[edge.v[1]] += em;
+	}
       }, true); // only master, we cumulate this afterwards
     M.template AllreduceNodalData<NT_VERTEX>(base_diags, [&](auto tab) LAMBDA_INLINE { return sum_table(tab); });
 
     Array<TVD> cvdata;
-    Array<TMU> cedata;
-    Array<TM> cedata_full, cdiags;
+    Array<TMU> cedata_full, cdiags;
+    Array<double> cedata;
     FlatArray<TVD> fvdata; fvdata.Assign(base_vdata);
-    FlatArray<TMU> fedata; fedata.Assign(base_edata);
-    FlatArray<TM> fedata_full; fedata_full.Assign(base_edata_full);
-    FlatArray<TM> fdiags; fdiags.Assign(base_diags);
+    FlatArray<TMU> fedata_full; fedata_full.Assign(base_edata_full);
+    FlatArray<TMU> fdiags; fdiags.Assign(base_diags);
+    FlatArray<double> fedata; fedata.Assign(base_edata);
 
     LocalHeap lh(20971520, "cthulu"); // 20 MB
 
@@ -334,8 +349,8 @@ namespace amg
       /** calc_trace does nothing for scalar case **/
       dedge = calc_trace(fedata[int(fecon(vi, vj))]);
       switch(cw_type) {
-      case(Options::CW_TYPE::HARMONIC) : { return dedge / calc_avg_scal(HARM, calc_trace(fdiags[vi]), calc_trace(fdiags[vj])); }
-      case(Options::CW_TYPE::GEOMETRIC) : { return dedge / calc_avg_scal(GEOM, calc_trace(fdiags[vi]), calc_trace(fdiags[vj])); }
+      case(Options::CW_TYPE::HARMONIC) : { return dedge / calc_avg_scal(HARM, calc_trace(fdiags[vi]), calc_trace(fdiags[vj])); break; }
+      case(Options::CW_TYPE::GEOMETRIC) : { return dedge / calc_avg_scal(GEOM, calc_trace(fdiags[vi]), calc_trace(fdiags[vj])); break; }
       case(Options::CW_TYPE::MINMAX) : {
 	da = db = 0;
 	for (auto eid : fecon.GetRowValues(vi))
@@ -343,7 +358,9 @@ namespace amg
 	for (auto eid : fecon.GetRowValues(vj))
 	  { da = max2(da, calc_trace(fedata[int(eid)])); }
 	return dedge / calc_avg_scal(mm_avg, da, db);
+	break;
       }
+      default : { return 0.0; break; }
       }
     };
 
@@ -575,7 +592,7 @@ namespace amg
 	    { ccvdata[cvnr] = ENERGY::CalcMPData(fvdata[fvs[0]], fvdata[fvs[1]]); }
 	}
 	/** Coarse edge data **/
-	Array<TM> ccedata_full(NCE); cedata_full = 0;
+	Array<TMU> ccedata_full(NCE); cedata_full = 0;
 	auto fedges = locmap->GetMesh()->template GetNodes<NT_EDGE>();
 	auto cedges = locmap->GetMappedMesh()->template GetNodes<NT_EDGE>();
 	auto emap = locmap->template GetMap<NT_EDGE>();
@@ -586,24 +603,32 @@ namespace amg
 	  auto cenr = emap[fenr];
 	  if (cenr != -1) {
 	    auto & cedge = cedges[cenr];
-	    femp = ENERGY::CalcMPData(fvdata[fedge.v[0]], fvdata[fedge.v[1]]);
-	    cemp = ENERGY::CalcMPData(ccvdata[cedge.v[0]], ccvdata[cedge.v[1]]);
-	    ENERGY::ModQHh(cemp, femp, Q);
-	    ENERGY::AddQtMQ(1.0, ccedata_full[cenr], Q, fedata[fenr]);
+	    if constexpr(robust) {
+	      femp = ENERGY::CalcMPData(fvdata[fedge.v[0]], fvdata[fedge.v[1]]);
+	      cemp = ENERGY::CalcMPData(ccvdata[cedge.v[0]], ccvdata[cedge.v[1]]);
+	      ENERGY::ModQHh(cemp, femp, Q);
+	      ENERGY::AddQtMQ(1.0, ccedata_full[cenr], Q, fedata[fenr]);
+	    }
+	    else
+	      { ccedata_full[cenr] += fedata[fenr]; }
 	  }
 	}
 	/** Coarse diags, I have to do this here because off-proc entries.
 	    Maps are only local on master, so cannot cumulate on coarse level **/
-	Array<TM> ccdiags(NCV);
+	Array<TMU> ccdiags(NCV);
 	TM Qij, Qji; SetIdentity(Qij); SetIdentity(Qji);
 	for (auto cvnr : Range(ccvdata)) {
 	  auto fvs = c2fv[cvnr];
 	  if (fvs.Size() == 1)
 	    { cdiags[cvnr] = fdiags[fvs[0]]; }
 	  else { /** sum up diags, remove contribution of connecting edge **/
-	    ENERGY::ModQs(fvdata[fvs[0]], fvdata[fvs[1]], Qij, Qji);
-	    ENERGY::SetQtMQ(1.0, cdiags[cvnr], Qji, fdiags[fvs[0]]);
-	    ENERGY::AddQtMQ(1.0, cdiags[cvnr], Qij, fdiags[fvs[1]]);
+	    if constexpr(robust) {
+	      ENERGY::ModQs(fvdata[fvs[0]], fvdata[fvs[1]], Qij, Qji);
+	      ENERGY::SetQtMQ(1.0, cdiags[cvnr], Qji, fdiags[fvs[0]]);
+	      ENERGY::AddQtMQ(1.0, cdiags[cvnr], Qij, fdiags[fvs[1]]);
+	    }
+	    else
+	      { cdiags[cvnr] += fdiags[fvs[1]]; }
 	    /** note: this should be fine, on coarse level, at least one vert is already in an agg,
 		or it would already have been paired in first round **/
 	    double fac = ( (round == 0) && use_hack_stab ) ? -1.5 : -2.0;
@@ -616,7 +641,7 @@ namespace amg
 
 	fvdata.Assign(0, lh); cvdata = move(ccvdata);
 	fedata_full.Assign(0, lh); cedata_full = move(ccedata_full);
-	fedata.Assign(0, lh); GetEdgeData<TMU>(cedata_full, cedata);
+	fedata.Assign(0, lh); GetEdgeData<TMU, double>(cedata_full, cedata);
 	fdiags.Assign(0, lh); cdiags = move(ccdiags);
       }
       else {
@@ -659,9 +684,9 @@ namespace amg
       { set_agg(n_aggs_p + k, fixed_aggs[k]); }
     tfaggs.Stop();
     
-  } // SSPWAgglomerator::FormAgglomerates_impl
+  } // SPWAgglomerator::FormAgglomerates_impl
 
-  /** END SSPWAgglomerator **/
+  /** END SPWAgglomerator **/
 
 
 } // namespace amg

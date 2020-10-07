@@ -20,8 +20,9 @@ namespace amg
     static constexpr bool ROBUST = AROBUST;
     using TMESH = ATMESH;
     using ENERGY = ATENERGY;
-    using TM = typename ENERGY::TM;
+    using TED = typename ENERGY::TED;
     using TVD = typename ENERGY::TVD;
+    using TM = typename ENERGY::TM;
 
     struct Options
     {
@@ -35,12 +36,12 @@ namespace amg
       /** when picking neib **/
       SpecOpt<bool> allrobust = false;               // true: EVP to choose neib candidate, otherwise EVP only to confirm
       SpecOpt<CW_TYPE> cw_type_pick = HARMONIC;      // which kind of SOC to use here
-      SpecOpt<AVG_TYPE> pick_mma_scal = HARMONIC;    // which averaging to use for MINMAX SOC 
-      SpecOpt<AVG_TYPE> pick_mma_mat = HARMONIC;     // which averaging to use for MINMAX SOC (only HARM/GEOM are valid)
+      SpecOpt<AVG_TYPE> pick_mma_scal = HARM;        // which averaging to use for MINMAX SOC 
+      SpecOpt<AVG_TYPE> pick_mma_mat = HARM;         // which averaging to use for MINMAX SOC (only HARM/GEOM are valid)
       /** when checking neib with small EVP (only relevant for robust && (!allrobust) **/
       SpecOpt<CW_TYPE> cw_type_check = HARMONIC;     // which kind of SOC to use here
-      SpecOpt<AVG_TYPE> check_mma_scal = HARMONIC;   // which averaging to use for traces in MINMAX SOC
-      SpecOpt<AVG_TYPE> check_mma_mat = HARMONIC;    // which averaging to use for mats in MINMAX SOC
+      SpecOpt<AVG_TYPE> check_mma_scal = HARM;       // which averaging to use for traces in MINMAX SOC
+      SpecOpt<AVG_TYPE> check_mma_mat = HARM;        // which averaging to use for mats in MINMAX SOC
       /** when checking neib with big EVP **/
       bool checkbigsoc = true;                       // check big EVP is pos. def for agg-agg merge
       /** used for EVPs **/
@@ -68,7 +69,7 @@ namespace amg
 
     virtual void FormAgglomerates (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg) override;
 
-    template<class TMU> INLINE void GetEdgeData (FlatArray<TM> full_data, Array<TMU> & data);
+    template<class ATD, class TMU> INLINE void GetEdgeData (FlatArray<ATD> in_data, Array<TMU> & out_data);
 
     template<class TMU> void FormAgglomerates_impl (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg);
 

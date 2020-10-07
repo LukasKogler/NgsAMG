@@ -97,6 +97,10 @@ namespace amg
   class BlockTM : public TopologicMesh
   {
     friend class NgsAMG_Comm;
+    friend class BaseCoarseMap;
+    template<class TMESH> friend class GridContractMap;
+    template<class TMESH> friend class VDiscardMap;
+    template<class TMESH> friend class AgglomerateCoarseMap;
   public:
     BlockTM (shared_ptr<EQCHierarchy> _eqc_h);
     BlockTM (BlockTM && other);
