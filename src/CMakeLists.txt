@@ -17,7 +17,7 @@ add_ngsolve_python_module(ngs_amg SHARED
   amg_discard.cpp amg_blocksmoother.cpp
   amg_mcs_gg_2d.cpp amg_mcs_gg_3d.cpp
   amg_mcs_epseps_2d.cpp amg_mcs_epseps_3d.cpp
-  amg_stokes_gg_2d.cpp)
+  amg_stokes_gg_2d.cpp amg_bla.cpp)
 
 include_directories(${MPI_CXX_INCLUDE_DIRS})
 
