@@ -298,7 +298,7 @@ namespace amg
     constexpr bool robust = (BS == BSU) && (BSU > 1);
 
     auto tm_mesh = dynamic_pointer_cast<TMESH>(mesh);
-    const auto & M = *tm_mesh; M.CumulateData();
+    const TMESH & M = *tm_mesh; M.CumulateData();
     const auto & eqc_h = *M.GetEQCHierarchy();
     auto comm = eqc_h.GetCommunicator();
     const auto NV = M.template GetNN<NT_VERTEX>();
@@ -529,19 +529,79 @@ namespace amg
       return CheckForSPD(A, lh);
     };
 
+
+    TM QiM, QjM, dgb;
     auto check_soc_aggs_full = [&](auto memsi, auto memsj) LAMBDA_INLINE {
       constexpr bool rrobust = robust;
-      if (rrobust) {
+      if constexpr(rrobust) {
 	/** "full" version, assembles the entire system **/
+	int n = memsi.Size() + memsj.Size(), N = BS * n;
+	if (n == 0)
+	  { return true; }
+	// FlatArray<int> allmems = merge_arrays_lh(memsi, memsj, lh); // actually, these are not ordered in the first place..
+	FlatArray<int> allmems(n, lh);
+	allmems.Part(0, memsi.Size()) = memsi;
+	allmems.Part(memsi.Size(), memsj.Size()) = memsj;
+	FlatMatrix<double> A(N, N, lh), P(N, BS, lh), PT(BS, N, lh);
+	/** A **/
+	auto assmems_int = [&](auto somemems, auto osi) {
+	  for (auto kil : Range(somemems)) {
+	    auto vi = somemems[kil];
+	    auto ki = kil + osi;
+	    const int Ki = BS*ki, Kip = Ki + BS;
+	    auto neibsa = econ.GetRowIndices(vi);
+	    auto eids = econ.GetRowValues(vi);
+	    iterate_intersection(neibsa, allmems, [&](auto kneib, auto kj) {
+		const int vj = neibsa[kneib], Kj = BS*kj, Kjp = Kj + BS;
+		const TMU & ed = base_edata_full[int(eids[kneib])];
+		ENERGY::ModQs(base_vdata[vi], base_vdata[vj], Qij, Qji);
+		QiM = Trans(Qij) * ed;
+		QjM = Trans(Qji) * ed;
+		A.Rows(Ki, Kip).Cols(Ki, Kip) +=  QiM * Qij;
+		A.Rows(Ki, Kip).Cols(Kj, Kjp) -= QiM * Qji;
+		A.Rows(Kj, Kjp).Cols(Ki, Kip) -= QjM * Qij;
+		A.Rows(Kj, Kjp).Cols(Kj, Kjp) +=  QjM * Qji;
+	      });
+	  }
+	};
+	A = 0.0;
+	assmems_int(memsi, 0);
+	assmems_int(memsj, memsi.Size());
+	/** P, PT **/
+	for (auto k : Range(allmems)) {
+	  ENERGY::ModQHh(base_vdata[allmems[0]], base_vdata[allmems[k]], Qij);
+	  P.Rows(k*BS, (k+1)*BS) = Qij;
+	}
+	PT = Trans(P);
+	/** M **/
+	FlatMatrix<double> M(N, N, lh); M = A;
+	auto assmems_ext = [&](auto somemems, auto osi) {
+	  for (auto kil : Range(somemems)) {
+	    auto vi = somemems[kil];
+	    auto ki = kil + osi;
+	    const int Ki = BS*ki, Kip = Ki + BS;
+	    auto neibsa = econ.GetRowIndices(vi);
+	    auto eids = econ.GetRowValues(vi);
+	    dgb = 0;
+	    iterate_anotb(neibsa, allmems, [&](auto kneib) {
+		const int vj = neibsa[kneib];
+		ENERGY::ModQij(base_vdata[vi], base_vdata[vj], Qij);
+		ENERGY::AddQtMQ(1.0, dgb, Q, base_edata_full[int(eids[kneib])]);
+	      });
+	    M.Rows(Ki, Kip).Cols(Ki, Kip) += dgb;
+	  }
+	};
+	assmems_ext(memsi, 0);
+	assmems_ext(memsj, memsi.Size());
 
 	/** This is what we <-should-> do **/
-	// A -= MIN_ECW * M;
-	// return CheckForSSPD(A);
+	A -= MIN_ECW * M;
+	return CheckForSSPD(A, lh);
 
 	/** maybe this works too? **/
 	// A += MIN_ECW * 1e-5 * calc_trace(M) * Id;
 	// A -= MIN_ECW * M;
-	// return CheckForSPD(A);
+	// return CheckForSPD(A, lh);
 	return true;
       }
       else
