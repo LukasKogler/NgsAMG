@@ -1367,6 +1367,9 @@ namespace amg
     }
     INLINE void SetFromFlags (const Flags & flags, string key);
     OC GetOpt (int level) const { return (level < spec_opt.Size()) ? spec_opt[level] : default_opt; }
+
+    template<class X>
+    friend INLINE std::ostream & operator<<(std::ostream &os, const SpecOpt<OC>& so);
   }; // struct SpecOpt
 
   template<class OC>
@@ -1436,6 +1439,15 @@ namespace amg
     }
     opt = default_val;
   }
+
+  template<class OC>
+  INLINE std::ostream & operator<<(std::ostream &os, const SpecOpt<OC>& so)
+  {
+    os << "SpecOpts<" << typeid(OC).name() << ">, default val = " << so.default_opt << ", spec opts (" << so.spec_opt.Size() << ") = ";
+    prow2(so.spec_opt, os);
+    return os;
+  }
+
 
 } // namespace amg
 

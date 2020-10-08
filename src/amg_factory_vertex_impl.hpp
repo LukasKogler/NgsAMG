@@ -116,6 +116,17 @@ namespace amg
       spw_check_cwt.SetFromFlagsEnum(flags, prefix + "", { "harm", "geom", "mmx" }, { HARMONIC, GEOMETRIC, MINMAX });
       spw_check_mma_scal.SetFromFlagsEnum(flags, prefix + "", { "min", "geom", "harm", "alg", "max" }, { MIN, GEOM, HARM, ALG, MAX });
       spw_check_mma_mat.SetFromFlagsEnum(flags, prefix + "", { "min", "geom", "harm", "alg", "max" },  { MIN, GEOM, HARM, ALG, MAX });
+
+      cout << "spw_rounds" << spw_rounds << endl;
+      cout << "spw_allrobust" << spw_allrobust << endl;
+      cout << "spw_checkbigsoc" << spw_checkbigsoc << endl;
+      cout << "spw_pick_cwt" << spw_pick_cwt << endl;
+      cout << "spw_pick_mma_scal" << spw_pick_mma_scal << endl;
+      cout << "spw_pick_mma_mat" << spw_pick_mma_mat << endl;
+      cout << "spw_check_cwt" << spw_check_cwt << endl;
+      cout << "spw_check_mma_scal" << spw_check_mma_scal << endl;
+      cout << "spw_check_mma_mat = " << spw_check_mma_mat << endl;
+
 #endif // SPWAGG
 
     } // VertexAMGFactoryOptions::SetFromFlags
@@ -236,6 +247,17 @@ namespace amg
     const int level = state.level[0];
 
     cout << " BuildSPWAggMap2 " << endl;
+
+    cout << "spw_rounds" << O.spw_rounds << endl;
+    cout << "spw_allrobust" << O.spw_allrobust << endl;
+    cout << "spw_checkbigsoc" << O.spw_checkbigsoc << endl;
+    cout << "spw_pick_cwt" << O.spw_pick_cwt << endl;
+    cout << "spw_pick_mma_scal" << O.spw_pick_mma_scal << endl;
+    cout << "spw_pick_mma_mat" << O.spw_pick_mma_mat << endl;
+    cout << "spw_check_cwt" << O.spw_check_cwt << endl;
+    cout << "spw_check_mma_scal" << O.spw_check_mma_scal << endl;
+    cout << "spw_check_mma_mat = " << O.spw_check_mma_mat << endl;
+
     agg_opts.edge_thresh = O.min_ecw.GetOpt(level);
     agg_opts.vert_thresh = O.min_vcw.GetOpt(level);
     agg_opts.robust = O.ecw_robust.GetOpt(level);
@@ -251,6 +273,15 @@ namespace amg
     agg_opts.checkbigsoc = O.spw_checkbigsoc.GetOpt(level);
     agg_opts.use_stab_ecw_hack = O.ecw_stab_hack.GetOpt(level);
     
+
+    cout << " AO pcwt " << agg_opts.pick_cw_type << endl;
+    cout << " AO pmmas " << agg_opts.pick_mma_scal << endl;
+    cout << " AO pmmam " << agg_opts.pick_mma_mat << endl;
+    cout << " AO ccwt " << agg_opts.check_cw_type << endl;
+    cout << " AO cmmas " << agg_opts.check_mma_scal << endl;
+    cout << " AO cmmam " << agg_opts.check_mma_mat << endl;
+
+
     cout << " BuildSPWAggMap3 " << endl;
     auto agglomerator = make_shared<AGG_CLASS>(mesh, state.curr_cap->free_nodes, move(agg_opts));
 

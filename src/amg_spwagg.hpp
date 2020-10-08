@@ -11,9 +11,9 @@
 namespace amg
 {
 
-  enum SPW_CW_TYPE : char { HARMONIC,                // most stable
-			    GEOMETRIC,               // if it works, best condition, most restrictive
-			    MINMAX };                // best with unbalanced aggs (??) 
+  enum SPW_CW_TYPE : char { HARMONIC = 0,                // most stable
+			    GEOMETRIC = 1,               // if it works, best condition, most restrictive
+			    MINMAX = 2 };                // best with unbalanced aggs (??) 
 
   /** Successive pairwise agglomeration **/
   template<class ATENERGY, class ATMESH, bool AROBUST = true>
@@ -52,6 +52,12 @@ namespace amg
       xbool use_stab_ecw_hack = maybe;               // useful to make HARMONIC behave a bit more like geometric 
       /** misc. **/
       bool print_aggs = false;                       // output
+      // Options (Options && other)
+      // 	: robust(other.robust), edge_thresh(other.edge_thresh), vert_thresh(other.vert_thresh), num_rounds(other.num_rounds),
+      // 	  allrobust(move(other.allrobust)), pick_cw_type(move(other.pick_cw_type)), pick_mma_scal(move(other.pick_mma_scal)),
+      // 	  pick_mma_mat(move(other.pick_mma_mat)), check_cw_type(move(other.check_cw_type)), check_mma_scal(move(other.check_mma_scal)),
+      // 	  check_mma_mat(move(other.check_mma_mat)), checkbigsoc(other.checkbigsoc), use_stab_ecw_hack(other.use_stab_ecw_hack), print_aggs(other.print_aggs)
+      // { ; }
     };
   protected:
     

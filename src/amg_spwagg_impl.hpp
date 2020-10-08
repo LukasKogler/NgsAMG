@@ -26,75 +26,92 @@ namespace amg
     FlatArray<int> GetV2EQ () const { return cv_to_eqc; }
     void SetV2EQ (Array<int> && _cv_to_eqc) { cv_to_eqc = _cv_to_eqc; }
 
+    size_t & GetNCV () { return mapped_NN[NT_VERTEX]; }
+
     void FinishUp ()
     {
+      cout << " FinishUp, NCV = " << GetMappedNN<NT_VERTEX>();
+      cout << " NCV 2 = " << GetNCV() << endl;
+      
       static Timer t("LocCoarseMap::FinishUp"); RegionTimer rt(t);
       /** mapped_mesh **/
       auto eqc_h = mesh->GetEQCHierarchy();
-      auto cmesh = make_shared<TopologicMesh>(eqc_h, GetMappedNN<NT_VERTEX>(), GetMappedNN<NT_EDGE>(), 0, 0);
+      auto cmesh = make_shared<TopologicMesh>(eqc_h, GetMappedNN<NT_VERTEX>(), 0, 0, 0); // NOTE: crs edges are only built below
       // NOTE: verts are never set, they are unnecessary because we dont build coarse BlockTM!
       /** crs vertex eqcs **/
       auto pbtm = dynamic_pointer_cast<BlockTM>(mesh);
-      if (pbtm == nullptr)
-	{ throw Exception("No BTM in LocCoarseMap in PAGG!"); }
-      const auto & btm = *pbtm;
-      cv_to_eqc.SetSize(GetMappedNN<NT_VERTEX>());
       auto c2fv = GetMapC2F<NT_VERTEX>();
-      for(auto cenr : Range(cv_to_eqc)) {
-	auto fvs = c2fv[cenr];
-	if (fvs.Size() == 1)
-	  { cv_to_eqc = btm.GetEqcOfNode<NT_VERTEX>(fvs[0]); }
-	else {
-	  // NOTE: this only works as long as i only go up/down eqc-hierararchy
-	  int eqa = btm.GetEqcOfNode<NT_VERTEX>(fvs[0]), eqb = btm.GetEqcOfNode<NT_VERTEX>(fvs[1]);
-	  cv_to_eqc = eqc_h->IsLEQ(eqa, eqb) ? eqb : eqa;
+      if (pbtm != nullptr) { // we are the first map - construct cv_to_eqc. for other maps, concatenate it!
+	const auto & btm = *pbtm;
+	cv_to_eqc.SetSize(GetMappedNN<NT_VERTEX>());
+	cout << " FUP c2fv " << endl << c2fv << endl;
+	for(auto cenr : Range(cv_to_eqc)) {
+	  auto fvs = c2fv[cenr];
+	  if (fvs.Size() == 1)
+	    { cv_to_eqc = btm.GetEqcOfNode<NT_VERTEX>(fvs[0]); }
+	  else {
+	    // NOTE: this only works as long as i only go up/down eqc-hierararchy
+	    int eqa = btm.GetEqcOfNode<NT_VERTEX>(fvs[0]), eqb = btm.GetEqcOfNode<NT_VERTEX>(fvs[1]);
+	    // cv_to_eqc = eqc_h->IsLEQ(eqa, eqb) ? eqb : eqa;
+	    cv_to_eqc = (eqa == 0) ? eqb : ( (eqb == 0) ? eqa : (eqc_h->IsLEQ(eqa, eqb) ? eqb : eqa) );
+	  }
 	}
       }
       /** crs edge connectivity and edges **/
       const auto & fecon = *mesh->GetEdgeCM();
       auto vmap = GetMap<NT_VERTEX>();
       TableCreator<int> ccg(GetMappedNN<NT_VERTEX>());
-      Array<int> vneibs;
+      Array<int> vneibs(50);
       for (; !ccg.Done(); ccg++)
 	for (auto cvnr : Range(c2fv)) {
+	  vneibs.SetSize0();
 	  for (auto fvnr : c2fv[cvnr])
-	    for (auto vneib : fecon.GetRowIndices(fvnr))
-	      if (vmap[vneib] != -1)
-		{ insert_into_sorted_array(vneib, vneibs); }
+	    for (auto vneib : fecon.GetRowIndices(fvnr)) {
+	      int cneib = vmap[vneib];
+	      if ( (cneib != -1) &&  ( cneib != cvnr) )
+		{ insert_into_sorted_array_nodups(cneib, vneibs); }
+	    }
 	  ccg.Add(cvnr, vneibs);
 	}
       auto graph = ccg.MoveTable();
+      cout << " cecon graph " << endl << graph << endl;
       Array<int> perow(graph.Size());
       for (auto k : Range(perow))
 	{ perow[k] = graph[k].Size(); }
       auto pcecon = make_shared<SparseMatrix<double>>(perow, GetMappedNN<NT_VERTEX>());
       const auto & cecon = *pcecon;
-      size_t cnt = 0;
+      size_t & cnt = mapped_NN[NT_EDGE]; cnt = 0;
       auto & cedges = cmesh->edges;
-      cedges.SetSize(GetMappedNN<NT_EDGE>());
+      cedges.SetSize(graph.AsArray().Size()/2);  // every edge is counted twice
       for (int k : Range(cecon)) {
 	auto ris = cecon.GetRowIndices(k);
 	ris = graph[k];
 	auto rvs = cecon.GetRowValues(k);
 	for (auto l : Range(ris)) {
-	  if (ris[l] > k)
-	    { rvs[l] = cnt++; cedges[int(rvs[l])].v = { k, ris[l] }; cedges[int(rvs[l])].id = int(rvs[l]); }
+	  if (k < ris[l])
+	    { int cid = cnt++; rvs[l] = cid; cedges[cid].v = { k, ris[l] }; cedges[cid].id = cid; }
 	  else
 	    { rvs[l] = cecon(ris[l], k); }
 	}
       }
+      cout << " cnt " << cnt << ", mappednn " << mapped_NN[NT_EDGE] << " " << GetMappedNN<NT_EDGE>() << endl;
       cmesh->econ = pcecon;
+      cmesh->nnodes[NT_EDGE] = GetMappedNN<NT_EDGE>();
+      cout << " cecon " << endl << cecon << endl;
       /** edge map **/
       auto fedges = mesh->template GetNodes<NT_EDGE>();
-      auto & emap = node_maps[NT_EDGE];
+      auto & emap = node_maps[NT_EDGE]; emap.SetSize(GetNN<NT_EDGE>());
+      cout << " FU fedges " << fedges.Size() << " " << GetNN<NT_EDGE>() << " " << mesh->template GetNN<NT_EDGE>() << endl;
+      cout << " MAPPED " << GetMappedNN<NT_EDGE>() << endl;
       for (auto fenr : Range(emap)) {
 	auto & edge = fedges[fenr];
 	int cv0 = vmap[edge.v[0]], cv1 = vmap[edge.v[1]];
-	if ( (cv0!=-1) && (cv1!=-1) && (cv0 != cv1) )
+	if ( (cv0 != -1) && (cv1 != -1) && (cv0 != cv1) )
 	  { emap[fenr] = cecon(cv0, cv1); }
 	else
 	  { emap[fenr] = -1; }
       }
+      cout << " FU emap " << emap.Size() << " "; prow2(emap); cout << endl;
       this->mapped_mesh = cmesh;
     } // FinishUp
 
@@ -102,20 +119,44 @@ namespace amg
     {
       static Timer t("LocCoarseMap::ConcatenateLCM(cmap)"); RegionTimer rt(t);
       /** with concatenated vertex/edge map **/
+      cout << " LCM " << endl;
       auto concmap = make_shared<LocCoarseMap>(this->mesh, right_map->mapped_mesh);
+      cout << " LCM " << endl;
       SetConcedMap(right_map, concmap);
+      cout << " LCM " << endl;
       // auto concmap = BaseCoarseMap::Concatenate(right_map);
       /** concatenated aggs! **/
       const size_t NCV = right_map->GetMappedNN<NT_VERTEX>();
-      FlatTable<int> aggs1 = GetMapC2F<NT_VERTEX>(), aggs2 = GetMapC2F<NT_VERTEX>();
+      cout << " LCM " << endl;
+      FlatTable<int> aggs1 = GetMapC2F<NT_VERTEX>(), aggs2 = right_map->GetMapC2F<NT_VERTEX>();
+      cout << " LCM " << endl;
+      // cout << " ConcatenateLCM, aggs1 = " << endl << aggs1 << endl;
+      // cout << " ConcatenateLCM, aggs2 = " << endl << aggs2 << endl;
       TableCreator<int> ct(NCV);
+      cout << " LCM " << endl;
       for (; !ct.Done(); ct++)
 	for (auto k : Range(NCV))
 	  for (auto v : aggs2[k])
 	    { ct.Add(k, aggs1[v]); }
+      cout << " LCM " << endl;
       concmap->rev_node_maps[NT_VERTEX] = ct.MoveTable();
-      /** coarse vertex->eqc mapping is the right one! **/
-      concmap->cv_to_eqc = move(right_map->cv_to_eqc);
+      cout << " LCM " << endl;
+      // cout << " ConcatenateLCM, aggs3 = " << endl << concmap->rev_node_maps[NT_VERTEX] << endl;
+      /** coarse vertex->eqc mapping - right map does not have it yet (no BTM to construct it from) **/
+      auto eqc_h = mesh->GetEQCHierarchy();
+      cout << " LCM " << endl;
+      auto & cv2eq = concmap->cv_to_eqc; cv2eq.SetSize(NCV);
+      cout << " LCM " << endl;
+      for (auto k : Range(NCV)) {
+	auto agg = aggs2[k];
+	if (agg.Size() == 1)
+	  { cv2eq[k] = cv_to_eqc[agg[0]]; }
+	else {
+	  int eqa = cv_to_eqc[agg[0]], eqb = cv_to_eqc[agg[1]];
+	  cv2eq = (eqa == 0) ? eqb : ( (eqb == 0) ? eqa : (eqc_h->IsLEQ(eqa, eqb) ? eqb : eqa) );
+	}
+      }
+      cout << " LCM " << endl;
       return concmap;
     } // Concatenate(map)
 
@@ -132,13 +173,16 @@ namespace amg
       for (auto & val : vmap)
 	{ val = (val == -1) ? val : rvmap[val]; }
       /** set up reverse vertex map **/
+      // cout << " Concatenate vmap, r vmap = "; prow2(rvmap); cout << endl;
+      // cout << " orig aggs = " << endl << rev_node_maps[NT_VERTEX] << endl << endl;
       auto & aggs = rev_node_maps[NT_VERTEX];
       TableCreator<int> ct(NCV);
       for (; !ct.Done(); ct++)
 	for (auto k : Range(aggs))
-	  if (rvmap[k] != 1)
+	  if (rvmap[k] != -1)
 	    { ct.Add(rvmap[k], aggs[k]); }
       rev_node_maps[NT_VERTEX] = ct.MoveTable();
+      // cout << endl << " new aggs = " << endl << rev_node_maps[NT_VERTEX] << endl;
       /** no vertex->eqc mapping on coarse level **/
       cv_to_eqc.SetSize(NCV); cv_to_eqc = -1; 
     } // Concatenate(array)
@@ -157,9 +201,18 @@ namespace amg
 
   template<class ENERGY, class TMESH, bool ROBUST>
   SPWAgglomerator<ENERGY, TMESH, ROBUST> ::SPWAgglomerator (shared_ptr<TMESH> _mesh, shared_ptr<BitArray> _free_verts, Options && _settings)
-    : BaseCoarseMap(_mesh), AgglomerateCoarseMap<TMESH>(_mesh), free_verts(_free_verts), settings(_settings)
+    : BaseCoarseMap(_mesh), AgglomerateCoarseMap<TMESH>(_mesh), free_verts(_free_verts), settings(move(_settings))
   {
+
+    cout << " CTOR " << endl;
+    cout << " pcwt " << settings.pick_cw_type << endl;
+    cout << " pmmas " << settings.pick_mma_scal << endl;
+    cout << " pmmam " << settings.pick_mma_mat << endl;
+    cout << " ccwt " << settings.check_cw_type << endl;
+    cout << " cmmas " << settings.check_mma_scal << endl;
+    cout << " cmmam " << settings.check_mma_mat << endl;
     cout << " SPW C 1 " << endl;
+
     assert(mesh != nullptr); // obviously this would be bad
   } // SPWAgglomerator(..)
 
@@ -255,6 +308,15 @@ namespace amg
     const double MIN_ECW = settings.edge_thresh;
     const double MIN_VCW = settings.vert_thresh;
 
+    cout << " FMESH : " << endl << M << endl;
+
+    cout << " pcwt " << settings.pick_cw_type << endl;
+    cout << " pmmas " << settings.pick_mma_scal << endl;
+    cout << " pmmam " << settings.pick_mma_mat << endl;
+    cout << " ccwt " << settings.check_cw_type << endl;
+    cout << " cmmas " << settings.check_mma_scal << endl;
+    cout << " cmmam " << settings.check_mma_mat << endl;
+
     if (print_params) {
       cout << "SPWAgglomerator::FormAgglomerates_impl, params are: " << endl;
       cout << " ROBUST = " << robust << endl;
@@ -324,7 +386,23 @@ namespace amg
     double da, db, dedge;
     auto calc_soc_scal = [&](CW_TYPE cw_type, AVG_TYPE mm_avg, auto vi, auto vj, const auto & fecon) LAMBDA_INLINE {
       /** calc_trace does nothing for scalar case **/
+      cout << " css for " << vi << " " << vj << ", eid " << fecon(vi, vj) << " , feds " << fedata.Size() << endl;
       dedge = calc_trace(fedata[int(fecon(vi, vj))]);
+      cout << " i j edge " << calc_trace(fdiags[vi]) << " " << calc_trace(fdiags[vj]) << " " << dedge << endl;
+      switch(cw_type) {
+      case(Options::CW_TYPE::HARMONIC) : { cout << " HARM " << calc_avg_scal(HARM, calc_trace(fdiags[vi]), calc_trace(fdiags[vj])) << endl; break; }
+      case(Options::CW_TYPE::GEOMETRIC) : { cout << " GEOm " << calc_avg_scal(GEOM, calc_trace(fdiags[vi]), calc_trace(fdiags[vj])) << endl; break; }
+      case(Options::CW_TYPE::MINMAX) : {
+	da = db = 0;
+	for (auto eid : fecon.GetRowValues(vi))
+	  { da = max2(da, calc_trace(fedata[int(eid)])); }
+	for (auto eid : fecon.GetRowValues(vj))
+	  { db = max2(db, calc_trace(fedata[int(eid)])); }
+	cout << " MMX " << da << " " << db << dedge / calc_avg_scal(mm_avg, da, db) << endl;
+	break;
+      }
+      default : { cout << " DEF!!" ; }
+      }
       switch(cw_type) {
       case(Options::CW_TYPE::HARMONIC) : { return dedge / calc_avg_scal(HARM, calc_trace(fdiags[vi]), calc_trace(fdiags[vj])); break; }
       case(Options::CW_TYPE::GEOMETRIC) : { return dedge / calc_avg_scal(GEOM, calc_trace(fdiags[vi]), calc_trace(fdiags[vj])); break; }
@@ -333,7 +411,7 @@ namespace amg
 	for (auto eid : fecon.GetRowValues(vi))
 	  { da = max2(da, calc_trace(fedata[int(eid)])); }
 	for (auto eid : fecon.GetRowValues(vj))
-	  { da = max2(da, calc_trace(fedata[int(eid)])); }
+	  { db = max2(db, calc_trace(fedata[int(eid)])); }
 	return dedge / calc_avg_scal(mm_avg, da, db);
 	break;
       }
@@ -409,14 +487,23 @@ namespace amg
       FlatArray<INT<2,double>> bsocs(neibs.Size(), lh);
       for (auto neib : neibs)
 	if (allowed(v, neib))
-	  { bsocs[c++] = INT<2, double>(neib, calc_soc_pair(robust_pick, cwt_pick, pmmas, pmmam, v, neib, fecon)); }
+	  { double thesoc = calc_soc_pair(robust_pick, cwt_pick, pmmas, pmmam, v, neib, fecon); cout << thesoc << " "; bsocs[c++] = INT<2, double>(neib, thesoc); }
+      cout << endl << " ALL possible neibs for " << v << " = ";
+      for (auto v : bsocs)
+	{ cout << "[" << v[0] << " " << v[1] << "] "; }
+      cout << endl;
       auto socs = bsocs.Part(0, c);
       QuickSort(socs, [&](const auto & a, const auto & b) LAMBDA_INLINE { return a[1] > b[1]; });
+      cout << " possible neibs for " << v << " = ";
+      for (auto v : socs)
+	{ cout << "[" << v[0] << " " << v[1] << "] "; }
+      cout << endl;
       int candidate = ( (c > 0) && (socs[0][1] > MIN_ECW) ) ? int(socs[0][0]) : -1;
+      cout << " candidate is " << candidate << endl;
       /** check candidate - either small EVP, or large EVP, or both! **/
       bool need_check = (robust && (!robust_pick)) || (checkbigsoc);
       if (need_check) {
-	for (int j = 1; j < socs.Size(); j++) {
+	for (int j = 0; j < socs.Size(); j++) {
 	  if (socs[j][1] < MIN_ECW)
 	    { candidate = -1; break; }
 	  double stabsoc = socs[j][0];
@@ -430,6 +517,7 @@ namespace amg
 	  { candidate = int(socs[j][0]); break; }
 	}
       } // need_check
+      cout << " final candidate is " << candidate << endl;
       return candidate;
     };
 
@@ -444,8 +532,11 @@ namespace amg
       for (auto k : Range(num_verts)) {
 	auto vnr = get_vert(k);
 	if (!handled.Test(vnr)) { // try to find a neib
-	  int neib = find_neib(vnr, fecon, allowed, get_mems, r_ar, r_cwtp, r_pmmas, r_pmmam, r_cwtc, r_cmmas, r_cmmam, r_cbs);
+	  cout << " find naib for " << vnr << endl;
+	  int neib = find_neib(vnr, fecon, [&](auto vi, auto vj) { return (!handled.Test(vj)) && allowed(vi, vj); },
+			       get_mems, r_ar, r_cwtp, r_pmmas, r_pmmam, r_cwtc, r_cmmas, r_cmmam, r_cbs);
 	  if (neib != -1) {
+	    cout << " new pair: " << vnr << " " << neib << endl;
 	    vmap[neib] = NCV;
 	    handled.SetBit(neib);
 	  }
@@ -455,8 +546,10 @@ namespace amg
 	}
       }
       if (print_summs) {
+	cout << "  pair_vertices done, NCV = " << NCV << endl;
       }
       if (print_aggs) {
+	cout << "  vmap: "; prow2(vmap); cout << endl;
       }
     };
 
@@ -478,31 +571,31 @@ namespace amg
 	       ( (!settings.allrobust.GetOpt(round)) && (settings.check_cw_type.GetOpt(round) == CW_TYPE::HARMONIC)) ) ) ;
 
       if (print_params) {
-	cout << " round " << round << " of " << num_rounds << endl;
-	cout << " allrobust      = " << r_ar << endl;
-	cout << " cwt pick       = " << r_cwtp << endl;
-	cout << " mma pick scal  = " << r_pmmas << endl;
-	cout << " mma pick mat   = " << r_pmmam << endl;
-	cout << " cwt check      = " << r_cwtc << endl;
-	cout << " mma check scal = " << r_cmmas << endl;
-	cout << " mma check mat  = " << r_cmmam << endl;
-	cout << " checkbigsoc    = " << r_cbs << endl;
-	cout << " use_hack_stab  = " << use_hack_stab << endl;
+	cout << " SPW agglomerates, round " << round << " of " << num_rounds << endl;
+	cout << "   allrobust      = " << r_ar << endl;
+	cout << "   cwt pick       = " << r_cwtp << endl;
+	cout << "   mma pick scal  = " << r_pmmas << endl;
+	cout << "   mma pick mat   = " << r_pmmam << endl;
+	cout << "   cwt check      = " << r_cwtc << endl;
+	cout << "   mma check scal = " << r_cmmas << endl;
+	cout << "   mma check mat  = " << r_cmmam << endl;
+	cout << "   checkbigsoc    = " << r_cbs << endl;
+	cout << "   use_hack_stab  = " << use_hack_stab << endl;
       }
 
       /** Set up a local map to represent this round of pairing vertices **/
+      if (round > 0) {
+	cout << " make locmap with mapped mesh " << conclocmap->GetMappedMesh() << endl;
+	  cout << " mesh NV NE " << conclocmap->GetMappedMesh()->template GetNN<NT_VERTEX>() << " "
+	       << conclocmap->GetMappedMesh()->template GetNN<NT_EDGE>() << endl;
+      }
       auto locmap = make_shared<LocCoarseMap>((round == 0) ? mesh : conclocmap->GetMappedMesh());
-      auto vmap = conclocmap->template GetMap<NT_VERTEX>();
+      auto vmap = locmap->template GetMap<NT_VERTEX>();
       const TopologicMesh & fmesh = *locmap->GetMesh();
       const SparseMatrix<double> & fecon = *fmesh.GetEdgeCM();
       
-      fvdata.Assign(cvdata);
-      fedata.Assign(fedata);
-      fedata_full.Assign(cedata_full);
-      fdiags.Assign(cdiags);
-
       BitArray handled(NV); handled.Clear();
-      size_t NCV = 0, NCE = 0;
+      size_t & NCV = locmap->GetNCV(); NCV = 0;
       
       if (round == 0) {
 	tsv.Start();
@@ -533,8 +626,7 @@ namespace amg
 	}
 	tsv.Stop();
 	/** CMK ordering **/
-	Array<int> cmk;
-	CalcCMK(handled, econ, cmk);
+	Array<int> cmk; CalcCMK(handled, econ, cmk);
 	/** Find pairs for vertices **/
 	Array<int> dummy(1);
 	pair_vertices(vmap, NCV, cmk.Size(), [&](auto k) { return cmk[k]; }, fecon, handled,
@@ -546,8 +638,11 @@ namespace amg
 	/** Find pairs for vertices **/
 	auto c2fv = conclocmap->template GetMapC2F<NT_VERTEX>();
 	auto veqs = conclocmap->GetV2EQ();
+	Array<int> cmk; CalcCMK(handled, econ, cmk);
+	cout << " CMK: "; prow2(cmk); cout << endl;
 	pair_vertices(vmap, NCV,
-		      vmap.Size(), [&](auto i) LAMBDA_INLINE { return i; }, // no CMK on later rounds!
+		      cmk.Size(), [&](auto k) { return cmk[k]; }, 
+		      // vmap.Size(), [&](auto i) LAMBDA_INLINE { return i; }, // no CMK on later rounds!
 		      fecon, handled,
 		      [&](auto v) LAMBDA_INLINE { return c2fv[v]; }, // get_mems
 		      [&](auto vi, auto vj) LAMBDA_INLINE { return allow_merge(veqs[vi], veqs[vj]); }, // allowed
@@ -569,10 +664,15 @@ namespace amg
 	    { ccvdata[cvnr] = ENERGY::CalcMPData(fvdata[fvs[0]], fvdata[fvs[1]]); }
 	}
 	/** Coarse edge data **/
-	Array<TMU> ccedata_full(NCE); cedata_full = 0;
+	size_t NCE = locmap->template GetMappedNN<NT_EDGE>();
+	Array<TMU> ccedata_full(NCE); ccedata_full = 0;
 	auto fedges = locmap->GetMesh()->template GetNodes<NT_EDGE>();
 	auto cedges = locmap->GetMappedMesh()->template GetNodes<NT_EDGE>();
 	auto emap = locmap->template GetMap<NT_EDGE>();
+	cout << " mapped mesh " << locmap->GetMappedMesh() << endl;
+	cout << " fedges " << fedges.Size() << " "; prow(fedges); cout << endl;
+	cout << " cedges " << cedges.Size() << " "; prow(cedges); cout << endl;
+	cout << " emap " << emap.Size() << " "; prow2(emap); cout << endl;
 	TM Q; SetIdentity(Q);
 	TVD femp, cemp;
 	for (auto fenr : Range(fedges)) {
@@ -590,37 +690,59 @@ namespace amg
 	      { ccedata_full[cenr] += fedata[fenr]; }
 	  }
 	}
+	cout << " ccedata_full " << ccedata_full.Size() << endl; prow2(ccedata_full); cout << endl;
 	/** Coarse diags, I have to do this here because off-proc entries.
 	    Maps are only local on master, so cannot cumulate on coarse level **/
 	Array<TMU> ccdiags(NCV);
 	TM Qij, Qji; SetIdentity(Qij); SetIdentity(Qji);
 	for (auto cvnr : Range(ccvdata)) {
 	  auto fvs = c2fv[cvnr];
+	  cout << cvnr << " from "; prow(fvs); cout << endl;
+	  cout << " sizes " << ccdiags.Size() << " " << fdiags.Size() << " " << fvdata.Size() << " " << fedata_full.Size() << endl;
 	  if (fvs.Size() == 1)
-	    { cdiags[cvnr] = fdiags[fvs[0]]; }
+	    { ccdiags[cvnr] = fdiags[fvs[0]]; }
 	  else { /** sum up diags, remove contribution of connecting edge **/
 	    if constexpr(robust) {
 	      ENERGY::ModQs(fvdata[fvs[0]], fvdata[fvs[1]], Qij, Qji);
-	      ENERGY::SetQtMQ(1.0, cdiags[cvnr], Qji, fdiags[fvs[0]]);
-	      ENERGY::AddQtMQ(1.0, cdiags[cvnr], Qij, fdiags[fvs[1]]);
+	      ENERGY::SetQtMQ(1.0, ccdiags[cvnr], Qji, fdiags[fvs[0]]);
+	      ENERGY::AddQtMQ(1.0, ccdiags[cvnr], Qij, fdiags[fvs[1]]);
 	    }
 	    else
-	      { cdiags[cvnr] += fdiags[fvs[1]]; }
+	      { ccdiags[cvnr] += fdiags[fvs[1]]; }
 	    /** note: this should be fine, on coarse level, at least one vert is already in an agg,
 		or it would already have been paired in first round **/
 	    double fac = ( (round == 0) && use_hack_stab ) ? -1.5 : -2.0;
 	    /** note: coarse vert is exactly ad edge-midpoint **/
-	    cdiags[cvnr] -= fac * fedata_full[int(fecon(fvs[0], fvs[1]))];
+	    cout << " fine edge id " << fecon(fvs[0], fvs[1]) << endl;
+	    ccdiags[cvnr] -= fac * fedata_full[int(fecon(fvs[0], fvs[1]))];
 	  }
 	}
+	cout << " ccdiags " << ccdiags.Size() << endl; prow2(ccdiags); cout << endl;
+
+	if (print_aggs) {
+	  cout << "   round aggs: " << endl;
+	  cout << locmap->template GetMapC2F<NT_VERTEX>();
+	}
+
+	cout << " CLCM " << endl;
 	/** Concatenate local maps **/
 	conclocmap = (round == 0) ? locmap : conclocmap->ConcatenateLCM(locmap);
 
+	cout << " MOVES" << endl;
 	fvdata.Assign(0, lh); cvdata = move(ccvdata);
 	fedata_full.Assign(0, lh); cedata_full = move(ccedata_full);
 	fedata.Assign(0, lh); GetEdgeData<TMU, double>(cedata_full, cedata);
 	fdiags.Assign(0, lh); cdiags = move(ccdiags);
+	cout << " ASSIGNS" << endl;
+
+	fvdata.Assign(cvdata);
+	fedata.Assign(cedata);
+	fedata_full.Assign(cedata_full);
+	fdiags.Assign(cdiags);
+	cout << " OK" << endl;
       }
+      else if (round == 0 ) // only 1 round of pairing
+	{ conclocmap = locmap; }
       else {
 	/** Only concatenate vertex map, no coarse mesh **/
 	conclocmap->Concatenate(NCV, vmap);
@@ -635,7 +757,7 @@ namespace amg
     agglomerates.SetSize(n_aggs_tot);
     v_to_agg.SetSize(M.template GetNN<NT_VERTEX>()); v_to_agg = -1;
     auto set_agg = [&](auto agg_nr, auto vs) {
-      auto & agg = agglomerates[id];
+      auto & agg = agglomerates[agg_nr];
       agg.id = agg_nr;
       int ctr_eqc = M.template GetEqcOfNode<NT_VERTEX>(vs[0]), v_eqc = -1;
       agg.ctr = vs[0]; // TODO: somehow mark agg ctrs [[ must be in the largest eqc ]] - which one is the best choice?
@@ -650,6 +772,8 @@ namespace amg
     };
     /** aggs from pairing **/
     auto c2fv = conclocmap->template GetMapC2F<NT_VERTEX>();
+    cout << " final vmap " << endl; prow2(conclocmap->template GetMap<NT_VERTEX>()); cout << endl;
+    cout << " final C->F vertex " << endl << c2fv << endl;
     for (auto agg_nr : Range(n_aggs_p)) {
       auto aggvs = c2fv[agg_nr];
       QuickSort(aggvs);
@@ -661,6 +785,10 @@ namespace amg
       { set_agg(n_aggs_p + k, fixed_aggs[k]); }
     tfaggs.Stop();
     
+    if (print_aggs) {
+      cout << " SPW FINAL agglomerates : " << agglomerates.Size() << endl;
+      cout << agglomerates << endl;
+    }
   } // SPWAgglomerator::FormAgglomerates_impl
 
 
@@ -694,9 +822,11 @@ namespace amg
 	    to take neibs from - if that happens, we have to pick a new minimum degree vertex to start from! **/
 	int c = 0; auto ris = econ.GetRowIndices(cmk[cnt2]);
 	neibs.SetSize(ris.Size());
-	for(auto k : Range(ris))
-	  if (!handled.Test(k))
-	    { neibs[c++] = ris[k]; handled.SetBit(nextvert); }
+	for(auto k : Range(ris)) {
+	  auto neib = ris[k];
+	  if (!handled.Test(neib))
+	    { neibs[c++] = neib; handled.SetBit(neib); }
+	}
 	neibs.SetSize(c);
 	QuickSort(neibs, [&](auto vi, auto vj) { return econ.GetRowIndices(vi).Size() < econ.GetRowIndices(vj).Size(); });
 	for (auto l : Range(c))
