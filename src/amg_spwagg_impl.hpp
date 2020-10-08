@@ -571,7 +571,7 @@ namespace amg
 	       ( (!settings.allrobust.GetOpt(round)) && (settings.check_cw_type.GetOpt(round) == CW_TYPE::HARMONIC)) ) ) ;
 
       if (print_params) {
-	cout << " SPW agglomerates, round " << round << " of " << num_rounds << endl;
+	cout << endl << " SPW agglomerates, round " << round << " of " << num_rounds << endl;
 	cout << "   allrobust      = " << r_ar << endl;
 	cout << "   cwt pick       = " << r_cwtp << endl;
 	cout << "   mma pick scal  = " << r_pmmas << endl;
@@ -626,7 +626,7 @@ namespace amg
 	}
 	tsv.Stop();
 	/** CMK ordering **/
-	Array<int> cmk; CalcCMK(handled, econ, cmk);
+	Array<int> cmk; CalcCMK(handled, fecon, cmk);
 	/** Find pairs for vertices **/
 	Array<int> dummy(1);
 	pair_vertices(vmap, NCV, cmk.Size(), [&](auto k) { return cmk[k]; }, fecon, handled,
@@ -638,11 +638,11 @@ namespace amg
 	/** Find pairs for vertices **/
 	auto c2fv = conclocmap->template GetMapC2F<NT_VERTEX>();
 	auto veqs = conclocmap->GetV2EQ();
-	Array<int> cmk; CalcCMK(handled, econ, cmk);
-	cout << " CMK: "; prow2(cmk); cout << endl;
+	// Array<int> cmk; CalcCMK(handled, fecon, cmk);
+	// cout << " CMK: "; prow2(cmk); cout << endl;
 	pair_vertices(vmap, NCV,
-		      cmk.Size(), [&](auto k) { return cmk[k]; }, 
-		      // vmap.Size(), [&](auto i) LAMBDA_INLINE { return i; }, // no CMK on later rounds!
+		      // cmk.Size(), [&](auto k) { return cmk[k]; }, 
+		      vmap.Size(), [&](auto i) LAMBDA_INLINE { return i; }, // no CMK on later rounds!
 		      fecon, handled,
 		      [&](auto v) LAMBDA_INLINE { return c2fv[v]; }, // get_mems
 		      [&](auto vi, auto vj) LAMBDA_INLINE { return allow_merge(veqs[vi], veqs[vj]); }, // allowed
