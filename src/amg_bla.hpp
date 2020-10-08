@@ -363,6 +363,9 @@ namespace amg
   FlatMat<IMIN, H, JMIN, W, TMAT> MakeFlatMat (const TMAT & m)
   { return FlatMat<IMIN,H,JMIN,W,TMAT>(m); }
 
+  bool CheckForSPD (FlatMatrix<double> A, LocalHeap & lh);
+  bool CheckForSSPD (FlatMatrix<double> A, LocalHeap & lh);
+
 } // namespace amg
 
 #endif

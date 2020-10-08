@@ -472,13 +472,95 @@ namespace amg
       else
 	{ return calc_soc_scal(cwt, mma_scal, vi, vj, fecon); }
     };
+    
+    auto check_soc_aggs_scal = [&](auto memsi, auto memsj) LAMBDA_INLINE {
+      /** simplified scalar version, based on traces of mats **/
+      int n = memsi.Size() + memsj.Size();
+      // FlatArray<int> allmems = merge_arrays_lh(memsi, memsj, lh); // actually, these are not ordered in the first place..
+      FlatArray<int> allmems(n, lh);
+      allmems.Part(0, memsi.Size()) = memsi;
+      allmems.Part(memsi.Size(), memsj.Size()) = memsj;
+      FlatMatrix<double> A(n, n, lh), P(n, 1, lh), PT(1, n, lh);
+      auto assmems_int = [&](auto somemems, auto osi) {
+	for (auto kil : Range(somemems)) {
+	  auto vi = somemems[kil];
+	  auto ki = kil + osi;
+	  auto neibsa = econ.GetRowIndices(vi);
+	  auto eids = econ.GetRowValues(vi);
+	  iterate_intersection(neibsa, allmems, [&](auto kneib, auto kj) {
+	      const double x = base_edata[int(eids[kneib])];
+	      A(ki, kj) += x;
+	      A(ki, kj) -= x;
+	      A(kj, ki) -= x;
+	      A(kj, kj) += x;
+	    });
+	}
+      };
+      A = 0.0;
+      assmems_int(memsi, 0);
+      assmems_int(memsj, memsi.Size());
+      P = 1.0; PT = 1.0;
+      /**  M is the diag block of the smoother - ATM I use the full diag block of Ahat (BJAC),
+	   not only the diagonal entries (JAC) **/
+      FlatMatrix<double> M(n, n, lh); M = A;
+      auto assmems_ext = [&](auto somemems, auto osi) {
+	for (auto kil : Range(somemems)) {
+	  auto vi = somemems[kil];
+	  auto ki = kil + osi;
+	  auto neibsa = econ.GetRowIndices(vi);
+	  auto eids = econ.GetRowValues(vi);
+	  iterate_anotb(neibsa, allmems, [&](auto kneib) {
+	      M(kil, kil) += base_edata[int(eids[kneib])];
+	    });
+	}
+      };
+      assmems_ext(memsi, 0);
+      assmems_ext(memsj, memsi.Size());
+      FlatMatrix<double> PTM(1, n, lh);
+      PTM = PT * M;
+      FlatMatrix<double> PTMP(1, 1, lh);
+      PTMP = PTM * P;
+      double invPTMP = 1.0/PTMP(0,0);
+      for (auto i : Range(n))
+	for (auto j : Range(n))
+	  { M(i,j) -= invPTMP; }
+      /** we have to check: MIN_ECW * M < A, ot A-MIN_ECW*M >= 0 **/
+      A -= MIN_ECW * M;
+      return CheckForSPD(A, lh);
+    };
+
+    auto check_soc_aggs_full = [&](auto memsi, auto memsj) LAMBDA_INLINE {
+      constexpr bool rrobust = robust;
+      if (rrobust) {
+	/** "full" version, assembles the entire system **/
+
+	/** This is what we <-should-> do **/
+	// A -= MIN_ECW * M;
+	// return CheckForSSPD(A);
+
+	/** maybe this works too? **/
+	// A += MIN_ECW * 1e-5 * calc_trace(M) * Id;
+	// A -= MIN_ECW * M;
+	// return CheckForSPD(A);
+	return true;
+      }
+      else
+	{ return true; }
+    };
 
     /** SOC for pair of agglomerates w.r.t original matrix **/
-    auto calc_soc_check2 = [&](auto memsi, auto memsj, const auto & fecon, auto get_mems) LAMBDA_INLINE { return 1.0; };
+    auto check_soc_aggs = [&](bool simplify, auto memsi, auto memsj) LAMBDA_INLINE {
+      if ( (BS == 1) || simplify)
+	{ return check_soc_aggs_scal(memsi, memsj); }
+      else if (simplify)
+	{ return check_soc_aggs_full(memsi, memsj); }
+      return true;
+    };
 
     /** Finds a neighbor to merge vertex v with. Returns -1 if no suitable ones found **/
     auto find_neib = [&](auto v, const auto & fecon, auto allowed, auto get_mems, bool robust_pick,
-			 auto cwt_pick, auto pmmas, auto pmmam, auto cwt_check, auto cmmas, auto cmmam, bool checkbigsoc) LAMBDA_INLINE {
+			 auto cwt_pick, auto pmmas, auto pmmam, auto cwt_check, auto cmmas, auto cmmam,
+			 bool checkbigsoc, bool simple_cbs) LAMBDA_INLINE {
       constexpr bool rrobust = robust;
       HeapReset hr(lh);
       /** SOC for all neibs **/
@@ -512,7 +594,7 @@ namespace amg
 		{ stabsoc = calc_soc_pair(true, cwt_check, cmmas, cmmam, v, neibs[j], fecon); }
 	    }
 	if (checkbigsoc && (stabsoc > MIN_ECW)) /** big EVP soc **/
-	  { stabsoc = calc_soc_check2(v, neibs[j], fecon, get_mems); }
+	  { stabsoc = check_soc_aggs(simple_cbs, get_mems(v), get_mems(neibs[j])) ? stabsoc : 0.0; }
 	if (stabsoc > MIN_ECW) /** this neib has strong stable connection **/
 	  { candidate = int(socs[j][0]); break; }
 	}
@@ -526,7 +608,7 @@ namespace amg
 			     int num_verts, auto get_vert, const auto & fecon,
 			     BitArray & handled,
 			     auto get_mems, auto allowed,// auto set_pair,
-			     bool r_ar,  auto r_cwtp, auto r_pmmas, auto r_pmmam, auto r_cwtc, auto r_cmmas, auto r_cmmam, bool r_cbs
+			     bool r_ar,  auto r_cwtp, auto r_pmmas, auto r_pmmam, auto r_cwtc, auto r_cmmas, auto r_cmmam, bool r_cbs, bool r_scbs
 			     ) LAMBDA_INLINE {
       RegionTimer rt(tvp);
       for (auto k : Range(num_verts)) {
@@ -534,7 +616,7 @@ namespace amg
 	if (!handled.Test(vnr)) { // try to find a neib
 	  cout << " find naib for " << vnr << endl;
 	  int neib = find_neib(vnr, fecon, [&](auto vi, auto vj) { return (!handled.Test(vj)) && allowed(vi, vj); },
-			       get_mems, r_ar, r_cwtp, r_pmmas, r_pmmam, r_cwtc, r_cmmas, r_cmmam, r_cbs);
+			       get_mems, r_ar, r_cwtp, r_pmmas, r_pmmam, r_cwtc, r_cmmas, r_cmmam, r_cbs, r_scbs);
 	  if (neib != -1) {
 	    cout << " new pair: " << vnr << " " << neib << endl;
 	    vmap[neib] = NCV;
@@ -565,6 +647,7 @@ namespace amg
       const AVG_TYPE r_cmmas = settings.check_mma_scal.GetOpt(round);
       const AVG_TYPE r_cmmam = settings.check_mma_mat.GetOpt(round);
       const bool r_cbs = settings.checkbigsoc;
+      const bool r_scbs = settings.simple_checkbigsoc;
       const bool use_hack_stab = settings.use_stab_ecw_hack.IsTrue() ||
 	( (!settings.use_stab_ecw_hack.IsFalse()) 
 	  && ( (   settings.allrobust.GetOpt(round)  && (settings.pick_cw_type.GetOpt(round)  == CW_TYPE::HARMONIC) ) ||
@@ -630,9 +713,9 @@ namespace amg
 	/** Find pairs for vertices **/
 	Array<int> dummy(1);
 	pair_vertices(vmap, NCV, cmk.Size(), [&](auto k) { return cmk[k]; }, fecon, handled,
-		      [&](auto v) { dummy[0] = v; return dummy; }, // get_mems
+		      [&](auto v) ->FlatArray<int> { dummy[0] = v; return dummy; }, // get_mems
 		      [&](auto vi, auto vj) { return allow_merge(M.template GetEqcOfNode<NT_VERTEX>(vi), M.template GetEqcOfNode<NT_VERTEX>(vj)); }, // allowed
-		      r_ar, r_cwtp, r_pmmas, r_pmmam, r_cwtc, r_cmmas, r_cmmam, false); // no big soc necessary
+		      r_ar, r_cwtp, r_pmmas, r_pmmam, r_cwtc, r_cmmas, r_cmmam, false, r_scbs); // no big soc necessary
       }
       else {
 	/** Find pairs for vertices **/
@@ -646,7 +729,7 @@ namespace amg
 		      fecon, handled,
 		      [&](auto v) LAMBDA_INLINE { return c2fv[v]; }, // get_mems
 		      [&](auto vi, auto vj) LAMBDA_INLINE { return allow_merge(veqs[vi], veqs[vj]); }, // allowed
-		      r_ar, r_cwtp, r_pmmas, r_pmmam, r_cwtc, r_cmmas, r_cmmam, r_cbs);
+		      r_ar, r_cwtp, r_pmmas, r_pmmam, r_cwtc, r_cmmas, r_cmmam, r_cbs, r_scbs);
       }
 
       if (round < num_rounds - 1) { /** proper concatenated map, with coarse mesh **/

@@ -291,6 +291,29 @@ namespace amg
     return out;
   }
 
+  template<class T>
+  INLINE FlatArray<T> merge_arrays_lh (FlatArray<T> a, FlatArray<T> b, LocalHeap & lh)
+  {
+    const int sa = a.Size(), sb = b.Size();
+    FlatArray<T> out(sa+sb, lh);
+    int ia = 0, ib = 0, io = 0;
+    while ( (ia < sa) && (ib < sb) ) {
+      if (a[ia] == b[ib])
+	{ out[io++] = a[ia++]; ib++; }
+      else if (a[ia] < b[ib])
+	{ out[io++] = a[ia++]; }
+      else
+	{ out[io++] = b[ib++]; }
+    }
+    while (ia < sa)
+      { out[io++] = a[ia++]; }
+    while (ib < sb)
+      { out[io++] = b[ib++]; }
+    out.Assign(out.Part(0, io));
+    return out;
+  }
+
+
   /** binary_op table **/
   template<class T, class TLAM> INLINE Array<typename tab_scal_trait<T>::type> bop_table (T & tab, TLAM lam)
   {
