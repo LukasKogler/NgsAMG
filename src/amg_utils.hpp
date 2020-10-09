@@ -44,8 +44,13 @@ namespace amg
     LapackEigenValuesSymmetric (a, lami, evecs);
   }
   
-  auto prow = [](const auto & ar, std::ostream &os = cout){ for (auto v:ar) os << v << " "; };
-  auto prow2 = [](const auto & ar, std::ostream &os = cout) {
+  template<class T>
+  INLINE void prow (const T & ar, std::ostream &os = cout) {
+    for (auto v:ar) os << v << " ";
+  };
+
+  template<class T>
+  INLINE void prow2 (const T & ar, std::ostream &os = cout) {
     for (auto k : Range(ar.Size())) os << "(" << k << "::" << ar[k] << ") ";
   };
 
@@ -199,12 +204,8 @@ namespace amg
   template<class T, typename... V> struct count_ppack<T, V...> { static constexpr int value = 1 + count_ppack<V...>::value;};
     
   
-  auto hack_eval_tab = [](const auto &x) { return x[0][0]; };
-  template<class T> struct tab_scal_trait {
-    typedef typename std::remove_reference<typename std::result_of<decltype(hack_eval_tab)(T)>::type>::type type;
-  };
-  template<class T1, class T2>
-  INLINE void merge_arrays (T1& tab_in, Array<typename tab_scal_trait<T1>::type> & out, T2 lam_comp)
+  template<class T1, class T2, class T3>
+  INLINE void merge_arrays (T1& tab_in, Array<T2> & out, T3 lam_comp)
   {
     const size_t nrows = tab_in.Size();
     size_t max_size = 0;
@@ -276,19 +277,23 @@ namespace amg
     }
     return;
   };
-  template<class T1, class T2>
-  INLINE Array<typename tab_scal_trait<T1>::type> merge_arrays (T1& tab_in, T2 lam_comp)
+
+  template<class T> struct tab_scal_trait {
+    // typedef typename std::result_of<decltype(&T::operator[int])(T, int)>::type T0;
+    typedef typename std::remove_pointer<typename std::result_of<decltype(&T::Data)(T)>::type>::type T0;
+    typedef typename std::remove_pointer<typename std::result_of<decltype(&T0::Data)(T0)>::type>::type type;
+  };
+  template<class T1, class T3>
+  INLINE Array<typename tab_scal_trait<T1>::type> merge_arrays (T1& tab_in, T3 lam_comp)
   {
     Array<typename tab_scal_trait<T1>::type> out;
     merge_arrays(tab_in, out, lam_comp);
     return out;
   }
-  template<class T1>
-  INLINE Array<typename tab_scal_trait<T1>::type> merge_arrays (T1& tab_in)
+  template<class T>
+  INLINE Array<typename tab_scal_trait<T>::type> merge_arrays (T& tab_in)
   {
-    Array<typename tab_scal_trait<T1>::type> out;
-    merge_arrays(tab_in, out, [&](const auto & i, const auto & j) LAMBDA_INLINE { return i<j; });
-    return out;
+    return merge_arrays(tab_in, [&](const auto & i, const auto & j) LAMBDA_INLINE { return i<j; });
   }
 
   template<class T>
@@ -762,10 +767,8 @@ namespace amg
       { lam(i1); i1++; }
   };
 
-  auto is_invalid = [](auto val) -> bool
-  {return val == typename remove_reference<decltype(val)>::type(-1); };
-  auto is_valid = [](auto val) -> bool
-  {return val != typename remove_reference<decltype(val)>::type(-1); };
+  template<class T> INLINE bool is_invalid (T val) { return val == T(-1); };
+  template<class T> INLINE bool is_valid (T val) { return val != T(-1); };
 
   template<int IMINI, int IMINJ, int A, int B, int C, int D>
   void GetTMBlock (Mat<A,B> & a, const Mat<C,D> & b) {
