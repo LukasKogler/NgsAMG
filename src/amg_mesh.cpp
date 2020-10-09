@@ -422,7 +422,7 @@ namespace amg
     if (build_faces) {
       throw Exception("face-nodes only work with non-refined mesh, remove this if that is the case!!");
       mesh->SetNodes<NT_FACE>( ma->GetNFaces(),
-			       [mar, vert_sort](auto node_num) {
+			       [&](auto node_num) {
 				 auto node = amg_nts::MAToAMG_Node<NT_FACE>(mar, node_num);
 				 constexpr int NODE_SIZE = sizeof(AMG_Node<NT_FACE>::v)/sizeof(AMG_Node<NT_VERTEX>);
 				 for (int k = 0; k < NODE_SIZE; k++) node[k] = vert_sort[node[k]];

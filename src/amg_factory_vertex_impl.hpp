@@ -398,7 +398,7 @@ namespace amg
 
       M.template Apply<NT_VERTEX>([&](auto v) { diag_mats[v] = ENERGY::GetVMatrix(vdata[v]); });
 
-      TM Qij, Qji;
+      TM Qij(0), Qji(0);
       SetIdentity(Qij); SetIdentity(Qji);
       M.template Apply<NT_EDGE>([&](const auto & edge) {
 	  typename ENERGY::TVD &vdi = vdata[edge.v[0]], &vdj = vdata[edge.v[1]];
@@ -408,7 +408,7 @@ namespace amg
 	}, true);
       M.template AllreduceNodalData<NT_VERTEX>(diag_mats, [&](auto & in) { return sum_table(in); });
 
-      TM A, B;
+      TM A(0), B(0);
       if (O.ecw_geom.GetOpt(100)) { // TODO: placeholder
 	M.template Apply<NT_EDGE>([&](const auto & edge) {
 	    typename ENERGY::TVD &vdi = vdata[edge.v[0]], &vdj = vdata[edge.v[1]];
@@ -698,7 +698,7 @@ namespace amg
     double fc = 0, fa = 0, ft = 0;
 
     const double omo = 1.0 - omega;
-    TM d;
+    TM d(0);
     auto fill_sprol_classic = [&](auto fvnr) {
       // cout << " fill " << fvnr;
       auto ris = CSP.GetRowIndices(fvnr);
@@ -737,7 +737,7 @@ namespace amg
       }
       // cout << " inv diag " << endl;
       // print_tm(cout, d);
-      TM od_pwp;
+      TM od_pwp(0);
       for (auto j : Range(fmris)) {
 	auto fvj = fmris[j];
 	int col = vmap[fmris[j]];
@@ -758,7 +758,7 @@ namespace amg
       }
     }; // fill_sprol_classic
 
-    TM Qij, Qji, QM;
+    TM Qij(0), Qji(0), QM(0);
     auto fill_sprol_aux = [&](auto fvnr) {
       // cout << " fill " << fvnr;
       auto ris = CSP.GetRowIndices(fvnr);
@@ -846,7 +846,7 @@ namespace amg
       }
       // cout << " diag inv " << endl;
       // print_tm(cout, d);
-      TM od_pwp;
+      TM od_pwp(0);
       for (auto j : Range(nufneibs)) {
 	auto fvj = ufneibs[j];
 	int col = vmap[fvj];
@@ -1064,7 +1064,7 @@ namespace amg
     LocalHeap lh(2000000, "hold this", false); // ~2 MB LocalHeap
     Array<INT<2,size_t>> uve(30); uve.SetSize0();
     Array<int> used_verts(20), used_edges(20);
-    TM id; SetIdentity(id);
+    TM id(0); SetIdentity(id);
     for (int V:Range(NFV)) {
       auto CV = vmap[V];
       if (is_invalid(CV)) continue; // grounded -> TODO: do sth. here if we are free?
@@ -1132,7 +1132,7 @@ namespace amg
 	// cout << "mat row: " << endl; print_tm_mat(cout, mat); cout << endl;
 
 
-	TM diag;
+	TM diag(0);
 	double tr = 1;
 	if constexpr(mat_traits<TM>::HEIGHT == 1) {
 	    diag = mat(0, posV);
@@ -1414,7 +1414,7 @@ namespace amg
     /** Fill Prolongation **/
     LocalHeap lh(2000000, "hold this", false); // ~2 MB LocalHeap
     Array<INT<2,int>> une(20);
-    TM Q, Qij, Qji, diag, rvl, ID; SetIdentity(ID);
+    TM Q(0), Qij(0), Qji(0), diag(0), rvl(0), ID(0); SetIdentity(ID);
     FM.template ApplyEQ<NT_VERTEX>([&](auto EQ, auto V) LAMBDA_INLINE {
 	auto CV = vmap[V];
 	if ( is_invalid(CV) ) // grounded/dirichlet

@@ -331,7 +331,7 @@ namespace amg
     Array<TMU> base_edata_full; GetEdgeData<TED, TMU>(get<1>(tm_mesh->Data())->Data(), base_edata_full);
     Array<double> base_edata; GetEdgeData<TMU, double>(base_edata_full, base_edata);
     Array<TMU> base_diags(M.template GetNN<NT_VERTEX>());
-    TM Qij, Qji; SetIdentity(Qij); SetIdentity(Qji);
+    TM Qij(0), Qji(0); SetIdentity(Qij); SetIdentity(Qji);
     M.template Apply<NT_EDGE>([&](const auto & edge) LAMBDA_INLINE {
 	constexpr int rrobust = robust;
 	const auto & em = base_edata[edge.id];
@@ -420,7 +420,7 @@ namespace amg
     };
 
     /** EVP based pairwise SOC. **/
-    TM dma, dmb, dmedge, Q; SetIdentity(Q);
+    TM dma(0), dmb(0), dmedge(0), Q(0); SetIdentity(Q);
     auto calc_soc_robust = [&](CW_TYPE cw_type, AVG_TYPE mma_scal, bool mma_mat_harm, auto vi, auto vj, const auto & fecon) LAMBDA_INLINE {
       constexpr bool rrobust = robust;
       double soc = 1.0;
@@ -530,7 +530,7 @@ namespace amg
     };
 
 
-    TM QiM, QjM, dgb;
+    TM QiM(0), QjM(0), dgb(0);
     auto check_soc_aggs_full = [&](auto memsi, auto memsj) LAMBDA_INLINE {
       constexpr bool rrobust = robust;
       if constexpr(rrobust) {
@@ -816,7 +816,7 @@ namespace amg
 	cout << " fedges " << fedges.Size() << " "; prow(fedges); cout << endl;
 	cout << " cedges " << cedges.Size() << " "; prow(cedges); cout << endl;
 	cout << " emap " << emap.Size() << " "; prow2(emap); cout << endl;
-	TM Q; SetIdentity(Q);
+	TM Q(0); SetIdentity(Q);
 	TVD femp, cemp;
 	for (auto fenr : Range(fedges)) {
 	  auto & fedge = fedges[fenr];
@@ -837,7 +837,7 @@ namespace amg
 	/** Coarse diags, I have to do this here because off-proc entries.
 	    Maps are only local on master, so cannot cumulate on coarse level **/
 	Array<TMU> ccdiags(NCV);
-	TM Qij, Qji; SetIdentity(Qij); SetIdentity(Qji);
+	TM Qij(0), Qji(0); SetIdentity(Qij); SetIdentity(Qji);
 	for (auto cvnr : Range(ccvdata)) {
 	  auto fvs = c2fv[cvnr];
 	  cout << cvnr << " from "; prow(fvs); cout << endl;

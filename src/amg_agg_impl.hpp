@@ -1223,7 +1223,7 @@ namespace amg
     size_t cnt_prtm = 0;
     Array<int> common_neibs(20), aneibs(20), bneibs(20);
     Array<FlatArray<int>> neib_tab(20);
-    TMU Qij, Qji, emat, Q, Ein, Ejn, Esum, addE, Q2, Aaa, Abb;
+    TMU Qij(0), Qji(0), emat(0), Q(0), Ein(0), Ejn(0), Esum(0), addE(0), Q2(0), Aaa(0), Abb(0);
     SetIdentity(Qij); SetIdentity(Qji); SetIdentity(emat); SetIdentity(Q); SetIdentity(Ein); SetIdentity(Ejn);
     SetIdentity(Esum); SetIdentity(addE); SetIdentity(Q2); SetIdentity(Aaa); SetIdentity(Abb);
     
