@@ -480,6 +480,7 @@ namespace amg
       FlatArray<int> allmems(n, lh);
       allmems.Part(0, memsi.Size()) = memsi;
       allmems.Part(memsi.Size(), memsj.Size()) = memsj;
+      QuickSort(allmems);
       FlatMatrix<double> A(n, n, lh), P(n, 1, lh), PT(1, n, lh);
       auto assmems_int = [&](auto somemems, auto osi) {
 	for (auto kil : Range(somemems)) {
@@ -542,6 +543,7 @@ namespace amg
 	FlatArray<int> allmems(n, lh);
 	allmems.Part(0, memsi.Size()) = memsi;
 	allmems.Part(memsi.Size(), memsj.Size()) = memsj;
+	QuickSort(allmems);
 	FlatMatrix<double> A(N, N, lh), P(N, BS, lh), PT(BS, N, lh);
 	/** A **/
 	auto assmems_int = [&](auto somemems, auto osi) {
