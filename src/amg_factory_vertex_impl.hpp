@@ -26,7 +26,7 @@ namespace amg
   public:
 
     /** choice of coarsening algorithm **/
-    enum CRS_ALG : char {
+    enum CRS_ALG : int { // int instead of char for readability
       ECOL = 0,             // edge collapsing
       AGG = 1               // MIS-based aggregaion
 #ifdef SPWAGG
@@ -55,19 +55,20 @@ namespace amg
     SpecOpt<bool> agg_neib_boost = false;
     SpecOpt<bool> lazy_neib_boost = false;
     SpecOpt<bool> print_aggs = false;            // print agglomerates (for debugging purposes)
-    SpecOpt<AVG_TYPE> agg_minmax_avg;
+    SpecOpt<AVG_TYPE> agg_minmax_avg = AVG_TYPE::GEOM;
 
 #ifdef SPWAGG
     /** SPW-AGG **/
     SpecOpt<int> spw_rounds = 3;
     SpecOpt<bool> spw_allrobust = true;
-    SpecOpt<bool> spw_checkbigsoc = true;
-    SpecOpt<SPW_CW_TYPE> spw_pick_cwt  = MINMAX;
-    SpecOpt<AVG_TYPE> spw_pick_mma_scal  = GEOM;
-    SpecOpt<AVG_TYPE> spw_pick_mma_mat  = GEOM;
-    SpecOpt<SPW_CW_TYPE> spw_check_cwt = HARMONIC;
-    SpecOpt<AVG_TYPE> spw_check_mma_scal  = GEOM;
-    SpecOpt<AVG_TYPE> spw_check_mma_mat  = GEOM;
+    SpecOpt<bool> spw_cbs = true;
+    SpecOpt<bool> spw_cbs_robust = true;
+    SpecOpt<SPW_CW_TYPE> spw_pick_cwt = SPW_CW_TYPE::MINMAX;
+    SpecOpt<AVG_TYPE> spw_pick_mma_scal = AVG_TYPE::GEOM;
+    SpecOpt<AVG_TYPE> spw_pick_mma_mat = AVG_TYPE::GEOM;
+    SpecOpt<SPW_CW_TYPE> spw_check_cwt = SPW_CW_TYPE::HARMONIC;
+    SpecOpt<AVG_TYPE> spw_check_mma_scal = AVG_TYPE::GEOM;
+    SpecOpt<AVG_TYPE> spw_check_mma_mat = AVG_TYPE::GEOM;
 #endif // SPWAGG
 
   public:
@@ -84,16 +85,16 @@ namespace amg
       BaseAMGFactory::Options::SetFromFlags(flags, prefix);
 
 #ifdef SPWAGG
-      crs_alg.SetFromFlagsEnum(flags, pfit("crs_alg"), { "ecol", "agg", "spw" }, { ECOL, AGG, SPW });
+      crs_alg.SetFromFlagsEnum(flags, pfit("crs_alg"), { "ecol", "agg", "spw" }, Array<CRS_ALG>{ ECOL, AGG, SPW });
 #else // SPWAGG
-      crs_alg.SetFromFlagsEnum(flags, pfit("crs_alg"), { "ecol", "agg" }, { ECOL, AGG });
+      crs_alg.SetFromFlagsEnum(flags, pfit("crs_alg"), { "ecol", "agg" }, Array<CRS_ALG>{ ECOL, AGG });
 #endif // SPWAGG
 
       ecw_geom.SetFromFlags(flags, prefix + "ecw_geom");
       ecw_robust.SetFromFlags(flags, prefix + "ecw_robust");
       ecw_minmax.SetFromFlags(flags, prefix + "ecw_minmax");
       ecw_stab_hack.SetFromFlags(flags, prefix + "ecw_stab_hack");
-      agg_minmax_avg.SetFromFlagsEnum(flags, prefix + "agg_minmax_avg", { "min", "geom", "harm", "alg", "max" }, { MIN, GEOM, HARM, ALG,MAX });
+      agg_minmax_avg.SetFromFlagsEnum(flags, prefix + "agg_minmax_avg", { "min", "geom", "harm", "alg", "max" }, Array<AVG_TYPE>{ MIN, GEOM, HARM, ALG,MAX });
 
       min_ecw.SetFromFlags(flags, prefix + "edge_thresh");
       min_vcw.SetFromFlags(flags, prefix + "vert_thresh");
@@ -107,25 +108,39 @@ namespace amg
       sp_max_per_row_classic.SetFromFlags(flags, prefix + "sp_max_per_row_classic");
 
 #ifdef SPWAGG
-      spw_rounds.SetFromFlags(flags, prefix + "spw_rounds");
-      spw_allrobust.SetFromFlags(flags, prefix +  "spw_check_robust");
-      spw_checkbigsoc.SetFromFlags(flags, prefix + "spw_checkbigsoc");
-      spw_pick_cwt.SetFromFlagsEnum(flags, prefix + "", { "harm", "geom", "mmx" }, { HARMONIC, GEOMETRIC, MINMAX });
-      spw_pick_mma_scal.SetFromFlagsEnum(flags, prefix + "", { "min", "geom", "harm", "alg", "max" }, { MIN, GEOM, HARM, ALG, MAX });
-      spw_pick_mma_mat.SetFromFlagsEnum(flags, prefix + "", { "min", "geom", "harm", "alg", "max" }, { MIN, GEOM, HARM, ALG, MAX });
-      spw_check_cwt.SetFromFlagsEnum(flags, prefix + "", { "harm", "geom", "mmx" }, { HARMONIC, GEOMETRIC, MINMAX });
-      spw_check_mma_scal.SetFromFlagsEnum(flags, prefix + "", { "min", "geom", "harm", "alg", "max" }, { MIN, GEOM, HARM, ALG, MAX });
-      spw_check_mma_mat.SetFromFlagsEnum(flags, prefix + "", { "min", "geom", "harm", "alg", "max" },  { MIN, GEOM, HARM, ALG, MAX });
 
-      cout << "spw_rounds" << spw_rounds << endl;
-      cout << "spw_allrobust" << spw_allrobust << endl;
-      cout << "spw_checkbigsoc" << spw_checkbigsoc << endl;
-      cout << "spw_pick_cwt" << spw_pick_cwt << endl;
-      cout << "spw_pick_mma_scal" << spw_pick_mma_scal << endl;
-      cout << "spw_pick_mma_mat" << spw_pick_mma_mat << endl;
-      cout << "spw_check_cwt" << spw_check_cwt << endl;
-      cout << "spw_check_mma_scal" << spw_check_mma_scal << endl;
-      cout << "spw_check_mma_mat = " << spw_check_mma_mat << endl;
+      cout << "spw_rounds " << spw_rounds << endl;
+      cout << "spw_allrobust " << spw_allrobust << endl;
+      cout << "spw_cbs " << spw_cbs << endl;
+      cout << "spw_cbs_robust " << spw_cbs_robust << endl;
+      cout << "spw_pick_cwt " << spw_pick_cwt << endl;
+      cout << "spw_pick_mma_scal " << spw_pick_mma_scal << endl;
+      cout << "spw_pick_mma_mat " << spw_pick_mma_mat << endl;
+      cout << "spw_check_cwt " << spw_check_cwt << endl;
+      cout << "spw_check_mma_scal " << spw_check_mma_scal << endl;
+      cout << "spw_check_mma_mat =  " << spw_check_mma_mat << endl;
+
+      spw_rounds.SetFromFlags(flags, prefix + "spw_rounds");
+      spw_allrobust.SetFromFlags(flags, prefix +  "spw_pick_robust");
+      spw_cbs.SetFromFlags(flags, prefix + "spw_cbs");
+      spw_cbs_robust.SetFromFlags(flags, prefix + "spw_cbs_robust");
+      spw_pick_cwt.SetFromFlagsEnum(flags, prefix + "spw_pcwt", { "harm", "geom", "mmx" }, Array<SPW_CW_TYPE>{ HARMONIC, GEOMETRIC, MINMAX });
+      spw_pick_mma_scal.SetFromFlagsEnum(flags, prefix + "spw_pmmas", { "min", "geom", "harm", "alg", "max" }, Array<AVG_TYPE>{ MIN, GEOM, HARM, ALG, MAX });
+      spw_pick_mma_mat.SetFromFlagsEnum(flags, prefix + "spw_pmmam", { "min", "geom", "harm", "alg", "max" }, Array<AVG_TYPE>{ MIN, GEOM, HARM, ALG, MAX });
+      spw_check_cwt.SetFromFlagsEnum(flags, prefix + "spw_ccwt", { "harm", "geom", "mmx" }, Array<SPW_CW_TYPE>{ HARMONIC, GEOMETRIC, MINMAX });
+      spw_check_mma_scal.SetFromFlagsEnum(flags, prefix + "spw_cmmas", { "min", "geom", "harm", "alg", "max" }, Array<AVG_TYPE>{ MIN, GEOM, HARM, ALG, MAX });
+      spw_check_mma_mat.SetFromFlagsEnum(flags, prefix + "spw_cmmam", { "min", "geom", "harm", "alg", "max" },  Array<AVG_TYPE>{ MIN, GEOM, HARM, ALG, MAX });
+
+      cout << "spw_rounds " << spw_rounds << endl;
+      cout << "spw_allrobust " << spw_allrobust << endl;
+      cout << "spw_cbs " << spw_cbs << endl;
+      cout << "spw_cbs_robust " << spw_cbs_robust << endl;
+      cout << "spw_pick_cwt " << spw_pick_cwt << endl;
+      cout << "spw_pick_mma_scal " << spw_pick_mma_scal << endl;
+      cout << "spw_pick_mma_mat " << spw_pick_mma_mat << endl;
+      cout << "spw_check_cwt " << spw_check_cwt << endl;
+      cout << "spw_check_mma_scal " << spw_check_mma_scal << endl;
+      cout << "spw_check_mma_mat =  " << spw_check_mma_mat << endl;
 
 #endif // SPWAGG
 
@@ -236,7 +251,6 @@ namespace amg
   template<class ENERGY, class TMESH, int BS>
   shared_ptr<BaseCoarseMap> VertexAMGFactory<ENERGY, TMESH, BS> :: BuildSPWAggMap (BaseAMGFactory::State & state, shared_ptr<BaseAMGFactory::LevelCapsule> & mapped_cap)
   {
-    cout << " BuildSPWAggMap " << endl;
     auto & O = static_cast<Options&>(*options);
     typedef SPWAgglomerator<ENERGY, TMESH, ENERGY::NEED_ROBUST> AGG_CLASS;
     typename AGG_CLASS::Options agg_opts;
@@ -246,11 +260,10 @@ namespace amg
 
     const int level = state.level[0];
 
-    cout << " BuildSPWAggMap2 " << endl;
-
     cout << "spw_rounds" << O.spw_rounds << endl;
     cout << "spw_allrobust" << O.spw_allrobust << endl;
-    cout << "spw_checkbigsoc" << O.spw_checkbigsoc << endl;
+    cout << "spw_cbs" << O.spw_cbs << endl;
+    cout << "spw_cbs_robust" << O.spw_cbs_robust << endl;
     cout << "spw_pick_cwt" << O.spw_pick_cwt << endl;
     cout << "spw_pick_mma_scal" << O.spw_pick_mma_scal << endl;
     cout << "spw_pick_mma_mat" << O.spw_pick_mma_mat << endl;
@@ -270,28 +283,17 @@ namespace amg
     agg_opts.check_mma_scal = O.spw_check_mma_scal.GetOpt(level);
     agg_opts.check_mma_mat = O.spw_check_mma_mat.GetOpt(level);
     agg_opts.print_aggs = O.print_aggs.GetOpt(level);
-    agg_opts.checkbigsoc = O.spw_checkbigsoc.GetOpt(level);
+    agg_opts.checkbigsoc = O.spw_cbs.GetOpt(level);
+    agg_opts.simple_checkbigsoc = !O.spw_cbs_robust.GetOpt(level);
     agg_opts.use_stab_ecw_hack = O.ecw_stab_hack.GetOpt(level);
-    
 
-    cout << " AO pcwt " << agg_opts.pick_cw_type << endl;
-    cout << " AO pmmas " << agg_opts.pick_mma_scal << endl;
-    cout << " AO pmmam " << agg_opts.pick_mma_mat << endl;
-    cout << " AO ccwt " << agg_opts.check_cw_type << endl;
-    cout << " AO cmmas " << agg_opts.check_mma_scal << endl;
-    cout << " AO cmmam " << agg_opts.check_mma_mat << endl;
-
-
-    cout << " BuildSPWAggMap3 " << endl;
     auto agglomerator = make_shared<AGG_CLASS>(mesh, state.curr_cap->free_nodes, move(agg_opts));
 
-    cout << " BuildSPWAggMap4 " << endl;
     /** Set mapped Capsule **/
     auto cmesh = agglomerator->GetMappedMesh();
     mapped_cap->eqc_h = cmesh->GetEQCHierarchy();
     mapped_cap->mesh = cmesh;
     mapped_cap->pardofs = this->BuildParallelDofs(cmesh);
-    cout << " BuildSPWAggMap5 " << endl;
 
     return agglomerator;
   } // VertexAMGFactory::BuildSPWAggMap

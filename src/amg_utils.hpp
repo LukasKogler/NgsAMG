@@ -4,11 +4,11 @@
 namespace amg
 {
 
-  enum AVG_TYPE : char { MIN,    // min(a,b)
-			 GEOM,   // sqrt(ab)
-			 HARM,   // 2 (ainv + binv)^{-1}
-			 ALG,    // (a+b)/2
-			 MAX     // max(a,b)
+  enum AVG_TYPE : int { MIN,    // min(a,b)
+			GEOM,   // sqrt(ab)
+			HARM,   // 2 (ainv + binv)^{-1}
+			ALG,    // (a+b)/2
+			MAX     // max(a,b)
   };
 
   template<int D> INLINE void GetNodePos (NodeId id, const MeshAccess & ma, Vec<D> & pos, Vec<D> & t) {
@@ -1380,10 +1380,15 @@ namespace amg
     }
     void SetFromFlagsEnum (const Flags & flags, string defkey, Array<string> optkeys, Array<OC> enum_vals)
     {
+      cout << " SFFE " << endl;
+      cout << " keys: "; prow2(optkeys); cout << endl;
+      cout << " enum_vals: "; prow2(enum_vals); cout << endl;
       auto setoc = [&](auto & oc, string val) {
 	int index;
+	cout << " Set from " << oc << endl;
 	if ( (index = optkeys.Pos(val)) != -1)
 	  { oc = enum_vals[index]; }
+	cout << " val " << val << ", index = " << index << ", set to " << oc << endl;
       };
       setoc(default_opt, flags.GetStringFlag(defkey, ""));
       auto & specfa = flags.GetStringListFlag(defkey + "_spec");

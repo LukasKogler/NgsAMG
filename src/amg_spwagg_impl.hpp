@@ -296,6 +296,7 @@ namespace amg
     constexpr int BS = mat_traits<TM>::HEIGHT;
     constexpr int BSU = mat_traits<TMU>::HEIGHT;
     constexpr bool robust = (BS == BSU) && (BSU > 1);
+    cout << "BS BSU ROBUST ROBUST = " << BS << " " << BSU << " " << robust << " " << ROBUST << endl;
 
     auto tm_mesh = dynamic_pointer_cast<TMESH>(mesh);
     const TMESH & M = *tm_mesh; M.CumulateData();
@@ -308,7 +309,8 @@ namespace amg
     const double MIN_ECW = settings.edge_thresh;
     const double MIN_VCW = settings.vert_thresh;
 
-    cout << " FMESH : " << endl << M << endl;
+    if (M.template GetNN<NT_VERTEX>() < 200)
+      { cout << " FMESH : " << endl << M << endl; }
 
     cout << " pcwt " << settings.pick_cw_type << endl;
     cout << " pmmas " << settings.pick_mma_scal << endl;
@@ -330,15 +332,27 @@ namespace amg
     FlatArray<TVD> base_vdata = get<0>(tm_mesh->Data())->Data();
     Array<TMU> base_edata_full; GetEdgeData<TED, TMU>(get<1>(tm_mesh->Data())->Data(), base_edata_full);
     Array<double> base_edata; GetEdgeData<TMU, double>(base_edata_full, base_edata);
-    Array<TMU> base_diags(M.template GetNN<NT_VERTEX>());
+    Array<TMU> base_diags(M.template GetNN<NT_VERTEX>()); base_diags = 0.0;
     TM Qij(0), Qji(0); SetIdentity(Qij); SetIdentity(Qji);
     M.template Apply<NT_EDGE>([&](const auto & edge) LAMBDA_INLINE {
 	constexpr int rrobust = robust;
-	const auto & em = base_edata[edge.id];
+	const auto & em = base_edata_full[edge.id];
 	if constexpr(rrobust) {
 	  ENERGY::ModQs(base_vdata[edge.v[0]], base_vdata[edge.v[1]], Qij, Qji);
+	  // cout << " edge " << edge << endl;
+	  // cout << " em = " << endl; print_tm(cout, em); cout << endl;
+	  // cout << " Qij = " << endl; print_tm(cout, Qij); cout << endl;
+	  // cout << " Qji = " << endl; print_tm(cout, Qji); cout << endl;
+	  // cout << " diag 0 at " << edge.v[0] << " before " << endl;
+	  // print_tm(cout, base_diags[edge.v[0]]); cout << endl;
 	  ENERGY::AddQtMQ(1.0, base_diags[edge.v[0]], Qij, em);
+	  // cout << " diag 0 at " << edge.v[0] << " after " << endl;
+	  // print_tm(cout, base_diags[edge.v[0]]); cout << endl;
+	  // cout << " diag 1 at " << edge.v[0] << " before " << endl;
+	  // print_tm(cout, base_diags[edge.v[0]]); cout << endl;
 	  ENERGY::AddQtMQ(1.0, base_diags[edge.v[1]], Qji, em);
+	  // cout << " diag 1 at " << edge.v[1] << " after " << endl;
+	  // print_tm(cout, base_diags[edge.v[0]]); cout << endl;
 	}
 	else {
 	  base_diags[edge.v[0]] += em;
@@ -355,7 +369,12 @@ namespace amg
     FlatArray<TMU> fdiags; fdiags.Assign(base_diags);
     FlatArray<double> fedata; fedata.Assign(base_edata);
 
-    LocalHeap lh(20971520, "cthulu"); // 20 MB
+    /** 1.5 times min(150MB, max(20MB, max i need for cbs)) **/
+    size_t lhs = 1.5 * min2(size_t(157286400),
+			    max2( size_t(20971520),
+				  size_t(pow(2*BS, num_rounds) * 6) ) );
+
+    LocalHeap lh(lhs, "cthulu"); // 20 MB
 
     auto calc_avg_scal = [&](AVG_TYPE avg, double mtra, double mtrb) LAMBDA_INLINE {
       switch(avg) {
@@ -386,23 +405,9 @@ namespace amg
     double da, db, dedge;
     auto calc_soc_scal = [&](CW_TYPE cw_type, AVG_TYPE mm_avg, auto vi, auto vj, const auto & fecon) LAMBDA_INLINE {
       /** calc_trace does nothing for scalar case **/
-      cout << " css for " << vi << " " << vj << ", eid " << fecon(vi, vj) << " , feds " << fedata.Size() << endl;
+      // cout << " css for " << vi << " " << vj << ", eid " << fecon(vi, vj) << " , feds " << fedata.Size() << endl;
       dedge = calc_trace(fedata[int(fecon(vi, vj))]);
-      cout << " i j edge " << calc_trace(fdiags[vi]) << " " << calc_trace(fdiags[vj]) << " " << dedge << endl;
-      switch(cw_type) {
-      case(Options::CW_TYPE::HARMONIC) : { cout << " HARM " << calc_avg_scal(HARM, calc_trace(fdiags[vi]), calc_trace(fdiags[vj])) << endl; break; }
-      case(Options::CW_TYPE::GEOMETRIC) : { cout << " GEOm " << calc_avg_scal(GEOM, calc_trace(fdiags[vi]), calc_trace(fdiags[vj])) << endl; break; }
-      case(Options::CW_TYPE::MINMAX) : {
-	da = db = 0;
-	for (auto eid : fecon.GetRowValues(vi))
-	  { da = max2(da, calc_trace(fedata[int(eid)])); }
-	for (auto eid : fecon.GetRowValues(vj))
-	  { db = max2(db, calc_trace(fedata[int(eid)])); }
-	cout << " MMX " << da << " " << db << dedge / calc_avg_scal(mm_avg, da, db) << endl;
-	break;
-      }
-      default : { cout << " DEF!!" ; }
-      }
+      // cout << " i j edge " << calc_trace(fdiags[vi]) << " " << calc_trace(fdiags[vj]) << " " << dedge << endl;
       switch(cw_type) {
       case(Options::CW_TYPE::HARMONIC) : { return dedge / calc_avg_scal(HARM, calc_trace(fdiags[vi]), calc_trace(fdiags[vj])); break; }
       case(Options::CW_TYPE::GEOMETRIC) : { return dedge / calc_avg_scal(GEOM, calc_trace(fdiags[vi]), calc_trace(fdiags[vj])); break; }
@@ -434,9 +439,20 @@ namespace amg
 	ENERGY::SetQtMQ(1.0, dmb, Q, fdiags[vj]);
 	/** TODO:: neib bonus **/
 	dmedge = fedata_full[int(fecon(vi,vj))];
+	cout << " CSR " << vi << " " << vj << endl;
+	// cout << " dga " << endl; print_tm(cout, fdiags[vi]); cout << endl;
+	cout << " dma " << endl; print_tm(cout, dma); cout << endl;
+	// cout << " dgb " << endl; print_tm(cout, fdiags[vj]); cout << endl;
+	cout << " dmb " << endl; print_tm(cout, dmb); cout << endl;
+	cout << " dmedge " << endl; print_tm(cout, dmedge); cout << endl;
+	cout << " fecon inds row " << vi << " = "; prow(fecon.GetRowIndices(vi)); cout << endl;
+	cout << " fecon vals row " << vi << " = "; prow(fecon.GetRowValues(vi)); cout << endl;
+	cout << " fecon inds row " << vj << " = "; prow(fecon.GetRowIndices(vj)); cout << endl;
+	cout << " fecon vals row " << vj << " = "; prow(fecon.GetRowValues(vj)); cout << endl;
+	cout << " fed size " << fedata_full.Size() << ", get from " << int(fecon(vi, vj)) << endl;
 	switch(cw_type) {
-	case(CW_TYPE::HARMONIC) : { soc = MIN_EV_HARM2(dma, dmb, dmedge); break; }
-	case(CW_TYPE::GEOMETRIC) : { soc = MIN_EV_FG2(dma, dmb, dmedge); break; }
+	case(CW_TYPE::HARMONIC) : { soc = MIN_EV_HARM2(dma, dmb, dmedge); cout << " soc harm = " << soc << endl; break; }
+	case(CW_TYPE::GEOMETRIC) : { soc = MIN_EV_FG2(dma, dmb, dmedge); cout << " soc geom = " << soc << endl; break; }
 	case(CW_TYPE::MINMAX) : {
 	  double mtra = 0, mtrb = 0;
 	  for (auto eid : fecon.GetRowValues(vi))
@@ -450,9 +466,9 @@ namespace amg
 	    dmb /= calc_trace(dmb);
 	    dmedge /= etrace;
 	    if (mma_mat_harm)
-	      { soc = min2(soc, MIN_EV_HARM2(dma, dmb, dmedge)); }
+	      { soc = min2(soc, MIN_EV_HARM2(dma, dmb, dmedge)); cout << " soc mmx harm = " << soc << endl; }
 	    else
-	      { soc = min2(soc, MIN_EV_FG2(dma, dmb, dmedge)); }
+	      { soc = min2(soc, MIN_EV_FG2(dma, dmb, dmedge)); cout << " soc mmx geom = " << soc << endl; }
 	  }
 	  break;
 	}
@@ -463,6 +479,7 @@ namespace amg
 
     auto calc_soc_pair = [&](bool dorobust, CW_TYPE cwt, AVG_TYPE mma_scal, AVG_TYPE mma_mat, auto vi, auto vj, const auto & fecon) { // maybe not force inlining this?
       constexpr bool rrobust = robust;
+      cout << " CSP, rr " << rrobust << " , dr " << dorobust << ", for " << vi << " " << vj << endl;
       if constexpr(rrobust) {
 	  if (dorobust)
 	    { return calc_soc_robust(cwt, mma_scal, (mma_mat==HARM), vi, vj, fecon); }
@@ -533,6 +550,7 @@ namespace amg
 
     TM QiM(0), QjM(0), dgb(0);
     auto check_soc_aggs_full = [&](auto memsi, auto memsj) LAMBDA_INLINE {
+      HeapReset hr(lh);
       constexpr bool rrobust = robust;
       if constexpr(rrobust) {
 	/** "full" version, assembles the entire system **/
@@ -620,6 +638,7 @@ namespace amg
     };
 
     /** Finds a neighbor to merge vertex v with. Returns -1 if no suitable ones found **/
+    INT<2, size_t> rej; rej = 0;
     auto find_neib = [&](auto v, const auto & fecon, auto allowed, auto get_mems, bool robust_pick,
 			 auto cwt_pick, auto pmmas, auto pmmam, auto cwt_check, auto cmmas, auto cmmam,
 			 bool checkbigsoc, bool simple_cbs) LAMBDA_INLINE {
@@ -631,11 +650,11 @@ namespace amg
       FlatArray<INT<2,double>> bsocs(neibs.Size(), lh);
       for (auto neib : neibs)
 	if (allowed(v, neib))
-	  { double thesoc = calc_soc_pair(robust_pick, cwt_pick, pmmas, pmmam, v, neib, fecon); cout << thesoc << " "; bsocs[c++] = INT<2, double>(neib, thesoc); }
-      cout << endl << " ALL possible neibs for " << v << " = ";
-      for (auto v : bsocs)
-	{ cout << "[" << v[0] << " " << v[1] << "] "; }
-      cout << endl;
+	  { double thesoc = calc_soc_pair(robust_pick, cwt_pick, pmmas, pmmam, v, neib, fecon); bsocs[c++] = INT<2, double>(neib, thesoc); }
+      // cout << endl << " ALL possible neibs for " << v << " = ";
+      // for (auto v : bsocs)
+	// { cout << "[" << v[0] << " " << v[1] << "] "; }
+      // cout << endl;
       auto socs = bsocs.Part(0, c);
       QuickSort(socs, [&](const auto & a, const auto & b) LAMBDA_INLINE { return a[1] > b[1]; });
       cout << " possible neibs for " << v << " = ";
@@ -643,20 +662,27 @@ namespace amg
 	{ cout << "[" << v[0] << " " << v[1] << "] "; }
       cout << endl;
       int candidate = ( (c > 0) && (socs[0][1] > MIN_ECW) ) ? int(socs[0][0]) : -1;
-      cout << " candidate is " << candidate << endl;
+      // cout << " candidate is " << candidate << endl;
       /** check candidate - either small EVP, or large EVP, or both! **/
-      bool need_check = (robust && (!robust_pick)) || (checkbigsoc);
+      bool need_check = (rrobust && (!robust_pick)) || checkbigsoc;
+      // cout << " rr = " << rrobust << " rp = " << robust_pick << ", cbs = " << checkbigsoc << endl;
+      // cout << " need_check = " << (rrobust && (!robust_pick)) << " || " << checkbigsoc << endl;
       if (need_check) {
+	candidate = -1; // !! important, otherwise the loop fails if last entry has soc>MIN, but stabsoc < MIN
 	for (int j = 0; j < socs.Size(); j++) {
-	  if (socs[j][1] < MIN_ECW)
+	  double stabsoc = socs[j][1];
+	  if (stabsoc < MIN_ECW)
 	    { candidate = -1; break; }
-	  double stabsoc = socs[j][0];
 	  if constexpr(rrobust) {
 	      if (!robust_pick) /** small EVP soc **/
-		{ stabsoc = calc_soc_pair(true, cwt_check, cmmas, cmmam, v, neibs[j], fecon); }
+		{ stabsoc = calc_soc_pair(true, cwt_check, cmmas, cmmam, v, int(socs[j][0]), fecon); }
 	    }
+	if (stabsoc < MIN_ECW) /** this neib has strong stable connection **/
+	  { rej[0]++; rej[1]--; }
 	if (checkbigsoc && (stabsoc > MIN_ECW)) /** big EVP soc **/
-	  { stabsoc = check_soc_aggs(simple_cbs, get_mems(v), get_mems(neibs[j])) ? stabsoc : 0.0; }
+	  { stabsoc = check_soc_aggs(simple_cbs, get_mems(v), get_mems(int(socs[j][0]))) ? stabsoc : 0.0; }
+	if (stabsoc < MIN_ECW) /** this neib has strong stable connection **/
+	  { rej[1]++; }
 	if (stabsoc > MIN_ECW) /** this neib has strong stable connection **/
 	  { candidate = int(socs[j][0]); break; }
 	}
@@ -672,11 +698,16 @@ namespace amg
 			     auto get_mems, auto allowed,// auto set_pair,
 			     bool r_ar,  auto r_cwtp, auto r_pmmas, auto r_pmmam, auto r_cwtc, auto r_cmmas, auto r_cmmam, bool r_cbs, bool r_scbs
 			     ) LAMBDA_INLINE {
+      cout << " PAIR_VERTICES, fecon = " << endl << fecon << endl;
+      for (auto k : Range(fedata_full)) {
+	cout << "fedata_full " << k << " = " << endl; print_tm(cout, fedata_full[k]); cout << endl;
+      }
+	
       RegionTimer rt(tvp);
       for (auto k : Range(num_verts)) {
 	auto vnr = get_vert(k);
 	if (!handled.Test(vnr)) { // try to find a neib
-	  cout << " find naib for " << vnr << endl;
+	  cout << " find neib for " << vnr << endl;
 	  int neib = find_neib(vnr, fecon, [&](auto vi, auto vj) { return (!handled.Test(vj)) && allowed(vi, vj); },
 			       get_mems, r_ar, r_cwtp, r_pmmas, r_pmmam, r_cwtc, r_cmmas, r_cmmam, r_cbs, r_scbs);
 	  if (neib != -1) {
@@ -699,8 +730,10 @@ namespace amg
 
     tprep.Stop();
 
+    INT<2, size_t> allrej = 0;
     // pair vertices
     for (int round : Range(num_rounds)) {
+      HeapReset hr(lh); // probably unnecessary
       const bool r_ar = robust && settings.allrobust.GetOpt(round);
       const CW_TYPE r_cwtp = settings.pick_cw_type.GetOpt(round);
       const AVG_TYPE r_pmmas = settings.pick_mma_scal.GetOpt(round);
@@ -829,10 +862,10 @@ namespace amg
 	      femp = ENERGY::CalcMPData(fvdata[fedge.v[0]], fvdata[fedge.v[1]]);
 	      cemp = ENERGY::CalcMPData(ccvdata[cedge.v[0]], ccvdata[cedge.v[1]]);
 	      ENERGY::ModQHh(cemp, femp, Q);
-	      ENERGY::AddQtMQ(1.0, ccedata_full[cenr], Q, fedata[fenr]);
+	      ENERGY::AddQtMQ(1.0, ccedata_full[cenr], Q, fedata_full[fenr]);
 	    }
 	    else
-	      { ccedata_full[cenr] += fedata[fenr]; }
+	      { ccedata_full[cenr] += fedata_full[fenr]; }
 	  }
 	}
 	cout << " ccedata_full " << ccedata_full.Size() << endl; prow2(ccedata_full); cout << endl;
@@ -853,7 +886,7 @@ namespace amg
 	      ENERGY::AddQtMQ(1.0, ccdiags[cvnr], Qij, fdiags[fvs[1]]);
 	    }
 	    else
-	      { ccdiags[cvnr] += fdiags[fvs[1]]; }
+	      { ccdiags[cvnr] = fdiags[fvs[0]] + fdiags[fvs[1]]; }
 	    /** note: this should be fine, on coarse level, at least one vert is already in an agg,
 		or it would already have been paired in first round **/
 	    double fac = ( (round == 0) && use_hack_stab ) ? -1.5 : -2.0;
@@ -893,6 +926,10 @@ namespace amg
 	conclocmap->Concatenate(NCV, vmap);
       }
 
+      allrej = rej;
+      cout << " round " << round << " rej    = " << rej[0] << " " << rej[1] << endl;
+      cout << " round " << round << " allrej = " << allrej[0] << " " << allrej[1] << endl;
+      rej = 0;
     } // round-loop
 
     /** Build final aggregates **/

@@ -11,9 +11,9 @@
 namespace amg
 {
 
-  enum SPW_CW_TYPE : char { HARMONIC = 0,                // most stable
-			    GEOMETRIC = 1,               // if it works, best condition, most restrictive
-			    MINMAX = 2 };                // best with unbalanced aggs (??) 
+  enum SPW_CW_TYPE : int { HARMONIC = 0,                // most stable
+			   GEOMETRIC = 1,               // if it works, best condition, most restrictive
+			   MINMAX = 2 };                // best with unbalanced aggs (??) 
 
   /** Successive pairwise agglomeration **/
   template<class ATENERGY, class ATMESH, bool AROBUST = true>
