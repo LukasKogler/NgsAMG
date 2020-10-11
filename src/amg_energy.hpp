@@ -43,6 +43,7 @@ namespace amg
     static INLINE void CalcQs  (const TVD & di, const TVD & dj, TM & Qij, TM & Qji);
     static INLINE void ModQs  (const TVD & di, const TVD & dj, TM & Qij, TM & Qji);
     static INLINE TVD CalcMPData (const TVD & da, const TVD & db);
+    static INLINE TVD CalcMPDataWW (const TVD & da, const TVD & db); // with weights
 
     static INLINE void CalcRMBlock (FlatMatrix<TM> mat, const TED & ed, const TVD & vdi, const TVD & vdj);
     static INLINE void CalcRMBlock2 (FlatMatrix<TM> mat, const TM & em, const TVD & vdi, const TVD & vdj);
@@ -105,16 +106,9 @@ namespace amg
     typedef Mat<DPV, DPV, double> TM;
 
     static INLINE double GetApproxWeight (const TED & ed) { return calc_trace(ed) / DPV; }
-    static INLINE double GetApproxVWeight (const TVD & vd) { return vd.wt; }
+    static INLINE double GetApproxVWeight (const TVD & vd) { return calc_trace(vd.wt) / DPV; }
     static INLINE const TM & GetEMatrix (const TED & ed) { return ed; }
-    static INLINE const TM & GetVMatrix (const TVD & vd) {
-      if constexpr (ADIM == 1) { return vd.wt; }
-      else { // TODO: this should really be a proper TM matrix eventually ... 
-	static TM m;
-	SetScalIdentity(vd.wt/DPV, m);
-	return m;
-      }
-    }
+    static INLINE const TM & GetVMatrix (const TVD & vd) { return vd.wt; }
 
     static INLINE void CalcQ  (const Vec<DIM> & t, TM & Q);
     static INLINE void ModQ  (const Vec<DIM> & t, TM & Q);
@@ -125,6 +119,7 @@ namespace amg
     static INLINE void CalcQs  (const TVD & di, const TVD & dj, TM & Qij, TM & Qji);
     static INLINE void ModQs  (const TVD & di, const TVD & dj, TM & Qij, TM & Qji);
     static INLINE TVD CalcMPData (const TVD & da, const TVD & db);
+    static INLINE TVD CalcMPDataWW (const TVD & da, const TVD & db); // with weights
 
     static INLINE void CalcRMBlock (FlatMatrix<TM> mat, const TED & ed, const TVD & vdi, const TVD & vdj);
     static INLINE void CalcRMBlock2 (FlatMatrix<TM> mat, const TM & ed, const TVD & vdi, const TVD & vdj);

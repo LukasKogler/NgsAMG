@@ -56,6 +56,12 @@ namespace amg
     return TVD(0);
   } // H1Energy::CalcMPData
 
+  template<int DIM, class TVD, class TED>
+  INLINE typename H1Energy<DIM, TVD, TED>::TVD H1Energy<DIM, TVD, TED> :: CalcMPDataWW (const TVD & da, const TVD & db)
+  {
+    return da + db;
+  } // EpsEpsEnergy::CalcMPData
+
 
   template<int DIM, class TVD, class TED>
   INLINE void H1Energy<DIM, TVD, TED> :: CalcRMBlock (FlatMatrix<TM> mat, const TED & ed, const TVD & vdi, const TVD & vdj)
@@ -183,6 +189,19 @@ namespace amg
     TVD o(0); o.pos = 0.5 * (da.pos + db.pos);
     return move(o);
   } // EpsEpsEnergy::CalcMPData
+
+
+  template<int DIM, class TVD, class TED>
+  INLINE typename EpsEpsEnergy<DIM, TVD, TED>::TVD EpsEpsEnergy<DIM, TVD, TED> :: CalcMPDataWW (const TVD & da, const TVD & db)
+  {
+    TVD o = CalcMPData(da, db);
+    // o.wt = da.wt + db.wt;
+    static TM Qij, Qji;
+    CalcQs( da, db, Qij, Qji);
+    SetQtMQ (1.0, o.wt, Qji, da.wt);
+    AddQtMQ (1.0, o.wt, Qij, db.wt);
+    return move(o);
+  } // EpsEpsEnergy::CalcMPDataWW
 
 
   template<int DIM, class TVD, class TED>

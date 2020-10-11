@@ -39,7 +39,7 @@ namespace amg
     auto ced = ceed.Data();
     typedef Mat<BS, BS, double> TM;
     // TODO: we are modifying coarse v-wts here. HACKY!!
-    Array<double> add_cvw (CNV); add_cvw = 0;
+    Array<TM> add_cvw (CNV); add_cvw = 0;
     Vec<DIM> posH, posh, tHh;
     TM TEST = 0;
     TM QHh(0), FMQ(0);
@@ -50,30 +50,99 @@ namespace amg
 	if (cenr != -1) {
 	  const auto & cedge = cedges[cenr];
 	  auto& cemat = ced[cenr];
-	  posH = 0.5 * (cvd[cedge.v[0]].pos + cvd[cedge.v[1]].pos);
-	  posh = 0.5 * (fvd[fedge.v[0]].pos + fvd[fedge.v[1]].pos);
+	  posH = 0.5 * (cvd[cedge.v[0]].pos + cvd[cedge.v[1]].pos); // hacky
+	  posh = 0.5 * (fvd[fedge.v[0]].pos + fvd[fedge.v[1]].pos); // hacky
 	  tHh = posh - posH;
 	  ElasticityAMGFactory<DIM>::ENERGY::CalcQ(tHh, QHh);
 	  FMQ = fed[fedge.id] * QHh;
 	  cemat += Trans(QHh) * FMQ;
 	}
-	else { // add largest eval of connection to ground to the coarse vertex-weight
-	  auto tr = calc_trace(fed[fedge.id]) / mat_traits<TM>::HEIGHT; // a guess
-	  Iterate<2>([&](auto l) LAMBDA_INLINE {
-	      if (v_map[fedge.v[1-l.value]] == -1) {
-		auto cvnr = v_map[fedge.v[l.value]];
-		// cout << l.value << ", v " << fedge.v[l.value] << " -> " << cvnr << endl;
-		if (cvnr != -1)
-		  { add_cvw[cvnr] += tr; }
-	      }
-	    });
+	else { /** connection to ground goes into vertex weight **/
+	  INT<2, int> cvs ( { v_map[fedge.v[0]], v_map[fedge.v[1]] } );;
+	  if (cvs[0] != cvs[1]) { // max. and min. one is -1
+	    int l = (cvs[0] == -1) ? 1 : 0;
+	    int cvnr = v_map[fedge.v[l]];
+	    ElasticityAMGFactory<DIM>::ENERGY::CalcQij(fvd[fedge.v[l]], fvd[fedge.v[1-l]], QHh); // from [l] to [1-l] should be correct
+	    cout << " add edge " << fedge << " to " << cvnr << endl;
+	    print_tm(cout, fed[fedge.id]); cout << endl;
+	    ElasticityAMGFactory<DIM>::ENERGY::AddQtMQ(1.0, add_cvw[cvnr], QHh, fed[fedge.id]);
+	  }
 	}
       }, true); // master only
     CM.template AllreduceNodalData<NT_VERTEX>(add_cvw, [](auto & in) { return sum_table(in); }, false);
-    for (auto k : Range(CNV)) // cvd and add_cvw are both "CUMULATED"
-      { cvd[k].wt += add_cvw[k]; }
+    for (auto k : Range(CNV)) { // cvd and add_cvw are both "CUMULATED"
+      if (calc_trace(cvd[k].wt) + calc_trace(add_cvw[k]) > 0) {
+	cout << " add_cvwt[ " << k << "]:" << endl;
+	print_tm(cout, cvd[k].wt); cout << endl;
+	print_tm(cout, add_cvw[k]); cout << endl;
+	print_tm(cout, cvd[k].wt); cout << endl;
+      }
+      cvd[k].wt += add_cvw[k];
+    }
     ceed.SetParallelStatus(DISTRIBUTED);
   } // AttachedEED::map_data
+
+
+  template<int DIM> template<class TMESH>
+  INLINE void AttachedEVD<DIM> :: map_data (const CoarseMap<TMESH> & cmap, AttachedEVD<DIM> & cevd) const
+  {
+    /** ECOL coarsening -> set midpoints in edges **/
+    static Timer t("AttachedEVD::map_data"); RegionTimer rt(t);
+    Cumulate();
+    auto & cdata = cevd.data; cdata.SetSize(cmap.template GetMappedNN<NT_VERTEX>()); cdata = 0;
+    auto vmap = cmap.template GetMap<NT_VERTEX>();
+    Array<int> touched(vmap.Size()); touched = 0;
+    mesh->template Apply<NT_EDGE>([&](const auto & e) { // set coarse data for all coll. vertices
+	auto CV = vmap[e.v[0]];
+	if ( (CV != -1) || (vmap[e.v[1]] == CV) ) {
+	  touched[e.v[0]] = touched[e.v[1]] = 1;
+	  cdata[CV] = ElasticityAMGFactory<DIM>::ENERGY::CalcMPDataWW(data[e.v[0]], data[e.v[1]]);
+	}
+      }, true); // if stat is CUMULATED, only master of collapsed edge needs to set wt 
+    mesh->template AllreduceNodalData<NT_VERTEX>(touched, [](auto & in) { return move(sum_table(in)); } , false);
+    mesh->template Apply<NT_VERTEX>([&](auto v) { // set coarse data for all "single" vertices
+	auto CV = vmap[v];
+	if ( (CV != -1) && (touched[v] == 0) )
+	  { cdata[CV] = data[v]; }
+      }, true);
+    cevd.SetParallelStatus(DISTRIBUTED);
+  } // AttachedEVD::map_data
+
+
+  template<int DIM> template<class TMESH>
+  INLINE void AttachedEVD<DIM> :: map_data (const AgglomerateCoarseMap<TMESH> & cmap, AttachedEVD<DIM> & cevd) const
+  {
+    /** AGG coarsening -> set midpoints in agg centers **/
+    static Timer t("AttachedEVD::map_data"); RegionTimer rt(t);
+    Cumulate();
+    auto & cdata = cevd.data; cdata.SetSize(cmap.template GetMappedNN<NT_VERTEX>()); cdata = 0;
+    auto vmap = cmap.template GetMap<NT_VERTEX>();
+    const auto & M = *mesh;
+    const auto & CM = static_cast<BlockTM&>(*cmap.GetMappedMesh()); // okay, kinda hacky, the coarse mesh already exists, but only as BlockTM i think
+    const auto & ctrs = *cmap.GetAggCenter();
+    typename ElasticityAMGFactory<DIM>::ENERGY::TM Q;
+    M.template ApplyEQ<NT_VERTEX> ([&](auto eqc, auto v) LAMBDA_INLINE {
+	/** set crs v pos - ctrs can add weight already **/
+	auto cv = vmap[v];
+	if (cv != -1)
+	  if (ctrs.Test(v)) {
+	    cdata[cv].pos = data[v].pos;
+	    cdata[cv].wt += data[v].wt;
+	  }
+      }, true);
+    M.template ApplyEQ<NT_VERTEX> ([&](auto eqc, auto v) LAMBDA_INLINE {
+	/** add l2 weights for non ctrs - I already need crs pos here **/
+	auto cv = vmap[v];
+	if (cv != -1)
+	  if (!ctrs.Test(v)) {
+	    ElasticityAMGFactory<DIM>::ENERGY::CalcQHh(cdata[cv], data[v], Q);
+	    cout << " add to " << cv << " <- " << v << endl; print_tm(cout, cdata[cv].wt); cout << endl;
+	    ElasticityAMGFactory<DIM>::ENERGY::AddQtMQ(1.0, cdata[cv].wt, Q, data[v].wt);
+	    print_tm(cout, cdata[cv].wt); cout << endl;
+	  }
+      }, true);
+    cevd.SetParallelStatus(DISTRIBUTED);
+  } // AttachedEVD::map_data
 
 } // namespace amg
 
@@ -117,7 +186,7 @@ namespace amg
     O.sp_omega = 1.0;
 
     /** Discard **/
-    O.enable_disc = true;
+    O.enable_disc = false; // this has always been a hack, so turn it off by default...
     O.disc_max_bs = 1; // TODO: make this work
 
     /** Level-control **/

@@ -14,18 +14,25 @@
 namespace amg
 {
 
+  /** blocks size for differnt dimensions **/
+  template<int DIM> struct ETM_TRAIT { typedef void type; };
+  template<> struct ETM_TRAIT<2> { typedef Mat<3, 3, double> type; };
+  template<> struct ETM_TRAIT<3> { typedef Mat<6, 6, double> type; };
+
+
   /** Vertex Data **/
 
   template<int DIM>
   class ElastVData
   {
   public:
+    using TM = typename ETM_TRAIT<DIM>::type;
     Vec<DIM, double> pos;
-    double wt;
-    ElastVData (double val) : pos(val), wt(val) { ; }
+    TM wt;
+    ElastVData (double val) : pos(val), wt(0) { SetScalIdentity(val, wt); }
     ElastVData () : ElastVData(0) { ; }
-    ElastVData (Vec<DIM,double> _pos, double _wt) : pos(_pos), wt(_wt) { ; }
-    ElastVData (Vec<DIM,double> && _pos, double && _wt) : pos(_pos), wt(_wt) { ; }
+    ElastVData (Vec<DIM,double> _pos, double _wt) : pos(_pos), wt(0) { SetScalIdentity(_wt, wt); }
+    ElastVData (Vec<DIM,double> && _pos, double && _wt) : pos(_pos), wt(0) { SetScalIdentity(_wt, wt); }
     ElastVData (ElastVData<DIM> && other) = default;
     ElastVData (const ElastVData<DIM> & other) = default;
     INLINE void operator = (double x) { pos = x; wt = x; }
@@ -57,51 +64,9 @@ namespace amg
       : BASE(move(_data), stat)
     { ; }
 
-    template<class TMESH> inline void map_data (const CoarseMap<TMESH> & cmap, AttachedEVD<DIM> & cevd) const
-    {
-      /** ECOL coarsening -> set midpoints in edges **/
-      static Timer t("AttachedEVD::map_data"); RegionTimer rt(t);
-      Cumulate();
-      auto & cdata = cevd.data; cdata.SetSize(cmap.template GetMappedNN<NT_VERTEX>()); cdata = 0;
-      auto vmap = cmap.template GetMap<NT_VERTEX>();
-      Array<int> touched(vmap.Size()); touched = 0;
-      mesh->template Apply<NT_EDGE>([&](const auto & e) { // set coarse data for all coll. vertices
-	  auto CV = vmap[e.v[0]];
-	  if ( (CV != -1) || (vmap[e.v[1]] == CV) ) {
-	    touched[e.v[0]] = touched[e.v[1]] = 1;
-	    cdata[CV].pos = 0.5 * (data[e.v[0]].pos + data[e.v[1]].pos);
-	    cdata[CV].wt = data[e.v[0]].wt + data[e.v[1]].wt;
-	  }
-	}, true); // if stat is CUMULATED, only master of collapsed edge needs to set wt 
-      mesh->template AllreduceNodalData<NT_VERTEX>(touched, [](auto & in) { return move(sum_table(in)); } , false);
-      mesh->template Apply<NT_VERTEX>([&](auto v) { // set coarse data for all "single" vertices
-	  auto CV = vmap[v];
-	  if ( (CV != -1) && (touched[v] == 0) )
-	    { cdata[CV] = data[v]; }
-	}, true);
-      cevd.SetParallelStatus(DISTRIBUTED);
-    } // AttachedEVD::map_data
+    template<class TMESH> INLINE void map_data (const CoarseMap<TMESH> & cmap, AttachedEVD<DIM> & cevd) const;
 
-    template<class TMESH> INLINE void map_data (const AgglomerateCoarseMap<TMESH> & cmap, AttachedEVD<DIM> & cevd) const
-    {
-      /** AGG coarsening -> set midpoints in agg centers **/
-      static Timer t("AttachedEVD::map_data"); RegionTimer rt(t);
-      Cumulate();
-      auto & cdata = cevd.data; cdata.SetSize(cmap.template GetMappedNN<NT_VERTEX>()); cdata = 0;
-      auto vmap = cmap.template GetMap<NT_VERTEX>();
-      const auto & M = *mesh;
-      const auto & CM = static_cast<BlockTM&>(*cmap.GetMappedMesh()); // okay, kinda hacky, the coarse mesh already exists, but only as BlockTM i think
-      const auto & ctrs = *cmap.GetAggCenter();
-      M.template ApplyEQ<NT_VERTEX> ([&](auto eqc, auto v) LAMBDA_INLINE {
-	  auto cv = vmap[v];
-	  if (cv != -1) {
-	    if (ctrs.Test(v))
-	      { cdata[cv].pos = data[v].pos; }
-	    cdata[cv].wt += data[v].wt;
-	  }
-	}, true);
-      cevd.SetParallelStatus(DISTRIBUTED);
-    } // AttachedEVD::map_data
+    template<class TMESH> INLINE void map_data (const AgglomerateCoarseMap<TMESH> & cmap, AttachedEVD<DIM> & cevd) const;
 
   }; // class AttachedEVD
 
@@ -110,10 +75,12 @@ namespace amg
 
   /** Edge Data **/
 
-  template<int DIM> struct EED_TRAIT { typedef void type; };
-  template<> struct EED_TRAIT<2> { typedef Mat<3, 3, double> type; };
-  template<> struct EED_TRAIT<3> { typedef Mat<6, 6, double> type; };
-  template<int DIM> using ElasticityEdgeData = typename EED_TRAIT<DIM>::type;
+  // template<int DIM> struct EED_TRAIT { typedef void type; };
+  // template<> struct EED_TRAIT<2> { typedef Mat<3, 3, double> type; };
+  // template<> struct EED_TRAIT<3> { typedef Mat<6, 6, double> type; };
+  // template<int DIM> using ElasticityEdgeData = typename EED_TRAIT<DIM>::type;
+
+  template<int DIM> using ElasticityEdgeData = typename ETM_TRAIT<DIM>::type;
 
   template<int DIM>
   class AttachedEED : public AttachedNodeData<NT_EDGE, ElasticityEdgeData<DIM>, AttachedEED<DIM>>

@@ -290,6 +290,7 @@ namespace amg
     const bool print_params = settings.print_aggs;  // parameters for every round
     const bool print_summs = settings.print_aggs;   // summary info
     const bool print_aggs = settings.print_aggs;    // actual aggs
+    this->print_vmap = settings.print_aggs;
 
     const int num_rounds = settings.num_rounds;
 
@@ -339,26 +340,22 @@ namespace amg
 	const auto & em = base_edata_full[edge.id];
 	if constexpr(rrobust) {
 	  ENERGY::ModQs(base_vdata[edge.v[0]], base_vdata[edge.v[1]], Qij, Qji);
-	  // cout << " edge " << edge << endl;
-	  // cout << " em = " << endl; print_tm(cout, em); cout << endl;
-	  // cout << " Qij = " << endl; print_tm(cout, Qij); cout << endl;
-	  // cout << " Qji = " << endl; print_tm(cout, Qji); cout << endl;
-	  // cout << " diag 0 at " << edge.v[0] << " before " << endl;
-	  // print_tm(cout, base_diags[edge.v[0]]); cout << endl;
 	  ENERGY::AddQtMQ(1.0, base_diags[edge.v[0]], Qij, em);
-	  // cout << " diag 0 at " << edge.v[0] << " after " << endl;
-	  // print_tm(cout, base_diags[edge.v[0]]); cout << endl;
-	  // cout << " diag 1 at " << edge.v[0] << " before " << endl;
-	  // print_tm(cout, base_diags[edge.v[0]]); cout << endl;
 	  ENERGY::AddQtMQ(1.0, base_diags[edge.v[1]], Qji, em);
-	  // cout << " diag 1 at " << edge.v[1] << " after " << endl;
-	  // print_tm(cout, base_diags[edge.v[0]]); cout << endl;
-	}
+	  }
 	else {
 	  base_diags[edge.v[0]] += em;
 	  base_diags[edge.v[1]] += em;
 	}
       }, true); // only master, we cumulate this afterwards
+    /** NOTE: We use l2 weights on both sides only for CBS. for pair-wise, l2 is only on diag. **/
+    M.template Apply<NT_VERTEX>([&](auto v) {
+	constexpr int rrobust = robust;
+	if constexpr(rrobust)
+	  { base_diags[v] += ENERGY::GetVMatrix(base_vdata[v]); }
+	else
+	  { base_diags[v] += ENERGY::GetApproxVWeight(base_vdata[v]); }
+      }, true ); // only master again
     M.template AllreduceNodalData<NT_VERTEX>(base_diags, [&](auto tab) LAMBDA_INLINE { return sum_table(tab); });
 
     Array<TVD> cvdata;
@@ -368,6 +365,15 @@ namespace amg
     FlatArray<TMU> fedata_full; fedata_full.Assign(base_edata_full);
     FlatArray<TMU> fdiags; fdiags.Assign(base_diags);
     FlatArray<double> fedata; fedata.Assign(base_edata);
+
+    if (print_aggs) {
+      cout << " FINE l2 wts; " << endl;
+      for (auto k : Range(fvdata)) {
+	cout << k << " = " << fvdata[k] << endl;
+	print_tm(cout, ENERGY::GetVMatrix(fvdata[k])); cout << endl;
+      }
+      cout << endl << endl;
+    }
 
     /** 1.5 times min(150MB, max(20MB, max i need for cbs)) **/
     size_t lhs = 1.5 * min2(size_t(157286400),
@@ -389,7 +395,20 @@ namespace amg
 
     /** vertex coll wt. only computed in round 0 **/
     auto calc_vcw = [&](auto v) {
-      return 0.0;
+      constexpr bool rrobust = robust;
+      if constexpr (rrobust) {
+	FlatMatrix<double> L(BS, BS, lh), R(BS, BS, lh);
+	L = base_diags[v]; R = base_vdata[v].wt; 
+	auto soc = MEV<BS>(L, R); // lam L \leq R
+	if (soc > MIN_VCW) {
+	  cout << " calc vcw for " << v << ", L = " << endl << L << endl << " R = " << endl << R << endl;
+	  cout << " soc = " << soc << endl;
+	}
+	return soc;
+	}
+      else {
+	return ENERGY::GetApproxVWeight(base_vdata[v]) / base_diags[v];
+      }
     };
 
     auto allow_merge = [&](auto eqi, auto eqj) LAMBDA_INLINE {
@@ -445,11 +464,11 @@ namespace amg
 	// cout << " dgb " << endl; print_tm(cout, fdiags[vj]); cout << endl;
 	cout << " dmb " << endl; print_tm(cout, dmb); cout << endl;
 	cout << " dmedge " << endl; print_tm(cout, dmedge); cout << endl;
-	cout << " fecon inds row " << vi << " = "; prow(fecon.GetRowIndices(vi)); cout << endl;
-	cout << " fecon vals row " << vi << " = "; prow(fecon.GetRowValues(vi)); cout << endl;
-	cout << " fecon inds row " << vj << " = "; prow(fecon.GetRowIndices(vj)); cout << endl;
-	cout << " fecon vals row " << vj << " = "; prow(fecon.GetRowValues(vj)); cout << endl;
-	cout << " fed size " << fedata_full.Size() << ", get from " << int(fecon(vi, vj)) << endl;
+	// cout << " fecon inds row " << vi << " = "; prow(fecon.GetRowIndices(vi)); cout << endl;
+	// cout << " fecon vals row " << vi << " = "; prow(fecon.GetRowValues(vi)); cout << endl;
+	// cout << " fecon inds row " << vj << " = "; prow(fecon.GetRowIndices(vj)); cout << endl;
+	// cout << " fecon vals row " << vj << " = "; prow(fecon.GetRowValues(vj)); cout << endl;
+	// cout << " fed size " << fedata_full.Size() << ", get from " << int(fecon(vi, vj)) << endl;
 	switch(cw_type) {
 	case(CW_TYPE::HARMONIC) : { soc = MIN_EV_HARM2(dma, dmb, dmedge); cout << " soc harm = " << soc << endl; break; }
 	case(CW_TYPE::GEOMETRIC) : { soc = MIN_EV_FG2(dma, dmb, dmedge); cout << " soc geom = " << soc << endl; break; }
@@ -491,6 +510,7 @@ namespace amg
     };
     
     auto check_soc_aggs_scal = [&](auto memsi, auto memsj) LAMBDA_INLINE {
+      /** TODO: this does not use fdiags, so l2 weights are not considered! **/
       /** simplified scalar version, based on traces of mats **/
       int n = memsi.Size() + memsj.Size();
       // FlatArray<int> allmems = merge_arrays_lh(memsi, memsj, lh); // actually, these are not ordered in the first place..
@@ -498,42 +518,32 @@ namespace amg
       allmems.Part(0, memsi.Size()) = memsi;
       allmems.Part(memsi.Size(), memsj.Size()) = memsj;
       QuickSort(allmems);
-      FlatMatrix<double> A(n, n, lh), P(n, 1, lh), PT(1, n, lh);
-      auto assmems_int = [&](auto somemems, auto osi) {
-	for (auto kil : Range(somemems)) {
-	  auto vi = somemems[kil];
-	  auto ki = kil + osi;
-	  auto neibsa = econ.GetRowIndices(vi);
-	  auto eids = econ.GetRowValues(vi);
-	  iterate_intersection(neibsa, allmems, [&](auto kneib, auto kj) {
-	      const double x = base_edata[int(eids[kneib])];
-	      A(ki, kj) += x;
-	      A(ki, kj) -= x;
-	      A(kj, ki) -= x;
-	      A(kj, kj) += x;
-	    });
-	}
-      };
-      A = 0.0;
-      assmems_int(memsi, 0);
-      assmems_int(memsj, memsi.Size());
+      /** A - the sub-assembled diag block including l2, but excluding external connections **/
+      FlatMatrix<double> A(n, n, lh); A = 0.0;
+      for (auto ki : Range(allmems)) {
+	auto vi = allmems[ki];
+	auto neibsa = econ.GetRowIndices(vi);
+	auto eids = econ.GetRowValues(vi);
+	A(ki, ki) += ENERGY::GetApproxVWeight(base_vdata[vi]); // divide by BS is probably important here
+	iterate_intersection(neibsa, allmems, [&](auto kneib, auto kj) {
+	    const double x = base_edata[int(eids[kneib])];
+	    A(ki, kj) += x;
+	    A(ki, kj) -= x;
+	    A(kj, ki) -= x;
+	    A(kj, kj) += x;
+	  });
+      }
+      /** P, PT**/
+      FlatMatrix<double> P(n, 1, lh), PT(1, n, lh);
       P = 1.0; PT = 1.0;
       /**  M is the diag block of the smoother - ATM I use the full diag block of Ahat (BJAC),
-	   not only the diagonal entries (JAC) **/
+	   not only the diagonal entries (JAC). Here we also need external (including off-proc) connections and l2 weight **/
       FlatMatrix<double> M(n, n, lh); M = A;
-      auto assmems_ext = [&](auto somemems, auto osi) {
-	for (auto kil : Range(somemems)) {
-	  auto vi = somemems[kil];
-	  auto ki = kil + osi;
-	  auto neibsa = econ.GetRowIndices(vi);
-	  auto eids = econ.GetRowValues(vi);
-	  iterate_anotb(neibsa, allmems, [&](auto kneib) {
-	      M(kil, kil) += base_edata[int(eids[kneib])];
-	    });
-	}
-      };
-      assmems_ext(memsi, 0);
-      assmems_ext(memsj, memsi.Size());
+      for (auto ki : Range(allmems)) {
+	auto vi = allmems[ki];
+	M(ki, ki) = calc_trace(base_diags[vi])/BS;
+      }
+      /** Project out ran(P) **/
       FlatMatrix<double> PTM(1, n, lh);
       PTM = PT * M;
       FlatMatrix<double> PTMP(1, 1, lh);
@@ -550,6 +560,7 @@ namespace amg
 
     TM QiM(0), QjM(0), dgb(0);
     auto check_soc_aggs_full = [&](auto memsi, auto memsj) LAMBDA_INLINE {
+      /** TODO: this does not use fdiags, so l2 weights are not considered! **/
       HeapReset hr(lh);
       constexpr bool rrobust = robust;
       if constexpr(rrobust) {
@@ -562,57 +573,41 @@ namespace amg
 	allmems.Part(0, memsi.Size()) = memsi;
 	allmems.Part(memsi.Size(), memsj.Size()) = memsj;
 	QuickSort(allmems);
-	FlatMatrix<double> A(N, N, lh), P(N, BS, lh), PT(BS, N, lh);
-	/** A **/
-	auto assmems_int = [&](auto somemems, auto osi) {
-	  for (auto kil : Range(somemems)) {
-	    auto vi = somemems[kil];
-	    auto ki = kil + osi;
-	    const int Ki = BS*ki, Kip = Ki + BS;
-	    auto neibsa = econ.GetRowIndices(vi);
-	    auto eids = econ.GetRowValues(vi);
-	    iterate_intersection(neibsa, allmems, [&](auto kneib, auto kj) {
-		const int vj = neibsa[kneib], Kj = BS*kj, Kjp = Kj + BS;
-		const TMU & ed = base_edata_full[int(eids[kneib])];
-		ENERGY::ModQs(base_vdata[vi], base_vdata[vj], Qij, Qji);
-		QiM = Trans(Qij) * ed;
-		QjM = Trans(Qji) * ed;
-		A.Rows(Ki, Kip).Cols(Ki, Kip) +=  QiM * Qij;
-		A.Rows(Ki, Kip).Cols(Kj, Kjp) -= QiM * Qji;
-		A.Rows(Kj, Kjp).Cols(Ki, Kip) -= QjM * Qij;
-		A.Rows(Kj, Kjp).Cols(Kj, Kjp) +=  QjM * Qji;
-	      });
-	  }
-	};
-	A = 0.0;
-	assmems_int(memsi, 0);
-	assmems_int(memsj, memsi.Size());
+	/** A - the sub-assembled diag block **/
+	FlatMatrix<double> A(N, N, lh); A = 0.0;
+	for (auto ki : Range(allmems)) {
+	  auto vi = allmems[ki];
+	  const int Ki = BS*ki, Kip = Ki + BS;
+	  auto neibsa = econ.GetRowIndices(vi);
+	  auto eids = econ.GetRowValues(vi);
+	  A.Rows(Ki, Kip).Cols(Ki, Kip) += base_vdata[vi].wt; // include l2 weight
+	  iterate_intersection(neibsa, allmems, [&](auto kneib, auto kj) {
+	      const int vj = neibsa[kneib], Kj = BS*kj, Kjp = Kj + BS;
+	      const TMU & ed = base_edata_full[int(eids[kneib])];
+	      ENERGY::ModQs(base_vdata[vi], base_vdata[vj], Qij, Qji);
+	      QiM = Trans(Qij) * ed;
+	      QjM = Trans(Qji) * ed;
+	      A.Rows(Ki, Kip).Cols(Ki, Kip) +=  QiM * Qij;
+	      A.Rows(Ki, Kip).Cols(Kj, Kjp) -= QiM * Qji;
+	      A.Rows(Kj, Kjp).Cols(Ki, Kip) -= QjM * Qij;
+	      A.Rows(Kj, Kjp).Cols(Kj, Kjp) +=  QjM * Qji;
+	    });
+	}
 	/** P, PT **/
+	FlatMatrix<double> P(N, BS, lh), PT(BS, N, lh);
 	for (auto k : Range(allmems)) {
 	  ENERGY::ModQHh(base_vdata[allmems[0]], base_vdata[allmems[k]], Qij);
 	  P.Rows(k*BS, (k+1)*BS) = Qij;
 	}
 	PT = Trans(P);
-	/** M **/
+	/**  M is the diag block of the smoother - ATM I use the full diag block of Ahat (BJAC),
+	     not only the diagonal entries (JAC). Here we also need external (including off-proc) connections and l2 weight **/
 	FlatMatrix<double> M(N, N, lh); M = A;
-	auto assmems_ext = [&](auto somemems, auto osi) {
-	  for (auto kil : Range(somemems)) {
-	    auto vi = somemems[kil];
-	    auto ki = kil + osi;
-	    const int Ki = BS*ki, Kip = Ki + BS;
-	    auto neibsa = econ.GetRowIndices(vi);
-	    auto eids = econ.GetRowValues(vi);
-	    dgb = 0;
-	    iterate_anotb(neibsa, allmems, [&](auto kneib) {
-		const int vj = neibsa[kneib];
-		ENERGY::ModQij(base_vdata[vi], base_vdata[vj], Qij);
-		ENERGY::AddQtMQ(1.0, dgb, Q, base_edata_full[int(eids[kneib])]);
-	      });
-	    M.Rows(Ki, Kip).Cols(Ki, Kip) += dgb;
-	  }
-	};
-	assmems_ext(memsi, 0);
-	assmems_ext(memsj, memsi.Size());
+	for (auto ki : Range(allmems)) {
+	  auto vi = allmems[ki];
+	  const int Ki = BS*ki, Kip = Ki + BS;
+	  M.Rows(Ki, Kip).Cols(Ki, Kip) = base_diags[vi];
+	}
 
 	/** This is what we <-should-> do **/
 	A -= MIN_ECW * M;
@@ -622,7 +617,7 @@ namespace amg
 	// A += MIN_ECW * 1e-5 * calc_trace(M) * Id;
 	// A -= MIN_ECW * M;
 	// return CheckForSPD(A, lh);
-	return true;
+	// return true;
       }
       else
 	{ return true; }
@@ -630,6 +625,7 @@ namespace amg
 
     /** SOC for pair of agglomerates w.r.t original matrix **/
     auto check_soc_aggs = [&](bool simplify, auto memsi, auto memsj) LAMBDA_INLINE {
+      /** TODO: this does not use fdiags, so l2 weights are not considered! **/
       if ( (BS == 1) || simplify)
 	{ return check_soc_aggs_scal(memsi, memsj); }
       else if (simplify)
@@ -724,7 +720,7 @@ namespace amg
 	cout << "  pair_vertices done, NCV = " << NCV << endl;
       }
       if (print_aggs) {
-	cout << "  vmap: "; prow2(vmap); cout << endl;
+	cout << "  apv vmap: "; prow2(vmap); cout << endl;
       }
     };
 
@@ -839,7 +835,7 @@ namespace amg
 	  if (fvs.Size() == 1)
 	    { ccvdata[cvnr] = fvdata[fvs[0]]; }
 	  else
-	    { ccvdata[cvnr] = ENERGY::CalcMPData(fvdata[fvs[0]], fvdata[fvs[1]]); }
+	    { ccvdata[cvnr] = ENERGY::CalcMPDataWW(fvdata[fvs[0]], fvdata[fvs[1]]); }
 	}
 	/** Coarse edge data **/
 	size_t NCE = locmap->template GetMappedNN<NT_EDGE>();
@@ -867,6 +863,7 @@ namespace amg
 	    else
 	      { ccedata_full[cenr] += fedata_full[fenr]; }
 	  }
+	  else { ; } /** if only one vertex drops, no need to do anything - the connection is already in fdiags ! **/
 	}
 	cout << " ccedata_full " << ccedata_full.Size() << endl; prow2(ccedata_full); cout << endl;
 	/** Coarse diags, I have to do this here because off-proc entries.

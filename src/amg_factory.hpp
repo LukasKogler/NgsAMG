@@ -117,7 +117,7 @@ namespace amg
     double rd_loc_gl = 0.8;                     // always try to redistribute such that at least this fraction will be local
 
     /** Discard **/
-    SpecOpt<bool> enable_disc = true;                    // enable discarding of vertices (should eliminate hanging nodes)
+    SpecOpt<bool> enable_disc = false;          // enable discarding of vertices (should eliminate hanging nodes)
 
     /** Smoothed Prolongation **/
     SpecOpt<bool> enable_sp = true;                      // enable prolongation-smoothing
