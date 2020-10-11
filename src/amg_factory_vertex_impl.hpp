@@ -276,6 +276,7 @@ namespace amg
     agg_opts.robust = O.ecw_robust.GetOpt(level);
     agg_opts.num_rounds = O.spw_rounds.GetOpt(level);
     agg_opts.allrobust = O.spw_allrobust.GetOpt(level);
+    agg_opts.neib_boost = O.agg_neib_boost.GetOpt(level);
     agg_opts.pick_cw_type = O.spw_pick_cwt.GetOpt(level);
     agg_opts.pick_mma_scal = O.spw_pick_mma_scal.GetOpt(level);
     agg_opts.pick_mma_mat = O.spw_pick_mma_mat.GetOpt(level);

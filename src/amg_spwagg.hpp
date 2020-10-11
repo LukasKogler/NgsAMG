@@ -48,7 +48,7 @@ namespace amg
       bool checkbigsoc = true;                       // check big EVP is pos. def for agg-agg merge
       bool simple_checkbigsoc = false;               // use simplified big EVP based on traces
       /** used for EVPs **/
-      // SpecOpt<bool> neib_boost = false;              // use connections to common neibs to boost edge matrices
+      SpecOpt<bool> neib_boost = false;              // use connections to common neibs to boost edge matrices
       // SpecOpt<bool> lazy_nb = false;                 // to a "lazy" boost, which requires no EVPs (probably a bad idea)
       xbool use_stab_ecw_hack = maybe;               // useful to make HARMONIC behave a bit more like geometric 
       /** misc. **/

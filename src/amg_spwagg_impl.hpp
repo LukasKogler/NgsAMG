@@ -6,6 +6,34 @@
 namespace amg
 {
 
+  template<int N>
+  INLINE void print_rank(string name, const Mat<N,N,double> & A)
+  {
+    static LocalHeap lh ( 5 * 9 * sizeof(double) * N * N, "mmev", false); // about 5 x used mem
+    HeapReset hr(lh);
+    FlatMatrix<double> a(N, N, lh); a = A;
+    FlatVector<double> evals(N, lh);
+    LapackEigenValuesSymmetric(a, evals);
+    int rk = 0;
+    for (auto k :Range(evals))
+      if (evals(k) > 1e-10 * evals(N-1))
+	{ rk++; }
+    cout << " trace of " << name << " = " << calc_trace(A) << endl;
+    cout << " rank of " << name << " = " << rk << endl;
+						  cout << " all evals are = "; prow(evals); cout << endl;
+  }
+
+  template<class T>
+  INLINE void print_tm (ostream &os, int prec, const T & mat) {
+    constexpr int H = mat_traits<T>::HEIGHT;
+    constexpr int W = mat_traits<T>::WIDTH;
+    for (int kH : Range(H)) {
+      for (int jW : Range(W)) { os << setprecision(prec) << mat(kH,jW) << " "; }
+      os << endl;
+    }
+  }
+  template<> INLINE void print_tm (ostream &os, int prec, const double & mat) { os << setprecision(prec) << mat << endl; }
+
 
   /** LocCoarseMap **/
 
@@ -399,11 +427,13 @@ namespace amg
       if constexpr (rrobust) {
 	FlatMatrix<double> L(BS, BS, lh), R(BS, BS, lh);
 	L = base_diags[v]; R = base_vdata[v].wt; 
+	if (fabs(calc_trace(R)) < 1e-15)
+	  { return 0.0; }
 	auto soc = MEV<BS>(L, R); // lam L \leq R
-	if (soc > MIN_VCW) {
-	  cout << " calc vcw for " << v << ", L = " << endl << L << endl << " R = " << endl << R << endl;
+	// if (soc > 1e-4) {
+	  cout << " calc vcw for " << v << endl; // << ", L = " << endl << L << endl << " R = " << endl << R << endl;
 	  cout << " soc = " << soc << endl;
-	}
+	// }
 	return soc;
 	}
       else {
@@ -434,8 +464,10 @@ namespace amg
 	da = db = 0;
 	for (auto eid : fecon.GetRowValues(vi))
 	  { da = max2(da, calc_trace(fedata[int(eid)])); }
+	da = max2(da, ENERGY::GetApproxVWeight(fvdata[vi])*BS);
 	for (auto eid : fecon.GetRowValues(vj))
 	  { db = max2(db, calc_trace(fedata[int(eid)])); }
+	db = max2(db, ENERGY::GetApproxVWeight(fvdata[vj])*BS); // this is divided by BS, but should not be
 	return dedge / calc_avg_scal(mm_avg, da, db);
 	break;
       }
@@ -444,12 +476,39 @@ namespace amg
     };
 
     /** EVP based pairwise SOC. **/
+    TM Q2(0), Ein(0), Ejn(0), Esum(0), addE(0); SetIdentity(Q2);
+    auto calc_emat = [&](TVD & H_data, TM & emat, auto vi, auto vj, bool boost, const auto & fecon) LAMBDA_INLINE {
+      constexpr bool rrobust = robust;
+      if constexpr(rrobust) { // dummy - should never be called anyways!
+	emat = fedata_full[int(fecon(vi, vj))];
+	if (boost) {
+	  print_rank("initial emat", emat);
+	  auto neibsi = fecon.GetRowIndices(vi);
+	  auto neibsj = fecon.GetRowIndices(vj);
+	  iterate_intersection(neibsi, neibsj, [&](auto ki, auto kj) {
+	      int N = neibsi[ki];
+	      ENERGY::ModQij(fvdata[N], fvdata[vi], Q2);
+	      ENERGY::SetQtMQ(1.0, Ein, Q2, fedata_full[int(fecon(vi,N))]);
+	      ENERGY::ModQij(fvdata[N], fvdata[vj], Q2);
+	      ENERGY::SetQtMQ(1.0, Ejn, Q2, fedata_full[int(fecon(vj,N))]);
+	      Esum = Ein + Ejn;
+	      CalcPseudoInverse(Esum, lh);
+	      addE = TripleProd(Ein, Esum, Ejn);
+	      ENERGY::ModQHh(H_data, fvdata[N], Q2);
+	      ENERGY::AddQtMQ (2.0, emat, Q2, addE);
+	    });
+	  print_rank("final emat", emat);
+	}
+      }
+    };
+
     TM dma(0), dmb(0), dmedge(0), Q(0); SetIdentity(Q);
-    auto calc_soc_robust = [&](CW_TYPE cw_type, AVG_TYPE mma_scal, bool mma_mat_harm, auto vi, auto vj, const auto & fecon) LAMBDA_INLINE {
+    auto calc_soc_robust = [&](CW_TYPE cw_type, bool neib_boost, AVG_TYPE mma_scal, bool mma_mat_harm, auto vi, auto vj, const auto & fecon) LAMBDA_INLINE {
       constexpr bool rrobust = robust;
       double soc = 1.0;
       if constexpr(rrobust) { // dummy - should never be called anyways!
 	soc = 0;
+	cout << " CSR " << vi << " " << vj << endl;
 	/** Transform diagonal matrices **/
 	TVD H_data = ENERGY::CalcMPData(fvdata[vi], fvdata[vj]);
 	ENERGY::ModQHh(H_data, fvdata[vi], Q);
@@ -457,13 +516,17 @@ namespace amg
 	ENERGY::ModQHh(H_data, fvdata[vj], Q);
 	ENERGY::SetQtMQ(1.0, dmb, Q, fdiags[vj]);
 	/** TODO:: neib bonus **/
-	dmedge = fedata_full[int(fecon(vi,vj))];
-	cout << " CSR " << vi << " " << vj << endl;
+	// dmedge = fedata_full[int(fecon(vi,vj))];
+	calc_emat(H_data, dmedge, vi, vj, neib_boost, fecon);
 	// cout << " dga " << endl; print_tm(cout, fdiags[vi]); cout << endl;
-	cout << " dma " << endl; print_tm(cout, dma); cout << endl;
+	print_rank("dma", dma);
+	print_rank("dmb", dma);
+	print_rank("dmedge", dmedge);
+
+	// cout << " dma " << endl; print_tm(cout, 16, dma); cout << endl;
 	// cout << " dgb " << endl; print_tm(cout, fdiags[vj]); cout << endl;
-	cout << " dmb " << endl; print_tm(cout, dmb); cout << endl;
-	cout << " dmedge " << endl; print_tm(cout, dmedge); cout << endl;
+	// cout << " dmb " << endl; print_tm(cout, 16, dmb); cout << endl;
+	// cout << " dmedge " << endl; print_tm(cout, 16, dmedge); cout << endl;
 	// cout << " fecon inds row " << vi << " = "; prow(fecon.GetRowIndices(vi)); cout << endl;
 	// cout << " fecon vals row " << vi << " = "; prow(fecon.GetRowValues(vi)); cout << endl;
 	// cout << " fecon inds row " << vj << " = "; prow(fecon.GetRowIndices(vj)); cout << endl;
@@ -476,8 +539,10 @@ namespace amg
 	  double mtra = 0, mtrb = 0;
 	  for (auto eid : fecon.GetRowValues(vi))
 	    { mtra = max2(mtra, calc_trace(fedata[int(eid)])); }
+	  mtra = max2(mtra, ENERGY::GetApproxVWeight(fvdata[vi])*BS); // this is divided by BS, but should not be
 	  for (auto eid : fecon.GetRowValues(vj))
 	    { mtrb = max2(mtrb, calc_trace(fedata[int(eid)])); }
+	  mtrb = max2(mtrb, ENERGY::GetApproxVWeight(fvdata[vj])*BS); // this is divided by BS, but should not be
 	  double etrace = calc_trace(dmedge);
 	  double soc = etrace / calc_avg_scal(mma_scal, mtra, mtrb);
 	  if (soc > MIN_ECW) {
@@ -496,12 +561,13 @@ namespace amg
       return soc;
     };
 
-    auto calc_soc_pair = [&](bool dorobust, CW_TYPE cwt, AVG_TYPE mma_scal, AVG_TYPE mma_mat, auto vi, auto vj, const auto & fecon) { // maybe not force inlining this?
+    auto calc_soc_pair = [&](bool dorobust, bool neib_boost, CW_TYPE cwt, AVG_TYPE mma_scal,
+			     AVG_TYPE mma_mat, auto vi, auto vj, const auto & fecon) { // maybe not force inlining this?
       constexpr bool rrobust = robust;
       cout << " CSP, rr " << rrobust << " , dr " << dorobust << ", for " << vi << " " << vj << endl;
       if constexpr(rrobust) {
 	  if (dorobust)
-	    { return calc_soc_robust(cwt, mma_scal, (mma_mat==HARM), vi, vj, fecon); }
+	    { return calc_soc_robust(cwt, neib_boost, mma_scal, (mma_mat==HARM), vi, vj, fecon); }
 	  else
 	    { return calc_soc_scal(cwt, mma_scal, vi, vj, fecon); }
 	}
@@ -635,7 +701,7 @@ namespace amg
 
     /** Finds a neighbor to merge vertex v with. Returns -1 if no suitable ones found **/
     INT<2, size_t> rej; rej = 0;
-    auto find_neib = [&](auto v, const auto & fecon, auto allowed, auto get_mems, bool robust_pick,
+    auto find_neib = [&](auto v, const auto & fecon, auto allowed, auto get_mems, bool robust_pick, bool neib_boost,
 			 auto cwt_pick, auto pmmas, auto pmmam, auto cwt_check, auto cmmas, auto cmmam,
 			 bool checkbigsoc, bool simple_cbs) LAMBDA_INLINE {
       constexpr bool rrobust = robust;
@@ -646,7 +712,7 @@ namespace amg
       FlatArray<INT<2,double>> bsocs(neibs.Size(), lh);
       for (auto neib : neibs)
 	if (allowed(v, neib))
-	  { double thesoc = calc_soc_pair(robust_pick, cwt_pick, pmmas, pmmam, v, neib, fecon); bsocs[c++] = INT<2, double>(neib, thesoc); }
+	  { double thesoc = calc_soc_pair(robust_pick, neib_boost, cwt_pick, pmmas, pmmam, v, neib, fecon); bsocs[c++] = INT<2, double>(neib, thesoc); }
       // cout << endl << " ALL possible neibs for " << v << " = ";
       // for (auto v : bsocs)
 	// { cout << "[" << v[0] << " " << v[1] << "] "; }
@@ -671,7 +737,7 @@ namespace amg
 	    { candidate = -1; break; }
 	  if constexpr(rrobust) {
 	      if (!robust_pick) /** small EVP soc **/
-		{ stabsoc = calc_soc_pair(true, cwt_check, cmmas, cmmam, v, int(socs[j][0]), fecon); }
+		{ stabsoc = calc_soc_pair(true, neib_boost, cwt_check, cmmas, cmmam, v, int(socs[j][0]), fecon); }
 	    }
 	if (stabsoc < MIN_ECW) /** this neib has strong stable connection **/
 	  { rej[0]++; rej[1]--; }
@@ -692,7 +758,7 @@ namespace amg
 			     int num_verts, auto get_vert, const auto & fecon,
 			     BitArray & handled,
 			     auto get_mems, auto allowed,// auto set_pair,
-			     bool r_ar,  auto r_cwtp, auto r_pmmas, auto r_pmmam, auto r_cwtc, auto r_cmmas, auto r_cmmam, bool r_cbs, bool r_scbs
+			     bool r_ar,  bool r_nb, auto r_cwtp, auto r_pmmas, auto r_pmmam, auto r_cwtc, auto r_cmmas, auto r_cmmam, bool r_cbs, bool r_scbs
 			     ) LAMBDA_INLINE {
       cout << " PAIR_VERTICES, fecon = " << endl << fecon << endl;
       for (auto k : Range(fedata_full)) {
@@ -705,7 +771,7 @@ namespace amg
 	if (!handled.Test(vnr)) { // try to find a neib
 	  cout << " find neib for " << vnr << endl;
 	  int neib = find_neib(vnr, fecon, [&](auto vi, auto vj) { return (!handled.Test(vj)) && allowed(vi, vj); },
-			       get_mems, r_ar, r_cwtp, r_pmmas, r_pmmam, r_cwtc, r_cmmas, r_cmmam, r_cbs, r_scbs);
+			       get_mems, r_ar, r_nb, r_cwtp, r_pmmas, r_pmmam, r_cwtc, r_cmmas, r_cmmam, r_cbs, r_scbs);
 	  if (neib != -1) {
 	    cout << " new pair: " << vnr << " " << neib << endl;
 	    vmap[neib] = NCV;
@@ -731,6 +797,7 @@ namespace amg
     for (int round : Range(num_rounds)) {
       HeapReset hr(lh); // probably unnecessary
       const bool r_ar = robust && settings.allrobust.GetOpt(round);
+      const bool r_nb = robust && settings.neib_boost.GetOpt(round);
       const CW_TYPE r_cwtp = settings.pick_cw_type.GetOpt(round);
       const AVG_TYPE r_pmmas = settings.pick_mma_scal.GetOpt(round);
       const AVG_TYPE r_pmmam = settings.pick_mma_mat.GetOpt(round);
@@ -747,6 +814,7 @@ namespace amg
       if (print_params) {
 	cout << endl << " SPW agglomerates, round " << round << " of " << num_rounds << endl;
 	cout << "   allrobust      = " << r_ar << endl;
+	cout << "   neib_boost     = " << r_nb << endl;
 	cout << "   cwt pick       = " << r_cwtp << endl;
 	cout << "   mma pick scal  = " << r_pmmas << endl;
 	cout << "   mma pick mat   = " << r_pmmam << endl;
@@ -806,7 +874,7 @@ namespace amg
 	pair_vertices(vmap, NCV, cmk.Size(), [&](auto k) { return cmk[k]; }, fecon, handled,
 		      [&](auto v) ->FlatArray<int> { dummy[0] = v; return dummy; }, // get_mems
 		      [&](auto vi, auto vj) { return allow_merge(M.template GetEqcOfNode<NT_VERTEX>(vi), M.template GetEqcOfNode<NT_VERTEX>(vj)); }, // allowed
-		      r_ar, r_cwtp, r_pmmas, r_pmmam, r_cwtc, r_cmmas, r_cmmam, false, r_scbs); // no big soc necessary
+		      r_ar, r_nb, r_cwtp, r_pmmas, r_pmmam, r_cwtc, r_cmmas, r_cmmam, false, r_scbs); // no big soc necessary
       }
       else {
 	/** Find pairs for vertices **/
@@ -820,7 +888,7 @@ namespace amg
 		      fecon, handled,
 		      [&](auto v) LAMBDA_INLINE { return c2fv[v]; }, // get_mems
 		      [&](auto vi, auto vj) LAMBDA_INLINE { return allow_merge(veqs[vi], veqs[vj]); }, // allowed
-		      r_ar, r_cwtp, r_pmmas, r_pmmam, r_cwtc, r_cmmas, r_cmmam, r_cbs, r_scbs);
+		      r_ar, r_nb, r_cwtp, r_pmmas, r_pmmam, r_cwtc, r_cmmas, r_cmmam, r_cbs, r_scbs);
       }
 
       if (round < num_rounds - 1) { /** proper concatenated map, with coarse mesh **/

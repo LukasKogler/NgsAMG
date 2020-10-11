@@ -64,8 +64,22 @@ namespace amg
 	    int cvnr = v_map[fedge.v[l]];
 	    ElasticityAMGFactory<DIM>::ENERGY::CalcQij(fvd[fedge.v[l]], fvd[fedge.v[1-l]], QHh); // from [l] to [1-l] should be correct
 	    cout << " add edge " << fedge << " to " << cvnr << endl;
+	    cout << " QHh is " << endl; print_tm(cout, QHh); cout << endl;
+	    cout << " fvd " << fedge.v[l] << " " << fvd[fedge.v[l]] << endl;
+	    cout << " fvd " << fedge.v[1-l] << " " << fvd[fedge.v[1-l]] << endl;
+	    cout << " fed is " << endl;
 	    print_tm(cout, fed[fedge.id]); cout << endl;
+	    cout << " cvw so far " << endl;
+	    print_tm(cout, add_cvw[cvnr]); cout << endl;
+	    TM cvw2 = add_cvw[cvnr];
 	    ElasticityAMGFactory<DIM>::ENERGY::AddQtMQ(1.0, add_cvw[cvnr], QHh, fed[fedge.id]);
+	    cout << " cvw now " << endl;
+	    print_tm(cout, add_cvw[cvnr]); cout << endl;
+	    TM fq = fed[fedge.id] * QHh;
+	    cvw2 += Trans(QHh) * fq;
+	    cvw2 -= add_cvw[cvnr];
+	    cout << " cvw diff  " << endl;
+	    print_tm(cout, cvw2); cout << endl;
 	  }
 	}
       }, true); // master only
