@@ -155,7 +155,7 @@ namespace ngcore
   	{
   	  int block_len[2] = { 1, 1 };
   	  MPI_Aint displs[2] = { 0, sizeof(ngbla::Vec<2,double>) };
-	  MPI_Datatype types[2] = { GetMPIType<ngbla::Vec<2,double>>(), GetMPIType<typename ElastVData<2>::TM>() };
+	  MPI_Datatype types[2] = { GetMPIType<ngbla::Vec<2,double>>(), GetMPIType<typename amg::ElastVData<2>::TM>() };
   	  MPI_Type_create_struct(2, block_len, displs, types, &MPI_T);
   	  MPI_Type_commit ( &MPI_T );
 	}
@@ -171,7 +171,7 @@ namespace ngcore
   	{
   	  int block_len[2] = { 1, 1 };
   	  MPI_Aint displs[2] = { 0, sizeof(ngbla::Vec<3,double>) };
-	  MPI_Datatype types[2] = { GetMPIType<ngbla::Vec<3,double>>(), GetMPIType<typename ElastVData<3>::TM>() };
+	  MPI_Datatype types[2] = { GetMPIType<ngbla::Vec<3,double>>(), GetMPIType<typename amg::ElastVData<3>::TM>() };
   	  MPI_Type_create_struct(2, block_len, displs, types, &MPI_T);
   	  MPI_Type_commit ( &MPI_T );
 	}
