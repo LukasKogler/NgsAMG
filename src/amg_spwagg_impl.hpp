@@ -23,6 +23,22 @@ namespace amg
 						  cout << " all evals are = "; prow(evals); cout << endl;
   }
 
+  INLINE void print_rank(string name, FlatMatrix<double> A, LocalHeap & lh)
+  {
+    int N = A.Height();
+    FlatMatrix<double> a(N, N, lh); a = A;
+    FlatVector<double> evals(N, lh);
+    LapackEigenValuesSymmetric(a, evals);
+    int rk = 0;
+    for (auto k :Range(evals))
+      if (evals(k) > 1e-10 * evals(N-1))
+	{ rk++; }
+    cout << " trace of " << name << " = " << calc_trace(A) << endl;
+    cout << " rank of " << name << " = " << rk << endl;
+						  cout << " all evals are = "; prow(evals); cout << endl;
+  }
+
+
   template<class T>
   INLINE void print_tm (ostream &os, int prec, const T & mat) {
     constexpr int H = mat_traits<T>::HEIGHT;
@@ -122,15 +138,15 @@ namespace amg
 	    { rvs[l] = cecon(ris[l], k); }
 	}
       }
-      cout << " cnt " << cnt << ", mappednn " << mapped_NN[NT_EDGE] << " " << GetMappedNN<NT_EDGE>() << endl;
+      // cout << " cnt " << cnt << ", mappednn " << mapped_NN[NT_EDGE] << " " << GetMappedNN<NT_EDGE>() << endl;
       cmesh->econ = pcecon;
       cmesh->nnodes[NT_EDGE] = GetMappedNN<NT_EDGE>();
-      cout << " cecon " << endl << cecon << endl;
+      // cout << " cecon " << endl << cecon << endl;
       /** edge map **/
       auto fedges = mesh->template GetNodes<NT_EDGE>();
       auto & emap = node_maps[NT_EDGE]; emap.SetSize(GetNN<NT_EDGE>());
-      cout << " FU fedges " << fedges.Size() << " " << GetNN<NT_EDGE>() << " " << mesh->template GetNN<NT_EDGE>() << endl;
-      cout << " MAPPED " << GetMappedNN<NT_EDGE>() << endl;
+      // cout << " FU fedges " << fedges.Size() << " " << GetNN<NT_EDGE>() << " " << mesh->template GetNN<NT_EDGE>() << endl;
+      // cout << " MAPPED " << GetMappedNN<NT_EDGE>() << endl;
       for (auto fenr : Range(emap)) {
 	auto & edge = fedges[fenr];
 	int cv0 = vmap[edge.v[0]], cv1 = vmap[edge.v[1]];
@@ -139,7 +155,7 @@ namespace amg
 	else
 	  { emap[fenr] = -1; }
       }
-      cout << " FU emap " << emap.Size() << " "; prow2(emap); cout << endl;
+      // cout << " FU emap " << emap.Size() << " "; prow2(emap); cout << endl;
       this->mapped_mesh = cmesh;
     } // FinishUp
 
@@ -394,14 +410,14 @@ namespace amg
     FlatArray<TMU> fdiags; fdiags.Assign(base_diags);
     FlatArray<double> fedata; fedata.Assign(base_edata);
 
-    if (print_aggs) {
-      cout << " FINE l2 wts; " << endl;
-      for (auto k : Range(fvdata)) {
-	cout << k << " = " << fvdata[k] << endl;
-	print_tm(cout, ENERGY::GetVMatrix(fvdata[k])); cout << endl;
-      }
-      cout << endl << endl;
-    }
+    // if (print_aggs) {
+    //   cout << " FINE l2 wts; " << endl;
+    //   for (auto k : Range(fvdata)) {
+    // 	cout << k << " = " << fvdata[k] << endl;
+    // 	print_tm(cout, ENERGY::GetVMatrix(fvdata[k])); cout << endl;
+    //   }
+    //   cout << endl << endl;
+    // }
 
     /** 1.5 times min(150MB, max(20MB, max i need for cbs)) **/
     size_t lhs = 1.5 * min2(size_t(157286400),
@@ -615,12 +631,16 @@ namespace amg
       FlatMatrix<double> PTMP(1, 1, lh);
       PTMP = PTM * P;
       double invPTMP = 1.0/PTMP(0,0);
-      for (auto i : Range(n))
-	for (auto j : Range(n))
-	  { M(i,j) -= invPTMP; }
+      M -= invPTMP * Trans(PTM) * PTM;
+      // M -= Trans(PTM) * invPTMP * PTM;
+      // print_rank("CBS, M II", M, lh);
       /** we have to check: MIN_ECW * M < A, ot A-MIN_ECW*M >= 0 **/
       A -= MIN_ECW * M;
-      return CheckForSPD(A, lh);
+      /** we KNOW the kernel exactly - regularize, so we can use dpotrf/dpstrf [[-eps eval is a problem]] **/
+      A += calc_trace(A)/n * P * PT;
+      // print_rank("CBS, checked mat", A, lh);
+      bool isspd = CheckForSPD(A, lh);
+      return isspd;
     };
 
 
@@ -760,10 +780,10 @@ namespace amg
 			     auto get_mems, auto allowed,// auto set_pair,
 			     bool r_ar,  bool r_nb, auto r_cwtp, auto r_pmmas, auto r_pmmam, auto r_cwtc, auto r_cmmas, auto r_cmmam, bool r_cbs, bool r_scbs
 			     ) LAMBDA_INLINE {
-      cout << " PAIR_VERTICES, fecon = " << endl << fecon << endl;
-      for (auto k : Range(fedata_full)) {
-	cout << "fedata_full " << k << " = " << endl; print_tm(cout, fedata_full[k]); cout << endl;
-      }
+      // cout << " PAIR_VERTICES, fecon = " << endl << fecon << endl;
+      // for (auto k : Range(fedata_full)) {
+      // 	cout << "fedata_full " << k << " = " << endl; print_tm(cout, fedata_full[k]); cout << endl;
+      // }
 	
       RegionTimer rt(tvp);
       for (auto k : Range(num_verts)) {
@@ -933,7 +953,7 @@ namespace amg
 	  }
 	  else { ; } /** if only one vertex drops, no need to do anything - the connection is already in fdiags ! **/
 	}
-	cout << " ccedata_full " << ccedata_full.Size() << endl; prow2(ccedata_full); cout << endl;
+	// cout << " ccedata_full " << ccedata_full.Size() << endl; prow2(ccedata_full); cout << endl;
 	/** Coarse diags, I have to do this here because off-proc entries.
 	    Maps are only local on master, so cannot cumulate on coarse level **/
 	Array<TMU> ccdiags(NCV);
@@ -967,22 +987,18 @@ namespace amg
 	  cout << locmap->template GetMapC2F<NT_VERTEX>();
 	}
 
-	cout << " CLCM " << endl;
 	/** Concatenate local maps **/
 	conclocmap = (round == 0) ? locmap : conclocmap->ConcatenateLCM(locmap);
 
-	cout << " MOVES" << endl;
 	fvdata.Assign(0, lh); cvdata = move(ccvdata);
 	fedata_full.Assign(0, lh); cedata_full = move(ccedata_full);
 	fedata.Assign(0, lh); GetEdgeData<TMU, double>(cedata_full, cedata);
 	fdiags.Assign(0, lh); cdiags = move(ccdiags);
-	cout << " ASSIGNS" << endl;
 
 	fvdata.Assign(cvdata);
 	fedata.Assign(cedata);
 	fedata_full.Assign(cedata_full);
 	fdiags.Assign(cdiags);
-	cout << " OK" << endl;
       }
       else if (round == 0 ) // only 1 round of pairing
 	{ conclocmap = locmap; }
@@ -1011,7 +1027,7 @@ namespace amg
       agg.mems.SetSize(vs.Size());
       for (auto l : Range(vs)) {
 	v_eqc = M.template GetEqcOfNode<NT_VERTEX>(vs[l]);
-	if ( (v_eqc != 0) && (ctr_eqc != v_eqc) && (eqc_h.IsLEQ( v_eqc, ctr_eqc) ) )
+	if ( (v_eqc != 0) && (ctr_eqc != v_eqc) && (eqc_h.IsLEQ( ctr_eqc, v_eqc) ) )
 	  { agg.ctr = vs[l]; ctr_eqc = v_eqc; }
 	agg.mems[l] = vs[l];
 	v_to_agg[vs[l]] = agg_nr;
