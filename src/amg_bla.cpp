@@ -56,18 +56,19 @@ namespace amg
     if (n == 0)
       { return true; }
     /** a trivial case ... **/
+    double tol = 1e-12 * calc_trace(A)/n;
     for (auto k : Range(n))
-      if (A(k,k) < 0)
+      if (A(k,k) < -tol)
 	{ return false; }
     integer info = 0;
     char uplo = 'U';
     FlatMatrix<double> A2(n, n, lh); A2 = A; /** used to check for SSPD **/
     FlatArray<integer> P(n, lh);
     integer rank;
-    double tol = 1e-12 * calc_trace(A)/n;
     FlatArray<double> W(2*n, lh);
     /** See lapack working note 161, section 7: THIS DOES NOT CHECK for positivce definiteness. The algorithm simply stops after
 	"rank" steps. This can be either due to NEGATIVE OR ZERO evals. We cannot directly use this!! **/
+    // cout << " A in : " << endl << A << endl;
     dpstrf_ (&uplo, &n, &A(0,0), &n, P.Data(), &rank, &tol, W.Data(), &info);
     if (info == 0)
       { return true; }
@@ -86,11 +87,13 @@ namespace amg
     for (auto k : Range(n2-1))
       for (auto j : Range(k+1, n2))
     	{ A(k, j) = 0; }
+    // cout << " zeroed A in : " << endl << A << endl;
 
     double eps = 1e-10 * calc_trace(A2)/n;
     A2.Rows(P).Cols(P) -= A.Cols(0, n2) * Trans(A.Cols(0, n2));
     char norm = 'm'; // max norm
     double diffnorm = dlange_(&norm, &n, &n, &A2(0,0), &n, NULL);
+    // cout << " diff: " << endl << A2 << endl;
     // cout << " diffnorm: " << diffnorm << endl;
     // cout << " diffnorm rel: " << diffnorm/eps << endl;
 
