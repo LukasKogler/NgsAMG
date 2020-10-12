@@ -41,8 +41,8 @@ namespace amg
     integer info = 0;
     char uplo = 'U';
     dpotrf_ (&uplo, &n, &A(0,0), &n, &info);
-    if (info != 0)
-      { cout << " check for spd, info = " << info << endl; }
+    // if (info != 0)
+      // { cout << " check for spd, info = " << info << endl; }
     return info == 0;
   } // CheckForSPD
 
@@ -91,8 +91,8 @@ namespace amg
     A2.Rows(P).Cols(P) -= A.Cols(0, n2) * Trans(A.Cols(0, n2));
     char norm = 'm'; // max norm
     double diffnorm = dlange_(&norm, &n, &n, &A2(0,0), &n, NULL);
-    cout << " diffnorm: " << diffnorm << endl;
-    cout << " diffnorm rel: " << diffnorm/eps << endl;
+    // cout << " diffnorm: " << diffnorm << endl;
+    // cout << " diffnorm rel: " << diffnorm/eps << endl;
 
     return diffnorm < eps;
   } // CheckForSSPD

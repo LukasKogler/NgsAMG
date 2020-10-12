@@ -1380,15 +1380,10 @@ namespace amg
     }
     void SetFromFlagsEnum (const Flags & flags, string defkey, Array<string> optkeys, Array<OC> enum_vals)
     {
-      cout << " SFFE " << endl;
-      cout << " keys: "; prow2(optkeys); cout << endl;
-      cout << " enum_vals: "; prow2(enum_vals); cout << endl;
       auto setoc = [&](auto & oc, string val) {
 	int index;
-	cout << " Set from " << oc << endl;
 	if ( (index = optkeys.Pos(val)) != -1)
 	  { oc = enum_vals[index]; }
-	cout << " val " << val << ", index = " << index << ", set to " << oc << endl;
       };
       setoc(default_opt, flags.GetStringFlag(defkey, ""));
       auto & specfa = flags.GetStringListFlag(defkey + "_spec");

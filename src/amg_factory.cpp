@@ -311,7 +311,7 @@ namespace amg
     const auto & O(*options);
 
     const auto fcomm = f_lev->cap->eqc_h->GetCommunicator();
-    const bool doco = (fcomm.Rank() == 0);
+    const bool doco = (fcomm.Rank() == 0) && (options->log_level != Options::LOG_LEVEL::NONE);
 
     size_t curr_meas = ComputeMeshMeasure(*state.curr_cap->mesh), goal_meas = ComputeGoal(f_lev, state);
 
@@ -320,12 +320,10 @@ namespace amg
 
     if (f_lev->level == 0)
       { state.last_redist_meas = curr_meas; }
-      cout << " AA" << endl;
 
     shared_ptr<BaseDOFMapStep> embed_map = f_lev->embed_map, disc_map;
 
     // CalcCoarsenOpts(state); // TODO: proper update of coarse cols for ecol?
-    cout << " AA" << endl;
 
     if ( O.enable_disc.GetOpt(f_lev->level) && (f_lev->level != 0) ) {
       if ( TryDiscardStep(state) ) {
@@ -333,11 +331,9 @@ namespace amg
 	curr_meas = ComputeMeshMeasure(*state.curr_cap->mesh);
       }
     }
-      cout << " AA" << endl;
 
     if (O.keep_grid_maps)
       { f_lev->disc_map = state.disc_map; }
-      cout << " AA" << endl;
 
     shared_ptr<BaseDOFMapStep> prol_map, rd_map;
     { /** Coarse/Redist maps - constructed interleaved, but come out untangled. **/
@@ -352,8 +348,6 @@ namespace amg
       mesh0 = state.curr_cap->mesh; mesh_meas[0] = ComputeMeshMeasure(*mesh0);
       shared_ptr<LevelCapsule> m0cap = state.curr_cap;
       
-      cout << " AA" << endl;
-
       Array<shared_ptr<BaseDOFMapStep>> dof_maps;
       Array<int> prol_inds;
       shared_ptr<BaseCoarseMap> first_cmap;
@@ -362,8 +356,6 @@ namespace amg
 
       bool could_recover = O.enable_redist;
 	
-      cout << " AA" << endl;
-
       do { /** coarsen until goal reached or stuck **/
 	cm_chunks.SetSize0();
 	auto comm = static_cast<BlockTM&>(*state.curr_cap->mesh).GetEQCHierarchy()->GetCommunicator();
@@ -372,20 +364,18 @@ namespace amg
 	auto cm_cap = state.curr_cap;
 	do { /** coarsen until stuck or goal reached **/
 	  if (doco)
-	    cout << " inner C loop, curr " << curr_meas << " -> " << goal_meas << endl;
+	    { cout << " inner C loop, curr " << curr_meas << " -> " << goal_meas << endl; }
 	  auto f_cap = state.curr_cap;
-      cout << " AA" << endl;
 	  if ( TryCoarseStep(state) ) { // coarse map constructed successfully
 	    state.level[1]++; state.level[2] = 0; // count up sub-coarse, reset redist
 	    size_t f_meas = ComputeMeshMeasure(*f_cap->mesh), c_meas = ComputeMeshMeasure(*state.curr_cap->mesh);
 	    double meas_fac = (f_meas == 0) ? 0 : c_meas / double(f_meas);
 	    if (doco)
-	      cout << " c step " << f_meas << " -> " << c_meas << ", frac = " << meas_fac << endl;
+	      { cout << " c step " << f_meas << " -> " << c_meas << ", frac = " << meas_fac << endl; }
 	    goal_reached = (c_meas < goal_meas);
-      cout << " AA" << endl;
-	    if ( (goal_reached) && (cm_chunks.Size() > 0) && (f_meas * c_meas < sqr(goal_meas)) ) {
+      	    if ( (goal_reached) && (cm_chunks.Size() > 0) && (f_meas * c_meas < sqr(goal_meas)) ) {
 	      if (doco)
-		cout << " roll back c!" << endl;
+		{ cout << " roll back c!" << endl; }
 	      // last step was closer than current step - reset to last step
 	      state.curr_cap = f_cap;
 	      state.crs_map = nullptr;
@@ -404,13 +394,13 @@ namespace amg
 	  }
 	  else { // coarsening failed completely
 	    if (doco)
-	      cout << "no cmap, stuck!" << endl;
+	      { cout << "no cmap, stuck!" << endl; }
 	    crs_stuck = true;
 	  }
 	} while ( (!crs_stuck) && (!goal_reached) );
 
 	if (doco)
-	  cout << " -> back to outer loop, stuck " << crs_stuck << ", reached " << goal_reached << endl;
+	  { cout << " -> back to outer loop, stuck " << crs_stuck << ", reached " << goal_reached << endl; }
 	
 	state.need_rd = crs_stuck;
 
@@ -422,7 +412,7 @@ namespace amg
 	  { c_step = cm_chunks[l]->Concatenate(c_step); }
 
 	if (doco)
-	  cout << " have conc c-step ? " << c_step << endl;;
+	  { cout << " have conc c-step ? " << c_step << endl; }
 
 	if (f_lev->crs_map == nullptr)
 	  { f_lev->crs_map = c_step; }
@@ -447,10 +437,10 @@ namespace amg
 	/** try to recover via redistribution **/
 	if (O.enable_redist && (state.level[2] == 0) ) {
 	  if (doco)
-	    cout << " try contract " << endl;
+	    { cout << " try contract " << endl; }
 	  if ( TryContractStep(state) ) { // redist successfull
 	    if (doco)
-	      cout << " contract ok " << endl;
+	      { cout << " contract ok " << endl; }
 	    state.level[2]++; // count up redist
 	    auto rdm = move(state.dof_map);
 	    dof_maps.Append(rdm);
@@ -461,18 +451,18 @@ namespace amg
 	  }
 	  else { // redist rejected
 	    if (doco)
-	      cout << " no contract " << endl;
+	      { cout << " no contract " << endl; }
 	    could_recover = false;
 	  }
 	}
 	else // already distributed once
 	  { could_recover = false; }
 	if (doco)
-	  cout << " continue ? " << bool((could_recover) && (!goal_reached)) << endl;
+	  { cout << " continue ? " << bool((could_recover) && (!goal_reached)) << endl; }
       } while ( (could_recover) && (!goal_reached) );
 
       if (doco)
-	cout << " broke out of crs/ctr loops " << endl;
+	{ cout << " broke out of crs/ctr loops " << endl; }
 
       // cout << " enable_sp: " << O.enable_sp << endl;
 
@@ -687,9 +677,7 @@ namespace amg
     c_cap->baselevel = state.level[0];
 
     /** build coarse map **/
-    cout << "BCM " << endl;
     shared_ptr<BaseCoarseMap> cmap = BuildCoarseMap(state, c_cap);
-    cout << "BCM END " << endl;
 
     if (cmap == nullptr) // could not build map
       { return false; }
@@ -703,7 +691,7 @@ namespace amg
 
     double cfac = (f_meas == 0) ? 0 : double(c_meas) / f_meas;
 
-    if (cmap->GetMesh()->GetEQCHierarchy()->GetCommunicator().Rank() == 0)
+    if ( (cmap->GetMesh()->GetEQCHierarchy()->GetCommunicator().Rank() == 0) && (options->log_level != Options::LOG_LEVEL::NONE) )
       { cout << " map maps " << f_meas << " -> " << c_meas <<  ", fac " << cfac << endl; }
 
     bool map_ok = true;

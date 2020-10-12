@@ -204,10 +204,6 @@ namespace amg
     auto & O(static_cast<Options&>(*options));
 
     Options::CRS_ALG calg = O.crs_alg.GetOpt(state.level[0]);
-    cout << " BCM, int(alg) = " << int(calg) << endl;
-    cout << " eqcs = " << ( calg == Options::CRS_ALG::ECOL ) << endl;
-    cout << " " << ( calg == Options::CRS_ALG::AGG ) << endl;
-    cout << " " << ( calg == Options::CRS_ALG::SPW ) << endl;
 
     switch(calg) {
     case(Options::CRS_ALG::ECOL): { return BuildECMap(state, mapped_cap); break; }
@@ -272,18 +268,18 @@ namespace amg
 
     const int level = state.level[0];
 
-    cout << "spw_rounds" << O.spw_rounds << endl;
-    cout << "spw_allrobust" << O.spw_allrobust << endl;
-    cout << "spw_cbs" << O.spw_cbs << endl;
-    cout << "spw_cbs_bdiag " << O.spw_cbs_bdiag << endl;
-    cout << "spw_cbs_robust" << O.spw_cbs_robust << endl;
-    cout << "spw_cbs_spd_hack" << O.spw_cbs_spd_hack << endl;
-    cout << "spw_pick_cwt" << O.spw_pick_cwt << endl;
-    cout << "spw_pick_mma_scal" << O.spw_pick_mma_scal << endl;
-    cout << "spw_pick_mma_mat" << O.spw_pick_mma_mat << endl;
-    cout << "spw_check_cwt" << O.spw_check_cwt << endl;
-    cout << "spw_check_mma_scal" << O.spw_check_mma_scal << endl;
-    cout << "spw_check_mma_mat = " << O.spw_check_mma_mat << endl;
+    // cout << "spw_rounds" << O.spw_rounds << endl;
+    // cout << "spw_allrobust" << O.spw_allrobust << endl;
+    // cout << "spw_cbs" << O.spw_cbs << endl;
+    // cout << "spw_cbs_bdiag " << O.spw_cbs_bdiag << endl;
+    // cout << "spw_cbs_robust" << O.spw_cbs_robust << endl;
+    // cout << "spw_cbs_spd_hack" << O.spw_cbs_spd_hack << endl;
+    // cout << "spw_pick_cwt" << O.spw_pick_cwt << endl;
+    // cout << "spw_pick_mma_scal" << O.spw_pick_mma_scal << endl;
+    // cout << "spw_pick_mma_mat" << O.spw_pick_mma_mat << endl;
+    // cout << "spw_check_cwt" << O.spw_check_cwt << endl;
+    // cout << "spw_check_mma_scal" << O.spw_check_mma_scal << endl;
+    // cout << "spw_check_mma_mat = " << O.spw_check_mma_mat << endl;
 
     agg_opts.edge_thresh = O.min_ecw.GetOpt(level);
     agg_opts.vert_thresh = O.min_vcw.GetOpt(level);
@@ -928,10 +924,15 @@ namespace amg
 	}, false); // master!
     }
 
-    if ( ( (eqc_h.GetCommunicator().Size() == 1) || (eqc_h.GetCommunicator().Rank() == 1) ) &&
-	 ( FNV > 0 ) ) {
-      cout << "NV,   nc/na/nt " << FNV << ", " << nc << " " << na << " " << nt << endl;
-      cout << "fracs c/a/t    " << double(nc)/FNV << " " << double(na)/FNV << " " << double(nt)/FNV << endl;
+    if ( options->log_level != Options::LOG_LEVEL::NONE ) {
+      nc = eqc_h.GetCommunicator().Reduce(nc, MPI_SUM);
+      na = eqc_h.GetCommunicator().Reduce(na, MPI_SUM);
+      nt = eqc_h.GetCommunicator().Reduce(nt, MPI_SUM);
+      if ( eqc_h.GetCommunicator().Rank() == 0 ) {
+	size_t FNV = FM.template GetNNGlobal<NT_VERTEX>();
+	cout << "NV,   nc/na/nt " << FNV << ", " << nc << " " << na << " " << nt << endl;
+	cout << "fracs c/a/t    " << double(nc)/FNV << " " << double(na)/FNV << " " << double(nt)/FNV << endl;
+      }
     }
 
     // cout << " sprol: " << endl;

@@ -917,7 +917,7 @@ namespace amg
       }
 
       /** Set up a local map to represent this round of pairing vertices **/
-      if (round > 0) {
+      if ( (round > 0) && print_summs ) {
 	cout << " make locmap with mapped mesh " << conclocmap->GetMappedMesh() << endl;
 	  cout << " mesh NV NE " << conclocmap->GetMappedMesh()->template GetNN<NT_VERTEX>() << " "
 	       << conclocmap->GetMappedMesh()->template GetNN<NT_EDGE>() << endl;
@@ -1002,10 +1002,10 @@ namespace amg
 	auto fedges = locmap->GetMesh()->template GetNodes<NT_EDGE>();
 	auto cedges = locmap->GetMappedMesh()->template GetNodes<NT_EDGE>();
 	auto emap = locmap->template GetMap<NT_EDGE>();
-	cout << " mapped mesh " << locmap->GetMappedMesh() << endl;
-	cout << " fedges " << fedges.Size() << " "; prow(fedges); cout << endl;
-	cout << " cedges " << cedges.Size() << " "; prow(cedges); cout << endl;
-	cout << " emap " << emap.Size() << " "; prow2(emap); cout << endl;
+	// cout << " mapped mesh " << locmap->GetMappedMesh() << endl;
+	// cout << " fedges " << fedges.Size() << " "; prow(fedges); cout << endl;
+	// cout << " cedges " << cedges.Size() << " "; prow(cedges); cout << endl;
+	// cout << " emap " << emap.Size() << " "; prow2(emap); cout << endl;
 	TM Q(0); SetIdentity(Q);
 	TVD femp, cemp;
 	for (auto fenr : Range(fedges)) {
@@ -1031,8 +1031,6 @@ namespace amg
 	TM Qij(0), Qji(0); SetIdentity(Qij); SetIdentity(Qji);
 	for (auto cvnr : Range(ccvdata)) {
 	  auto fvs = c2fv[cvnr];
-	  cout << cvnr << " from "; prow(fvs); cout << endl;
-	  cout << " sizes " << ccdiags.Size() << " " << fdiags.Size() << " " << fvdata.Size() << " " << fedata_full.Size() << endl;
 	  if (fvs.Size() == 1)
 	    { ccdiags[cvnr] = fdiags[fvs[0]]; }
 	  else { /** sum up diags, remove contribution of connecting edge **/
