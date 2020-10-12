@@ -47,6 +47,7 @@ namespace amg
       /** when checking neib with big EVP **/
       bool checkbigsoc = true;                       // check big EVP is pos. def for agg-agg merge
       bool simple_checkbigsoc = false;               // use simplified big EVP based on traces
+      bool bdiag = false;                            // check big EVP correspoding to BGS, or GS smoother?
       /** used for EVPs **/
       SpecOpt<bool> neib_boost = false;              // use connections to common neibs to boost edge matrices
       // SpecOpt<bool> lazy_nb = false;                 // to a "lazy" boost, which requires no EVPs (probably a bad idea)

@@ -14,29 +14,29 @@ namespace amg
 
   template<class TMAP> INLINE void H1VData :: map_data_impl (const TMAP & cmap, H1VData & ch1v) const
   {
+    Cumulate();
     auto & cdata = ch1v.data;
     cdata.SetSize(cmap.template GetMappedNN<NT_VERTEX>()); cdata = 0.0;
     auto map = cmap.template GetMap<NT_VERTEX>();
-    auto lam_v = [&](const AMG_Node<NT_VERTEX> & v)
-      { auto cv = map[v]; if (cv != -1) cdata[cv] += data[v]; };
-    bool master_only = (GetParallelStatus()==CUMULATED);
-    mesh->Apply<NT_VERTEX>(lam_v, master_only);
-
+    mesh->Apply<NT_VERTEX>([&](const AMG_Node<NT_VERTEX> & v) {
+	auto cv = map[v];
+	if (cv != -1)
+	  { cdata[cv] += data[v]; }
+      }, true);
     auto emap = cmap.template GetMap<NT_EDGE>();
     auto aed = get<1>(static_cast<H1Mesh*>(mesh)->Data()); aed->Cumulate(); // should be NOOP
     auto edata = aed->Data();
-    mesh->Apply<NT_EDGE>( [&](const auto & e) LAMBDA_INLINE {
-	if (emap[e.id] == -1) {
-	  Iterate<2>([&](auto i) LAMBDA_INLINE {
-	      if (map[e.v[i.value]] == -1) {
-		auto cv = map[e.v[1-i.value]];
-		if (cv != -1) {
-		  cdata[cv] += edata[e.id];
-		}
-	      }
-	    });
+    mesh->Apply<NT_EDGE>( [&](const auto & fedge) LAMBDA_INLINE {
+	if (emap[fedge.id] == -1) {
+	  /** connection to ground goes into vertex weight **/
+	  INT<2, int> cvs ( { map[fedge.v[0]], map[fedge.v[1]] } );;
+	  if (cvs[0] != cvs[1]) { // max. and min. one is -1
+	    int l = (cvs[0] == -1) ? 1 : 0;
+	    int cvnr = map[fedge.v[l]];
+	    cdata[cvnr] += edata[fedge.id];
+	  }
 	}
-      }, master_only);
+      }, true);
     ch1v.SetParallelStatus(DISTRIBUTED);
   } // H1VData::map_data_impl
 

@@ -337,6 +337,7 @@ namespace amg
     this->print_vmap = settings.print_aggs;
 
     const int num_rounds = settings.num_rounds;
+    const bool bdiag = settings.bdiag;
 
     constexpr int BS = mat_traits<TM>::HEIGHT;
     constexpr int BSU = mat_traits<TMU>::HEIGHT;
@@ -618,9 +619,12 @@ namespace amg
       /** P, PT**/
       FlatMatrix<double> P(n, 1, lh), PT(1, n, lh);
       P = 1.0; PT = 1.0;
-      /**  M is the diag block of the smoother - ATM I use the full diag block of Ahat (BJAC),
-	   not only the diagonal entries (JAC). Here we also need external (including off-proc) connections and l2 weight **/
-      FlatMatrix<double> M(n, n, lh); M = A;
+      /**  M is the diag block of the smoother - either block-diag or diag  **/
+      FlatMatrix<double> M(n, n, lh);
+      if (bdiag)
+	{ M = A; }
+      else
+	{ M = 0.0; }
       for (auto ki : Range(allmems)) {
 	auto vi = allmems[ki];
 	M(ki, ki) = calc_trace(base_diags[vi])/BS;
@@ -631,15 +635,21 @@ namespace amg
       FlatMatrix<double> PTMP(1, 1, lh);
       PTMP = PTM * P;
       double invPTMP = 1.0/PTMP(0,0);
+      cout << " CBS for " << memsi.Size() << " + " << memsj.Size() << " = " << n << endl;
+      print_rank("CBS A", A, lh);
+      print_rank("CBS M I ", M, lh);
       M -= invPTMP * Trans(PTM) * PTM;
       // M -= Trans(PTM) * invPTMP * PTM;
       // print_rank("CBS, M II", M, lh);
       /** we have to check: MIN_ECW * M < A, ot A-MIN_ECW*M >= 0 **/
+      print_rank("CBS M II ", M, lh);
       A -= MIN_ECW * M;
       /** we KNOW the kernel exactly - regularize, so we can use dpotrf/dpstrf [[-eps eval is a problem]] **/
       A += calc_trace(A)/n * P * PT;
+      print_rank("CBS checked mat", A, lh);
       // print_rank("CBS, checked mat", A, lh);
       bool isspd = CheckForSPD(A, lh);
+      cout << " is spd = " << isspd << endl << endl;
       return isspd;
     };
 
@@ -688,22 +698,37 @@ namespace amg
 	PT = Trans(P);
 	/**  M is the diag block of the smoother - ATM I use the full diag block of Ahat (BJAC),
 	     not only the diagonal entries (JAC). Here we also need external (including off-proc) connections and l2 weight **/
-	FlatMatrix<double> M(N, N, lh); M = A;
+	FlatMatrix<double> M(N, N, lh); 
+	if (bdiag)
+	  { M = A; }
+	else
+	  { M = 0.0; }
 	for (auto ki : Range(allmems)) {
 	  auto vi = allmems[ki];
 	  const int Ki = BS*ki, Kip = Ki + BS;
 	  M.Rows(Ki, Kip).Cols(Ki, Kip) = base_diags[vi];
 	}
-
-	/** This is what we <-should-> do **/
-	A -= MIN_ECW * M;
-	return CheckForSSPD(A, lh);
-
-	/** maybe this works too? **/
-	// A += MIN_ECW * 1e-5 * calc_trace(M) * Id;
-	// A -= MIN_ECW * M;
-	// return CheckForSPD(A, lh);
-	// return true;
+	FlatMatrix<double> PTM(BS, N, lh);
+	PTM = PT * M;
+	FlatMatrix<double> PTMP(BS, BS, lh);
+	CalcInverse(PTMP);
+	FlatMatrix<double> inv_PTMP_PTM(BS, N, lh);
+	inv_PTMP_PTM = PTMP * PTM;
+	/** M - M P (PTMP)^{-1} PT M **/
+	M -= Trans(PTM) * inv_PTMP_PTM;
+	/** "-eps" evals confuse dpotrf/dpstrf and it says there are negative evals!
+	    Here we do not necessarily know the entire kernel - vertices can be on a line (in 3d).
+	    Regularizing with RBMs only might not be enough. So we substract a bit more than MIN_ECW,
+	    and then add a bit to the diagonal.
+	**/
+	double tra = calc_trace(A)/N;
+	double reg = 1e-12 * tra;
+	A -= (MIN_ECW + reg) * M;
+	A += tra * P * PT;
+	for (auto k : Range(N))
+	  { A(k,k) += reg; }
+	return CheckForSPD(A, lh);
+	// return CheckForSSPD(A, lh);
       }
       else
 	{ return true; }

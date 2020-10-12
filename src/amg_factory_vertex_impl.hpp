@@ -62,6 +62,7 @@ namespace amg
     SpecOpt<int> spw_rounds = 3;
     SpecOpt<bool> spw_allrobust = true;
     SpecOpt<bool> spw_cbs = true;
+    SpecOpt<bool> spw_cbs_bdiag = false;
     SpecOpt<bool> spw_cbs_robust = true;
     SpecOpt<SPW_CW_TYPE> spw_pick_cwt = SPW_CW_TYPE::MINMAX;
     SpecOpt<AVG_TYPE> spw_pick_mma_scal = AVG_TYPE::GEOM;
@@ -112,6 +113,7 @@ namespace amg
       cout << "spw_rounds " << spw_rounds << endl;
       cout << "spw_allrobust " << spw_allrobust << endl;
       cout << "spw_cbs " << spw_cbs << endl;
+      cout << "spw_cbs_bdiag " << spw_cbs_bdiag << endl;
       cout << "spw_cbs_robust " << spw_cbs_robust << endl;
       cout << "spw_pick_cwt " << spw_pick_cwt << endl;
       cout << "spw_pick_mma_scal " << spw_pick_mma_scal << endl;
@@ -123,6 +125,15 @@ namespace amg
       spw_rounds.SetFromFlags(flags, prefix + "spw_rounds");
       spw_allrobust.SetFromFlags(flags, prefix +  "spw_pick_robust");
       spw_cbs.SetFromFlags(flags, prefix + "spw_cbs");
+
+      if ( (flags.GetDefineFlagX(prefix + "spw_bdiag").IsTrue() || flags.GetDefineFlagX(prefix + "spw_bdiag").IsFalse()) ||
+	   (flags.GetNumListFlag(prefix + "spw_bdiag_spec").Size() > 0) ) { /** it is set explicitely!**/
+	spw_cbs_bdiag.SetFromFlags(flags, prefix + "spw_bdiag");
+      } else { /** if nothing is given explicitely, try to take a guess on which sm_types are given. default is "gs", so initialize with "false" **/
+	spw_cbs_bdiag = false;
+	spw_cbs_bdiag.SetFromFlagsEnum(flags, prefix+"sm_type", { "gs", "bgs" }, Array<bool>{ false, true });
+      }
+
       spw_cbs_robust.SetFromFlags(flags, prefix + "spw_cbs_robust");
       spw_pick_cwt.SetFromFlagsEnum(flags, prefix + "spw_pcwt", { "harm", "geom", "mmx" }, Array<SPW_CW_TYPE>{ HARMONIC, GEOMETRIC, MINMAX });
       spw_pick_mma_scal.SetFromFlagsEnum(flags, prefix + "spw_pmmas", { "min", "geom", "harm", "alg", "max" }, Array<AVG_TYPE>{ MIN, GEOM, HARM, ALG, MAX });
@@ -134,6 +145,7 @@ namespace amg
       cout << "spw_rounds " << spw_rounds << endl;
       cout << "spw_allrobust " << spw_allrobust << endl;
       cout << "spw_cbs " << spw_cbs << endl;
+      cout << "spw_cbs_bdiag " << spw_cbs_bdiag << endl;
       cout << "spw_cbs_robust " << spw_cbs_robust << endl;
       cout << "spw_pick_cwt " << spw_pick_cwt << endl;
       cout << "spw_pick_mma_scal " << spw_pick_mma_scal << endl;
@@ -263,6 +275,7 @@ namespace amg
     cout << "spw_rounds" << O.spw_rounds << endl;
     cout << "spw_allrobust" << O.spw_allrobust << endl;
     cout << "spw_cbs" << O.spw_cbs << endl;
+    cout << "spw_cbs_bdiag " << O.spw_cbs_bdiag << endl;
     cout << "spw_cbs_robust" << O.spw_cbs_robust << endl;
     cout << "spw_pick_cwt" << O.spw_pick_cwt << endl;
     cout << "spw_pick_mma_scal" << O.spw_pick_mma_scal << endl;
@@ -276,6 +289,7 @@ namespace amg
     agg_opts.robust = O.ecw_robust.GetOpt(level);
     agg_opts.num_rounds = O.spw_rounds.GetOpt(level);
     agg_opts.allrobust = O.spw_allrobust.GetOpt(level);
+    agg_opts.bdiag = O.spw_cbs_bdiag.GetOpt(level);
     agg_opts.neib_boost = O.agg_neib_boost.GetOpt(level);
     agg_opts.pick_cw_type = O.spw_pick_cwt.GetOpt(level);
     agg_opts.pick_mma_scal = O.spw_pick_mma_scal.GetOpt(level);
