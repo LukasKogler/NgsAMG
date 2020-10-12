@@ -71,6 +71,9 @@ namespace amg
     SpecOpt<SPW_CW_TYPE> spw_check_cwt = SPW_CW_TYPE::HARMONIC;
     SpecOpt<AVG_TYPE> spw_check_mma_scal = AVG_TYPE::GEOM;
     SpecOpt<AVG_TYPE> spw_check_mma_mat = AVG_TYPE::GEOM;
+    SpecOpt<bool> spw_print_aggs = false;
+    SpecOpt<bool> spw_print_params = false;
+    SpecOpt<bool> spw_print_summs = false;
 #endif // SPWAGG
 
   public:
@@ -111,19 +114,6 @@ namespace amg
 
 #ifdef SPWAGG
 
-      cout << "spw_rounds " << spw_rounds << endl;
-      cout << "spw_allrobust " << spw_allrobust << endl;
-      cout << "spw_cbs " << spw_cbs << endl;
-      cout << "spw_cbs_bdiag " << spw_cbs_bdiag << endl;
-      cout << "spw_cbs_spd_hack " << spw_cbs_spd_hack << endl;
-      cout << "spw_cbs_robust " << spw_cbs_robust << endl;
-      cout << "spw_pick_cwt " << spw_pick_cwt << endl;
-      cout << "spw_pick_mma_scal " << spw_pick_mma_scal << endl;
-      cout << "spw_pick_mma_mat " << spw_pick_mma_mat << endl;
-      cout << "spw_check_cwt " << spw_check_cwt << endl;
-      cout << "spw_check_mma_scal " << spw_check_mma_scal << endl;
-      cout << "spw_check_mma_mat =  " << spw_check_mma_mat << endl;
-
       spw_rounds.SetFromFlags(flags, prefix + "spw_rounds");
       spw_allrobust.SetFromFlags(flags, prefix +  "spw_pick_robust");
       spw_cbs.SetFromFlags(flags, prefix + "spw_cbs");
@@ -144,19 +134,25 @@ namespace amg
       spw_check_cwt.SetFromFlagsEnum(flags, prefix + "spw_ccwt", { "harm", "geom", "mmx" }, Array<SPW_CW_TYPE>{ HARMONIC, GEOMETRIC, MINMAX });
       spw_check_mma_scal.SetFromFlagsEnum(flags, prefix + "spw_cmmas", { "min", "geom", "harm", "alg", "max" }, Array<AVG_TYPE>{ MIN, GEOM, HARM, ALG, MAX });
       spw_check_mma_mat.SetFromFlagsEnum(flags, prefix + "spw_cmmam", { "min", "geom", "harm", "alg", "max" },  Array<AVG_TYPE>{ MIN, GEOM, HARM, ALG, MAX });
+      spw_print_params.SetFromFlags(flags, prefix + "spw_print_params");
+      spw_print_summs.SetFromFlags(flags, prefix + "spw_print_summs");
+      spw_print_aggs.SetFromFlags(flags, prefix + "spw_print_aggs");
 
-      cout << "spw_rounds " << spw_rounds << endl;
-      cout << "spw_allrobust " << spw_allrobust << endl;
-      cout << "spw_cbs " << spw_cbs << endl;
-      cout << "spw_cbs_robust " << spw_cbs_robust << endl;
-      cout << "spw_cbs_bdiag " << spw_cbs_bdiag << endl;
-      cout << "spw_cbs_spd_hack " << spw_cbs_spd_hack << endl;
-      cout << "spw_pick_cwt " << spw_pick_cwt << endl;
-      cout << "spw_pick_mma_scal " << spw_pick_mma_scal << endl;
-      cout << "spw_pick_mma_mat " << spw_pick_mma_mat << endl;
-      cout << "spw_check_cwt " << spw_check_cwt << endl;
-      cout << "spw_check_mma_scal " << spw_check_mma_scal << endl;
-      cout << "spw_check_mma_mat =  " << spw_check_mma_mat << endl;
+      // cout << "spw_rounds " << spw_rounds << endl;
+      // cout << "spw_allrobust " << spw_allrobust << endl;
+      // cout << "spw_cbs " << spw_cbs << endl;
+      // cout << "spw_cbs_robust " << spw_cbs_robust << endl;
+      // cout << "spw_cbs_bdiag " << spw_cbs_bdiag << endl;
+      // cout << "spw_cbs_spd_hack " << spw_cbs_spd_hack << endl;
+      // cout << "spw_pick_cwt " << spw_pick_cwt << endl;
+      // cout << "spw_pick_mma_scal " << spw_pick_mma_scal << endl;
+      // cout << "spw_pick_mma_mat " << spw_pick_mma_mat << endl;
+      // cout << "spw_check_cwt " << spw_check_cwt << endl;
+      // cout << "spw_check_mma_scal " << spw_check_mma_scal << endl;
+      // cout << "spw_check_mma_mat =  " << spw_check_mma_mat << endl;
+      // cout << "spw_print_params =  " << spw_print_params << endl;
+      // cout << "spw_print_summs =  " << spw_print_summs << endl;
+      // cout << "spw_print_aggs =  " << spw_print_aggs << endl;
 
 #endif // SPWAGG
 
@@ -302,12 +298,14 @@ namespace amg
     agg_opts.check_cw_type = O.spw_check_cwt.GetOpt(level);
     agg_opts.check_mma_scal = O.spw_check_mma_scal.GetOpt(level);
     agg_opts.check_mma_mat = O.spw_check_mma_mat.GetOpt(level);
-    agg_opts.print_aggs = O.print_aggs.GetOpt(level);
     agg_opts.checkbigsoc = O.spw_cbs.GetOpt(level);
     agg_opts.cbs_spd_hack = O.spw_cbs_spd_hack.GetOpt(level);
     agg_opts.simple_checkbigsoc = !O.spw_cbs_robust.GetOpt(level);
     agg_opts.use_stab_ecw_hack = O.ecw_stab_hack.GetOpt(level);
-
+    agg_opts.print_params = O.spw_print_params.GetOpt(level);
+    agg_opts.print_summs = O.spw_print_summs.GetOpt(level);
+    agg_opts.print_aggs = O.print_aggs.GetOpt(level) | O.spw_print_aggs.GetOpt(level);
+    
     auto agglomerator = make_shared<AGG_CLASS>(mesh, state.curr_cap->free_nodes, move(agg_opts));
 
     /** Set mapped Capsule **/

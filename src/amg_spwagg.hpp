@@ -54,6 +54,8 @@ namespace amg
       // SpecOpt<bool> lazy_nb = false;                 // to a "lazy" boost, which requires no EVPs (probably a bad idea)
       xbool use_stab_ecw_hack = maybe;               // useful to make HARMONIC behave a bit more like geometric 
       /** misc. **/
+      bool print_params = false;                       // output
+      bool print_summs = false;                       // output
       bool print_aggs = false;                       // output
       // Options (Options && other)
       // 	: robust(other.robust), edge_thresh(other.edge_thresh), vert_thresh(other.vert_thresh), num_rounds(other.num_rounds),
@@ -87,6 +89,7 @@ namespace amg
 
     void CalcCMK (const BitArray & skip, const SparseMatrix<double> & econ, Array<int> & cmk);
 
+    void MapVertsTest  (FlatArray<Agglomerate> agglomerates, FlatArray<int> v_to_agg);
   }; // class SPWAgglomerator
 
 } //namespace amg
