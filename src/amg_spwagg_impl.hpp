@@ -16,10 +16,10 @@ namespace amg
     LapackEigenValuesSymmetric(a, evals);
     int rk = 0;
     for (auto k :Range(evals))
-      if (evals(k) > 1e-10 * evals(N-1))
+      if (fabs(evals(k)) > 1e-10 * fabs(evals(N-1)))
 	{ rk++; }
     cout << " trace of " << name << " = " << calc_trace(A) << endl;
-    cout << " rank of " << name << " = " << rk << endl;
+    cout << " rank of " << name << " = " << rk << " of " << N << endl;
 						  cout << " all evals are = "; prow(evals); cout << endl;
   }
 
@@ -31,10 +31,10 @@ namespace amg
     LapackEigenValuesSymmetric(a, evals);
     int rk = 0;
     for (auto k :Range(evals))
-      if (evals(k) > 1e-10 * evals(N-1))
+      if (fabs(evals(k)) > 1e-10 * fabs(evals(N-1)))
 	{ rk++; }
     cout << " trace of " << name << " = " << calc_trace(A) << endl;
-    cout << " rank of " << name << " = " << rk << endl;
+    cout << " rank of " << name << " = " << rk << " of " << N << endl;
 						  cout << " all evals are = "; prow(evals); cout << endl;
   }
 
@@ -338,6 +338,7 @@ namespace amg
 
     const int num_rounds = settings.num_rounds;
     const bool bdiag = settings.bdiag;
+    const bool cbs_spd_hack = settings.cbs_spd_hack;
 
     constexpr int BS = mat_traits<TM>::HEIGHT;
     constexpr int BSU = mat_traits<TMU>::HEIGHT;
@@ -561,15 +562,17 @@ namespace amg
 	    { mtrb = max2(mtrb, calc_trace(fedata[int(eid)])); }
 	  mtrb = max2(mtrb, ENERGY::GetApproxVWeight(fvdata[vj])*BS); // this is divided by BS, but should not be
 	  double etrace = calc_trace(dmedge);
-	  double soc = etrace / calc_avg_scal(mma_scal, mtra, mtrb);
+	  soc = etrace / calc_avg_scal(mma_scal, mtra, mtrb);
+	  // cout << " mtra mtrb etrace socscal " << mtra << " " << mtrb << " " << etrace << " " << soc << endl;
 	  if (soc > MIN_ECW) {
 	    dma /= calc_trace(dma);
 	    dmb /= calc_trace(dmb);
 	    dmedge /= etrace;
 	    if (mma_mat_harm)
-	      { soc = min2(soc, MIN_EV_HARM2(dma, dmb, dmedge)); cout << " soc mmx harm = " << soc << endl; }
+	      { soc = min2(soc, MIN_EV_HARM2(dma, dmb, dmedge)); /** cout << " soc mmx harm = " << soc << endl; **/ }
 	    else
-	      { soc = min2(soc, MIN_EV_FG2(dma, dmb, dmedge)); cout << " soc mmx geom = " << soc << endl; }
+	      { soc = min2(soc, MIN_EV_FG2(dma, dmb, dmedge)); /** cout << " soc mmx geom = " << soc << endl; **/ }
+	    // cout << " soc mat " << soc << endl;
 	  }
 	  break;
 	}
@@ -635,7 +638,7 @@ namespace amg
       FlatMatrix<double> PTMP(1, 1, lh);
       PTMP = PTM * P;
       double invPTMP = 1.0/PTMP(0,0);
-      cout << " CBS for " << memsi.Size() << " + " << memsj.Size() << " = " << n << endl;
+      cout << " (scal) CBS for " << memsi.Size() << " + " << memsj.Size() << " = " << n << endl;
       print_rank("CBS A", A, lh);
       print_rank("CBS M I ", M, lh);
       M -= invPTMP * Trans(PTM) * PTM;
@@ -711,23 +714,42 @@ namespace amg
 	FlatMatrix<double> PTM(BS, N, lh);
 	PTM = PT * M;
 	FlatMatrix<double> PTMP(BS, BS, lh);
+	PTMP = PTM * P;
+	/** this CAN be singular (in rare cases...) **/
 	CalcInverse(PTMP);
 	FlatMatrix<double> inv_PTMP_PTM(BS, N, lh);
 	inv_PTMP_PTM = PTMP * PTM;
+	cout << " (vec) CBS for " << memsi.Size() << " + " << memsj.Size() << " = " << n << endl;
+	print_rank("CBS A", A, lh);
+	print_rank("CBS M I ", M, lh);
 	/** M - M P (PTMP)^{-1} PT M **/
 	M -= Trans(PTM) * inv_PTMP_PTM;
-	/** "-eps" evals confuse dpotrf/dpstrf and it says there are negative evals!
-	    Here we do not necessarily know the entire kernel - vertices can be on a line (in 3d).
-	    Regularizing with RBMs only might not be enough. So we substract a bit more than MIN_ECW,
-	    and then add a bit to the diagonal.
-	**/
-	double tra = calc_trace(A)/N;
-	double reg = 1e-12 * tra;
-	A -= (MIN_ECW + reg) * M;
-	A += tra * P * PT;
-	for (auto k : Range(N))
-	  { A(k,k) += reg; }
-	return CheckForSPD(A, lh);
+	print_rank("CBS M II ", M, lh);
+	if (cbs_spd_hack) {
+	  /** Here we do not necessarily know the entire kernel - vertices can be on a line (in 3d).
+	      Regularizing with RBMs only might not be enough. So we substract a bit more than MIN_ECW,
+	      and then add a bit to the diagonal. Then we can use dpotrf. **/
+	  double tra = calc_trace(A)/N;
+	  double reg = 1e-12 * tra;
+	  A -= (MIN_ECW + reg) * M;
+	  print_rank("CBS checked mat I ", A, lh);
+	  A += tra * P * PT;
+	  for (auto k : Range(N))
+	    { A(k,k) += reg; }
+	  print_rank("CBS checked mat II ", A, lh);
+	  // FlatMatrix<double> A2(N, N, lh); A2 = A;
+	  bool isspd = CheckForSPD(A, lh);
+	  // bool issspd = CheckForSSPD(A2, lh);
+	  // cout << " SPD/SSPD = " << isspd << " " << issspd << endl;
+	  return isspd;
+	}
+	else { /** Do not regularize anything and use dpstrf. **/
+	  A -= MIN_ECW * M;
+	  print_rank("CBS checked mat ", A, lh);
+	  bool issspd = CheckForSSPD(A, lh);
+	  cout << " SSPD = " << issspd << endl;
+	  return issspd;
+	}
 	// return CheckForSSPD(A, lh);
       }
       else
@@ -737,9 +759,9 @@ namespace amg
     /** SOC for pair of agglomerates w.r.t original matrix **/
     auto check_soc_aggs = [&](bool simplify, auto memsi, auto memsj) LAMBDA_INLINE {
       /** TODO: this does not use fdiags, so l2 weights are not considered! **/
-      if ( (BS == 1) || simplify)
+      if ( (BSU == 1) || simplify)
 	{ return check_soc_aggs_scal(memsi, memsj); }
-      else if (simplify)
+      else
 	{ return check_soc_aggs_full(memsi, memsj); }
       return true;
     };

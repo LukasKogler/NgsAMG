@@ -64,6 +64,7 @@ namespace amg
     SpecOpt<bool> spw_cbs = true;
     SpecOpt<bool> spw_cbs_bdiag = false;
     SpecOpt<bool> spw_cbs_robust = true;
+    SpecOpt<bool> spw_cbs_spd_hack = false;
     SpecOpt<SPW_CW_TYPE> spw_pick_cwt = SPW_CW_TYPE::MINMAX;
     SpecOpt<AVG_TYPE> spw_pick_mma_scal = AVG_TYPE::GEOM;
     SpecOpt<AVG_TYPE> spw_pick_mma_mat = AVG_TYPE::GEOM;
@@ -114,6 +115,7 @@ namespace amg
       cout << "spw_allrobust " << spw_allrobust << endl;
       cout << "spw_cbs " << spw_cbs << endl;
       cout << "spw_cbs_bdiag " << spw_cbs_bdiag << endl;
+      cout << "spw_cbs_spd_hack " << spw_cbs_spd_hack << endl;
       cout << "spw_cbs_robust " << spw_cbs_robust << endl;
       cout << "spw_pick_cwt " << spw_pick_cwt << endl;
       cout << "spw_pick_mma_scal " << spw_pick_mma_scal << endl;
@@ -135,6 +137,7 @@ namespace amg
       }
 
       spw_cbs_robust.SetFromFlags(flags, prefix + "spw_cbs_robust");
+      spw_cbs_spd_hack.SetFromFlags(flags, prefix + "spw_cbs_spd_hack");
       spw_pick_cwt.SetFromFlagsEnum(flags, prefix + "spw_pcwt", { "harm", "geom", "mmx" }, Array<SPW_CW_TYPE>{ HARMONIC, GEOMETRIC, MINMAX });
       spw_pick_mma_scal.SetFromFlagsEnum(flags, prefix + "spw_pmmas", { "min", "geom", "harm", "alg", "max" }, Array<AVG_TYPE>{ MIN, GEOM, HARM, ALG, MAX });
       spw_pick_mma_mat.SetFromFlagsEnum(flags, prefix + "spw_pmmam", { "min", "geom", "harm", "alg", "max" }, Array<AVG_TYPE>{ MIN, GEOM, HARM, ALG, MAX });
@@ -145,8 +148,9 @@ namespace amg
       cout << "spw_rounds " << spw_rounds << endl;
       cout << "spw_allrobust " << spw_allrobust << endl;
       cout << "spw_cbs " << spw_cbs << endl;
-      cout << "spw_cbs_bdiag " << spw_cbs_bdiag << endl;
       cout << "spw_cbs_robust " << spw_cbs_robust << endl;
+      cout << "spw_cbs_bdiag " << spw_cbs_bdiag << endl;
+      cout << "spw_cbs_spd_hack " << spw_cbs_spd_hack << endl;
       cout << "spw_pick_cwt " << spw_pick_cwt << endl;
       cout << "spw_pick_mma_scal " << spw_pick_mma_scal << endl;
       cout << "spw_pick_mma_mat " << spw_pick_mma_mat << endl;
@@ -277,6 +281,7 @@ namespace amg
     cout << "spw_cbs" << O.spw_cbs << endl;
     cout << "spw_cbs_bdiag " << O.spw_cbs_bdiag << endl;
     cout << "spw_cbs_robust" << O.spw_cbs_robust << endl;
+    cout << "spw_cbs_spd_hack" << O.spw_cbs_spd_hack << endl;
     cout << "spw_pick_cwt" << O.spw_pick_cwt << endl;
     cout << "spw_pick_mma_scal" << O.spw_pick_mma_scal << endl;
     cout << "spw_pick_mma_mat" << O.spw_pick_mma_mat << endl;
@@ -299,6 +304,7 @@ namespace amg
     agg_opts.check_mma_mat = O.spw_check_mma_mat.GetOpt(level);
     agg_opts.print_aggs = O.print_aggs.GetOpt(level);
     agg_opts.checkbigsoc = O.spw_cbs.GetOpt(level);
+    agg_opts.cbs_spd_hack = O.spw_cbs_spd_hack.GetOpt(level);
     agg_opts.simple_checkbigsoc = !O.spw_cbs_robust.GetOpt(level);
     agg_opts.use_stab_ecw_hack = O.ecw_stab_hack.GetOpt(level);
 
