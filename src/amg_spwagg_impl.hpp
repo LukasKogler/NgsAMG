@@ -85,14 +85,14 @@ namespace amg
   }
 
   template<class ENERGY>
-  static INLINE void CalcMQ (double scal, const typename ENERGY::TM & Q, const typename ENERGY::TM & M, typename ENERGY::TM & out)
+  static INLINE void CalcMQ (double scal, const typename ENERGY::TM & M, const typename ENERGY::TM & Q, typename ENERGY::TM & out)
   {
     /** A  B   I Q  =  A   AQ+B
 	BT C   0 I  =  BT BTQ+C **/
     static Mat<ENERGY::DISPPV, ENERGY::ROTPV, double> AQ;
-    static Mat<ENERGY::ROTPV, ENERGY::DISPPV, double> BTQ;
+    static Mat<ENERGY::ROTPV, ENERGY::ROTPV, double> BTQ;
     BTQ = MakeFlatMat<ENERGY::DISPPV, ENERGY::ROTPV, 0, ENERGY::DISPPV>(M) * MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(Q);
-    AQ = scal * MakeFlatMat<0, ENERGY::DISPPV, 0, ENERGY::DISPPV>(M) * MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(Q);
+    AQ = MakeFlatMat<0, ENERGY::DISPPV, 0, ENERGY::DISPPV>(M) * MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(Q);
     MakeFlatMat<0, ENERGY::DISPPV, 0, ENERGY::DISPPV>(out) = scal * MakeFlatMat<0, ENERGY::DISPPV, 0, ENERGY::DISPPV>(M);
     MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(out) = scal * ( MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(M) + AQ );
     MakeFlatMat<ENERGY::DISPPV, ENERGY::ROTPV, 0, ENERGY::DISPPV>(out) = scal * MakeFlatMat<ENERGY::DISPPV, ENERGY::ROTPV, 0, ENERGY::DISPPV>(M);
@@ -100,14 +100,14 @@ namespace amg
   }
 
   template<class ENERGY>
-  static INLINE void AddMQ (double scal, const typename ENERGY::TM & Q, const typename ENERGY::TM & M, typename ENERGY::TM & out)
+  static INLINE void AddMQ (double scal, const typename ENERGY::TM & M, const typename ENERGY::TM & Q, typename ENERGY::TM & out)
   {
     /** A  B   I Q  =  A   AQ+B
 	BT C   0 I  =  BT BTQ+C **/
     static Mat<ENERGY::DISPPV, ENERGY::ROTPV, double> AQ;
     static Mat<ENERGY::ROTPV, ENERGY::ROTPV, double> BTQ;
     BTQ = MakeFlatMat<ENERGY::DISPPV, ENERGY::ROTPV, 0, ENERGY::DISPPV>(M) * MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(Q);
-    AQ = scal * MakeFlatMat<0, ENERGY::DISPPV, 0, ENERGY::DISPPV>(M) * MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(Q);
+    AQ = MakeFlatMat<0, ENERGY::DISPPV, 0, ENERGY::DISPPV>(M) * MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(Q);
     MakeFlatMat<0, ENERGY::DISPPV, 0, ENERGY::DISPPV>(out) += scal * MakeFlatMat<0, ENERGY::DISPPV, 0, ENERGY::DISPPV>(M);
     MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(out) += scal * ( MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(M) + AQ );
     MakeFlatMat<ENERGY::DISPPV, ENERGY::ROTPV, 0, ENERGY::DISPPV>(out) += scal * MakeFlatMat<ENERGY::DISPPV, ENERGY::ROTPV, 0, ENERGY::DISPPV>(M);
@@ -778,26 +778,27 @@ namespace amg
 		  const TM & ed = base_edata_full[int(base_econ(vi, neib))];
 		  ENERGY::ModQs(base_vdata[vi], base_vdata[neib], Qij, Qji);
 
-		  // ENERGY::CalcQTM(1.0, Qji, ed, QjM);
-		  CalcQTM<ENERGY>(1.0, Qji, ed, QjM);
+		  ENERGY::CalcQTM(1.0, Qji, ed, QjM);
+		  // CalcQTM<ENERGY>(1.0, Qji, ed, QjM);
 		  // QjM = Trans(Qji) * ed;
 
-		  // ENERGY::CalcQTM(1.0, Qij, ed, QiM);
-		  CalcQTM<ENERGY>(1.0, Qij, ed, QiM);
+		  ENERGY::CalcQTM(1.0, Qij, ed, QiM);
+		  // CalcQTM<ENERGY>(1.0, Qij, ed, QiM);
 		  // QiM = Trans(Qij) * ed;
 
 		  // A.Rows(Ki, Kip).Cols(Ki, Kip) += QiM * Qij;
-		  // ENERGY::CalcMQ(1.0, QiM, Qij, tm_tmp);
-		  CalcMQ<ENERGY>(1.0, QiM, Qij, tm_tmp);
+		  ENERGY::CalcMQ(1.0, QiM, Qij, tm_tmp);
+		  // CalcMQ<ENERGY>(1.0, QiM, Qij, tm_tmp);
+		  // tm_tmp = QiM * Qij;
 		  A.Rows(Ki, Kip).Cols(Ki, Kip) += tm_tmp;
 
-		  A_n_mems.Cols(Li, Lip) = -1.0 * QjM * Qij;
-		  // ENERGY::CalcMQ(-1.0, QjM, Qij, tm_tmp);
+		  // A_n_mems.Cols(Li, Lip) = -1.0 * QjM * Qij;
+		  ENERGY::CalcMQ(-1.0, QjM, Qij, tm_tmp);
 		  // CalcMQ<ENERGY>(-1.0, QjM, Qij, tm_tmp);
-		  // A_n_mems.Cols(Li, Lip) = tm_tmp;
+		  A_n_mems.Cols(Li, Lip) = tm_tmp;
 
-		  Esum += QjM * Qji;
-		  // ENERGY::AddMQ(1.0, QjM, Qji, Esum);
+		  // Esum += QjM * Qji;
+		  ENERGY::AddMQ(1.0, QjM, Qji, Esum);
 		  // AddMQ<ENERGY>(1.0, QjM, Qji, Esum);
 		}
 		// cout << "Aris "; prow(Aris); cout << endl;

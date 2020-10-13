@@ -213,10 +213,10 @@ namespace amg
     {
       /** A  B   I Q  =  A   AQ+B
 	  BT C   0 I  =  BT BTQ+C **/
-      // static Mat<DISPPV, ROTPV, double> AQ;
-      // static Mat<ROTPV, DISPPV, double> BTQ;
-      auto BTQ = MakeFlatMat<DISPPV, ROTPV, 0, DISPPV>(M) * MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(Q);
-      auto AQ = scal * MakeFlatMat<0, DISPPV, 0, DISPPV>(M) * MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(Q);
+      static Mat<DISPPV, ROTPV, double> AQ;
+      static Mat<ROTPV, ROTPV, double> BTQ;
+      BTQ = MakeFlatMat<DISPPV, ROTPV, 0, DISPPV>(M) * MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(Q);
+      AQ = MakeFlatMat<0, DISPPV, 0, DISPPV>(M) * MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(Q);
       MakeFlatMat<0, DISPPV, 0, DISPPV>(out) = scal * MakeFlatMat<0, DISPPV, 0, DISPPV>(M);
       MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(out) = scal * ( MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(M) + AQ );
       MakeFlatMat<DISPPV, ROTPV, 0, DISPPV>(out) = scal * MakeFlatMat<DISPPV, ROTPV, 0, DISPPV>(M);
@@ -227,10 +227,10 @@ namespace amg
     {
       /** A  B   I Q  =  A   AQ+B
 	  BT C   0 I  =  BT BTQ+C **/
-      // static Mat<DISPPV, ROTPV, double> AQ;
-      auto AQ = MakeFlatMat<0, DISPPV, 0, DISPPV>(M) * MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(Q);
-      // static Mat<ROTPV, DISPPV, double> BTQ;
-      auto BTQ = MakeFlatMat<DISPPV, ROTPV, 0, DISPPV>(M) * MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(Q);
+      static Mat<DISPPV, ROTPV, double> AQ;
+      static Mat<ROTPV, ROTPV, double> BTQ;
+      BTQ = MakeFlatMat<DISPPV, ROTPV, 0, DISPPV>(M) * MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(Q);
+      AQ = MakeFlatMat<0, DISPPV, 0, DISPPV>(M) * MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(Q);
       MakeFlatMat<0, DISPPV, 0, DISPPV>(out) += scal * MakeFlatMat<0, DISPPV, 0, DISPPV>(M);
       MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(out) += scal * ( MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(M) + AQ );
       MakeFlatMat<DISPPV, ROTPV, 0, DISPPV>(out) += scal * MakeFlatMat<DISPPV, ROTPV, 0, DISPPV>(M);
@@ -241,9 +241,10 @@ namespace amg
     {
       /** I  0   A  B   =    A      B
 	  QT I   BT C   =  QTA+BT QTB+C **/
-      // static Mat<DISPPV, ROTPV, double> QTA, QTB;
-      auto QTA = Trans(MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(Q)) * MakeFlatMat<0, DISPPV, 0, DISPPV>(M);
-      auto QTB = Trans(MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(Q)) * MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(M);
+      static Mat<DISPPV, ROTPV, double> QTA;
+      static Mat<ROTPV, ROTPV, double> QTB;
+      QTA = Trans(MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(Q)) * MakeFlatMat<0, DISPPV, 0, DISPPV>(M);
+      QTB = Trans(MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(Q)) * MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(M);
       MakeFlatMat<0, DISPPV, 0, DISPPV>(out) = scal * MakeFlatMat<0, DISPPV, 0, DISPPV>(M);
       MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(out) = scal * MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(M);
       MakeFlatMat<DISPPV, ROTPV, 0, DISPPV>(out) = scal * ( MakeFlatMat<DISPPV, ROTPV, 0, DISPPV>(M) + QTA );
@@ -254,9 +255,10 @@ namespace amg
     {
       /** I  0   A  B   =    A      B
 	  QT I   BT C   =  QTA+BT QTB+C **/
-      // static Mat<DISPPV, ROTPV, double> QTA, QTB;
-      auto QTA = Trans(MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(Q)) * MakeFlatMat<0, DISPPV, 0, DISPPV>(M);
-      auto QTB = Trans(MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(Q)) * MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(M);
+      static Mat<DISPPV, ROTPV, double> QTA;
+      static Mat<ROTPV, ROTPV, double> QTB;
+      QTA = Trans(MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(Q)) * MakeFlatMat<0, DISPPV, 0, DISPPV>(M);
+      QTB = Trans(MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(Q)) * MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(M);
       MakeFlatMat<0, DISPPV, 0, DISPPV>(out) += scal * MakeFlatMat<0, DISPPV, 0, DISPPV>(M);
       MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(out) += scal * MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(M);
       MakeFlatMat<DISPPV, ROTPV, 0, DISPPV>(out) += scal * ( MakeFlatMat<DISPPV, ROTPV, 0, DISPPV>(M) + QTA );
