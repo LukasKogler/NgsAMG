@@ -365,6 +365,17 @@ namespace amg
 
   bool CheckForSPD (FlatMatrix<double> A, LocalHeap & lh);
   bool CheckForSSPD (FlatMatrix<double> A, LocalHeap & lh);
+  void CalcPseudoInverseNew (FlatMatrix<double> mat, LocalHeap & lh);
+
+  template<int N>
+  INLINE void CalcPseudoInverseNew (Mat<N, N, double> & mat, LocalHeap & lh)
+  {
+    FlatMatrix<double> mat2(N, N, lh);
+    mat2 = mat;
+    CalcPseudoInverseNew(mat2, lh);
+    mat = mat2;
+  }
+
 
 } // namespace amg
 

@@ -384,6 +384,7 @@ namespace amg
     static Timer tvp("FormAgglomerates - pair verts");
     static Timer tassb("FormAgglomerates - ass.block");
     static Timer tassbs("FormAgglomerates - ass.block.simple");
+    static Timer tbste("FormAgglomerates - boost edge");
     tprep.Start();
 
     auto tm_mesh = dynamic_pointer_cast<TMESH>(mesh);
@@ -619,6 +620,7 @@ namespace amg
       if constexpr(rrobust) { // dummy - should never be called anyways!
 	emat = fedata_full[int(fecon(vi, vj))];
 	if (boost) {
+	  RegionTimer rt(tbste);
 	  // print_rank("initial emat", emat);
 	  auto neibsi = fecon.GetRowIndices(vi);
 	  auto neibsj = fecon.GetRowIndices(vj);
@@ -629,7 +631,8 @@ namespace amg
 	      ENERGY::ModQij(fvdata[N], fvdata[vj], Q2);
 	      ENERGY::SetQtMQ(1.0, Ejn, Q2, fedata_full[int(fecon(vj,N))]);
 	      Esum = Ein + Ejn;
-	      CalcPseudoInverse(Esum, lh);
+	      // CalcPseudoInverse(Esum, lh);
+	      CalcPseudoInverseNew(Esum, lh);
 	      addE = TripleProd(Ein, Esum, Ejn);
 	      ENERGY::ModQHh(H_data, fvdata[N], Q2);
 	      ENERGY::AddQtMQ (2.0, emat, Q2, addE);
@@ -787,24 +790,41 @@ namespace amg
 		  // QiM = Trans(Qij) * ed;
 
 		  // A.Rows(Ki, Kip).Cols(Ki, Kip) += QiM * Qij;
-		  ENERGY::CalcMQ(1.0, QiM, Qij, tm_tmp);
-		  // CalcMQ<ENERGY>(1.0, QiM, Qij, tm_tmp);
+		  // ENERGY::CalcMQ(1.0, QiM, Qij, tm_tmp);
+		  CalcMQ<ENERGY>(1.0, QiM, Qij, tm_tmp);
 		  // tm_tmp = QiM * Qij;
 		  A.Rows(Ki, Kip).Cols(Ki, Kip) += tm_tmp;
 
 		  // A_n_mems.Cols(Li, Lip) = -1.0 * QjM * Qij;
-		  ENERGY::CalcMQ(-1.0, QjM, Qij, tm_tmp);
-		  // CalcMQ<ENERGY>(-1.0, QjM, Qij, tm_tmp);
+		  // ENERGY::CalcMQ(-1.0, QjM, Qij, tm_tmp);
+		  CalcMQ<ENERGY>(-1.0, QjM, Qij, tm_tmp);
 		  A_n_mems.Cols(Li, Lip) = tm_tmp;
 
 		  // Esum += QjM * Qji;
-		  ENERGY::AddMQ(1.0, QjM, Qji, Esum);
-		  // AddMQ<ENERGY>(1.0, QjM, Qji, Esum);
+		  // ENERGY::AddMQ(1.0, QjM, Qji, Esum);
+		  AddMQ<ENERGY>(1.0, QjM, Qji, Esum);
 		}
 		// cout << "Aris "; prow(Aris); cout << endl;
 		// print_rank("assblock A " + to_string(mem) + ".I", A, lh);
 		// cout << " Esum " << endl; print_tm(cout, Esum); cout << endl;
-		CalcPseudoInverse(Esum, lh);
+		// TM esum2 = Esum;
+		// print_rank("esum", Esum);
+		// cout << " Esum = " << endl; print_tm(cout, Esum);
+		
+		// CalcPseudoInverse(Esum, lh);
+		CalcPseudoInverseNew(Esum, lh);
+
+		// CalcPseudoInverseNew(esum2, lh);
+		// cout << " inv Esum    = " << endl; print_tm(cout, Esum);
+		// cout << " newinv Esum = " << endl; print_tm(cout, esum2);
+		// esum2 -= Esum;
+		// double nrm = 0;
+		// for (auto k : Range(BS))
+		//   for (auto j : Range(BS))
+		//     nrm += fabs(esum2(k,j));
+		// if (nrm > 1e-12)
+		//   { cout << " DIFF = " << nrm << endl << endl; }
+
 		// cout << " pinv Esum " << endl; print_tm(cout, Esum); cout << endl;
 		FlatMatrix<double> A_mems_n(BS*inmems.Size(), BS, lh);
 		// cout << " A_n_mems " << endl << A_n_mems << endl;

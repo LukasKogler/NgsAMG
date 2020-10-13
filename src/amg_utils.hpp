@@ -998,7 +998,7 @@ namespace amg
 
   template<int N, class T> INLINE void CalcPseudoInverse (T & m)
   {
-    static Timer t("CalcPseudoInverse"); RegionTimer rt(t);
+    // static Timer t("CalcPseudoInverse"); RegionTimer rt(t);
     // static Timer tl("CalcPseudoInverse - Lapck");
 
     static Matrix<double> M(N,N), evecs(N,N);
@@ -1026,7 +1026,7 @@ namespace amg
 
   INLINE void CalcPseudoInverseFM (FlatMatrix<double> & M, LocalHeap & lh)
   {
-    static Timer t("CalcPseudoInverseFM"); RegionTimer rt(t);
+    // static Timer t("CalcPseudoInverseFM"); RegionTimer rt(t);
     HeapReset hr(lh);
     // static Timer tl("CalcPseudoInverse - Lapck");
     const int N = M.Height();
@@ -1058,7 +1058,7 @@ namespace amg
   template<class T>
   INLINE void CalcPseudoInverse_impl (FlatMatrix<double> & M, T & out, LocalHeap & lh)
   {
-    static Timer t("CalcPseudoInverse_impl"); RegionTimer rt(t);
+    // static Timer t("CalcPseudoInverse_impl"); RegionTimer rt(t);
     // static Timer tl("CalcPseudoInverse - Lapck");
     const int N = M.Height();
     FlatMatrix<double> evecs(N, N, lh);
@@ -1089,7 +1089,7 @@ namespace amg
   template<int N>
   INLINE void CalcPseudoInverse (Mat<N, N, double> & M, LocalHeap & lh)
   {
-    static Timer t("CalcPseudoInverse expr");
+    // static Timer t("CalcPseudoInverse expr");
     HeapReset hr(lh);
     FlatMatrix<double> Mf(N,N,lh);
     Mf = M;

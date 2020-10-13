@@ -50,7 +50,7 @@ namespace amg
   bool CheckForSSPD (FlatMatrix<double> A, LocalHeap & lh)
   {
     // throw Exception("THIS DOES NOT WORK!!");
-    static Timer t("CheckForSPD"); RegionTimer rt(t);
+    static Timer t("CheckForSSPD"); RegionTimer rt(t);
     /** can do this with dpstrf (cholesky for semi-positive definite) **/
     integer n = A.Height();
     if (n == 0)
@@ -99,5 +99,169 @@ namespace amg
 
     return diffnorm < eps;
   } // CheckForSSPD
+
+
+  /** Fallback inverse for singular matrices - via SVD **/
+  INLINE void CalcPseudoInverseFB (FlatMatrix<double> & M, LocalHeap & lh)
+  {
+    // cout << " CPI FB for " << endl << M << endl;
+    // static Timer t("CalcPseudoInverseFB"); RegionTimer rt(t);
+    const int N = M.Height();
+    FlatMatrix<double> evecs(N, N, lh);
+    FlatVector<double> evals(N, lh);
+    LapackEigenValuesSymmetric(M, evals, evecs);
+    double tol = 0; for (auto v : evals) tol += v;
+    tol = 1e-12 * tol; tol = max2(tol, 1e-15);
+    int DK = 0; // dim kernel
+    for (auto & v : evals) {
+      if (v > tol)
+	{ v = 1/sqrt(v); }
+      else {
+	DK++;
+	v = 0;
+      }
+    }
+    int NS = N-DK;
+    for (auto i : Range(N))
+      for (auto j : Range(N))
+	evecs(i,j) *= evals(i);
+    if (DK > 0)
+      { M = Trans(evecs.Rows(DK, N)) * evecs.Rows(DK, N); }
+    else
+      { M = Trans(evecs) * evecs; }
+    // cout << " done CPI FB for " << endl << M << endl;
+  }
+
+  /** Copied from ngsolve/basiclinalg/ng_lapack.hpp, then modified if info is != 0 **/
+  INLINE void CPI_TN_Lapack (FlatMatrix<double> A, LocalHeap & lh)
+  {
+    integer n = A.Width();
+    if (n == 0)
+      { return; }
+    FlatMatrix<double> a(n, n, lh); a = A;
+    integer lda = a.Dist();
+    integer info;
+    char uplo = 'U';
+    dpotrf_ (&uplo, &n, &a(0,0), &lda, &info);
+    if (info != 0)
+      { CalcPseudoInverseFB(A, lh); return; }
+    dpotri_ (&uplo, &n, &a(0,0), &lda, &info);
+    if (info != 0)
+      { CalcPseudoInverseFB(A, lh); return; }
+    for (int i = 0; i < n; i++)
+      for (int j = 0; j <= i; j++)
+	{ A(j,i) = a(i,j); A(i,j) = a(i,j); }
+  }
+
+  /** Copied from ngsolve/basiclinalg/calcinerse.cpp, then modified if mat singular **/
+  INLINE void CPI_TN (FlatMatrix<double> A, LocalHeap & lh)
+  {
+    int n = A.Height();
+    if (n == 0)
+      { return; }
+    double eps = 0;
+    for (int j = 0; j < n; j++)
+      { eps = max(eps, A(j,j)); }
+    eps = 1e-14 * eps;
+    FlatMatrix<double> inv(n, n, lh); inv = A;
+    ngstd::ArrayMem<int,100> p(n);   // pivot-permutation
+    for (int j = 0; j < n; j++)
+      { p[j] = j; }
+    bool isok = true;
+    for (int j = 0; j < n; j++)
+      {
+	// pivot search
+	double maxval = abs(inv(j,j));
+	int r = j;
+	for (int i = j+1; i < n; i++)
+	  if (abs (inv(j, i)) > maxval)
+	    {
+	      r = i;
+	      maxval = abs (inv(j, i));
+	    }
+        double rest = 0.0;
+        for (int i = j+1; i < n; i++)
+          rest += abs(inv(r, i));
+	// if ( (maxval < 1e-20*rest) || (rest < eps) )
+	  // { isok = false; break; }
+	if ( maxval < max(1e-20*rest, eps) )
+	  { isok = false; break; }
+	// exchange rows
+	if (r > j)
+	  {
+	    for (int k = 0; k < n; k++)
+	      swap (inv(k, j), inv(k, r));
+	    swap (p[j], p[r]);
+	  }
+	// transformation
+	double hr;
+	CalcInverse (inv(j,j), hr);
+	for (int i = 0; i < n; i++)
+	  {
+	    double h = hr * inv(j, i);
+	    inv(j, i) = h;
+	  }
+	inv(j,j) = hr;
+	for (int k = 0; k < n; k++)
+	  if (k != j)
+	    {
+	      double help = inv(n*k+j);
+	      double h = help * hr;   
+	      for (int i = 0; i < n; i++)
+		{
+		  double h = help * inv(n*j+i); 
+		  inv(n*k+i) -= h;
+		}
+	      inv(k,j) = -h;
+	    }
+      }
+    if (isok) {
+      // row exchange
+      VectorMem<100,double> hv(n);
+      for (int i = 0; i < n; i++)
+	{
+	  for (int k = 0; k < n; k++) hv(p[k]) = inv(k, i);
+	  for (int k = 0; k < n; k++) inv(k, i) = hv(k);
+	}
+      A = inv;
+    }
+    else
+      { CalcPseudoInverseFB(A, lh); }
+  }
+
+  void CalcPseudoInverseTryNormal (FlatMatrix<double> A, LocalHeap & lh)
+  {
+    // static Timer t("CalcPseudoInverseTryNormal"); RegionTimer rt(t);
+    if (A.Height() >= 50)
+      { CPI_TN_Lapack(A, lh); }
+    else
+      { CPI_TN (A, lh); }
+  }
+
+  void CalcPseudoInverseNew (FlatMatrix<double> mat, LocalHeap & lh)
+  {
+    int N = mat.Height(), M = 0;
+    double maxd = 0;
+    for (auto k : Range(N))
+      { maxd = max2(maxd, mat(k,k)); }
+    double eps = 1e-8 * maxd;
+    for (auto k : Range(N))
+      if (mat(k,k) > eps)
+	{ M++; }
+    if (M == N)
+      { CalcPseudoInverseTryNormal(mat, lh); }
+    else if (M > 0) {
+      FlatMatrix<double> small_mat(M, M, lh);
+      FlatArray<int> nzeros(M, lh);
+      M = 0;
+      for (auto k : Range(N))
+	if (mat(k,k) > eps)
+	  { nzeros[M++] = k; }
+      small_mat = mat.Rows(nzeros).Cols(nzeros);
+      // cout << " CPO on reduces mat " << endl << small_mat << endl;
+      CalcPseudoInverseTryNormal(small_mat, lh);
+      mat.Rows(nzeros).Cols(nzeros) = small_mat;
+    }
+  }
 
 } // namespace amg
