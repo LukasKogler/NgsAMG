@@ -14,30 +14,105 @@ namespace amg
     FlatMatrix<double> a(N, N, lh); a = A;
     FlatVector<double> evals(N, lh);
     LapackEigenValuesSymmetric(a, evals);
-    int rk = 0;
+    int neg = 0, pos = 0, rk = 0;
+    double eps = 1e-10 * fabs(evals(N-1));
     for (auto k :Range(evals))
-      if (fabs(evals(k)) > 1e-10 * fabs(evals(N-1)))
-	{ rk++; }
-    cout << " trace of " << name << " = " << calc_trace(A) << endl;
-    cout << " rank of " << name << " = " << rk << " of " << N << endl;
-						  cout << " all evals are = "; prow(evals); cout << endl;
+      if (evals(k) > eps)
+	{ pos++; rk++; }
+      else if (evals(k) < -eps)
+	{ neg++; rk++; }
+    // cout << " trace of " << name << " = " << calc_trace(A) << endl;
+    cout << " rank of " << name << " = " << rk << " of " << N << ", pos = " << pos << ", neg = " << neg << ", min = " << evals(0) << ", max = " << evals(N-1) << ", all evals = "; prow(evals); cout << endl;
+						  // cout << " all evals are = "; prow(evals); cout << endl;
   }
 
-  INLINE void print_rank(string name, FlatMatrix<double> A, LocalHeap & lh)
+    INLINE void print_rank(string name, FlatMatrix<double> A, LocalHeap & lh, ostream & os)
   {
+    HeapReset hr(lh);
     int N = A.Height();
     FlatMatrix<double> a(N, N, lh); a = A;
     FlatVector<double> evals(N, lh);
     LapackEigenValuesSymmetric(a, evals);
-    int rk = 0;
+    int neg = 0, pos = 0, rk = 0;
+    double eps = 1e-10 * fabs(evals(N-1));
+    double minpos = fabs(evals(N-1));
     for (auto k :Range(evals))
-      if (fabs(evals(k)) > 1e-10 * fabs(evals(N-1)))
-	{ rk++; }
-    cout << " trace of " << name << " = " << calc_trace(A) << endl;
-    cout << " rank of " << name << " = " << rk << " of " << N << endl;
-						  cout << " all evals are = "; prow(evals); cout << endl;
+      if (evals(k) > eps)
+	{ pos++; rk++; minpos = min(evals(k), minpos); }
+      else if (evals(k) < -eps)
+	{ neg++; rk++; }
+    // os << " trace of " << name << " = " << calc_trace(A) << endl;
+    // os << " rank of " << name << " = " << rk << " of " << N << ", pos = " << pos << ", neg = " << neg << ", min = " << evals(0) << ", max = " << evals(N-1) << ", all evals = "; prow(evals); cout << endl;
+    os << " rank of " << name << " = " << rk << " of " << N << ", pos = " << pos << ", neg = " << neg << ", min = " << evals(0) << ", minpos = " << minpos << ", max = " << evals(N-1) << ", all evals = " << endl;
+						  // cout << " all evals are = "; prow(evals); cout << endl;
   }
 
+  INLINE void print_rank(string name, FlatMatrix<double> A, LocalHeap & lh)
+  {
+    print_rank(name, A, lh, cout);
+  }
+
+  /** for some reaason, ENERGY::Calc/Add stuff segfaults. Actually, these segfault too?? **/
+
+  template<class ENERGY>
+  INLINE void CalcQTM (double scal, const typename ENERGY::TM & Q, const typename ENERGY::TM & M, typename ENERGY::TM & out)
+  {
+    /** I  0   A  B   =    A      B
+	QT I   BT C   =  QTA+BT QTB+C **/
+    static Mat<ENERGY::DISPPV, ENERGY::ROTPV, double> QTA;
+    static Mat<ENERGY::ROTPV, ENERGY::ROTPV, double> QTB;
+    QTA = Trans(MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(Q)) * MakeFlatMat<0, ENERGY::DISPPV, 0, ENERGY::DISPPV>(M);
+    QTB = Trans(MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(Q)) * MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(M);
+    MakeFlatMat<0, ENERGY::DISPPV, 0, ENERGY::DISPPV>(out) = scal * MakeFlatMat<0, ENERGY::DISPPV, 0, ENERGY::DISPPV>(M);
+    MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(out) = scal * MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(M);
+    MakeFlatMat<ENERGY::DISPPV, ENERGY::ROTPV, 0, ENERGY::DISPPV>(out) = scal * ( MakeFlatMat<ENERGY::DISPPV, ENERGY::ROTPV, 0, ENERGY::DISPPV>(M) + QTA );
+    MakeFlatMat<ENERGY::DISPPV, ENERGY::ROTPV, ENERGY::DISPPV, ENERGY::ROTPV>(out) = scal * (MakeFlatMat<ENERGY::DISPPV, ENERGY::ROTPV, ENERGY::DISPPV, ENERGY::ROTPV>(M) + QTB);
+  }
+
+  template<class ENERGY>
+  INLINE void AddQTM (double scal, const typename ENERGY::TM & Q, const typename ENERGY::TM & M, typename ENERGY::TM & out)
+  {
+    /** I  0   A  B   =    A      B
+	QT I   BT C   =  QTA+BT QTB+C **/
+    static Mat<ENERGY::DISPPV, ENERGY::ROTPV, double> QTA;
+    static Mat<ENERGY::ROTPV, ENERGY::ROTPV, double> QTB;
+    QTA = Trans(MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(Q)) * MakeFlatMat<0, ENERGY::DISPPV, 0, ENERGY::DISPPV>(M);
+    QTB = Trans(MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(Q)) * MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(M);
+    MakeFlatMat<0, ENERGY::DISPPV, 0, ENERGY::DISPPV>(out) += scal * MakeFlatMat<0, ENERGY::DISPPV, 0, ENERGY::DISPPV>(M);
+    MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(out) += scal * MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(M);
+    MakeFlatMat<ENERGY::DISPPV, ENERGY::ROTPV, 0, ENERGY::DISPPV>(out) += scal * ( MakeFlatMat<ENERGY::DISPPV, ENERGY::ROTPV, 0, ENERGY::DISPPV>(M) + QTA );
+    MakeFlatMat<ENERGY::DISPPV, ENERGY::ROTPV, ENERGY::DISPPV, ENERGY::ROTPV>(out) += scal * (MakeFlatMat<ENERGY::DISPPV, ENERGY::ROTPV, ENERGY::DISPPV, ENERGY::ROTPV>(M) + QTB);
+  }
+
+  template<class ENERGY>
+  static INLINE void CalcMQ (double scal, const typename ENERGY::TM & Q, const typename ENERGY::TM & M, typename ENERGY::TM & out)
+  {
+    /** A  B   I Q  =  A   AQ+B
+	BT C   0 I  =  BT BTQ+C **/
+    static Mat<ENERGY::DISPPV, ENERGY::ROTPV, double> AQ;
+    static Mat<ENERGY::ROTPV, ENERGY::DISPPV, double> BTQ;
+    BTQ = MakeFlatMat<ENERGY::DISPPV, ENERGY::ROTPV, 0, ENERGY::DISPPV>(M) * MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(Q);
+    AQ = scal * MakeFlatMat<0, ENERGY::DISPPV, 0, ENERGY::DISPPV>(M) * MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(Q);
+    MakeFlatMat<0, ENERGY::DISPPV, 0, ENERGY::DISPPV>(out) = scal * MakeFlatMat<0, ENERGY::DISPPV, 0, ENERGY::DISPPV>(M);
+    MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(out) = scal * ( MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(M) + AQ );
+    MakeFlatMat<ENERGY::DISPPV, ENERGY::ROTPV, 0, ENERGY::DISPPV>(out) = scal * MakeFlatMat<ENERGY::DISPPV, ENERGY::ROTPV, 0, ENERGY::DISPPV>(M);
+    MakeFlatMat<ENERGY::DISPPV, ENERGY::ROTPV, ENERGY::DISPPV, ENERGY::ROTPV>(out) = scal * (MakeFlatMat<ENERGY::DISPPV, ENERGY::ROTPV, ENERGY::DISPPV, ENERGY::ROTPV>(M) + BTQ);
+  }
+
+  template<class ENERGY>
+  static INLINE void AddMQ (double scal, const typename ENERGY::TM & Q, const typename ENERGY::TM & M, typename ENERGY::TM & out)
+  {
+    /** A  B   I Q  =  A   AQ+B
+	BT C   0 I  =  BT BTQ+C **/
+    static Mat<ENERGY::DISPPV, ENERGY::ROTPV, double> AQ;
+    static Mat<ENERGY::ROTPV, ENERGY::ROTPV, double> BTQ;
+    BTQ = MakeFlatMat<ENERGY::DISPPV, ENERGY::ROTPV, 0, ENERGY::DISPPV>(M) * MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(Q);
+    AQ = scal * MakeFlatMat<0, ENERGY::DISPPV, 0, ENERGY::DISPPV>(M) * MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(Q);
+    MakeFlatMat<0, ENERGY::DISPPV, 0, ENERGY::DISPPV>(out) += scal * MakeFlatMat<0, ENERGY::DISPPV, 0, ENERGY::DISPPV>(M);
+    MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(out) += scal * ( MakeFlatMat<0, ENERGY::DISPPV, ENERGY::DISPPV, ENERGY::ROTPV>(M) + AQ );
+    MakeFlatMat<ENERGY::DISPPV, ENERGY::ROTPV, 0, ENERGY::DISPPV>(out) += scal * MakeFlatMat<ENERGY::DISPPV, ENERGY::ROTPV, 0, ENERGY::DISPPV>(M);
+    MakeFlatMat<ENERGY::DISPPV, ENERGY::ROTPV, ENERGY::DISPPV, ENERGY::ROTPV>(out) += scal * (MakeFlatMat<ENERGY::DISPPV, ENERGY::ROTPV, ENERGY::DISPPV, ENERGY::ROTPV>(M) + BTQ);
+  }
 
   template<class T>
   INLINE void print_tm (ostream &os, int prec, const T & mat) {
@@ -307,12 +382,22 @@ namespace amg
     static Timer tprep("FormAgglomerates - prep");
     static Timer tsv("FormAgglomerates - spec verts");
     static Timer tvp("FormAgglomerates - pair verts");
+    static Timer tassb("FormAgglomerates - ass.block");
+    static Timer tassbs("FormAgglomerates - ass.block.simple");
     tprep.Start();
 
+    auto tm_mesh = dynamic_pointer_cast<TMESH>(mesh);
+    const TMESH & M = *tm_mesh; M.CumulateData();
+    const auto & eqc_h = *M.GetEQCHierarchy();
+    auto comm = eqc_h.GetCommunicator();
+    const auto NV = M.template GetNN<NT_VERTEX>();
+    const auto NE = M.template GetNN<NT_EDGE>();
+    const auto & base_econ = *M.GetEdgeCM();
+
     typedef typename Options::CW_TYPE CW_TYPE;
-    const bool print_aggs = settings.print_aggs;    // actual aggs
-    const bool print_summs = print_aggs || settings.print_aggs;   // summary info
-    const bool print_params = print_summs || settings.print_aggs;  // parameters for every round
+    const bool print_aggs = (comm.Rank() == 0) && settings.print_aggs;    // actual aggs
+    const bool print_summs = (comm.Rank() == 0) && ( print_aggs || settings.print_summs );   // summary info
+    const bool print_params = (comm.Rank() == 0) && ( print_summs || settings.print_params );  // parameters for every round
     this->print_vmap = settings.print_aggs;
 
     const int num_rounds = settings.num_rounds;
@@ -327,14 +412,6 @@ namespace amg
       cout << " FORM SPW AGGLOMERATES " << endl;
       cout << "BS BSU ROBUST ROBUST = " << BS << " " << BSU << " " << robust << " " << ROBUST << endl;
     }
-
-    auto tm_mesh = dynamic_pointer_cast<TMESH>(mesh);
-    const TMESH & M = *tm_mesh; M.CumulateData();
-    const auto & eqc_h = *M.GetEQCHierarchy();
-    auto comm = eqc_h.GetCommunicator();
-    const auto NV = M.template GetNN<NT_VERTEX>();
-    const auto NE = M.template GetNN<NT_EDGE>();
-    const auto & econ = *M.GetEdgeCM();
     
     /** Calc trace of sum of off-proc contrib to diagonal. use this as additional trace to take the max over for "mmx" CWT.
 	Only need to do this if the mesh is parallel, and if we are actually using "mmx" anywhere.
@@ -411,6 +488,12 @@ namespace amg
       for (auto k : Range(base_mtrod))
 	{ base_mtrod[k] = (calc_trace(base_diags[k]) - base_mtrod[k]) / BS; }
 
+    // cout << " intermed base_diags: " << endl;
+    // for (auto k : Range(base_diags)) {
+    //   cout << "(" << k << "::" << calc_trace(base_diags[k]) << " " << calc_trace(base_diags[k])/BS << ") ";
+    // }
+    // cout << endl << endl;
+
     /** NOTE: We use l2 weights on both sides only for CBS. for pair-wise, l2 is only on diag. **/
     M.template Apply<NT_VERTEX>([&](auto v) {
 	constexpr int rrobust = robust;
@@ -418,7 +501,7 @@ namespace amg
 	  { base_diags[v] += ENERGY::GetVMatrix(base_vdata[v]); }
 	else
 	  { base_diags[v] += ENERGY::GetApproxVWeight(base_vdata[v]); }
-      }, false ); // only master again
+      }, false ); // everyone 
 
     Array<TVD> cvdata;
     Array<TMU> cedata_full, cdiags;
@@ -428,6 +511,15 @@ namespace amg
     FlatArray<TMU> fdiags; fdiags.Assign(base_diags);
     FlatArray<double> fedata; fedata.Assign(base_edata);
     FlatArray<double> fmtrod; fmtrod.Assign(base_mtrod);
+
+    // cout << " final base_diags: " << endl;
+    // for (auto k : Range(base_diags)) {
+    //   cout << "(" << k << "::" << calc_trace(fdiags[k]) << " " << calc_trace(fdiags[k])/BS << ") ";
+    // }
+    // cout << endl << endl;
+      
+    // cout << " fedata: "; prow2(fedata); cout << endl;
+    // cout << endl << endl;
 
     // if (print_aggs) {
     //   cout << " FINE l2 wts; " << endl;
@@ -441,9 +533,11 @@ namespace amg
     /** 1.5 times min(150MB, max(20MB, max i need for cbs)) **/
     size_t lhs = 1.5 * min2(size_t(157286400),
 			    max2( size_t(20971520),
-				  size_t(pow(2*BS, num_rounds) * 6) ) );
+				  size_t(pow(2*BS, num_rounds) * 10) ) );
 
-    LocalHeap lh(lhs, "cthulu"); // 20 MB
+    // cout << " alloc localheap with size = " << lhs << ", in MBS = " << lhs/1024/1024 << endl;
+    
+    LocalHeap lh(lhs, "cthulu");
 
     auto calc_avg_scal = [&](AVG_TYPE avg, double mtra, double mtrb) LAMBDA_INLINE {
       switch(avg) {
@@ -460,10 +554,11 @@ namespace amg
     auto calc_vcw = [&](auto v) {
       constexpr bool rrobust = robust;
       if constexpr (rrobust) {
+	if (fabs(calc_trace(base_vdata[v].wt)) < 1e-15)
+	  { return 0.0; }
+	HeapReset hr(lh);
 	FlatMatrix<double> L(BS, BS, lh), R(BS, BS, lh);
 	L = base_diags[v]; R = base_vdata[v].wt; 
-	if (fabs(calc_trace(R)) < 1e-15)
-	  { return 0.0; }
 	auto soc = MEV<BS>(L, R); // lam L \leq R
 	// if (soc > 1e-4) {
 	  // cout << " calc vcw for " << v << endl; // << ", L = " << endl << L << endl << " R = " << endl << R << endl;
@@ -489,12 +584,15 @@ namespace amg
     double da, db, dedge;
     auto calc_soc_scal = [&](CW_TYPE cw_type, AVG_TYPE mm_avg, auto vi, auto vj, const auto & fecon) LAMBDA_INLINE {
       /** calc_trace does nothing for scalar case **/
-      // cout << " css for " << vi << " " << vj << ", eid " << fecon(vi, vj) << " , feds " << fedata.Size() << endl;
       dedge = calc_trace(fedata[int(fecon(vi, vj))]);
-      // cout << " i j edge " << calc_trace(fdiags[vi]) << " " << calc_trace(fdiags[vj]) << " " << dedge << endl;
+      // constexpr bool rrobust = robust;
+      // if constexpr(rrobust) {
+      // cout << " i vi j vj edge " << calc_trace(fdiags[vi]) << " " << calc_trace(fvdata[vi].wt);
+      // cout << " " << calc_trace(fdiags[vj]) << " " << calc_trace(fvdata[vj].wt) << " " << dedge << endl;
+	// }
       switch(cw_type) {
-      case(Options::CW_TYPE::HARMONIC) : { return dedge / calc_avg_scal(HARM, calc_trace(fdiags[vi]), calc_trace(fdiags[vj])); break; }
-      case(Options::CW_TYPE::GEOMETRIC) : { return dedge / calc_avg_scal(GEOM, calc_trace(fdiags[vi]), calc_trace(fdiags[vj])); break; }
+      case(Options::CW_TYPE::HARMONIC) : { return BSU * dedge / calc_avg_scal(HARM, calc_trace(fdiags[vi]), calc_trace(fdiags[vj])); break; }
+      case(Options::CW_TYPE::GEOMETRIC) : { return BSU * dedge / calc_avg_scal(GEOM, calc_trace(fdiags[vi]), calc_trace(fdiags[vj])); break; }
       case(Options::CW_TYPE::MINMAX) : {
 	da = db = 0;
 	for (auto eid : fecon.GetRowValues(vi))
@@ -540,6 +638,185 @@ namespace amg
 	}
       }
     };
+
+    // /** does not work as intended (is not enough) **/
+    // auto calc_emat_filtered = [&](TM & emat, auto vi, auto vj, auto filter) LAMBDA_INLINE {
+    //   constexpr bool rrobust = robust;
+    //   if constexpr(rrobust) { // dummy - should never be called anyways!
+    // 	emat = base_edata_full[int(base_econ(vi, vj))];
+    // 	// print_rank("init emat", emat);
+    // 	TVD H_data = ENERGY::CalcMPData(base_vdata[vi], base_vdata[vj]);
+    // 	// print_rank("initial emat", emat);
+    // 	auto neibsi = base_econ.GetRowIndices(vi);
+    // 	auto neibsj = base_econ.GetRowIndices(vj);
+    // 	int cnt = 0;
+    // 	iterate_intersection(neibsi, neibsj, [&](auto ki, auto kj) {
+    // 	    int N = neibsi[ki];
+    // 	    if (filter(N)) {
+    // 	      cnt++;
+    // 	      ENERGY::ModQij(base_vdata[N], base_vdata[vi], Q2);
+    // 	      ENERGY::SetQtMQ(1.0, Ein, Q2, base_edata_full[int(base_econ(vi,N))]);
+    // 	      ENERGY::ModQij(base_vdata[N], base_vdata[vj], Q2);
+    // 	      ENERGY::SetQtMQ(1.0, Ejn, Q2, base_edata_full[int(base_econ(vj,N))]);
+    // 	      Esum = Ein + Ejn;
+    // 	      CalcPseudoInverse(Esum, lh);
+    // 	      addE = TripleProd(Ein, Esum, Ejn);
+    // 	      ENERGY::ModQHh(H_data, base_vdata[N], Q2);
+    // 	      ENERGY::AddQtMQ (2.0, emat, Q2, addE);
+    // 	    }
+    // 	  });
+    // 	// print_rank("final emat (+" + to_string(cnt) + ")", emat);
+    //   }
+    // };
+
+    TM QiM(0), QjM(0), ed(0); //, dgb(0); 
+    auto assemble_block_simple = [&](FlatArray<int> mems, FlatMatrix<double> A) {
+      RegionTimer rt(tassbs);
+      constexpr bool rrobust = robust; // constexpr capture ...
+      if constexpr(rrobust) {
+	const int n = mems.Size(), N = BS * mems.Size();
+	for (auto ki : Range(mems)) {
+	  auto vi = mems[ki];
+	  const int Ki = BS*ki, Kip = Ki + BS;
+	  auto neibsa = base_econ.GetRowIndices(vi);
+	  auto eids = base_econ.GetRowValues(vi);
+	  A.Rows(Ki, Kip).Cols(Ki, Kip) += ENERGY::GetVMatrix(base_vdata[vi]); // include l2 weight
+	  iterate_intersection(neibsa, mems, [&](auto kneib, auto kj) {
+	      if (kj > ki) {
+		const int vj = neibsa[kneib], Kj = BS*kj, Kjp = Kj + BS;
+		const TMU & ed = base_edata_full[int(eids[kneib])];
+		// calc_emat_filtered(ed, vi, vj, [&](auto n){ return find_in_sorted_array(n, mems) == -1; });
+		ENERGY::ModQs(base_vdata[vi], base_vdata[vj], Qij, Qji);
+		QiM = Trans(Qij) * ed;
+		QjM = Trans(Qji) * ed;
+		A.Rows(Ki, Kip).Cols(Ki, Kip) +=  QiM * Qij;
+		A.Rows(Ki, Kip).Cols(Kj, Kjp) -= QiM * Qji;
+		A.Rows(Kj, Kjp).Cols(Ki, Kip) -= QjM * Qij;
+		A.Rows(Kj, Kjp).Cols(Kj, Kjp) +=  QjM * Qji;
+	      }
+	    });
+	}
+      }
+    };
+
+    // Array<int> extmems;
+    // auto assemble_block = [&](FlatArray<int> mems, FlatMatrix<double> A, bool boost) {
+    //   RegionTimer rt(tassb);
+    //   constexpr bool rrobust = robust; // constexpr capture ...
+    //   if constexpr(rrobust) {
+    // 	if (!boost) /** straight A-block **/
+    // 	  { assemble_block_simple(mems, A); }
+    // 	else { /** Assemble diagonal block for mems + neibs of mems, then calc (generalized) SC to mems **/
+    // 	  HeapReset hr(lh);
+    // 	  extmems.SetSize(3 * mems.Size()); extmems.SetSize0();
+    // 	  for (auto mem : mems) // no need to add "mem" itself - we assume mems to form connected graph
+    // 	    for (auto neib : base_econ.GetRowIndices(mem))
+    // 	      { insert_into_sorted_array_nodups(neib, extmems); }
+    // 	  int n = mems.Size(), N = BS * n, m = extmems.Size() - n, M = BS * m;
+    // 	  FlatMatrix<double> Aext(N+M, N+M, lh); Aext = 0;
+    // 	  assemble_block_simple(extmems, Aext);
+    // 	  FlatArray<int> locin(N, lh);
+    // 	  iterate_intersection(mems, extmems, [&](auto ki, auto ke) {
+    // 	      int indi = BS * ki, inde = BS * ke;
+    // 	      for (auto l : Range(BS))
+    // 		{ locin[indi++] = inde++; }
+    // 	    });
+    // 	  FlatArray<int> locout(M, lh); int co = 0;
+    // 	  iterate_anotb(extmems, mems, [&](auto ke) {
+    // 	      int inde = BS * ke;
+    // 	      for (auto l : Range(BS))
+    // 		{ locout[co++] = inde++; }
+    // 	    });
+    // 	  FlatMatrix<double> C(M, M, lh);
+    // 	  C = Aext.Rows(locout).Cols(locout);
+    // 	  // print_rank("as sblock C", C, lh, cerr);
+    // 	  // cerr << " calc Pinv for " << endl << C << endl;
+    // 	  CalcPseudoInverseFM(C, lh);
+    // 	  // print_rank("inved C", C, lh, cerr);
+    // 	  A = Aext.Rows(locin).Cols(locin);
+    // 	  FlatMatrix<double> AC(N, M, lh);
+    // 	  AC = Aext.Rows(locin).Cols(locout) * C;
+    // 	  // print_rank("assblock A I", Aext, lh);
+    // 	  A -= AC * Aext.Rows(locout).Cols(locin);
+    // 	  // print_rank("assblock A II  ", Aext, lh);
+    // 	}
+    //   }
+    // };
+
+    Array<int> extmems, inmems;
+    TM tm_tmp(0);
+    auto assemble_block = [&](FlatArray<int> mems, FlatMatrix<double> A, bool boost) {
+      RegionTimer rt(tassb);
+      constexpr bool rrobust = robust; // constexpr capture ...
+      if constexpr(rrobust) {
+	/** straight A-block **/
+	assemble_block_simple(mems, A);
+	/** For every member, calc SC w.r.t mems  **/
+    	if (boost) {
+    	  extmems.SetSize(3 * mems.Size()); extmems.SetSize0();
+	  extmems.Part(0, mems.Size()) = mems;
+	  // print_rank("assblock init A", A, lh);
+    	  for (auto mem : mems) // no need to add "mem" itself - we assume mems to form connected graph
+    	    for (auto neib : base_econ.GetRowIndices(mem)) {
+	      if ( insert_into_sorted_array_nodups(neib, extmems) ) {
+		HeapReset hr(lh);
+		auto neibneibs = base_econ.GetRowIndices(neib);
+		intersect_sorted_arrays(neibneibs, mems, inmems);
+		if (inmems.Size() < 2)
+		  { continue; }
+		// cout << " add neib " << neib << endl;
+		// cout << " inmems: "; prow2(inmems); cout << endl;
+		Esum = 0;
+		FlatArray<int> Aris(BS*inmems.Size(), lh); int cnt_Aris = 0;
+		FlatMatrix<double> A_n_mems(BS, BS*inmems.Size(), lh);
+		for (auto li : Range(inmems)) {
+		  int vi = inmems[li], Ki = find_in_sorted_array(vi, mems) * BS, Kip = Ki + BS,
+		    Li = BS * li, Lip = Li + BS;
+		  // cout << " vi ki kip " << vi << " " << Ki << " " << Kip << endl;
+		  for (auto l : Range(Ki, Kip))
+		    { Aris[cnt_Aris++] = l; }
+		  const TM & ed = base_edata_full[int(base_econ(vi, neib))];
+		  ENERGY::ModQs(base_vdata[vi], base_vdata[neib], Qij, Qji);
+
+		  // ENERGY::CalcQTM(1.0, Qji, ed, QjM);
+		  CalcQTM<ENERGY>(1.0, Qji, ed, QjM);
+		  // QjM = Trans(Qji) * ed;
+
+		  // ENERGY::CalcQTM(1.0, Qij, ed, QiM);
+		  CalcQTM<ENERGY>(1.0, Qij, ed, QiM);
+		  // QiM = Trans(Qij) * ed;
+
+		  // A.Rows(Ki, Kip).Cols(Ki, Kip) += QiM * Qij;
+		  // ENERGY::CalcMQ(1.0, QiM, Qij, tm_tmp);
+		  CalcMQ<ENERGY>(1.0, QiM, Qij, tm_tmp);
+		  A.Rows(Ki, Kip).Cols(Ki, Kip) += tm_tmp;
+
+		  A_n_mems.Cols(Li, Lip) = -1.0 * QjM * Qij;
+		  // ENERGY::CalcMQ(-1.0, QjM, Qij, tm_tmp);
+		  // CalcMQ<ENERGY>(-1.0, QjM, Qij, tm_tmp);
+		  // A_n_mems.Cols(Li, Lip) = tm_tmp;
+
+		  Esum += QjM * Qji;
+		  // ENERGY::AddMQ(1.0, QjM, Qji, Esum);
+		  // AddMQ<ENERGY>(1.0, QjM, Qji, Esum);
+		}
+		// cout << "Aris "; prow(Aris); cout << endl;
+		// print_rank("assblock A " + to_string(mem) + ".I", A, lh);
+		// cout << " Esum " << endl; print_tm(cout, Esum); cout << endl;
+		CalcPseudoInverse(Esum, lh);
+		// cout << " pinv Esum " << endl; print_tm(cout, Esum); cout << endl;
+		FlatMatrix<double> A_mems_n(BS*inmems.Size(), BS, lh);
+		// cout << " A_n_mems " << endl << A_n_mems << endl;
+		A_mems_n = Trans(A_n_mems) * Esum;
+		/** The SC **/
+		A.Rows(Aris).Cols(Aris) -= A_mems_n * A_n_mems;
+		// print_rank("assblock A " + to_string(mem) + ".II", A, lh);
+	      }
+	    }
+    	}
+      }
+    };
+
 
     TM dma(0), dmb(0), dmedge(0), Q(0); SetIdentity(Q);
     auto calc_soc_robust = [&](CW_TYPE cw_type, bool neib_boost, AVG_TYPE mma_scal, bool mma_mat_harm, auto vi, auto vj, const auto & fecon) LAMBDA_INLINE {
@@ -607,8 +884,10 @@ namespace amg
 
     auto calc_soc_pair = [&](bool dorobust, bool neib_boost, CW_TYPE cwt, AVG_TYPE mma_scal,
 			     AVG_TYPE mma_mat, auto vi, auto vj, const auto & fecon) { // maybe not force inlining this?
+      // cout << " calc soc pair " << vi << " " << vj << ", free      = " << double(lh.Available())/1024/1024 << ", frac = " << double(lh.Available())/lhs << endl;
       constexpr bool rrobust = robust;
       // cout << " CSP, rr " << rrobust << " , dr " << dorobust << ", for " << vi << " " << vj << endl;
+      { HeapReset hr(lh);
       if constexpr(rrobust) {
 	  if (dorobust)
 	    { return calc_soc_robust(cwt, neib_boost, mma_scal, (mma_mat==HARM), vi, vj, fecon); }
@@ -616,10 +895,12 @@ namespace amg
 	    { return calc_soc_scal(cwt, mma_scal, vi, vj, fecon); }
 	}
       else
-	{ return calc_soc_scal(cwt, mma_scal, vi, vj, fecon); }
+	{ return calc_soc_scal(cwt, mma_scal, vi, vj, fecon); } }
+      // cout << " done calc soc pair " << vi << " " << vj << ", free      = " << double(lh.Available())/1024/1024 << ", frac = " << double(lh.Available())/lhs << endl;
     };
     
     auto check_soc_aggs_scal = [&](auto memsi, auto memsj) LAMBDA_INLINE {
+      HeapReset hr(lh);
       /** TODO: this does not use fdiags, so l2 weights are not considered! **/
       /** simplified scalar version, based on traces of mats **/
       int n = memsi.Size() + memsj.Size();
@@ -632,15 +913,17 @@ namespace amg
       FlatMatrix<double> A(n, n, lh); A = 0.0;
       for (auto ki : Range(allmems)) {
 	auto vi = allmems[ki];
-	auto neibsa = econ.GetRowIndices(vi);
-	auto eids = econ.GetRowValues(vi);
+	auto neibsa = base_econ.GetRowIndices(vi);
+	auto eids = base_econ.GetRowValues(vi);
 	A(ki, ki) += ENERGY::GetApproxVWeight(base_vdata[vi]); // divide by BS is probably important here
 	iterate_intersection(neibsa, allmems, [&](auto kneib, auto kj) {
-	    const double x = base_edata[int(eids[kneib])];
-	    A(ki, kj) += x;
-	    A(ki, kj) -= x;
-	    A(kj, ki) -= x;
-	    A(kj, kj) += x;
+	    if (kj > ki) {
+	      const double x = base_edata[int(eids[kneib])];
+	      A(ki, ki) += x;
+	      A(ki, kj) -= x;
+	      A(kj, ki) -= x;
+	      A(kj, kj) += x;
+	    }
 	  });
       }
       /** P, PT**/
@@ -675,20 +958,20 @@ namespace amg
       A += calc_trace(A)/n * P * PT;
       // print_rank("CBS checked mat", A, lh);
       // print_rank("CBS, checked mat", A, lh);
+      // print_rank("(scal) CBS checked mat ", A, lh);
       bool isspd = CheckForSPD(A, lh);
       // cout << " is spd = " << isspd << endl << endl;
       return isspd;
     };
 
 
-    TM QiM(0), QjM(0), dgb(0);
-    auto check_soc_aggs_full = [&](auto memsi, auto memsj) LAMBDA_INLINE {
+    auto check_soc_aggs_robust = [&](auto memsi, auto memsj, bool boost) LAMBDA_INLINE {
       /** TODO: this does not use fdiags, so l2 weights are not considered! **/
-      HeapReset hr(lh);
       constexpr bool rrobust = robust;
       if constexpr(rrobust) {
 	/** "full" version, assembles the entire system **/
 	int n = memsi.Size() + memsj.Size(), N = BS * n;
+	HeapReset hr(lh);
 	if (n == 0)
 	  { return true; }
 	// FlatArray<int> allmems = merge_arrays_lh(memsi, memsj, lh); // actually, these are not ordered in the first place..
@@ -698,25 +981,9 @@ namespace amg
 	QuickSort(allmems);
 	/** A - the sub-assembled diag block **/
 	FlatMatrix<double> A(N, N, lh); A = 0.0;
-	for (auto ki : Range(allmems)) {
-	  auto vi = allmems[ki];
-	  const int Ki = BS*ki, Kip = Ki + BS;
-	  auto neibsa = econ.GetRowIndices(vi);
-	  auto eids = econ.GetRowValues(vi);
-	  A.Rows(Ki, Kip).Cols(Ki, Kip) += base_vdata[vi].wt; // include l2 weight
-	  iterate_intersection(neibsa, allmems, [&](auto kneib, auto kj) {
-	      const int vj = neibsa[kneib], Kj = BS*kj, Kjp = Kj + BS;
-	      const TMU & ed = base_edata_full[int(eids[kneib])];
-	      ENERGY::ModQs(base_vdata[vi], base_vdata[vj], Qij, Qji);
-	      QiM = Trans(Qij) * ed;
-	      QjM = Trans(Qji) * ed;
-	      A.Rows(Ki, Kip).Cols(Ki, Kip) +=  QiM * Qij;
-	      A.Rows(Ki, Kip).Cols(Kj, Kjp) -= QiM * Qji;
-	      A.Rows(Kj, Kjp).Cols(Ki, Kip) -= QjM * Qij;
-	      A.Rows(Kj, Kjp).Cols(Kj, Kjp) +=  QjM * Qji;
-	    });
-	}
-	/** P, PT **/
+	assemble_block(allmems, A, boost);
+
+	// /** P, PT **/
 	FlatMatrix<double> P(N, BS, lh), PT(BS, N, lh);
 	for (auto k : Range(allmems)) {
 	  ENERGY::ModQHh(base_vdata[allmems[0]], base_vdata[allmems[k]], Qij);
@@ -748,7 +1015,8 @@ namespace amg
 	// print_rank("CBS M I ", M, lh);
 	/** M - M P (PTMP)^{-1} PT M **/
 	M -= Trans(PTM) * inv_PTMP_PTM;
-	// print_rank("CBS M II ", M, lh);
+	// print_rank("CBS A ", A, lh);
+	// print_rank("CBS M ", M, lh);
 	if (cbs_spd_hack) {
 	  /** Here we do not necessarily know the entire kernel - vertices can be on a line (in 3d).
 	      Regularizing with RBMs only might not be enough. So we substract a bit more than MIN_ECW,
@@ -760,11 +1028,11 @@ namespace amg
 	  A += tra * P * PT;
 	  for (auto k : Range(N))
 	    { A(k,k) += reg; }
-	  // print_rank("CBS checked mat II ", A, lh);
+	  // print_rank("(hacked) CBS checked mat ", A, lh);
 	  // FlatMatrix<double> A2(N, N, lh); A2 = A;
 	  bool isspd = CheckForSPD(A, lh);
 	  // bool issspd = CheckForSSPD(A2, lh);
-	  // cout << " SPD/SSPD = " << isspd << " " << issspd << endl;
+	  // cout << " SSPD = " << isspd << endl;
 	  return isspd;
 	}
 	else { /** Do not regularize anything and use dpstrf. **/
@@ -781,12 +1049,14 @@ namespace amg
     };
 
     /** SOC for pair of agglomerates w.r.t original matrix **/
-    auto check_soc_aggs = [&](bool simplify, auto memsi, auto memsj) LAMBDA_INLINE {
+    auto check_soc_aggs = [&](bool simplify, bool boost, auto memsi, auto memsj) LAMBDA_INLINE {
+      // cout << " check soc aggs, n mems = " << memsi.Size() + memsj.Size() << ", free      = " << double(lh.Available())/1024/1024 << ", frac = " << double(lh.Available())/lhs << endl;
       /** TODO: this does not use fdiags, so l2 weights are not considered! **/
       if ( (BSU == 1) || simplify)
 	{ return check_soc_aggs_scal(memsi, memsj); }
       else
-	{ return check_soc_aggs_full(memsi, memsj); }
+	{ return check_soc_aggs_robust(memsi, memsj, boost); }
+      // cout << " done check soc aggs, free = " << double(lh.Available())/1024/1024 << ", frac = " << double(lh.Available())/lhs << endl;
       return true;
     };
 
@@ -812,7 +1082,7 @@ namespace amg
       QuickSort(socs, [&](const auto & a, const auto & b) LAMBDA_INLINE { return a[1] > b[1]; });
       // cout << " possible neibs for " << v << " = ";
       // for (auto v : socs)
-	// { cout << "[" << v[0] << " " << v[1] << "] "; }
+      // 	{ cout << "[" << v[0] << " " << v[1] << "] "; }
       // cout << endl;
       int candidate = ( (c > 0) && (socs[0][1] > MIN_ECW) ) ? int(socs[0][0]) : -1;
       // cout << " candidate is " << candidate << endl;
@@ -831,11 +1101,12 @@ namespace amg
 		{ stabsoc = calc_soc_pair(true, neib_boost, cwt_check, cmmas, cmmam, v, int(socs[j][0]), fecon); }
 	    }
 	if (stabsoc < MIN_ECW) /** this neib has strong stable connection **/
-	  { rej[0]++; rej[1]--; }
-	if (checkbigsoc && (stabsoc > MIN_ECW)) /** big EVP soc **/
-	  { stabsoc = check_soc_aggs(simple_cbs, get_mems(v), get_mems(int(socs[j][0]))) ? stabsoc : 0.0; }
-	if (stabsoc < MIN_ECW) /** this neib has strong stable connection **/
-	  { rej[1]++; }
+	  { rej[0]++; }
+	if (checkbigsoc && (stabsoc > MIN_ECW)) { /** big EVP soc **/
+	  stabsoc = check_soc_aggs(simple_cbs, neib_boost, get_mems(v), get_mems(int(socs[j][0]))) ? stabsoc : 0.0;
+	  if (stabsoc < MIN_ECW) /** this neib has strong stable connection **/
+	    { rej[1]++; }
+	}
 	if (stabsoc > MIN_ECW) /** this neib has strong stable connection **/
 	  { candidate = int(socs[j][0]); break; }
 	}
@@ -895,7 +1166,7 @@ namespace amg
       const CW_TYPE r_cwtc = settings.check_cw_type.GetOpt(round);
       const AVG_TYPE r_cmmas = settings.check_mma_scal.GetOpt(round);
       const AVG_TYPE r_cmmam = settings.check_mma_mat.GetOpt(round);
-      const bool r_cbs = settings.checkbigsoc;
+      const bool r_cbs = (round > 0) && settings.checkbigsoc; // round 0 no bigsoc hardcoded anyways
       const bool r_scbs = settings.simple_checkbigsoc;
       const bool use_hack_stab = settings.use_stab_ecw_hack.IsTrue() ||
 	( (!settings.use_stab_ecw_hack.IsFalse()) 
@@ -918,9 +1189,8 @@ namespace amg
 
       /** Set up a local map to represent this round of pairing vertices **/
       if ( (round > 0) && print_summs ) {
-	cout << " make locmap with mapped mesh " << conclocmap->GetMappedMesh() << endl;
-	  cout << " mesh NV NE " << conclocmap->GetMappedMesh()->template GetNN<NT_VERTEX>() << " "
-	       << conclocmap->GetMappedMesh()->template GetNN<NT_EDGE>() << endl;
+	cout << " next loc mesh NV NE " << conclocmap->GetMappedMesh()->template GetNN<NT_VERTEX>() << " "
+	     << conclocmap->GetMappedMesh()->template GetNN<NT_EDGE>() << endl;
       }
       auto locmap = make_shared<LocCoarseMap>((round == 0) ? mesh : conclocmap->GetMappedMesh());
       auto vmap = locmap->template GetMap<NT_VERTEX>();
@@ -951,6 +1221,7 @@ namespace amg
 	    { vmap[v] = -1; handled.SetBit(v); }
 	/** collapsed vertices **/
 	if (MIN_VCW > 0) { // otherwise, no point
+	  HeapReset hr(lh);
 	  for(auto v : Range(vmap)) {
 	    double cw = calc_vcw(v);
 	    if (cw > MIN_VCW)
@@ -1087,8 +1358,10 @@ namespace amg
 	conclocmap->Concatenate(NCV, vmap);
       }
 
+      // rej[0] = eqc_h.GetCommunicator().Reduce(rej[0], MPI_SUM);
+      // rej[1] = eqc_h.GetCommunicator().Reduce(rej[1], MPI_SUM);
       rej = eqc_h.GetCommunicator().Reduce(rej, MPI_SUM);
-      allrej = rej;
+      allrej += rej;
       if (eqc_h.GetCommunicator().Rank() == 0) {
 	/** TODO: use print_summs here instead, but for now keep it as on rank 1 until stable! **/
 	cout << " round " << round << " rej    = " << rej[0] << " " << rej[1] << endl;

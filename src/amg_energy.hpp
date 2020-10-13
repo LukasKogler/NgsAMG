@@ -57,6 +57,15 @@ namespace amg
     static INLINE void SetQtMQ (double val, TM & A, const TM & _Qij, const TM & M)
     { A = val * M; }
 
+    static INLINE void CalcMQ (double scal, const TM & Q, TM M, TM & out)
+    { out = scal * M; }
+    static INLINE void AddMQ (double scal, const TM & Q, TM M, TM & out)
+    { out += scal * M; }
+    static INLINE void CalcQTM (double scal, const TM & Q, TM M, TM & out)
+    { out = scal * M; }
+    static INLINE void AddQTM (double scal, const TM & Q, TM M, TM & out)
+    { out += scal * M; }
+
     static INLINE TM HMean (const TM & a, const TM & b)
     {
       if constexpr(is_same<TM, double>::value)
@@ -200,7 +209,60 @@ namespace amg
       return 0.5 * (A + B);
     }
 
-  };
+    static INLINE void CalcMQ (double scal, const TM & Q, const TM & M, TM & out)
+    {
+      /** A  B   I Q  =  A   AQ+B
+	  BT C   0 I  =  BT BTQ+C **/
+      // static Mat<DISPPV, ROTPV, double> AQ;
+      // static Mat<ROTPV, DISPPV, double> BTQ;
+      auto BTQ = MakeFlatMat<DISPPV, ROTPV, 0, DISPPV>(M) * MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(Q);
+      auto AQ = scal * MakeFlatMat<0, DISPPV, 0, DISPPV>(M) * MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(Q);
+      MakeFlatMat<0, DISPPV, 0, DISPPV>(out) = scal * MakeFlatMat<0, DISPPV, 0, DISPPV>(M);
+      MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(out) = scal * ( MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(M) + AQ );
+      MakeFlatMat<DISPPV, ROTPV, 0, DISPPV>(out) = scal * MakeFlatMat<DISPPV, ROTPV, 0, DISPPV>(M);
+      MakeFlatMat<DISPPV, ROTPV, DISPPV, ROTPV>(out) = scal * (MakeFlatMat<DISPPV, ROTPV, DISPPV, ROTPV>(M) + BTQ);
+    }
+
+    static INLINE void AddMQ (double scal, const TM & Q, const TM & M, TM & out)
+    {
+      /** A  B   I Q  =  A   AQ+B
+	  BT C   0 I  =  BT BTQ+C **/
+      // static Mat<DISPPV, ROTPV, double> AQ;
+      auto AQ = MakeFlatMat<0, DISPPV, 0, DISPPV>(M) * MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(Q);
+      // static Mat<ROTPV, DISPPV, double> BTQ;
+      auto BTQ = MakeFlatMat<DISPPV, ROTPV, 0, DISPPV>(M) * MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(Q);
+      MakeFlatMat<0, DISPPV, 0, DISPPV>(out) += scal * MakeFlatMat<0, DISPPV, 0, DISPPV>(M);
+      MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(out) += scal * ( MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(M) + AQ );
+      MakeFlatMat<DISPPV, ROTPV, 0, DISPPV>(out) += scal * MakeFlatMat<DISPPV, ROTPV, 0, DISPPV>(M);
+      MakeFlatMat<DISPPV, ROTPV, DISPPV, ROTPV>(out) += scal * (MakeFlatMat<DISPPV, ROTPV, DISPPV, ROTPV>(M) + BTQ);
+    }
+
+    static INLINE void CalcQTM (double scal, const TM & Q, const TM & M, TM & out)
+    {
+      /** I  0   A  B   =    A      B
+	  QT I   BT C   =  QTA+BT QTB+C **/
+      // static Mat<DISPPV, ROTPV, double> QTA, QTB;
+      auto QTA = Trans(MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(Q)) * MakeFlatMat<0, DISPPV, 0, DISPPV>(M);
+      auto QTB = Trans(MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(Q)) * MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(M);
+      MakeFlatMat<0, DISPPV, 0, DISPPV>(out) = scal * MakeFlatMat<0, DISPPV, 0, DISPPV>(M);
+      MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(out) = scal * MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(M);
+      MakeFlatMat<DISPPV, ROTPV, 0, DISPPV>(out) = scal * ( MakeFlatMat<DISPPV, ROTPV, 0, DISPPV>(M) + QTA );
+      MakeFlatMat<DISPPV, ROTPV, DISPPV, ROTPV>(out) = scal * (MakeFlatMat<DISPPV, ROTPV, DISPPV, ROTPV>(M) + QTB);
+    }
+
+    static INLINE void AddQTM (double scal, const TM & Q, const TM & M, TM & out)
+    {
+      /** I  0   A  B   =    A      B
+	  QT I   BT C   =  QTA+BT QTB+C **/
+      // static Mat<DISPPV, ROTPV, double> QTA, QTB;
+      auto QTA = Trans(MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(Q)) * MakeFlatMat<0, DISPPV, 0, DISPPV>(M);
+      auto QTB = Trans(MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(Q)) * MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(M);
+      MakeFlatMat<0, DISPPV, 0, DISPPV>(out) += scal * MakeFlatMat<0, DISPPV, 0, DISPPV>(M);
+      MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(out) += scal * MakeFlatMat<0, DISPPV, DISPPV, ROTPV>(M);
+      MakeFlatMat<DISPPV, ROTPV, 0, DISPPV>(out) += scal * ( MakeFlatMat<DISPPV, ROTPV, 0, DISPPV>(M) + QTA );
+      MakeFlatMat<DISPPV, ROTPV, DISPPV, ROTPV>(out) += scal * (MakeFlatMat<DISPPV, ROTPV, DISPPV, ROTPV>(M) + QTB);
+    }
+};
 
 #endif
 

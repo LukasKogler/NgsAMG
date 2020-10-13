@@ -53,7 +53,7 @@ namespace amg
        The prolongation has to already have allocated entries for the agg-interiors
      **/
 
-    LocalHeap lh(30*1024*1024, "FillAggs");
+    LocalHeap lh(31457280, "FillAggs");
 
     constexpr int H = mat_traits<TM>::HEIGHT;
     TVD mpi, mpj;
