@@ -396,9 +396,9 @@ namespace amg
     const auto & base_econ = *M.GetEdgeCM();
 
     typedef typename Options::CW_TYPE CW_TYPE;
-    const bool print_aggs = (comm.Rank() == 0) && settings.print_aggs;    // actual aggs
-    const bool print_summs = (comm.Rank() == 0) && ( print_aggs || settings.print_summs );   // summary info
-    const bool print_params = (comm.Rank() == 0) && ( print_summs || settings.print_params );  // parameters for every round
+    const bool print_aggs = settings.print_aggs;    // actual aggs
+    const bool print_summs =  ( print_aggs || settings.print_summs );   // summary info
+    const bool print_params =  ( print_summs || settings.print_params );  // parameters for every round
     this->print_vmap = settings.print_aggs;
 
     const int num_rounds = settings.num_rounds;
@@ -1380,9 +1380,9 @@ namespace amg
 	conclocmap->Concatenate(NCV, vmap);
       }
 
-      // rej[0] = eqc_h.GetCommunicator().Reduce(rej[0], MPI_SUM);
-      // rej[1] = eqc_h.GetCommunicator().Reduce(rej[1], MPI_SUM);
-      rej = eqc_h.GetCommunicator().Reduce(rej, MPI_SUM);
+      rej[0] = eqc_h.GetCommunicator().Reduce(rej[0], MPI_SUM);
+      rej[1] = eqc_h.GetCommunicator().Reduce(rej[1], MPI_SUM);
+      // rej = eqc_h.GetCommunicator().Reduce(rej, MPI_SUM);
       allrej += rej;
       if (eqc_h.GetCommunicator().Rank() == 0) {
 	/** TODO: use print_summs here instead, but for now keep it as on rank 1 until stable! **/
