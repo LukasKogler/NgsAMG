@@ -1028,7 +1028,8 @@ namespace amg
 	FlatMatrix<double> PTMP(BS, BS, lh);
 	PTMP = PTM * P;
 	/** this CAN be singular (in rare cases...) **/
-	CalcInverse(PTMP);
+	// CalcInverse(PTMP);
+	CalcPseudoInverseNew(PTMP, lh);
 	FlatMatrix<double> inv_PTMP_PTM(BS, N, lh);
 	inv_PTMP_PTM = PTMP * PTM;
 	// cout << " (vec) CBS for " << memsi.Size() << " + " << memsj.Size() << " = " << n << endl;
