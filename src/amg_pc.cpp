@@ -444,6 +444,14 @@ namespace amg
     else
       { spmat = amg_level.cap->mat; }
 
+    /** bandaid fix. can happen if crsening is stuck and then we redistribute! **/
+    if ( sm_type == Options::SM_TYPE::BGS ) {
+      int no_cmp = (amg_level.crs_map == nullptr) ? 1 : 0;
+      pardofs->GetCommunicator().Allreduce(no_cmp, MPI_SUM);
+      if (no_cmp != 0)
+	{ sm_type = Options::SM_TYPE::GS; }
+    }
+
     switch(sm_type) {
     case(Options::SM_TYPE::GS)  : { smoother = BuildGSSmoother(spmat, pardofs, amg_level.cap->eqc_h, GetFreeDofs(amg_level)); break; }
     case(Options::SM_TYPE::BGS) : { smoother = BuildBGSSmoother(spmat, pardofs, amg_level.cap->eqc_h, move(GetGSBlocks(amg_level))); break; }
