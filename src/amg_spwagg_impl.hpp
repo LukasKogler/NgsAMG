@@ -1254,14 +1254,16 @@ namespace amg
       }
 
       /** Set up a local map to represent this round of pairing vertices **/
-      if ( (round > 0) && havelocinfo && print_summs ) {
-	cout << " next loc mesh NV NE " << conclocmap->GetMappedMesh()->template GetNN<NT_VERTEX>() << " "
-	     << conclocmap->GetMappedMesh()->template GetNN<NT_EDGE>() << endl;
-      }
-      if (print_summs && (eqc_h.GetCommunicator().Size() > 1)) {
-	auto rednv = eqc_h.GetCommunicator().Reduce(conclocmap->GetMappedMesh()->template GetNN<NT_VERTEX>(), MPI_SUM, 0);
-	if (eqc_h.GetCommunicator().Rank() == 0)
-	  { cout << " next glob NV = " << rednv << endl; }
+      if ( (round > 0) && print_summs ) { 
+	if ( havelocinfo ) {
+	  cout << " next loc mesh NV NE " << conclocmap->GetMappedMesh()->template GetNN<NT_VERTEX>() << " "
+	       << conclocmap->GetMappedMesh()->template GetNN<NT_EDGE>() << endl;
+	}
+	if (eqc_h.GetCommunicator().Size() > 1) {
+	  auto rednv = eqc_h.GetCommunicator().Reduce(conclocmap->GetMappedMesh()->template GetNN<NT_VERTEX>(), MPI_SUM, 0);
+	  if (eqc_h.GetCommunicator().Rank() == 0)
+	    { cout << " next glob NV = " << rednv << endl; }
+	}
       }
       auto locmap = make_shared<LocCoarseMap>((round == 0) ? mesh : conclocmap->GetMappedMesh());
       auto vmap = locmap->template GetMap<NT_VERTEX>();
