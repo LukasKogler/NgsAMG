@@ -542,7 +542,7 @@ namespace amg
     /** 1.5 times min(150MB, max(20MB, max i need for cbs)) **/
     size_t lhs = 1.5 * min2(size_t(157286400),
 			    max2( size_t(20971520),
-				  size_t(pow(2*BS, num_rounds) * 10) ) );
+				  size_t( max(pow(2*BS, num_rounds), 20) * 10) * sizeof(double) ) );
 
     // cout << " alloc localheap with size = " << lhs << ", in MBS = " << lhs/1024/1024 << endl;
     
