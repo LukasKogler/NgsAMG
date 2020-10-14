@@ -416,8 +416,7 @@ namespace amg
     constexpr bool robust = (BS == BSU) && (BSU > 1);
 
     if (print_params) {
-      cout << " FORM SPW AGGLOMERATES " << endl;
-      cout << "BS BSU ROBUST ROBUST = " << BS << " " << BSU << " " << robust << " " << ROBUST << endl;
+      ;
     }
     
     /** Calc trace of sum of off-proc contrib to diagonal. use this as additional trace to take the max over for "mmx" CWT.
@@ -540,7 +539,7 @@ namespace amg
     // }
 
     /** 1.5 times min(150MB, max(20MB, max i need for cbs)) **/
-    size_t lhs = 1.5 * min2(size_t(157286400),
+    size_t lhs = 2.0 * min2(size_t(157286400),
 			    max2( size_t(20971520),
 				  size_t( max(pow(2*BS, num_rounds), 20.0) * 10 ) * sizeof(double) ) );
 
@@ -937,9 +936,9 @@ namespace amg
 
     auto calc_soc_pair = [&](bool dorobust, bool neib_boost, CW_TYPE cwt, AVG_TYPE mma_scal,
 			     AVG_TYPE mma_mat, auto vi, auto vj, const auto & fecon) { // maybe not force inlining this?
-      // cout << " calc soc pair " << vi << " " << vj << ", free      = " << double(lh.Available())/1024/1024 << ", frac = " << double(lh.Available())/lhs << endl;
+      // if (double(lh.Available())/lhs < 0.9)
+	// cout << " calc_soc_pair, free      = " << double(lh.Available())/1024/1024 << ", frac = " << double(lh.Available())/lhs << endl;
       constexpr bool rrobust = robust;
-      // cout << " CSP, rr " << rrobust << " , dr " << dorobust << ", for " << vi << " " << vj << endl;
       { HeapReset hr(lh);
       if constexpr(rrobust) {
 	  if (dorobust)
@@ -949,7 +948,6 @@ namespace amg
 	}
       else
 	{ return calc_soc_scal(cwt, mma_scal, vi, vj, fecon); } }
-      // cout << " done calc soc pair " << vi << " " << vj << ", free      = " << double(lh.Available())/1024/1024 << ", frac = " << double(lh.Available())/lhs << endl;
     };
     
     auto check_soc_aggs_scal = [&](auto memsi, auto memsj) LAMBDA_INLINE {
@@ -1104,14 +1102,11 @@ namespace amg
 
     /** SOC for pair of agglomerates w.r.t original matrix **/
     auto check_soc_aggs = [&](bool simplify, bool boost, auto memsi, auto memsj) LAMBDA_INLINE {
-      // cout << " check soc aggs, n mems = " << memsi.Size() + memsj.Size() << ", free      = " << double(lh.Available())/1024/1024 << ", frac = " << double(lh.Available())/lhs << endl;
       /** TODO: this does not use fdiags, so l2 weights are not considered! **/
-      { HeapReset hr(lh);
       if ( (BSU == 1) || simplify)
 	{ return check_soc_aggs_scal(memsi, memsj); }
       else
-	{ return check_soc_aggs_robust(memsi, memsj, boost); } }
-      // cout << " done check soc aggs, free = " << double(lh.Available())/1024/1024 << ", frac = " << double(lh.Available())/lhs << endl;
+	{ return check_soc_aggs_robust(memsi, memsj, boost); }
       return true;
     };
 
@@ -1330,6 +1325,7 @@ namespace amg
 	  Array<int> possmems, dummy;
 	  auto leqeq = [&](auto vi, auto vj) { return eqc_h.IsLEQ(M.template GetEqcOfNode<NT_VERTEX>(vi), M.template GetEqcOfNode<NT_VERTEX>(vj)); };
 	  bool simplecbs = r_scbs || (!r_cbs);
+	  const int maxaggsize = pow(2, num_rounds);
 	  int acnt = 0;
 	  if (M.template GetNN<NT_VERTEX>() > 0)
 	    for (auto k : M.template GetENodes<NT_VERTEX>(0))
@@ -1349,7 +1345,7 @@ namespace amg
 		  for (auto cn : ctrnbs)
 		    if ( (fecon.GetRowIndices(cn).Size() == 1) && (!handled.Test(cn)) && leqeq(cn, c) )
 		      { possmems[c++] = cn; }
-		  possmems.SetSize(c);
+		  possmems.SetSize(min(c, maxaggsize));
 		  if ( c == 2 ) { // force this connection - it HAS to be at least "OK" per definition!
 		    handled.SetBit(k); handled.SetBit(ctrv);
 		    vmap[k] = NCV; vmap[ctrv] = NCV;
@@ -1393,9 +1389,11 @@ namespace amg
 	auto veqs = conclocmap->GetV2EQ();
 	// Array<int> cmk; CalcCMK(handled, fecon, cmk);
 	// cout << " CMK: "; prow2(cmk); cout << endl;
+	size_t MAX = vmap.Size() - 1;
 	pair_vertices(vmap, NCV,
 		      // cmk.Size(), [&](auto k) { return cmk[k]; }, 
-		      vmap.Size(), [&](auto i) LAMBDA_INLINE { return i; }, // no CMK on later rounds!
+		      // vmap.Size(), [&](auto i) LAMBDA_INLINE { return i; }, // no CMK on later rounds!
+		      vmap.Size(), [&](auto i) LAMBDA_INLINE { return MAX-i; }, // no CMK on later rounds!
 		      fecon, handled,
 		      [&](auto v) LAMBDA_INLINE { return c2fv[v]; }, // get_mems
 		      [&](auto vi, auto vj) LAMBDA_INLINE { return allow_merge(veqs[vi], veqs[vj]); }, // allowed
@@ -1531,13 +1529,13 @@ namespace amg
 	if (print_summs) {
 	  /** TODO: use print_summs here instead, but for now keep it as on rank 1 until stable! **/
 	  auto prtt = [&](auto tup) { for (auto l : Range(6)) { cout << tup[l] << " / "; } cout << endl; };
-	  cout << " rej for reasons check_pair/check_agg/mmax_scal/mmx_mat/l2/allpair/noallow " << endl;
-	  cout << " round " << round << " rej = "; prtt(rej);
-	  cout << " cumulative  rej   = "; prtt(allrej);
-	  cout << " no valid partner for " << rej[6] << ", frac = " << double(rej[6])/NFVG << endl;
-	  cout << " acc for reasons check_pair/check_agg/mmax_scal/mmx_mat/l2/allpair/noallow " << endl;
-	  cout << " round " << round << " acc = "; prtt(acc);
-	  cout << " cumulative acc   = "; prtt(allacc);
+	  cout << "  rej for reasons check_pair/check_agg/mmax_scal/mmx_mat/l2/allpair/noallow " << endl;
+	  cout << "  round " << round << " rej = "; prtt(rej);
+	  cout << "  cumulative  rej   = "; prtt(allrej);
+	  cout << "  no valid partner for " << rej[6] << ", frac = " << double(rej[6])/NFVG << endl;
+	  cout << "  acc for reasons check_pair/check_agg/mmax_scal/mmx_mat/l2/allpair/noallow " << endl;
+	  cout << "  round " << round << " acc = "; prtt(acc);
+	  cout << "  cumulative acc   = "; prtt(allacc);
 	}
 	rej = 0; acc = 0;
       }
@@ -1552,7 +1550,7 @@ namespace amg
       if (eqc_h.GetCommunicator().Rank() > 0)
 	{ nspacs = n_aggs_spec; }
       if (print_summs)
-	{ cout << "# spec aggs = " << nspacs << endl; }
+	{ cout << " # spec aggs = " << nspacs << endl; }
     }
 
     agglomerates.SetSize(n_aggs_tot);
