@@ -403,6 +403,10 @@ namespace amg
     const bool havelocinfo = (eqc_h.GetCommunicator().Size() == 1) || (eqc_h.GetCommunicator().Rank() != 0);
     this->print_vmap = settings.print_aggs;
 
+    int abs = (eqc_h.GetCommunicator().Rank() == 0) ? 1 : 0;
+    eqc_h.GetCommunicator().NgMPI_Comm::Bcast(abs, 0);
+    const bool m_print_summs = abs;
+
     const int num_rounds = settings.num_rounds;
     const bool bdiag = settings.bdiag;
     const bool cbs_spd_hack = settings.cbs_spd_hack;
@@ -1254,14 +1258,14 @@ namespace amg
       }
 
       /** Set up a local map to represent this round of pairing vertices **/
-      if ( (round > 0) && print_summs ) { 
-	if ( havelocinfo ) {
+      if ( (round > 0) && m_print_summs ) { 
+	if ( print_summs && havelocinfo ) {
 	  cout << " next loc mesh NV NE " << conclocmap->GetMappedMesh()->template GetNN<NT_VERTEX>() << " "
 	       << conclocmap->GetMappedMesh()->template GetNN<NT_EDGE>() << endl;
 	}
-	if (eqc_h.GetCommunicator().Size() > 1) {
+	if ( eqc_h.GetCommunicator().Size() > 1 ) {
 	  auto rednv = eqc_h.GetCommunicator().Reduce(conclocmap->GetMappedMesh()->template GetNN<NT_VERTEX>(), MPI_SUM, 0);
-	  if (eqc_h.GetCommunicator().Rank() == 0)
+	  if ( print_summs && (eqc_h.GetCommunicator().Rank() == 0) )
 	    { cout << " next glob NV = " << rednv << endl; }
 	}
       }
@@ -1503,7 +1507,7 @@ namespace amg
 
       // rej[0] = eqc_h.GetCommunicator().Reduce(rej[0], MPI_SUM);
       // rej[1] = eqc_h.GetCommunicator().Reduce(rej[1], MPI_SUM);
-      if (print_summs) {
+      if (m_print_summs) {
 	auto redc = [&](auto & tup) {
 	  for (auto k : Range(7)) {
 	    auto redval = eqc_h.GetCommunicator().Reduce(tup[k], MPI_SUM, 0);
@@ -1522,7 +1526,7 @@ namespace amg
 	  if ( eqc_h.GetCommunicator().Rank() == 0)
 	    { NFVG = rval; }
 	}
-	if (eqc_h.GetCommunicator().Rank() == 0) {
+	if (print_summs) {
 	  /** TODO: use print_summs here instead, but for now keep it as on rank 1 until stable! **/
 	  auto prtt = [&](auto tup) { for (auto l : Range(6)) { cout << tup[l] << " / "; } cout << endl; };
 	  cout << " rej for reasons check_pair/check_agg/mmax_scal/mmx_mat/l2/allpair/noallow " << endl;
