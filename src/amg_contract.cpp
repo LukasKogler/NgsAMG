@@ -64,7 +64,7 @@ namespace amg
 
     // O(1) "gather" calls. Should be log(NP) complexity I think.
     Array<int> rcnts(comm.Rank() == root ? comm.Size() : 0);
-    Array<int> displs(comm.Rank() == root ? 1 + comm.Size() : 0);
+    Array<int> displs(comm.Rank() == root ? 1 + comm.Size() : 1);
     int loc_data_size = data.Size();
     comm.Gather(loc_data_size, rcnts, root);
     size_t tds = 0;
