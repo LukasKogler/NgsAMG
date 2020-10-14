@@ -1106,10 +1106,11 @@ namespace amg
     auto check_soc_aggs = [&](bool simplify, bool boost, auto memsi, auto memsj) LAMBDA_INLINE {
       // cout << " check soc aggs, n mems = " << memsi.Size() + memsj.Size() << ", free      = " << double(lh.Available())/1024/1024 << ", frac = " << double(lh.Available())/lhs << endl;
       /** TODO: this does not use fdiags, so l2 weights are not considered! **/
+      { HeapReset hr(lh);
       if ( (BSU == 1) || simplify)
 	{ return check_soc_aggs_scal(memsi, memsj); }
       else
-	{ return check_soc_aggs_robust(memsi, memsj, boost); }
+	{ return check_soc_aggs_robust(memsi, memsj, boost); } }
       // cout << " done check soc aggs, free = " << double(lh.Available())/1024/1024 << ", frac = " << double(lh.Available())/lhs << endl;
       return true;
     };
