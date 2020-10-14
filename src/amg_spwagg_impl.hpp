@@ -385,6 +385,7 @@ namespace amg
     static Timer tassb("FormAgglomerates - ass.block");
     static Timer tassbs("FormAgglomerates - ass.block.simple");
     static Timer tbste("FormAgglomerates - boost edge");
+    static Timer tdangle("FormAgglomerates - dangling verts");
     tprep.Start();
 
     auto tm_mesh = dynamic_pointer_cast<TMESH>(mesh);
@@ -399,6 +400,7 @@ namespace amg
     const bool print_aggs = settings.print_aggs;    // actual aggs
     const bool print_summs =  ( print_aggs || settings.print_summs );   // summary info
     const bool print_params =  ( print_summs || settings.print_params );  // parameters for every round
+    const bool havelocinfo = (eqc_h.GetCommunicator().Size() == 1) || (eqc_h.GetCommunicator().Rank() != 0);
     this->print_vmap = settings.print_aggs;
 
     const int num_rounds = settings.num_rounds;
@@ -435,7 +437,7 @@ namespace amg
     const double MIN_ECW = settings.edge_thresh;
     const double MIN_VCW = settings.vert_thresh;
 
-    if (print_aggs) {
+    if (havelocinfo && print_aggs) {
       if (M.template GetNN<NT_VERTEX>() < 200)
 	{ cout << " FMESH : " << endl << M << endl; }
     }
@@ -513,6 +515,8 @@ namespace amg
     FlatArray<double> fedata; fedata.Assign(base_edata);
     FlatArray<double> fmtrod; fmtrod.Assign(base_mtrod);
 
+    v_to_agg.SetSize(M.template GetNN<NT_VERTEX>()); v_to_agg = -1;
+
     // cout << " final base_diags: " << endl;
     // for (auto k : Range(base_diags)) {
     //   cout << "(" << k << "::" << calc_trace(fdiags[k]) << " " << calc_trace(fdiags[k])/BS << ") ";
@@ -540,6 +544,12 @@ namespace amg
     
     LocalHeap lh(lhs, "cthulu");
 
+    /** check_pair/check_agg/mmax_scal/mmx_mat/l2/pair/noallowed **/
+    INT<7, int> rej; rej = 0;
+    INT<7, int> allrej = 0;
+    INT<7, int> acc; acc = 0;
+    INT<7, int> allacc = 0;
+
     auto calc_avg_scal = [&](AVG_TYPE avg, double mtra, double mtrb) LAMBDA_INLINE {
       switch(avg) {
       case(MIN): { return min(mtra, mtrb); break; }
@@ -565,6 +575,10 @@ namespace amg
 	  // cout << " calc vcw for " << v << endl; // << ", L = " << endl << L << endl << " R = " << endl << R << endl;
 	  // cout << " soc = " << soc << endl;
 	// }
+	if (soc > MIN_VCW)
+	  { acc[4]++; }
+	else
+	  { rej[4]++; }
 	return soc;
 	}
       else {
@@ -606,7 +620,12 @@ namespace amg
 	db = max2(db, ENERGY::GetApproxVWeight(fvdata[vj])*BS); // this is divided by BS, but should not be
 	if (need_mtrod)
 	  { db = max2(db, fmtrod[vj]); }
-	return dedge / calc_avg_scal(mm_avg, da, db);
+	double soc = dedge / calc_avg_scal(mm_avg, da, db);
+	if (soc < MIN_ECW)
+	  { rej[2]++; }
+	else
+	  { acc[2]++; }
+	return soc;
 	break;
       }
       default : { return 0.0; break; }
@@ -838,7 +857,6 @@ namespace amg
       }
     };
 
-
     TM dma(0), dmb(0), dmedge(0), Q(0); SetIdentity(Q);
     auto calc_soc_robust = [&](CW_TYPE cw_type, bool neib_boost, AVG_TYPE mma_scal, bool mma_mat_harm, auto vi, auto vj, const auto & fecon) LAMBDA_INLINE {
       constexpr bool rrobust = robust;
@@ -885,15 +903,25 @@ namespace amg
 	    { mtrb = max2(mtrb, fmtrod[vj]); } //
 	  double etrace = calc_trace(dmedge);
 	  soc = etrace / calc_avg_scal(mma_scal, mtra, mtrb);
+	  if (soc < MIN_ECW)
+	    { rej[2]++; }
+	  else
+	    { acc[2]++; }
 	  // cout << " mtra mtrb etrace socscal " << mtra << " " << mtrb << " " << etrace << " " << soc << endl;
 	  if (soc > MIN_ECW) {
 	    dma /= calc_trace(dma);
 	    dmb /= calc_trace(dmb);
 	    dmedge /= etrace;
+	    double socmat;
 	    if (mma_mat_harm)
-	      { soc = min2(soc, MIN_EV_HARM2(dma, dmb, dmedge)); /** cout << " soc mmx harm = " << soc << endl; **/ }
+	      { socmat = MIN_EV_HARM2(dma, dmb, dmedge); /** cout << " soc mmx harm = " << soc << endl; **/ }
 	    else
-	      { soc = min2(soc, MIN_EV_FG2(dma, dmb, dmedge)); /** cout << " soc mmx geom = " << soc << endl; **/ }
+	      { socmat = MIN_EV_FG2(dma, dmb, dmedge); /** cout << " soc mmx geom = " << soc << endl; **/ }
+	    if (socmat < MIN_ECW)
+	      { rej[3]++; }
+	    else
+	      { acc[3]++; }
+	    soc = min2(soc, socmat);
 	    // cout << " soc mat " << soc << endl;
 	  }
 	  break;
@@ -1083,7 +1111,6 @@ namespace amg
     };
 
     /** Finds a neighbor to merge vertex v with. Returns -1 if no suitable ones found **/
-    INT<2, size_t> rej; rej = 0;
     auto find_neib = [&](auto v, const auto & fecon, auto allowed, auto get_mems, bool robust_pick, bool neib_boost,
 			 auto cwt_pick, auto pmmas, auto pmmam, auto cwt_check, auto cmmas, auto cmmam,
 			 bool checkbigsoc, bool simple_cbs) LAMBDA_INLINE {
@@ -1106,7 +1133,18 @@ namespace amg
       // for (auto v : socs)
       // 	{ cout << "[" << v[0] << " " << v[1] << "] "; }
       // cout << endl;
+
       int candidate = ( (c > 0) && (socs[0][1] > MIN_ECW) ) ? int(socs[0][0]) : -1;
+
+      if ( (c > 0) && allowed(v, int(socs[0][0])) ) {
+	if (candidate == -1)
+	  { rej[5]++; }
+	else
+	  { acc[5]++; }
+      }
+      if (c == 0)
+	{ rej[6]++; }
+
       // cout << " candidate is " << candidate << endl;
       /** check candidate - either small EVP, or large EVP, or both! **/
       bool need_check = (rrobust && (!robust_pick)) || checkbigsoc;
@@ -1124,10 +1162,14 @@ namespace amg
 	    }
 	if (stabsoc < MIN_ECW) /** this neib has strong stable connection **/
 	  { rej[0]++; }
+	else
+	  { acc[0]++; }
 	if (checkbigsoc && (stabsoc > MIN_ECW)) { /** big EVP soc **/
 	  stabsoc = check_soc_aggs(simple_cbs, neib_boost, get_mems(v), get_mems(int(socs[j][0]))) ? stabsoc : 0.0;
 	  if (stabsoc < MIN_ECW) /** this neib has strong stable connection **/
 	    { rej[1]++; }
+	  else
+	    { acc[1]++; }
 	}
 	if (stabsoc > MIN_ECW) /** this neib has strong stable connection **/
 	  { candidate = int(socs[j][0]); break; }
@@ -1144,11 +1186,11 @@ namespace amg
 			     auto get_mems, auto allowed,// auto set_pair,
 			     bool r_ar,  bool r_nb, auto r_cwtp, auto r_pmmas, auto r_pmmam, auto r_cwtc, auto r_cmmas, auto r_cmmam, bool r_cbs, bool r_scbs
 			     ) LAMBDA_INLINE {
-      // cout << " PAIR_VERTICES, fecon = " << endl << fecon << endl;
-      // for (auto k : Range(fedata_full)) {
-      // 	cout << "fedata_full " << k << " = " << endl; print_tm(cout, fedata_full[k]); cout << endl;
+      // if (print_summs) {
+      // 	cout << "  pair_vertices done, check " << num_verts << " of " << fecon.Height() << endl;
+      // 	cout << "  " << handled.NumSet() << " alreay handled " << endl;
       // }
-	
+
       RegionTimer rt(tvp);
       for (auto k : Range(num_verts)) {
 	auto vnr = get_vert(k);
@@ -1166,18 +1208,18 @@ namespace amg
 	  // set_pair(vnr, neib);
 	}
       }
-      if (print_summs) {
-	cout << "  pair_vertices done, NCV = " << NCV << endl;
-      }
-      if (print_aggs) {
+      if ( havelocinfo && print_summs ) {
+	cout << "  pair_vertices done, NFV = " << fecon.Height() << ", NCV = " << NCV << endl;
+	}
+      if (havelocinfo && print_aggs) {
 	cout << "  round vmap: "; prow2(vmap); cout << endl;
       }
     };
 
     tprep.Stop();
 
-    INT<2, size_t> allrej = 0;
     // pair vertices
+    Array<Agglomerate> spec_aggs;
     for (int round : Range(num_rounds)) {
       HeapReset hr(lh); // probably unnecessary
       const bool r_ar = robust && settings.allrobust.GetOpt(round);
@@ -1190,6 +1232,7 @@ namespace amg
       const AVG_TYPE r_cmmam = settings.check_mma_mat.GetOpt(round);
       const bool r_cbs = (round > 0) && settings.checkbigsoc; // round 0 no bigsoc hardcoded anyways
       const bool r_scbs = settings.simple_checkbigsoc;
+      const bool r_wo = settings.weed_out;
       const bool use_hack_stab = settings.use_stab_ecw_hack.IsTrue() ||
 	( (!settings.use_stab_ecw_hack.IsFalse()) 
 	  && ( (   settings.allrobust.GetOpt(round)  && (settings.pick_cw_type.GetOpt(round)  == CW_TYPE::HARMONIC) ) ||
@@ -1207,18 +1250,38 @@ namespace amg
 	cout << "   mma check mat  = " << r_cmmam << endl;
 	cout << "   checkbigsoc    = " << r_cbs << endl;
 	cout << "   use_hack_stab  = " << use_hack_stab << endl;
+	cout << "   weed_out    = " << r_wo << endl;
       }
 
       /** Set up a local map to represent this round of pairing vertices **/
-      if ( (round > 0) && print_summs ) {
+      if ( (round > 0) && havelocinfo && print_summs ) {
 	cout << " next loc mesh NV NE " << conclocmap->GetMappedMesh()->template GetNN<NT_VERTEX>() << " "
 	     << conclocmap->GetMappedMesh()->template GetNN<NT_EDGE>() << endl;
+      }
+      if (print_summs && (eqc_h.GetCommunicator().Size() > 1)) {
+	auto rednv = eqc_h.GetCommunicator().Reduce(conclocmap->GetMappedMesh()->template GetNN<NT_VERTEX>(), MPI_SUM, 0);
+	if (eqc_h.GetCommunicator().Rank() == 0)
+	  { cout << " next glob NV = " << rednv << endl; }
       }
       auto locmap = make_shared<LocCoarseMap>((round == 0) ? mesh : conclocmap->GetMappedMesh());
       auto vmap = locmap->template GetMap<NT_VERTEX>();
       const TopologicMesh & fmesh = *locmap->GetMesh();
       const SparseMatrix<double> & fecon = *fmesh.GetEdgeCM();
       
+      // if (fecon.Height())
+      // 	{
+      // 	  INT<5, int> cnts = 0;
+      // 	  for (auto k : Range(fecon.Height())) {
+      // 	    if (fecon.GetRowIndices(k).Size() < 5) {
+      // 	      cnts[fecon.GetRowIndices(k).Size()]++;
+      // 	    }
+      // 	  }
+      // 	  cout << " cnts: " << endl;
+      // 	  for (auto k : Range(5)) {
+      // 	    cout << k << " " << cnts[k] << "   " << double(cnts[k])/fecon.Height() << endl;
+      // 	  }
+      // 	}
+
       BitArray handled(NV); handled.Clear();
       size_t & NCV = locmap->GetNCV(); NCV = 0;
       
@@ -1240,14 +1303,70 @@ namespace amg
 	/** Fixed Aggs - set verts to diri, handle afterwards **/
 	for (auto row : fixed_aggs)
 	  for (auto v : row)
-	    { vmap[v] = -1; handled.SetBit(v); }
+	    if (!handled.Test(v))
+	      { vmap[v] = -1; handled.SetBit(v); }
 	/** collapsed vertices **/
 	if (MIN_VCW > 0) { // otherwise, no point
 	  HeapReset hr(lh);
 	  for(auto v : Range(vmap)) {
-	    double cw = calc_vcw(v);
-	    if (cw > MIN_VCW)
-	      { vmap[v] = -1; handled.SetBit(v); }
+	    if (!handled.Test(v)) {
+	      double cw = calc_vcw(v);
+	      if (cw > MIN_VCW)
+		{ vmap[v] = -1; handled.SetBit(v); }
+	    }
+	  }
+	}
+	auto allowit = [&](auto vi, auto vj) { return allow_merge(M.template GetEqcOfNode<NT_VERTEX>(vi), M.template GetEqcOfNode<NT_VERTEX>(vj)); };
+	/** Try to weed out dangling vertices. Do not include these aggs in local crs levels if they have > 2 members ! **/
+	if (r_wo) {
+	  RegionTimer rt(tdangle);
+	  Array<int> possmems, dummy;
+	  auto leqeq = [&](auto vi, auto vj) { return eqc_h.IsLEQ(M.template GetEqcOfNode<NT_VERTEX>(vi), M.template GetEqcOfNode<NT_VERTEX>(vj)); };
+	  bool simplecbs = r_scbs || (!r_cbs);
+	  int acnt = 0;
+	  if (M.template GetNN<NT_VERTEX>() > 0)
+	    for (auto k : M.template GetENodes<NT_VERTEX>(0))
+	      if (fecon.GetRowIndices(k).Size() == 1)
+		{ acnt++; }
+	  spec_aggs.SetSize(acnt); spec_aggs.SetSize0();
+	  /** try only local vertices (but ctr can be in another eqc) **/
+	  if (M.template GetNN<NT_VERTEX>() > 0) {
+	    for (auto k : M.template GetENodes<NT_VERTEX>(0)) {
+		// for (auto k : Range(fecon.Height())) {
+		auto ris = fecon.GetRowIndices(k);
+		if ( (ris.Size() == 1) && (! (handled.Test(k) || handled.Test(ris[0])) ) && (leqeq(k, ris[0])) ) {
+		  int ctrv = ris[0];
+		  auto ctrnbs = fecon.GetRowIndices(ctrv);
+		  /** all allowed, dangling neibs of "ctrv" **/
+		  int c = 1; possmems.SetSize(1+ctrnbs.Size()); possmems[0] = ctrv;
+		  for (auto cn : ctrnbs)
+		    if ( (fecon.GetRowIndices(cn).Size() == 1) && (!handled.Test(cn)) && leqeq(cn, c) )
+		      { possmems[c++] = cn; }
+		  possmems.SetSize(c);
+		  if ( c == 2 ) { // force this connection - it HAS to be at least "OK" per definition!
+		    handled.SetBit(k); handled.SetBit(ctrv);
+		    vmap[k] = NCV; vmap[ctrv] = NCV;
+		    NCV++;
+		  }
+		  else {
+		    bool aggok = check_soc_aggs( r_scbs, r_nb, FlatArray<int>(possmems), FlatArray<int>(dummy) );
+		    if ( aggok ) { /** build the agg **/
+		      int aggid = spec_aggs.Size();
+		      handled.SetBit(ctrv); vmap[ctrv] = -1;
+		      v_to_agg[ctrv] = aggid;
+		      spec_aggs.Append(Agglomerate(ctrv, aggid));
+		      auto & agg = spec_aggs.Last();
+		      for (auto mem : possmems.Part(1)) {
+			handled.SetBit(mem);
+			vmap[mem] = -1;
+			agg.Add(mem);
+			v_to_agg[mem] = aggid;
+		      }
+		      // cout << " added a dangling agg for " << k <<  ", agg = " << agg << endl;
+		    } // TOOD: I should probably at least take "k + the neib or so..."
+		  }
+		}
+	      }
 	  }
 	}
 	tsv.Stop();
@@ -1257,7 +1376,7 @@ namespace amg
 	Array<int> dummy(1);
 	pair_vertices(vmap, NCV, cmk.Size(), [&](auto k) { return cmk[k]; }, fecon, handled,
 		      [&](auto v) ->FlatArray<int> { dummy[0] = v; return dummy; }, // get_mems
-		      [&](auto vi, auto vj) { return allow_merge(M.template GetEqcOfNode<NT_VERTEX>(vi), M.template GetEqcOfNode<NT_VERTEX>(vj)); }, // allowed
+		      allowit,
 		      r_ar, r_nb, r_cwtp, r_pmmas, r_pmmam, r_cwtc, r_cmmas, r_cmmam, false, r_scbs); // no big soc necessary
       }
       else {
@@ -1353,7 +1472,7 @@ namespace amg
 	  }
 	}
 
-	if (print_aggs) {
+	if (havelocinfo && print_aggs) {
 	  cout << "   round aggs: " << endl;
 	  cout << locmap->template GetMapC2F<NT_VERTEX>();
 	}
@@ -1380,25 +1499,50 @@ namespace amg
 	conclocmap->Concatenate(NCV, vmap);
       }
 
-      rej[0] = eqc_h.GetCommunicator().Reduce(rej[0], MPI_SUM);
-      rej[1] = eqc_h.GetCommunicator().Reduce(rej[1], MPI_SUM);
-      // rej = eqc_h.GetCommunicator().Reduce(rej, MPI_SUM);
-      allrej += rej;
-      if (eqc_h.GetCommunicator().Rank() == 0) {
-	/** TODO: use print_summs here instead, but for now keep it as on rank 1 until stable! **/
-	cout << " round " << round << " rej    = " << rej[0] << " " << rej[1] << endl;
-	cout << " round " << round << " allrej = " << allrej[0] << " " << allrej[1] << endl;
+      // rej[0] = eqc_h.GetCommunicator().Reduce(rej[0], MPI_SUM);
+      // rej[1] = eqc_h.GetCommunicator().Reduce(rej[1], MPI_SUM);
+      if (print_summs) {
+	auto redc = [&](auto & tup) {
+	  for (auto k : Range(7)) {
+	    auto redval = eqc_h.GetCommunicator().Reduce(tup[k], MPI_SUM, 0);
+	    if (eqc_h.GetCommunicator().Rank() == 0)
+	      { tup[k] = redval; }
+	  }
+	};
+	redc(rej); redc(acc);
+	allrej += rej; allacc += acc;
+	int NFVG;
+	if (round == 0)
+	  { NFVG = M.template GetNNGlobal<NT_VERTEX>(); }
+	else {
+	  NFVG = fecon.Height();
+	  int rval = eqc_h.GetCommunicator().Reduce(NFVG, MPI_SUM, 0);
+	  if ( eqc_h.GetCommunicator().Rank() == 0)
+	    { NFVG = rval; }
+	}
+	if (eqc_h.GetCommunicator().Rank() == 0) {
+	  /** TODO: use print_summs here instead, but for now keep it as on rank 1 until stable! **/
+	  auto prtt = [&](auto tup) { for (auto l : Range(6)) { cout << tup[l] << " / "; } cout << endl; };
+	  cout << " rej for reasons check_pair/check_agg/mmax_scal/mmx_mat/l2/allpair/noallow " << endl;
+	  cout << " round " << round << " rej = "; prtt(rej);
+	  cout << " cumulative  rej   = "; prtt(allrej);
+	  cout << " no valid partner for " << rej[6] << ", frac = " << double(rej[6])/NFVG << endl;
+	  cout << " acc for reasons check_pair/check_agg/mmax_scal/mmx_mat/l2/allpair/noallow " << endl;
+	  cout << " round " << round << " acc = "; prtt(acc);
+	  cout << " cumulative acc   = "; prtt(allacc);
+	}
+	rej = 0; acc = 0;
       }
-      rej = 0;
     } // round-loop
 
     /** Build final aggregates **/
     tfaggs.Start();
-    size_t n_aggs_p = conclocmap->template GetMappedNN<NT_VERTEX>(), n_aggs_f = fixed_aggs.Size();
-    size_t n_aggs_tot = n_aggs_p + n_aggs_f;
+    size_t n_aggs_spec = spec_aggs.Size(), n_aggs_p = conclocmap->template GetMappedNN<NT_VERTEX>(), n_aggs_f = fixed_aggs.Size();
+    size_t n_aggs_tot = n_aggs_spec + n_aggs_p + n_aggs_f, agg_id = n_aggs_spec;
     agglomerates.SetSize(n_aggs_tot);
-    v_to_agg.SetSize(M.template GetNN<NT_VERTEX>()); v_to_agg = -1;
-    auto set_agg = [&](auto agg_nr, auto vs) {
+    for (auto k : Range(n_aggs_spec))
+      { agglomerates[k] = move(spec_aggs[k]); }
+    auto set_agg = [&](int agg_nr, auto vs) {
       auto & agg = agglomerates[agg_nr];
       agg.id = agg_nr;
       int ctr_eqc = M.template GetEqcOfNode<NT_VERTEX>(vs[0]), v_eqc = -1;
@@ -1419,15 +1563,15 @@ namespace amg
     for (auto agg_nr : Range(n_aggs_p)) {
       auto aggvs = c2fv[agg_nr];
       QuickSort(aggvs);
-      set_agg(agg_nr, aggvs);
+      set_agg(agg_id++, aggvs);
     }
     /** pre-determined fixed aggs **/
     // TODO: should I filter fixed_aggs by master here, or rely on this being OK from outside?
     for (auto k : Range(fixed_aggs))
-      { set_agg(n_aggs_p + k, fixed_aggs[k]); }
+      { set_agg(agg_id++, fixed_aggs[k]); }
     tfaggs.Stop();
     
-    if (print_aggs) {
+    if (havelocinfo && print_aggs) {
       cout << " SPW FINAL agglomerates : " << agglomerates.Size() << endl;
       cout << agglomerates << endl;
     }

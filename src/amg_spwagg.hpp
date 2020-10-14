@@ -57,6 +57,7 @@ namespace amg
       bool print_params = false;                       // output
       bool print_summs = false;                       // output
       bool print_aggs = false;                       // output
+      bool weed_out = false;
       // Options (Options && other)
       // 	: robust(other.robust), edge_thresh(other.edge_thresh), vert_thresh(other.vert_thresh), num_rounds(other.num_rounds),
       // 	  allrobust(move(other.allrobust)), pick_cw_type(move(other.pick_cw_type)), pick_mma_scal(move(other.pick_mma_scal)),

@@ -74,6 +74,7 @@ namespace amg
     SpecOpt<bool> spw_print_aggs = false;
     SpecOpt<bool> spw_print_params = false;
     SpecOpt<bool> spw_print_summs = false;
+    SpecOpt<bool> spw_wo = false;
 #endif // SPWAGG
 
   public:
@@ -137,6 +138,7 @@ namespace amg
       spw_print_params.SetFromFlags(flags, prefix + "spw_print_params");
       spw_print_summs.SetFromFlags(flags, prefix + "spw_print_summs");
       spw_print_aggs.SetFromFlags(flags, prefix + "spw_print_aggs");
+      spw_wo.SetFromFlags(flags, prefix + "spw_wo");
 
       // cout << "spw_rounds " << spw_rounds << endl;
       // cout << "spw_allrobust " << spw_allrobust << endl;
@@ -153,6 +155,7 @@ namespace amg
       // cout << "spw_print_params =  " << spw_print_params << endl;
       // cout << "spw_print_summs =  " << spw_print_summs << endl;
       // cout << "spw_print_aggs =  " << spw_print_aggs << endl;
+      // cout << "spw_wo =  " << spw_wo << endl;
 
 #endif // SPWAGG
 
@@ -268,19 +271,6 @@ namespace amg
 
     const int level = state.level[0];
 
-    // cout << "spw_rounds" << O.spw_rounds << endl;
-    // cout << "spw_allrobust" << O.spw_allrobust << endl;
-    // cout << "spw_cbs" << O.spw_cbs << endl;
-    // cout << "spw_cbs_bdiag " << O.spw_cbs_bdiag << endl;
-    // cout << "spw_cbs_robust" << O.spw_cbs_robust << endl;
-    // cout << "spw_cbs_spd_hack" << O.spw_cbs_spd_hack << endl;
-    // cout << "spw_pick_cwt" << O.spw_pick_cwt << endl;
-    // cout << "spw_pick_mma_scal" << O.spw_pick_mma_scal << endl;
-    // cout << "spw_pick_mma_mat" << O.spw_pick_mma_mat << endl;
-    // cout << "spw_check_cwt" << O.spw_check_cwt << endl;
-    // cout << "spw_check_mma_scal" << O.spw_check_mma_scal << endl;
-    // cout << "spw_check_mma_mat = " << O.spw_check_mma_mat << endl;
-
     agg_opts.edge_thresh = O.min_ecw.GetOpt(level);
     agg_opts.vert_thresh = O.min_vcw.GetOpt(level);
     agg_opts.robust = O.ecw_robust.GetOpt(level);
@@ -301,6 +291,7 @@ namespace amg
     agg_opts.print_params = O.spw_print_params.GetOpt(level);
     agg_opts.print_summs = O.spw_print_summs.GetOpt(level);
     agg_opts.print_aggs = O.print_aggs.GetOpt(level) | O.spw_print_aggs.GetOpt(level);
+    agg_opts.weed_out = O.spw_wo.GetOpt(level);
     
     auto agglomerator = make_shared<AGG_CLASS>(mesh, state.curr_cap->free_nodes, move(agg_opts));
 
