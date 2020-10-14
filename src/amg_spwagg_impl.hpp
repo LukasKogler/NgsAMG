@@ -1355,6 +1355,7 @@ namespace amg
 		    NCV++;
 		  }
 		  else {
+		    HeapReset hr(lh);
 		    bool aggok = check_soc_aggs( r_scbs, r_nb, FlatArray<int>(possmems), FlatArray<int>(dummy) );
 		    if ( aggok ) { /** build the agg **/
 		      int aggid = spec_aggs.Size();
@@ -1545,6 +1546,14 @@ namespace amg
     tfaggs.Start();
     size_t n_aggs_spec = spec_aggs.Size(), n_aggs_p = conclocmap->template GetMappedNN<NT_VERTEX>(), n_aggs_f = fixed_aggs.Size();
     size_t n_aggs_tot = n_aggs_spec + n_aggs_p + n_aggs_f, agg_id = n_aggs_spec;
+    if (m_print_summs) {
+      int nspacs = eqc_h.GetCommunicator().Reduce(int(n_aggs_spec), MPI_SUM, 0);
+      if (eqc_h.GetCommunicator().Rank() > 0)
+	{ nspacs = n_aggs_spec; }
+      if (print_summs)
+	{ cout << "# spec aggs = " << nspacs << endl; }
+    }
+
     agglomerates.SetSize(n_aggs_tot);
     for (auto k : Range(n_aggs_spec))
       { agglomerates[k] = move(spec_aggs[k]); }
