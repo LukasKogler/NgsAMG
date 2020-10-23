@@ -1392,10 +1392,12 @@ namespace amg
 	auto c2fv = conclocmap->template GetMapC2F<NT_VERTEX>();
 	auto veqs = conclocmap->GetV2EQ();
 	// Array<int> cmk; CalcCMK(handled, fecon, cmk);
+	size_t MAX = vmap.Size() - 1;
 	// cout << " CMK: "; prow2(cmk); cout << endl;
 	pair_vertices(vmap, NCV,
 		      // cmk.Size(), [&](auto k) { return cmk[k]; }, 
-		      vmap.Size(), [&](auto i) LAMBDA_INLINE { return i; }, // no CMK on later rounds!
+		      // vmap.Size(), [&](auto i) LAMBDA_INLINE { return i; }, // no CMK on later rounds!
+		      vmap.Size(), [&](auto i) LAMBDA_INLINE { return MAX-i; }, // no CMK on later rounds!
 		      fecon, handled,
 		      [&](auto v) LAMBDA_INLINE { return c2fv[v]; }, // get_mems
 		      [&](auto vi, auto vj) LAMBDA_INLINE { return allow_merge(veqs[vi], veqs[vj]); }, // allowed
