@@ -209,7 +209,7 @@ namespace amg
       return 0.5 * (A + B);
     }
 
-    static INLINE void CalcMQ (double scal, const TM & Q, const TM & M, TM & out)
+    static INLINE void CalcMQ (double scal, const TM & M, const TM & Q, TM & out)
     {
       /** A  B   I Q  =  A   AQ+B
 	  BT C   0 I  =  BT BTQ+C **/
@@ -223,7 +223,7 @@ namespace amg
       MakeFlatMat<DISPPV, ROTPV, DISPPV, ROTPV>(out) = scal * (MakeFlatMat<DISPPV, ROTPV, DISPPV, ROTPV>(M) + BTQ);
     }
 
-    static INLINE void AddMQ (double scal, const TM & Q, const TM & M, TM & out)
+    static INLINE void AddMQ (double scal, const TM & M, const TM & Q, TM & out)
     {
       /** A  B   I Q  =  A   AQ+B
 	  BT C   0 I  =  BT BTQ+C **/
@@ -264,7 +264,7 @@ namespace amg
       MakeFlatMat<DISPPV, ROTPV, 0, DISPPV>(out) += scal * ( MakeFlatMat<DISPPV, ROTPV, 0, DISPPV>(M) + QTA );
       MakeFlatMat<DISPPV, ROTPV, DISPPV, ROTPV>(out) += scal * (MakeFlatMat<DISPPV, ROTPV, DISPPV, ROTPV>(M) + QTB);
     }
-};
+  };
 
 #endif
 
