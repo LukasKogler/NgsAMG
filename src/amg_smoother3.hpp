@@ -255,6 +255,23 @@ namespace amg
   };
 
 
+  template<class TSCAL>
+  class BasicDCCMap : public DCCMap<TSCAL>
+  {
+  public:
+    BasicDCCMap (shared_ptr<EQCHierarchy> eqc_h, shared_ptr<ParallelDofs> _pardofs);
+
+  protected:
+
+    using DCCMap<TSCAL>::pardofs;
+    using DCCMap<TSCAL>::m_dofs;
+    using DCCMap<TSCAL>::m_ex_dofs;
+    using DCCMap<TSCAL>::g_ex_dofs;
+
+    virtual void CalcDOFMasters (shared_ptr<EQCHierarchy> eqc_h) override;
+  };
+
+
   /**
      Splits a ParallelMatrix with a SparseMatrix inside in this way: (M .. master, G .. ghost)
         

@@ -2,6 +2,7 @@
 
 #include "amg_smoother3.hpp"
 #include "amg_smoother_impl.hpp"
+#include "amg_bla.hpp"
 
 #ifdef USE_TAU
 #include <Profile/Profiler.h>
@@ -11,6 +12,8 @@
 namespace amg
 {
 
+  void CalcPseudoInverseNew (double& mat, LocalHeap & lh) { mat = 1.0/mat; }
+  void CalcPseudoInverseNew (double& mat) { mat = 1.0/mat; }
 
   class BackgroundMPIThread
   {
@@ -122,11 +125,16 @@ namespace amg
   {
     SetUp(mat, subset);
     dinv.SetSize(repl_diag.Size());
+    LocalHeap lh(10 * 1024 * 1024, "for_pinv");
     ParallelFor (H, [&](size_t i) {
   	if (!freedofs || freedofs->Test(i))
 	  {
 	    dinv[i] = repl_diag[i];
 	    CalcInverse (dinv[i]);
+	    // if constexpr(mat_traits<TM>::HEIGHT>1) { RegTM<0, mat_traits<TM>::HEIGHT, mat_traits<TM>::HEIGHT>(dinv[i]); }
+	    // CalcPseudoInverseNew(dinv[i], lh);
+      // cout << " inv " << i << endl;
+      // print_tm(cout, dinv[i]);
 	  }
   	else
   	  { dinv[i] = TM(0.0); }
@@ -177,10 +185,15 @@ namespace amg
   {
     dinv.SetSize (H); 
     const auto& A(*spmat);
+    LocalHeap lh(10 * 1024 * 1024, "for_pinv");
     ParallelFor (H, [&](size_t i) {
   	if (!freedofs || freedofs->Test(i)) {
   	  dinv[i] = A(i,i);
   	  CalcInverse (dinv[i]);
+	    // if constexpr(mat_traits<TM>::HEIGHT>1) { RegTM<0, mat_traits<TM>::HEIGHT, mat_traits<TM>::HEIGHT>(dinv[i]); }
+  	  // CalcPseudoInverseNew (dinv[i], lh);
+      // cout << " inv " << i << endl;
+      // print_tm(cout, dinv[i]);
   	}
   	else
   	  { dinv[i] = TM(0.0); }
@@ -368,9 +381,14 @@ namespace amg
     // cout << " GSS4, repl diag " << endl;
     SetUp(A, subset);
     dinv.SetSize(xdofs.Size());
+    LocalHeap lh(10 * 1024 * 1024, "for_pinv");
     for (auto k : Range(xdofs)) {
       dinv[k] = repl_diag[xdofs[k]];
       CalcInverse(dinv[k]);
+	    // if constexpr(mat_traits<TM>::HEIGHT>1) { RegTM<0, mat_traits<TM>::HEIGHT, mat_traits<TM>::HEIGHT>(dinv[k]); }
+      // CalcPseudoInverseNew(dinv[k], lh);
+      // cout << " inv " << xdofs[k] << endl;
+      // print_tm(cout, dinv[k]);
     }
     // cout << " MY (gss4) INVS(w. repl): " << endl;
     // for (auto k : Range(xdofs)) {
@@ -439,9 +457,14 @@ namespace amg
     /** invert diag **/
     const auto& ncA(*cA);
     dinv.SetSize(xdofs.Size());
+    LocalHeap lh(10 * 1024 * 1024, "for_pinv");
     for (auto k : Range(xdofs)) {
       dinv[k] = ncA(xdofs[k], xdofs[k]);
       CalcInverse(dinv[k]);
+	    // if constexpr(mat_traits<TM>::HEIGHT>1) { RegTM<0, mat_traits<TM>::HEIGHT, mat_traits<TM>::HEIGHT>(dinv[k]); }
+      // CalcPseudoInverseNew(dinv[k], lh);
+      // cout << " inv " << xdofs[k] << endl;
+      // print_tm(cout, dinv[k]);
     }
     // cout << "GSS4 invs: " << endl; prow2(dinv); cout << endl;
   } // GSS4::CalcDiags
@@ -562,7 +585,8 @@ namespace amg
 	perow.SetSize(b.Size());
 	for (auto k : Range(perow))
 	  { perow[k] = block_size * b[k].Size(); }
-	a = (typename remove_reference<decltype(a)>::type)(perow);
+	// a = (typename remove_reference<decltype(a)>::type)(perow);
+	a = move(Table<TSCAL>(perow));
       };
       alloc_bs(m_buffer, m_ex_dofs); // m_buffer = -1;
       alloc_bs(g_buffer, g_ex_dofs); // g_buffer = -1;
@@ -1042,6 +1066,74 @@ namespace amg
   } // ChunkedDCCMap::CalcDOFMasters
 
 
+  /** BasicDCCMap **/
+
+  template<class TSCAL>
+  BasicDCCMap<TSCAL> :: BasicDCCMap (shared_ptr<EQCHierarchy> eqc_h, shared_ptr<ParallelDofs> _pardofs)
+    : DCCMap<TSCAL>(eqc_h, _pardofs)
+  {
+    /** m_ex_dofs and g_ex_dofs **/
+    CalcDOFMasters(eqc_h);
+
+    /** requests and buffers **/
+    this->AllocMPIStuff();
+
+  } // BasicDCCMap (..)
+
+
+  template<class TSCAL>
+  void BasicDCCMap<TSCAL> :: CalcDOFMasters (shared_ptr<EQCHierarchy> eqc_h)
+  {
+    static Timer t("BasicDCCMap::CalcDOFMasters"); RegionTimer rt(t);
+
+    auto comm = pardofs->GetCommunicator();
+
+    /** This is a subtle but IMPORTANT difference. eqc_h can have more distprocs than pardofs.
+     Happens e.g. when two procs share only one single vertex on a dirichlet boundary. This vertex drops
+     from the first coarse level, it is not a distproc of the coarse paralleldofs anymore but it's eqc is still in eqchierarchy! **/
+    // auto ex_procs = eqc_h->GetDistantProcs();
+    auto ex_procs = pardofs->GetDistantProcs();
+
+    auto nexp = ex_procs.Size();
+
+    // clear non-local dofs from master_of, and split into eqc-blocks
+    m_dofs = make_shared<BitArray>(pardofs->GetNDofLocal());
+    // I think we are ready to construct m_ex_dofs and g_ex_dofs !!
+    {
+      TableCreator<int> c_m_exd(nexp), c_g_exd(nexp);
+      for (; !c_m_exd.Done(); c_m_exd++, c_g_exd++) {
+	for (auto k : Range(pardofs->GetNDofLocal())) {
+	  auto dps = pardofs->GetDistantProcs(k);
+	  if (dps.Size() > 0 && (dps[0] < comm.Rank()) ) {
+	    auto kp = find_in_sorted_array(dps[0], ex_procs);
+	    c_g_exd.Add(kp, k);
+	    m_dofs->Clear(k);
+	  }
+	  else { // local or master
+	    m_dofs->SetBit(k);
+	    for (auto p : dps) {
+	      auto kp = find_in_sorted_array(p, ex_procs);
+	      c_m_exd.Add(kp, k);
+	    }
+	  }
+	}
+      }
+      m_ex_dofs = c_m_exd.MoveTable();
+      for (auto row : m_ex_dofs) // only already sorted on coarse levels !
+	{ QuickSort(row); }
+      g_ex_dofs = c_g_exd.MoveTable();
+      for (auto row : g_ex_dofs)
+	{ QuickSort(row); }
+    }
+
+    // cout << "m_ex_dofs" << endl << m_ex_dofs << endl << endl;
+    // cout << "g_ex_dofs" << endl << g_ex_dofs << endl << endl;
+
+  } // BasicDCCMap::CalcDOFMasters
+
+  /** END BasicDCCMap **/
+
+
   /** HybridMatrix **/
 
   template<class TM>
@@ -1419,7 +1511,9 @@ namespace amg
 
     shared_ptr<DCCMap<typename mat_traits<TM>::TSCAL>> dcc_map = nullptr;
     if (auto pds = _A->GetParallelDofs())
-      { dcc_map = make_shared<ChunkedDCCMap<typename mat_traits<TM>::TSCAL>>(eqc_h, pds, 10); }
+      { dcc_map = make_shared<BasicDCCMap<typename mat_traits<TM>::TSCAL>>(eqc_h, pds); }
+    // if (auto pds = _A->GetParallelDofs())
+      // { dcc_map = make_shared<ChunkedDCCMap<typename mat_traits<TM>::TSCAL>>(eqc_h, pds, 10); }
 
     
     // sqr.SetSize(mat_traits<TM>::HEIGHT * _A->Height());
