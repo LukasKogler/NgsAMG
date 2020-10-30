@@ -37,7 +37,8 @@ namespace amg
     			     BaseVector &res, bool res_updated = false,
     			     bool update_res = true, bool x_zero = false) const override
     {
-      amg_mat->SmoothVFromLevel(start_level, x, b, res, res_updated, update_res, x_zero);
+      // x = 0.0;
+      // amg_mat->SmoothVFromLevel(start_level, x, b, res, res_updated, update_res, x_zero);
     }
 
     virtual int VHeight () const override { return amg_mat->GetSmoother(start_level)->GetAMatrix()->VHeight(); }
@@ -55,22 +56,27 @@ namespace amg
     AutoVector res;
     bool sym;
   public:
-    SmootherBM(shared_ptr<BaseSmoother> _sm, bool _sym = true) : sm(_sm), sym(_sym) { res.AssignPointer(sm->CreateColVector()); }
-    
+    // SmootherBM(shared_ptr<BaseSmoother> _sm, bool _sym = true) : sm(_sm), sym(_sym) { res.AssignPointer(sm->CreateColVector()); }
+    SmootherBM(shared_ptr<BaseSmoother> _sm, bool _sym = true)
+      : sm(_sm), res(move(_sm->CreateColVector())), sym(_sym)
+    { ; }
+
     virtual void Mult (const BaseVector & b, BaseVector & x) const override
     {
       BaseVector & r2 (const_cast<BaseVector&>(*res));
       x = 0.0;
       x.Cumulate();
       b.Distribute();
+      r2 = b;
+      // updated, update, zero
       if (sym) {
-	sm->Smooth(x, b, r2, false, true, true);
+	sm->Smooth(x, b, r2, true, true, true);
 	x.Distribute();
 	sm->SmoothBack(x, b, r2, true, false, false);
 	x.Cumulate();
       }
       else
-	{ sm->Smooth(x, b, r2, false, true, false); }
+	{ sm->Smooth(x, b, r2, true, false, true); }
     }
     virtual void MultTrans (const BaseVector & b, BaseVector & x) const override { Mult(b, x); }
 
@@ -79,8 +85,31 @@ namespace amg
     // virtual AutoVector CreateVector () const override { return sm->CreateVector(); };
     virtual AutoVector CreateColVector () const override { return sm->CreateColVector(); };
     virtual AutoVector CreateRowVector () const override { return sm->CreateColVector(); };
-
   };
+
+  void DoTest (BaseMatrix &mat, BaseMatrix &pc, NgMPI_Comm & gcomm) {
+    auto i1 = printmessage_importance;
+    auto i2 = netgen::printmessage_importance;
+    printmessage_importance = 1;
+    netgen::printmessage_importance = 1;
+    EigenSystem eigen(mat, pc); // need parallel mat
+    eigen.SetPrecision(1e-12);
+    eigen.SetMaxSteps(10000);
+    int ok = eigen.Calc();
+    if (ok == 0) {
+      double minev = 0.0;
+      for (int k = 1; k <= eigen.NumEigenValues(); k++)
+	if (eigen.EigenValue(k) > 1e-10)
+	  { minev = eigen.EigenValue(k); break; }
+      if (gcomm.Rank() == 0) {
+	cout << IM(1) << " Min Eigenvalue : " << minev << endl; 
+	cout << IM(1) << " Max Eigenvalue : " << eigen.MaxEigenValue() << endl; 
+	cout << IM(1) << " Condition   " << eigen.MaxEigenValue()/eigen.EigenValue(1) << endl;
+      }
+    }
+    printmessage_importance = i1;
+    netgen::printmessage_importance = i2;
+  }
 
   /** Options **/
 
@@ -133,6 +162,8 @@ namespace amg
 
     set_bool(sync, "sync");
     set_bool(do_test, "do_test");
+    set_bool(test_levels, "test_levels");
+    set_bool(test_smoothers, "test_smoothers");
     set_bool(smooth_lo_only, "smooth_lo_only");
     set_bool(regularize_cmats, "regularize_cmats");
     set_bool(force_ass_flmat, "faflm");
@@ -352,52 +383,30 @@ namespace amg
     amg_mat->SetVWB(O.mg_cycle);
 
     auto gcomm = dof_map->GetParDofs()->GetCommunicator();
-    for (int k = 0; k < amg_levels.Size() - 1; k++) {
-      if (gcomm.Rank() == 0)
-	{ cout << " test AMG-smoother from level " << k << endl; }
-      auto i1 = printmessage_importance;
-      auto i2 = netgen::printmessage_importance;
-      printmessage_importance = 1;
-      netgen::printmessage_importance = 1;
-      // EigenSystem eigen(*aux_mat, *amg_mat);
-      shared_ptr<BaseMatrix> smwrap, smt;
-      if (k == 0) { smt = finest_mat; smwrap = amg_mat; }
-      else {
-	smwrap = make_shared<SmootherBM>(make_shared<AMGSmoother2>(amg_mat, k), false);
-	shared_ptr<BaseSparseMatrix> spmat;
-	if (k == 0) { /** This makes a difference with force_ass_flmat **/
-	  auto fpm = dynamic_pointer_cast<ParallelMatrix>(finest_mat);
-	  spmat = (fpm == nullptr) ? dynamic_pointer_cast<BaseSparseMatrix>(finest_mat) : dynamic_pointer_cast<BaseSparseMatrix>(fpm->GetMatrix());
+
+    if ( O.test_levels ) {
+      for (int k = 1; k < amg_levels.Size() - 1; k++) {
+	if (gcomm.Rank() == 0)
+	  { cout << " test AMG-smoother from level " << k << endl; }
+	shared_ptr<BaseMatrix> smwrap, smt;
+	if (k == 0) { smt = finest_mat; smwrap = amg_mat; }
+	else {
+	  smwrap = make_shared<SmootherBM>(make_shared<AMGSmoother2>(amg_mat, k), false);
+	  shared_ptr<BaseSparseMatrix> spmat;
+	  if (k == 0) { /** This makes a difference with force_ass_flmat **/
+	    auto fpm = dynamic_pointer_cast<ParallelMatrix>(finest_mat);
+	    spmat = (fpm == nullptr) ? dynamic_pointer_cast<BaseSparseMatrix>(finest_mat) : dynamic_pointer_cast<BaseSparseMatrix>(fpm->GetMatrix());
+	  }
+	  else
+	    { spmat = amg_levels[k]->cap->mat; }
+	  smt = spmat;
+	  if (amg_levels[k]->cap->pardofs)
+	    { smt = make_shared<ParallelMatrix>(smt, amg_levels[k]->cap->pardofs, amg_levels[k]->cap->pardofs, C2D); }
 	}
-	else
-	  { spmat = amg_levels[k]->cap->mat; }
-	smt = spmat;
-	if (amg_levels[k]->cap->pardofs)
-	  { smt = make_shared<ParallelMatrix>(smt, amg_levels[k]->cap->pardofs, amg_levels[k]->cap->pardofs, C2D); }
+	DoTest(*smt, *smwrap, gcomm);
+	if (gcomm.Rank() == 0)
+	  { cout << " done testing AMG-smoother from level " << k << endl << endl; }
       }
-      cout << " smt " << smt->Height() << ", smw " << smwrap->Height() << endl;
-      auto vc = smt->CreateColVector();
-      cout << " SMT " << typeid(*smt).name() << endl;
-      cout << " VCT1 " << typeid(*vc).name() << endl;
-      auto vc2 = smwrap->CreateColVector();
-      cout << " VCT2 " << typeid(*vc2).name() << endl;
-      auto smk = amg_mat->GetSmoother(k);
-      auto amt = smk->GetAMatrix(); cout << " AMT " << typeid(*amt).name() << " " << amt->Height() << " " << amt->VHeight() << endl;
-      auto amtvk = amt->CreateColVector();
-      cout << " AMTVK " << typeid(*amtvk).name() << endl;
-      EigenSystem eigen(*smt, *smwrap); // need parallel mat
-      eigen.SetPrecision(1e-12);
-      eigen.SetMaxSteps(1000);
-      eigen.Calc();
-      for (auto l : Range(20))
-	     cout << IM(1) << eigen.EigenValue(1+l) << " ";
-	   cout << endl; 
-      cout << IM(1) << " Max Eigenvalue : " << eigen.MaxEigenValue() << endl; 
-      cout << IM(1) << " Condition   " << eigen.MaxEigenValue()/eigen.EigenValue(1) << endl; 
-      printmessage_importance = i1;
-      netgen::printmessage_importance = i2;
-      if (gcomm.Rank() == 0)
-	{ cout << " done testing AMG-smoother from level " << k << endl << endl; }
     }
 
     /** Coarsest level inverse **/
@@ -470,43 +479,27 @@ namespace amg
       }
     }
 
-    for (int k = 0; k < amg_levels.Size() - 1; k++) {
-      if (gcomm.Rank() == 0)
-	{ cout << " test AMG-smoother+INV from level " << k << endl; }
-      auto i1 = printmessage_importance;
-      auto i2 = netgen::printmessage_importance;
-      printmessage_importance = 1;
-      netgen::printmessage_importance = 1;
-      // EigenSystem eigen(*aux_mat, *amg_mat);
-      shared_ptr<BaseMatrix> smwrap, smt;
-      if (k == 0) { smt = finest_mat; smwrap = amg_mat; }
-      else {
-	smwrap = make_shared<SmootherBM>(make_shared<AMGSmoother2>(amg_mat, k), false);
-	shared_ptr<BaseSparseMatrix> spmat;
-	if (k == 0) { /** This makes a difference with force_ass_flmat **/
-	  auto fpm = dynamic_pointer_cast<ParallelMatrix>(finest_mat);
-	  spmat = (fpm == nullptr) ? dynamic_pointer_cast<BaseSparseMatrix>(finest_mat) : dynamic_pointer_cast<BaseSparseMatrix>(fpm->GetMatrix());
+    if ( O.test_levels ) {
+      for (int k = 1; k < amg_levels.Size() - 1; k++) {
+	shared_ptr<BaseMatrix> smwrap, smt;
+	if (k == 0) { smt = finest_mat; smwrap = amg_mat; }
+	else {
+	  smwrap = make_shared<SmootherBM>(make_shared<AMGSmoother2>(amg_mat, k), false);
+	  shared_ptr<BaseSparseMatrix> spmat;
+	  if (k == 0) { /** This makes a difference with force_ass_flmat **/
+	    auto fpm = dynamic_pointer_cast<ParallelMatrix>(finest_mat);
+	    spmat = (fpm == nullptr) ? dynamic_pointer_cast<BaseSparseMatrix>(finest_mat) : dynamic_pointer_cast<BaseSparseMatrix>(fpm->GetMatrix());
+	  }
+	  else
+	    { spmat = amg_levels[k]->cap->mat; }
+	  smt = spmat;
+	  if (amg_levels[k]->cap->pardofs)
+	    { smt = make_shared<ParallelMatrix>(smt, amg_levels[k]->cap->pardofs, amg_levels[k]->cap->pardofs, C2D); }
 	}
-	else
-	  { spmat = amg_levels[k]->cap->mat; }
-	smt = spmat;
-	if (amg_levels[k]->cap->pardofs)
-	  { smt = make_shared<ParallelMatrix>(smt, amg_levels[k]->cap->pardofs, amg_levels[k]->cap->pardofs, C2D); }
+	if (gcomm.Rank() == 0)
+	  { cout << " test AMG-smoother (+INV) from level " << k << endl; }
+	DoTest(*smt, *smwrap, gcomm);
       }
-      cout << " smt " << smt->Height() << ", smw " << smwrap->Height() << endl;
-      EigenSystem eigen(*smt, *smwrap); // need parallel mat
-      eigen.SetPrecision(1e-12);
-      eigen.SetMaxSteps(1000);
-      eigen.Calc();
-      for (auto l : Range(20))
-	     cout << IM(1) << eigen.EigenValue(1+l) << " ";
-	   cout << endl; 
-      cout << IM(1) << " Max Eigenvalue : " << eigen.MaxEigenValue() << endl; 
-      cout << IM(1) << " Condition   " << eigen.MaxEigenValue()/eigen.EigenValue(1) << endl; 
-      printmessage_importance = i1;
-      netgen::printmessage_importance = i2;
-      if (gcomm.Rank() == 0)
-	{ cout << " done testing AMG-smoother+INV from level " << k << endl << endl; }
     }
 
     if (options->do_test)
@@ -538,7 +531,8 @@ namespace amg
       if ( (k > 0) && O.regularize_cmats) { // Regularize coarse level matrices
 	if (gcomm.Rank() == 0 && O.log_level_pc > Options::LOG_LEVEL_PC::NORMAL)
 	  { cout << "  regularize matrix on level " << k << endl; }
-	RegularizeMatrix(amg_levels[k]->cap->mat, amg_levels[k]->cap->pardofs);
+	// if (k <= 1)
+	// RegularizeMatrix(amg_levels[k]->cap->mat, amg_levels[k]->cap->pardofs);
       }
       if (gcomm.Rank() == 0 && O.log_level_pc > Options::LOG_LEVEL_PC::NORMAL)
 	{ cout << "  set up smoother on level " << k << endl; }
@@ -548,38 +542,24 @@ namespace amg
     if (gcomm.Rank() == 0 && O.log_level_pc > Options::LOG_LEVEL_PC::NONE)
       { cout << " smoothers built" << endl; }
 
-    for (int k = 0; k < amg_levels.Size() - 1; k++) {
-      if (gcomm.Rank() == 0)
-	{ cout << " test smoother on level " << k << endl; }
-      auto i1 = printmessage_importance;
-      auto i2 = netgen::printmessage_importance;
-      printmessage_importance = 1;
-      netgen::printmessage_importance = 1;
-      // EigenSystem eigen(*aux_mat, *amg_mat);
-      auto smwrap = make_shared<SmootherBM>(smoothers[k]);
-      shared_ptr<BaseSparseMatrix> spmat;
-      if (k == 0) { /** This makes a difference with force_ass_flmat **/
-	auto fpm = dynamic_pointer_cast<ParallelMatrix>(finest_mat);
-	spmat = (fpm == nullptr) ? dynamic_pointer_cast<BaseSparseMatrix>(finest_mat) : dynamic_pointer_cast<BaseSparseMatrix>(fpm->GetMatrix());
+    if ( O.test_smoothers ) {
+      for (int k = 0; k < amg_levels.Size() - 1; k++) {
+	shared_ptr<ParallelDofs> pardofs = (k == 0) ? finest_mat->GetParallelDofs() : amg_levels[k]->cap->pardofs;
+	shared_ptr<BaseSparseMatrix> spmat;
+	if (k == 0) { /** This makes a difference with force_ass_flmat **/
+	  auto fpm = dynamic_pointer_cast<ParallelMatrix>(finest_mat);
+	  spmat = (fpm == nullptr) ? dynamic_pointer_cast<BaseSparseMatrix>(finest_mat) : dynamic_pointer_cast<BaseSparseMatrix>(fpm->GetMatrix());
+	}
+	else
+	  { spmat = amg_levels[k]->cap->mat; }
+	shared_ptr<BaseMatrix> smt = spmat;
+	if (pardofs)
+	  { smt = make_shared<ParallelMatrix>(smt, pardofs, pardofs, C2D); }
+	auto smwrap = make_shared<SmootherBM>(smoothers[k]);
+	if (gcomm.Rank() == 0)
+	  { cout << " test smoother on level " << k << endl; }
+	DoTest(*smt, *smwrap, gcomm);
       }
-      else
-	{ spmat = amg_levels[k]->cap->mat; }
-      shared_ptr<BaseMatrix> smt = spmat;
-      if (amg_levels[k]->cap->pardofs)
-	{ smt = make_shared<ParallelMatrix>(smt, amg_levels[k]->cap->pardofs, amg_levels[k]->cap->pardofs, C2D); }
-      EigenSystem eigen(*smt, *smwrap); // need parallel mat
-      eigen.SetPrecision(1e-12);
-      eigen.SetMaxSteps(1000);
-      eigen.Calc();
-      for (auto l : Range(20))
-	     cout << IM(1) << eigen.EigenValue(1+l) << " ";
-	   cout << endl; 
-      cout << IM(1) << " Max Eigenvalue : " << eigen.MaxEigenValue() << endl; 
-      cout << IM(1) << " Condition   " << eigen.MaxEigenValue()/eigen.EigenValue(1) << endl; 
-      printmessage_importance = i1;
-      netgen::printmessage_importance = i2;
-      if (gcomm.Rank() == 0)
-	{ cout << " done testing smoother on level " << k << endl << endl; }
     }
 
     return smoothers;
@@ -702,7 +682,8 @@ namespace amg
 	     if (eqc_h == nullptr)
 	       { throw Exception("BuildGSSmoother needs eqc_h!"); break; }
 	     auto parmat = make_shared<ParallelMatrix>(spm, pardofs, pardofs, C2D);
-	     auto hgsm = make_shared<HybridGSS3<typename strip_mat<Mat<BS, BS, double>>::type>> (parmat, eqc_h, freedofs, O.sm_mpi_overlap, O.sm_mpi_thread);
+	     auto hgsm = make_shared<HybridGSS3<typename strip_mat<Mat<BS, BS, double>>::type>> (parmat, eqc_h, freedofs,
+												 O.regularize_cmats, O.sm_mpi_overlap, O.sm_mpi_thread);
 	     hgsm->Finalize();
 	     hgsm->SetSymmetric(O.sm_symm);
 	     smoother = hgsm;

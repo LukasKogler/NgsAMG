@@ -15,6 +15,19 @@ namespace amg
   void CalcPseudoInverseNew (double& mat, LocalHeap & lh) { mat = 1.0/mat; }
   void CalcPseudoInverseNew (double& mat) { mat = 1.0/mat; }
 
+  void DoRTM1 (double & m, LocalHeap & lh) { ; }
+  void DoRTM2 (double & m, LocalHeap & lh) { ; }
+
+  template<int N>
+  void DoRTM1 (Mat<N, N, double> & m, LocalHeap & lh) {
+    // RegTM<0, N, N>(m);
+  }
+
+  template<int N>
+  void DoRTM2 (Mat<N, N, double> & m, LocalHeap & lh) {
+    // RegTM<0, N, N>(m);
+  }
+
   class BackgroundMPIThread
   {
   protected:
@@ -111,8 +124,8 @@ namespace amg
   /** Local Gauss-Seidel **/
 
   template<class TM>
-  GSS3<TM> :: GSS3 (shared_ptr<SparseMatrix<TM>> mat, shared_ptr<BitArray> subset)
-    : BaseSmoother(mat)
+  GSS3<TM> :: GSS3 (shared_ptr<SparseMatrix<TM>> mat, shared_ptr<BitArray> subset, bool _pinv)
+    : BaseSmoother(mat), pinv(_pinv)
   {
     SetUp(mat, subset);
     CalcDiags();
@@ -120,32 +133,27 @@ namespace amg
 
 
   template<class TM>
-  GSS3<TM> :: GSS3 (shared_ptr<SparseMatrix<TM>> mat, FlatArray<TM> repl_diag, shared_ptr<BitArray> subset)
-    : BaseSmoother(mat)
+  GSS3<TM> :: GSS3 (shared_ptr<SparseMatrix<TM>> mat, FlatArray<TM> repl_diag, shared_ptr<BitArray> subset, bool _pinv)
+    : BaseSmoother(mat), pinv(_pinv)
   {
     SetUp(mat, subset);
     dinv.SetSize(repl_diag.Size());
-    LocalHeap lh(10 * 1024 * 1024, "for_pinv");
-    ParallelFor (H, [&](size_t i) {
-  	if (!freedofs || freedofs->Test(i))
-	  {
-	    dinv[i] = repl_diag[i];
-	    CalcInverse (dinv[i]);
-	    // if constexpr(mat_traits<TM>::HEIGHT>1) { RegTM<0, mat_traits<TM>::HEIGHT, mat_traits<TM>::HEIGHT>(dinv[i]); }
-	    // CalcPseudoInverseNew(dinv[i], lh);
-      // cout << " inv " << i << endl;
-      // print_tm(cout, dinv[i]);
-	  }
-  	else
-  	  { dinv[i] = TM(0.0); }
+    LocalHeap glh(10 * 1024 * 1024, "for_pinv");
+    ParallelForRange (IntRange(dinv.Size()), [&] ( IntRange r ) {
+	LocalHeap lh = glh.Split();
+	for (auto i : r) {
+	  if (!freedofs || freedofs->Test(i))
+	    {
+	      dinv[i] = repl_diag[i];
+	      if (pinv)
+		{ CalcPseudoInverseNew(dinv[i], lh); }
+	      else
+		{ CalcInverse(dinv[i]); }
+	    }
+	  else
+	    { dinv[i] = TM(0.0); }
+	}
       });
-
-    // cout << " MY INVS(w. repl): " << endl;
-    // 			    for (auto k : Range(H)) {
-    // 			      if (!freedofs || freedofs->Test(k)) {
-    // 			      cout << k << ": " << endl;
-    // 						   print_tm(cout, dinv[k]); cout << endl;
-    // 			      } }
   }
   
   template<class TM>
@@ -185,25 +193,22 @@ namespace amg
   {
     dinv.SetSize (H); 
     const auto& A(*spmat);
-    LocalHeap lh(10 * 1024 * 1024, "for_pinv");
-    ParallelFor (H, [&](size_t i) {
-  	if (!freedofs || freedofs->Test(i)) {
-  	  dinv[i] = A(i,i);
-  	  CalcInverse (dinv[i]);
-	    // if constexpr(mat_traits<TM>::HEIGHT>1) { RegTM<0, mat_traits<TM>::HEIGHT, mat_traits<TM>::HEIGHT>(dinv[i]); }
-  	  // CalcPseudoInverseNew (dinv[i], lh);
-      // cout << " inv " << i << endl;
-      // print_tm(cout, dinv[i]);
-  	}
-  	else
-  	  { dinv[i] = TM(0.0); }
+    LocalHeap glh(10 * 1024 * 1024, "for_pinv");
+    ParallelForRange (IntRange(dinv.Size()), [&] ( IntRange r ) {
+	LocalHeap lh = glh.Split();
+	for (auto i : r) {
+	  if (!freedofs || freedofs->Test(i))
+	    {
+	      dinv[i] = A(i,i);
+	      if (pinv)
+		{ CalcPseudoInverseNew(dinv[i], lh); }
+	      else
+		{ CalcInverse(dinv[i]); }
+	    }
+	  else
+	    { dinv[i] = TM(0.0); }
+	}
       });
-    // cout << " MY (noadd) INVS(w. repl): " << endl;
-    // 			    for (auto k : Range(H)) {
-    // 			      if (!freedofs || freedofs->Test(k)) {
-    // 			      cout << k << ": " << endl;
-    // 						   print_tm(cout, dinv[k]); cout << endl;
-    // 			      } }
   }
 
   
@@ -367,7 +372,8 @@ namespace amg
   /** GSS4 **/
 
   template<class TM>
-  GSS4<TM> :: GSS4 (shared_ptr<SparseMatrix<TM>> A, shared_ptr<BitArray> subset)
+  GSS4<TM> :: GSS4 (shared_ptr<SparseMatrix<TM>> A, shared_ptr<BitArray> subset, bool _pinv)
+    : pinv(_pinv)
   {
     // cout << " GSS4, self diag " << endl;
     SetUp(A, subset);
@@ -376,25 +382,23 @@ namespace amg
 
 
   template<class TM>
-  GSS4<TM> :: GSS4 (shared_ptr<SparseMatrix<TM>> A, FlatArray<TM> repl_diag, shared_ptr<BitArray> subset)
+  GSS4<TM> :: GSS4 (shared_ptr<SparseMatrix<TM>> A, FlatArray<TM> repl_diag, shared_ptr<BitArray> subset, bool _pinv)
+    : pinv(_pinv)
   {
     // cout << " GSS4, repl diag " << endl;
     SetUp(A, subset);
     dinv.SetSize(xdofs.Size());
-    LocalHeap lh(10 * 1024 * 1024, "for_pinv");
-    for (auto k : Range(xdofs)) {
-      dinv[k] = repl_diag[xdofs[k]];
-      CalcInverse(dinv[k]);
-	    // if constexpr(mat_traits<TM>::HEIGHT>1) { RegTM<0, mat_traits<TM>::HEIGHT, mat_traits<TM>::HEIGHT>(dinv[k]); }
-      // CalcPseudoInverseNew(dinv[k], lh);
-      // cout << " inv " << xdofs[k] << endl;
-      // print_tm(cout, dinv[k]);
-    }
-    // cout << " MY (gss4) INVS(w. repl): " << endl;
-    // for (auto k : Range(xdofs)) {
-    //   cout << xdofs[k] << ": " << endl;
-    //   print_tm(cout, dinv[k]); cout << endl;
-    // }
+    LocalHeap glh(10 * 1024 * 1024, "for_pinv");
+    ParallelForRange (IntRange(dinv.Size()), [&] ( IntRange r ) {
+	LocalHeap lh = glh.Split();
+	for (auto i : r) {
+	  dinv[i] = repl_diag[xdofs[i]];
+	  if (pinv)
+	    { CalcPseudoInverseNew(dinv[i], lh); }
+	  else
+	    { CalcInverse(dinv[i]); }
+	}
+      });
   } // GSS4(..)
 
 
@@ -457,16 +461,17 @@ namespace amg
     /** invert diag **/
     const auto& ncA(*cA);
     dinv.SetSize(xdofs.Size());
-    LocalHeap lh(10 * 1024 * 1024, "for_pinv");
-    for (auto k : Range(xdofs)) {
-      dinv[k] = ncA(xdofs[k], xdofs[k]);
-      CalcInverse(dinv[k]);
-	    // if constexpr(mat_traits<TM>::HEIGHT>1) { RegTM<0, mat_traits<TM>::HEIGHT, mat_traits<TM>::HEIGHT>(dinv[k]); }
-      // CalcPseudoInverseNew(dinv[k], lh);
-      // cout << " inv " << xdofs[k] << endl;
-      // print_tm(cout, dinv[k]);
-    }
-    // cout << "GSS4 invs: " << endl; prow2(dinv); cout << endl;
+    LocalHeap glh(10 * 1024 * 1024, "for_pinv");
+    ParallelForRange (IntRange(dinv.Size()), [&] ( IntRange r ) {
+	LocalHeap lh = glh.Split();
+	for (auto i : r) {
+	  dinv[i] = ncA(xdofs[i], xdofs[i]);
+	  if (pinv)
+	    { CalcPseudoInverseNew(dinv[i], lh); }
+	  else
+	    { CalcInverse(dinv[i]); }
+	}
+      });
   } // GSS4::CalcDiags
 
 
@@ -1843,6 +1848,9 @@ namespace amg
       }
     }
 
+    // cout << " B  " << typeid(b).name() << endl;
+    // cout << " x  " << typeid(x).name() << endl;
+    // cout << "res " << typeid(res).name() << endl;
   } // HybridSmoother2<TM> :: SmoothInternal
 
 
@@ -1976,8 +1984,8 @@ namespace amg
 
   template<class TM>
   HybridGSS3<TM> :: HybridGSS3 (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h, shared_ptr<BitArray> _subset,
-				bool _overlap, bool _in_thread)
-    : HybridSmoother2<TM>(_A, eqc_h, _overlap, _in_thread), subset(_subset)
+				bool _pinv, bool _overlap, bool _in_thread)
+    : HybridSmoother2<TM>(_A, eqc_h, _overlap, _in_thread), subset(_subset), pinv(_pinv)
   { ; }
 
 
@@ -2043,14 +2051,14 @@ namespace amg
     auto mod_diag = this->CalcModDiag(subset);
 
     if (mod_diag.Size()) {
-      jac_loc = make_shared<GSS3<TM>>(A->GetM(), mod_diag, loc);
+      jac_loc = make_shared<GSS3<TM>>(A->GetM(), mod_diag, loc, pinv);
       if ( (pardofs != nullptr) && (ex->NumSet() != 0) )
-	{ jac_ex = make_shared<GSS4<TM>>(A->GetM(), mod_diag, ex); }
+	{ jac_ex = make_shared<GSS4<TM>>(A->GetM(), mod_diag, ex, pinv); }
     }
     else {
-      jac_loc = make_shared<GSS3<TM>>(A->GetM(), loc);
+      jac_loc = make_shared<GSS3<TM>>(A->GetM(), loc, pinv);
       if ( (pardofs != nullptr) && (ex->NumSet() != 0) )
-	{ jac_ex = make_shared<GSS4<TM>>(A->GetM(), ex); }
+	{ jac_ex = make_shared<GSS4<TM>>(A->GetM(), ex, pinv); }
     }
   } // HybridGSS3::Finalize
 
@@ -2111,41 +2119,41 @@ namespace amg
   }
 
 
-  /** RegHybridGSS3 **/
+  // /** RegHybridGSS3 **/
 
-  template<class TM, int RMIN, int RMAX>
-  RegHybridGSS3<TM, RMIN, RMAX> :: RegHybridGSS3 (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h, shared_ptr<BitArray> _subset,
-						  bool _overlap, bool _in_thread)
-    : HybridGSS3<TM> (_A, eqc_h, _subset, _overlap, _in_thread)
-  { ; }
+  // template<class TM, int RMIN, int RMAX>
+  // RegHybridGSS3<TM, RMIN, RMAX> :: RegHybridGSS3 (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h, shared_ptr<BitArray> _subset,
+  // 						  bool _overlap, bool _in_thread)
+  //   : HybridGSS3<TM> (_A, eqc_h, _subset, _overlap, _in_thread)
+  // { ; }
 
 
-  template<class TM, int RMIN, int RMAX>
-  Array<TM> RegHybridGSS3<TM, RMIN, RMAX> :: CalcModDiag (shared_ptr<BitArray> free) 
-  {
-    Array<TM> mod_diag = HybridSmoother2<TM>::CalcModDiag(free);
+  // template<class TM, int RMIN, int RMAX>
+  // Array<TM> RegHybridGSS3<TM, RMIN, RMAX> :: CalcModDiag (shared_ptr<BitArray> free) 
+  // {
+  //   Array<TM> mod_diag = HybridSmoother2<TM>::CalcModDiag(free);
 
-    if (!mod_diag.Size()) {
-      mod_diag.SetSize(A->Height()); mod_diag = 0;
-      const auto & M = *A->GetM();
-      for (auto k : Range(M.Height()))
-	{ mod_diag[k] = M(k,k); }
-    }
+  //   if (!mod_diag.Size()) {
+  //     mod_diag.SetSize(A->Height()); mod_diag = 0;
+  //     const auto & M = *A->GetM();
+  //     for (auto k : Range(M.Height()))
+  // 	{ mod_diag[k] = M(k,k); }
+  //   }
 
-    constexpr int RMMRM = RMAX - RMIN;
-    for (auto k : Range(mod_diag)) {
-      // cout << " regularize " << k << endl;
-      // cout << " init mat: " << endl;
-      // print_tm(cout, mod_diag[k]);
-      // RegTM<RMIN, RMMRM, RMAX>(mod_diag[k]);
-      RegTM<0, RMAX, RMAX>(mod_diag[k]);
-      // cout << " reg mat: " << endl;
-      // print_tm(cout, mod_diag[k]);
-      // cout << " ----- " << endl;
-    }
+  //   constexpr int RMMRM = RMAX - RMIN;
+  //   for (auto k : Range(mod_diag)) {
+  //     // cout << " regularize " << k << endl;
+  //     // cout << " init mat: " << endl;
+  //     // print_tm(cout, mod_diag[k]);
+  //     // RegTM<RMIN, RMMRM, RMAX>(mod_diag[k]);
+  //     RegTM<0, RMAX, RMAX>(mod_diag[k]);
+  //     // cout << " reg mat: " << endl;
+  //     // print_tm(cout, mod_diag[k]);
+  //     // cout << " ----- " << endl;
+  //   }
 
-    return mod_diag;
-  } // RegHybridGSS3 :: CalcModDiag
+  //   return mod_diag;
+  // } // RegHybridGSS3 :: CalcModDiag
 
 
 } // namespace amg

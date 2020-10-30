@@ -111,8 +111,8 @@ namespace amg
   EXTERN template class GSS3<Mat<6,6,double>>;
   EXTERN template class HybridGSS3<Mat<6,6,double>>;
   EXTERN template class HybridSmoother2<Mat<6,6,double>>;
-  EXTERN template class RegHybridGSS3<Mat<3,3,double>, 2, 3>;
-  EXTERN template class RegHybridGSS3<Mat<6,6,double>, 3, 6>;
+  // EXTERN template class RegHybridGSS3<Mat<3,3,double>, 2, 3>;
+  // EXTERN template class RegHybridGSS3<Mat<6,6,double>, 3, 6>;
 #endif // ELASTICITY
 #endif
 #endif // FILE_AMGSM3

@@ -131,6 +131,8 @@ namespace amg
     /** Misc **/
     bool sync = false;                   // synchronize via MPI-Barrier in places
     bool do_test = false;                // perform PC-test for amg_mat
+    bool test_levels = false;            // perform PC-tests on every level
+    bool test_smoothers = false;         // perform PC-tests for smoothers
     bool smooth_lo_only = false;         // smooth only on low order part -> AMG-PC is for the LO part only
     bool regularize_cmats = false;       // do we need to regularize coarse level matrices ?
     bool force_ass_flmat = false;        // force assembling of matrix belonging to finest level (embedding)

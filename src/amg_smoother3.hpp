@@ -18,6 +18,7 @@ namespace amg
     size_t H;
     shared_ptr<SparseMatrix<TM>> spmat;
     shared_ptr<BitArray> freedofs;
+    bool pinv = false;
     Array<TM> dinv;
     size_t first_free, next_free;
 
@@ -27,10 +28,10 @@ namespace amg
     static constexpr int BS () { return mat_traits<TM>::HEIGHT; }
     using TV = typename strip_vec<Vec<BS(),TSCAL>> :: type;
 
-    GSS3 (shared_ptr<SparseMatrix<TM>> mat, shared_ptr<BitArray> subset = nullptr);
+    GSS3 (shared_ptr<SparseMatrix<TM>> mat, shared_ptr<BitArray> subset = nullptr, bool _pinv = false);
 
     /** take elements form repl_dinv as diagonal inverses instead of computing them from mat  **/
-    GSS3 (shared_ptr<SparseMatrix<TM>> mat, FlatArray<TM> repl_diag, shared_ptr<BitArray> subset = nullptr);
+    GSS3 (shared_ptr<SparseMatrix<TM>> mat, FlatArray<TM> repl_diag, shared_ptr<BitArray> subset = nullptr, bool _pinv = false);
 
   protected:
     void SetUp (shared_ptr<SparseMatrix<TM>> mat, shared_ptr<BitArray> subset);
@@ -102,15 +103,16 @@ namespace amg
     Array<int> xdofs/*, resdofs*/;        // dofnrs we upadte, dofnrs we need (so also all neibs)
     shared_ptr<SparseMatrix<TM>> cA;  // compressed A
     Array<TM> dinv;
+    bool pinv = false;
 
   public:
     using TSCAL = typename mat_traits<TM>::TSCAL;
     static constexpr int BS () { return mat_traits<TM>::HEIGHT; }
     using TV = typename strip_vec<Vec<BS(),TSCAL>> :: type;
 
-    GSS4 (shared_ptr<SparseMatrix<TM>> A, shared_ptr<BitArray> subset = nullptr);
+    GSS4 (shared_ptr<SparseMatrix<TM>> A, shared_ptr<BitArray> subset = nullptr, bool _pinv = false);
 
-    GSS4 (shared_ptr<SparseMatrix<TM>> A, FlatArray<TM> repl_diag, shared_ptr<BitArray> subset = nullptr);
+    GSS4 (shared_ptr<SparseMatrix<TM>> A, FlatArray<TM> repl_diag, shared_ptr<BitArray> subset = nullptr, bool _pinv = false);
 
   protected:
 
@@ -405,7 +407,7 @@ namespace amg
     using TV = typename strip_vec<Vec<mat_traits<TM>::HEIGHT,typename mat_traits<TM>::TSCAL>> :: type;
 
     HybridGSS3 (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h, shared_ptr<BitArray> _subset,
-		bool _overlap, bool _in_thread);
+		bool _pinv, bool _overlap, bool _in_thread);
 
     virtual void Finalize () override;
 
@@ -414,6 +416,7 @@ namespace amg
     using HybridSmoother2<TM>::A;
 
     shared_ptr<BitArray> subset;
+    bool pinv = false;
 
     size_t split_ind;
 
@@ -425,18 +428,6 @@ namespace amg
     virtual void SmoothRESLocal (int stage, BaseVector &x, BaseVector &res) const override;
     virtual void SmoothBackRESLocal (int stage, BaseVector &x, BaseVector &res) const override;
   }; // HybridGSS3
-
-
-  template<class TM, int RMIN, int RMAX>
-  class RegHybridGSS3 : public HybridGSS3<TM>
-  {
-    using HybridGSS3<TM>::A;
-  public:
-    RegHybridGSS3 (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h, shared_ptr<BitArray> _subset,
-		   bool _overlap, bool _in_thread);
-  protected:
-    virtual Array<TM> CalcModDiag (shared_ptr<BitArray> free) override;
-  };
 
 } // namespace amg
 
