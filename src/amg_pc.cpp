@@ -104,7 +104,7 @@ namespace amg
       if (gcomm.Rank() == 0) {
 	cout << IM(1) << " Min Eigenvalue : " << minev << endl; 
 	cout << IM(1) << " Max Eigenvalue : " << eigen.MaxEigenValue() << endl; 
-	cout << IM(1) << " Condition   " << eigen.MaxEigenValue()/eigen.EigenValue(1) << endl;
+	cout << IM(1) << " Condition   " << eigen.MaxEigenValue()/minev << endl;
       }
     }
     printmessage_importance = i1;
