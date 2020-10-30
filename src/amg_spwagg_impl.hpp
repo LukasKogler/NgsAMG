@@ -1388,7 +1388,6 @@ namespace amg
 	auto c2fv = conclocmap->template GetMapC2F<NT_VERTEX>();
 	auto veqs = conclocmap->GetV2EQ();
 	// Array<int> cmk; CalcCMK(handled, fecon, cmk);
-	size_t MAX = vmap.Size() - 1;
 	// cout << " CMK: "; prow2(cmk); cout << endl;
 	size_t MAX = vmap.Size() - 1;
 	pair_vertices(vmap, NCV,
