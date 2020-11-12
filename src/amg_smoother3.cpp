@@ -146,7 +146,7 @@ namespace amg
 	    {
 	      dinv[i] = repl_diag[i];
 	      if (pinv)
-		{ CalcPseudoInverseNew(dinv[i], lh); }
+		{ HeapReset hr(lh); CalcPseudoInverseNew(dinv[i], lh); }
 	      else
 		{ CalcInverse(dinv[i]); }
 	    }
@@ -201,7 +201,7 @@ namespace amg
 	    {
 	      dinv[i] = A(i,i);
 	      if (pinv)
-		{ CalcPseudoInverseNew(dinv[i], lh); }
+		{ HeapReset hr(lh); CalcPseudoInverseNew(dinv[i], lh); }
 	      else
 		{ CalcInverse(dinv[i]); }
 	    }
@@ -394,7 +394,7 @@ namespace amg
 	for (auto i : r) {
 	  dinv[i] = repl_diag[xdofs[i]];
 	  if (pinv)
-	    { CalcPseudoInverseNew(dinv[i], lh); }
+	    { HeapReset hr(lh); CalcPseudoInverseNew(dinv[i], lh); }
 	  else
 	    { CalcInverse(dinv[i]); }
 	}
@@ -467,7 +467,7 @@ namespace amg
 	for (auto i : r) {
 	  dinv[i] = ncA(xdofs[i], xdofs[i]);
 	  if (pinv)
-	    { CalcPseudoInverseNew(dinv[i], lh); }
+	    { HeapReset hr(lh); CalcPseudoInverseNew(dinv[i], lh); }
 	  else
 	    { CalcInverse(dinv[i]); }
 	}
