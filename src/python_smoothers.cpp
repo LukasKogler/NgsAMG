@@ -83,6 +83,7 @@ namespace amg
 		      auto pds = parA->GetParallelDofs();
 		      auto eqc_h = make_shared<EQCHierarchy> (pds);
 		      smoother = make_shared<HybridGSS3<TM>> (parA, eqc_h, freedofs, false, overlap, in_thread);
+		      smoother->Finalize();
 		    }
 		  }
 		} );
