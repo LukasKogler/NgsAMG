@@ -26,6 +26,7 @@ namespace amg
 	}
       case 3:
 	{
+	  evaluator[VOL] = make_shared<T_DifferentialOperator<DiffOpId<3>>>();
 	  break;
 	}
       }
@@ -90,13 +91,14 @@ namespace amg
     Ngs_Element ngel = ma->GetElement(ei);
     ELEMENT_TYPE eltype = ngel.GetType();
 
-    if (eltype == ET_TRIG)
-      {
-	// cout << " alloc el" << endl;
-	auto el = new (alloc) NoCoH1Element<ET_TRIG>;
-	// cout << " have el, return it!" << endl;
-	return *el;
+    if (eltype == ET_TRIG) {
+      auto el = new (alloc) NoCoH1Element<ET_TRIG>;
+      return *el;
       }
+    else if (eltype == ET_TET) {
+      auto el = new (alloc) NoCoH1Element<ET_TET>;
+      return *el;
+    }
 
     return SwitchET (eltype, [&] (auto et) -> FiniteElement& {
 	return *new (alloc) ScalarDummyFE<et.ElementType()> ();
@@ -119,7 +121,8 @@ namespace amg
   void NoCoH1FESpace :: GetDofNrs (NodeId ni, Array<DofId> & dnums) const
   {
     // cout << " n dnrs " << ni << endl;
-    if (ni.GetType() == NT_EDGE) {
+    if ( ( (ma->GetDimension()==2) && (ni.GetType() == NT_EDGE) ) ||
+	 ( (ma->GetDimension()==3) && (ni.GetType() == NT_FACE) ) ) {
       dnums.SetSize(1);
       dnums[0] = f2a_facet[ni.GetNr()];
     }

@@ -56,13 +56,47 @@ namespace amg
   template<> template<typename Tx, typename TFA>  
   INLINE void NoCoH1Shape<ET_TRIG> :: T_CalcShape (TIP<DIM,Tx> ip, TFA & shape) const
   {
+    /**
+      static double trig_points [][3] = 
+        { { 1, 0 },
+  	  { 0, 1 },
+  	  { 0, 0 } };
+      static const int trig_edges[3][2] =
+	{ { 2, 0 },
+	  { 1, 2 },
+	  { 0, 1 }};
+     **/
     Tx lam[3] = { ip.x, ip.y, 1-ip.x-ip.y };
-    shape[0] = lam[2] + lam[0] - lam[1];
-    shape[1] = lam[1] + lam[2] - lam[0];
-    shape[2] = lam[0] + lam[1] - lam[2];
+    shape[0] = lam[2] + lam[0] - lam[1]; // (0,0) -> (1,0), 1-2y
+    shape[1] = lam[1] + lam[2] - lam[0]; // (0,1) -> (0,0), 1-2x
+    shape[2] = lam[0] + lam[1] - lam[2]; // (1,0) -> (0,0), 2x+2y-1
   } // NoCoH1Shape<ET_TRIG>::T_CalcShape
   
   
+  template<> template<typename Tx, typename TFA>  
+  INLINE void NoCoH1Shape<ET_TET> :: T_CalcShape (TIP<DIM,Tx> ip, TFA & shape) const
+  {
+    /** TET 
+      static double tet_points [][3] = 
+        { { 1, 0, 0 },
+	  { 0, 1, 0 },
+	  { 0, 0, 1 },
+	  { 0, 0, 0 } };
+      static int tet_faces[4][4] =
+	{ { 3, 1, 2, -1 },
+	  { 3, 2, 0, -1 },
+	  { 3, 0, 1, -1 },
+	  { 0, 2, 1, -1 } }; // all faces point into interior!
+
+     **/
+    Tx lam[4] = { ip.x, ip.y, ip.z, 1-ip.x-ip.y-ip.z };
+    shape[0] = lam[1] + lam[2] + lam[3] - 2*lam[0];
+    shape[1] = lam[0] + lam[2] + lam[3] - 2*lam[1];
+    shape[2] = lam[0] + lam[1] + lam[3] - 2*lam[2];
+    shape[3] = lam[0] + lam[1] + lam[2] - 2*lam[3];
+  } // NoCoH1Shape<ET_TRIG>::T_CalcShape
+
+
   class NoCoH1FESpace : public FESpace
   {
   protected:
