@@ -3,6 +3,8 @@
 
 #include <python_ngstd.hpp>
 
+#include "amg_pc.hpp"
+
 namespace amg {
 
   template<class PCC, class TLAM>
@@ -35,6 +37,16 @@ namespace amg {
 			     shared_ptr<BaseVector> rhs) {
 		    pre.GetAMGMatrix()->CINV(csol, rhs);
 		  }, py::arg("sol") = nullptr, py::arg("rhs") = nullptr);
+
+    amg_class.def("InitLevel", [](PCC & pre, shared_ptr<BitArray> freedofs) {
+	amg::BaseAMGPC & base_pre(pre);
+	base_pre.InitLevel(freedofs);
+      }, py::arg("freedofs") = nullptr);
+
+    amg_class.def("FinalizeLevel", [](PCC & pre, shared_ptr<BaseMatrix> mat) {
+	amg::BaseAMGPC & base_pre(pre);
+	base_pre.FinalizeLevel(mat.get());
+      }, py::arg("mat") = nullptr);
 
     lam(amg_class);
 
