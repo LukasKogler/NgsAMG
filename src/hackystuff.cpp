@@ -3,6 +3,8 @@
 #include "amg_pc.hpp"
 #include "amg_matrix.hpp"
 
+#include "amg_spmstuff_impl.hpp"
+
 namespace amg
 {
 
@@ -68,20 +70,37 @@ namespace amg
   void ExportHackyStuff (py::module &m)
   {
     m.def("compose_embs", [](shared_ptr<BaseMatrix> embA, shared_ptr<BaseMatrix> embB) -> shared_ptr<BaseMatrix> {
-	return compose_embs<SparseMatrix<Mat<1,3,double>>, SparseMatrixTM<Mat<1,3,double>>>(embA, embB);
+	shared_ptr<BaseMatrix> comp_emb = nullptr;
+	Switch<MAX_SYS_DIM> //
+	  (GetEntryWidth(embA.get())-1, [&] (auto BSM) {
+	    constexpr int BS = BSM + 1;
+	    comp_emb = compose_embs<SparseMatrix<Mat<1,BS,double>>, SparseMatrixTM<Mat<1,BS,double>>>(embA, embB);
+	  });
+	return comp_emb;
       });
 
     m.def("E_A_ET", [](shared_ptr<BaseMatrix> E, shared_ptr<BaseMatrix> A) -> shared_ptr<BaseMatrix> {
-	auto spA = dynamic_pointer_cast<SparseMatrixTM<double>>(A);
-	auto spE = dynamic_pointer_cast<SparseMatrixTM<Mat<1,3,double>>>(E);
-
-	auto ET = TransposeSPM(*spE);
-
-	auto EAET = RestrictMatrixTM<SparseMatrixTM<double>, SparseMatrixTM<Mat<1,3,double>>>(*ET, *spA, *spE);
-
-	auto spm = make_shared<SparseMatrix<Mat<3,3,double>>>(move(*EAET));
-	
-	return spm;
+	shared_ptr<BaseMatrix> e_a_et = nullptr;
+	Switch<MAX_SYS_DIM> //
+	  (GetEntryHeight(E.get())-1, [&] (auto BSHM) {
+	    Switch<MAX_SYS_DIM> //
+	      (GetEntryWidth(E.get())-1, [&] (auto BSWM) {
+		constexpr int BSH = BSHM + 1;
+		constexpr int BSW = BSWM + 1;
+		if constexpr ( (BSH==1) || (BSW==1) || (BSH==BSW) ||
+			       ((BSH==3) && (BSW==6)) || ((BSH==2) && (BSW==3)) ) {
+		    typedef typename strip_mat<Mat<BSH, BSH, double>>::type TMH;
+		    typedef typename strip_mat<Mat<BSH, BSW, double>>::type TMHW;
+		    typedef typename strip_mat<Mat<BSW, BSW, double>>::type TMW;
+		    auto spA = dynamic_pointer_cast<SparseMatrixTM<TMH>>(A);
+		    auto spE = dynamic_pointer_cast<SparseMatrixTM<TMHW>>(E);
+		    auto ET = TransposeSPM(*spE);
+		    auto EAET = RestrictMatrixTM<SparseMatrixTM<TMH>, SparseMatrixTM<TMHW>>(*ET, *spA, *spE);
+		    e_a_et = make_shared<SparseMatrix<TMW>>(move(*EAET));
+		  }
+	      });
+	  });
+	return e_a_et;
 	// if ( (spA == nullptr) || (spB = nullptr) )
 	//   { throw Exception("spA/B!"); }
 	// shared_ptr<BaseSparseMatrix> EAET;
