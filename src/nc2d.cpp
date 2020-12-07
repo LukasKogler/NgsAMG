@@ -22,20 +22,24 @@ namespace amg
       case 2:
 	{
 	  evaluator[VOL] = make_shared<T_DifferentialOperator<DiffOpId<2>>>();
+	  flux_evaluator[VOL] = make_shared<T_DifferentialOperator<DiffOpGradient<2>>>();
 	  break;
 	}
       case 3:
 	{
 	  evaluator[VOL] = make_shared<T_DifferentialOperator<DiffOpId<3>>>();
+          flux_evaluator[VOL] = make_shared<T_DifferentialOperator<DiffOpGradient<3>>>();
 	  break;
 	}
       }
-    if (dimension > 1)
+    if (dimension > 1) {
+      additional_evaluators.Set ("Grad", make_shared<BlockDifferentialOperatorTrans>(flux_evaluator[VOL], dimension));
         for (auto vb : { VOL,BND, BBND, BBBND })
           {
             if (evaluator[vb])
               evaluator[vb] = make_shared<BlockDifferentialOperator> (evaluator[vb], dimension);
 	  }
+    }
   } // NoCoH1FESpace(..)
 
 
