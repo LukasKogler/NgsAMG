@@ -80,6 +80,8 @@ namespace amg
     virtual AutoVector CreateRowVector () const override { return CreateVector(); }
     virtual AutoVector CreateColVector () const override { return CreateVector(); }
 
+    virtual void MultAdd (double s, const BaseVector & b, BaseVector & x) const override;
+
   private:
     template<class TLAM> INLINE void IterateBlocks (bool reverse, TLAM lam) const; 
     INLINE void Smooth_impl    (BaseVector & x, const BaseVector & b, int steps, bool reverse) const;
@@ -107,6 +109,9 @@ namespace amg
 
     HybridBS (shared_ptr<BaseMatrix> _A, shared_ptr<EQCHierarchy> eqc_h, Table<int> && blocks,
 	      Table<int> && block_ext_dofs, bool _overlap, bool _in_thread, bool _parallel = true, bool _sl2 = false);
+
+    virtual void MultAdd (double s, const BaseVector & b, BaseVector & x) const override;
+
   protected:
 
     /** Filter blocks:

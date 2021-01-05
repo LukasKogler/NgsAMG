@@ -83,6 +83,8 @@ namespace amg
     virtual AutoVector CreateRowVector () const override { return CreateVector(); }
     virtual AutoVector CreateColVector () const override { return CreateVector(); }
 
+    virtual void MultAdd (double s, const BaseVector & b, BaseVector & x) const override;
+
   protected:
     void SmoothInternal (int type, BaseVector  &x, const BaseVector &b, BaseVector &res,
 			 bool res_updated = false, bool update_res = true, bool x_zero = false) const;
@@ -113,6 +115,8 @@ namespace amg
     GSS4 (shared_ptr<SparseMatrix<TM>> A, shared_ptr<BitArray> subset = nullptr, bool _pinv = false);
 
     GSS4 (shared_ptr<SparseMatrix<TM>> A, FlatArray<TM> repl_diag, shared_ptr<BitArray> subset = nullptr, bool _pinv = false);
+
+    void MultAdd (double s, const BaseVector & b, BaseVector & x) const;
 
   protected:
 
@@ -410,6 +414,8 @@ namespace amg
 		bool _pinv, bool _overlap, bool _in_thread);
 
     virtual void Finalize () override;
+
+    virtual void MultAdd (double s, const BaseVector & b, BaseVector & x) const override;
 
   protected:
 

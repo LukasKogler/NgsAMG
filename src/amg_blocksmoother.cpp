@@ -464,6 +464,28 @@ namespace amg
     SmoothRES_impl(x, res, steps, true);
   } //BSmoother::SmoothBackRES
 
+
+  template<class TM>
+  void BSmoother<TM> :: MultAdd (double s, const BaseVector & b, BaseVector & x) const
+  {
+    // IterateBlocks(false, [&](auto block_nr, auto & hxmax, auto & hymax) {
+    auto fx = x.FV<TV>();
+    auto fb = b.FV<TV>();
+    ParallelForRange (blocks.Size(), [&] ( IntRange r ) {
+	VectorMem<100,TV> hxmax(maxbs);
+	VectorMem<100,TV> hymax(maxbs);
+	for (auto block_nr : r) {
+	  auto block_dofs = blocks[block_nr];
+	  int bs = block_dofs.Size();
+	  FlatVector<TV> hup = hxmax.Range(0,bs);
+	  FlatVector<TV> hr = hymax.Range(0,bs);
+	  hr = fb(block_dofs);
+	  hup = dinv[block_nr] * hr;
+	  fx(block_dofs) += s * hup;
+	}
+      });
+  } // HybridBS::MultAdd
+
   /** END BSmoother **/
 
 
@@ -644,6 +666,22 @@ namespace amg
     loc_smoothers[2-stage]->SmoothBackRES(x, res);
   } // HybridBS::SmoothBackRESLocal
 
+
+  template<class TM>
+  void HybridBS<TM> :: MultAdd (double s, const BaseVector & b, BaseVector & x) const
+  {
+    x.Cumulate();
+    b.Distribute();
+    auto parb = dynamic_cast<const ParallelBaseVector*>(&b);
+    if (parb == nullptr)
+      { throw Exception("HybridGSS3::MultAdd b not parallel!"); }
+    auto parx = dynamic_cast<ParallelBaseVector*>(&x);
+    if (parx == nullptr)
+      { throw Exception("HybridGSS3::MultAdd x not parallel!"); }
+    loc_smoothers[0]->MultAdd(s, *parb->GetLocalVector(), *parx->GetLocalVector());
+    loc_smoothers[1]->MultAdd(s, *parb->GetLocalVector(), *parx->GetLocalVector());
+    loc_smoothers[2]->MultAdd(s, *parb->GetLocalVector(), *parx->GetLocalVector());
+  } // HybridBS::MultAdd
 
   /** END HybridBS **/
 

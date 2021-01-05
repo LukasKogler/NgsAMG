@@ -213,6 +213,28 @@ namespace amg
 
   
   template<class TM>
+  void GSS3<TM> :: MultAdd (double s, const BaseVector & b, BaseVector & x) const
+  {
+    auto fvx = x.FV<TV>();
+    auto fvb = b.FV<TV>();
+    if (freedofs) {
+      ParallelForRange (IntRange(dinv.Size()), [&] ( IntRange r ) {
+	  const auto & fds = *freedofs;
+	  for (auto rownr : r)
+	    if (fds.Test(rownr))
+	      { fvx(rownr) += s * dinv[rownr] * fvb(rownr); }
+	});
+    }
+    else {
+      ParallelForRange (IntRange(dinv.Size()), [&] ( IntRange r ) {
+	  for (auto rownr : r)
+	    { fvx(rownr) += s * dinv[rownr] * fvb(rownr); }
+	});
+    }
+  } // GSS3::MultAdd
+
+
+  template<class TM>
   void GSS3<TM> :: SmoothRHSInternal (size_t first, size_t next, BaseVector &x, const BaseVector &b, bool backwards) const
   {
 #ifdef USE_TAU
@@ -473,6 +495,18 @@ namespace amg
 	}
       });
   } // GSS4::CalcDiags
+
+
+  template<class TM>
+  void GSS4<TM> :: MultAdd (double s, const BaseVector & b, BaseVector & x) const
+  {
+    auto fvx = x.FV<TV>();
+    auto fvb = b.FV<TV>();
+    ParallelForRange (IntRange(cA->Height()), [&] ( IntRange r ) {
+	for (auto rownr : r)
+	  { fvx(xdofs[rownr]) += s * dinv[rownr] * fvb(xdofs[rownr]); }
+      });
+  } // GSS4::MultAdd
 
 
   template<class TM>
@@ -1941,6 +1975,7 @@ namespace amg
 
     const double eta = 1.5;
     const double eta_inv = 1.0/eta;
+    // const double eta_inv = 0.0;
 
     for (auto k : Range(G->Height())) {
       if ( !ismaster.Test(k) || (free && !free->Test(k)) )
@@ -2117,6 +2152,25 @@ namespace amg
     else if (stage == 2)
       { jac_loc->SmoothBackRES(0, split_ind, x, res); }
   }
+
+
+  template<class TM>
+  void HybridGSS3<TM> :: MultAdd (double s, const BaseVector & b, BaseVector & x) const
+  {
+    x.Cumulate();
+    b.Distribute();
+    auto parb = dynamic_cast<const ParallelBaseVector*>(&b);
+    if (parb == nullptr)
+      { throw Exception("HybridGSS3::MultAdd b not parallel!"); }
+    auto parx = dynamic_cast<ParallelBaseVector*>(&x);
+    if (parx == nullptr)
+      { throw Exception("HybridGSS3::MultAdd x not parallel!"); }
+    jac_loc->MultAdd(s, *parb->GetLocalVector(), *parx->GetLocalVector());
+    jac_ex->MultAdd(s, *parb->GetLocalVector(), *parx->GetLocalVector());
+  } // HybridGSS3::MultAdd
+
+
+  /** END HybridGSS3 **/
 
 
   // /** RegHybridGSS3 **/

@@ -72,6 +72,10 @@ namespace amg {
     virtual AutoVector CreateRowVector () const override { return GetAMatrix()->CreateRowVector(); };
     virtual AutoVector CreateColVector () const override { return GetAMatrix()->CreateColVector(); };
 
+    virtual void Mult (const BaseVector & b, BaseVector & x) const override;
+    virtual void MultAdd (double s, const BaseVector & b, BaseVector & x) const override;
+    virtual void MultTrans (const BaseVector & b, BaseVector & x) const override;
+    virtual void MultTransAdd (double s, const BaseVector & b, BaseVector & x) const override;
   };
   
 
@@ -121,6 +125,8 @@ namespace amg {
     shared_ptr<BaseMatrix> GetARange () { return Arange; }
     shared_ptr<BaseMatrix> GetD () { return D; }
     shared_ptr<BaseMatrix> GetDT () { return DT; }
+
+    virtual void MultAdd (double s, const BaseVector & b, BaseVector & x) const override;
 
   }; // class HiptMairSmoother
 

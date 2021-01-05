@@ -4,6 +4,35 @@
 
 namespace amg {
 
+  /** BaseSmoother **/
+
+  void BaseSmoother :: Mult (const BaseVector & b, BaseVector & x) const
+  {
+    x = 0.0;
+    MultAdd(1.0, b, x);
+  } // BaseSmoother :: Mult
+
+  void BaseSmoother :: MultTrans (const BaseVector & b, BaseVector & x) const
+  {
+    x = 0.0;
+    MultAdd(1.0, b, x);
+  } // BaseSmoother :: MultTrans
+
+  void BaseSmoother :: MultTransAdd (double scal, const BaseVector & b, BaseVector & x) const
+  {
+    MultAdd(scal, b, x);
+  } // BaseSmoother :: MultTrans
+
+
+  void BaseSmoother :: MultAdd (double s, const BaseVector & b, BaseVector & x) const
+  {
+    throw Exception("BaseSmoother :: MultAdd not overloaded!");
+  }
+
+
+  /** END BaseSmoother **/
+
+
   /** HybridGSS **/
 
   template<int BS>
@@ -1493,6 +1522,10 @@ namespace amg {
     // cout << " BW x fin " << endl << x << endl;
   }
 
+  void HiptMairSmoother :: MultAdd (double s, const BaseVector & b, BaseVector & x) const
+  {
+    throw Exception("HiptMairSmoother::MultAdd not implemented (should be easy)");
+  } // HiptMairSmoother::MultAdd
 
 } // namespace amg
 
