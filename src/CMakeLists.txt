@@ -1,36 +1,67 @@
-project(ngs_amg)
+# dont remember why
+# cmake_minimum_required(VERSION 3.8)
 
-cmake_minimum_required(VERSION 3.8)
+# project(at_amg)
+# cmake_policy(SET CMP0076 OLD)
 
-# amg_agg_*.*pp compile a long time, so start with those
-add_ngsolve_python_module(ngs_amg SHARED
-  nc2d.cpp
-  amg_agg_h1scal.cpp amg_agg_el2d.cpp amg_agg_el3d.cpp
-  amg_spwagg_h1scal.cpp amg_spwagg_el2d.cpp amg_spwagg_el3d.cpp
-  eqchierarchy.cpp amg_mesh.cpp amg_coarsen.cpp
-  amg_factory.cpp python_amg.cpp amg_pc.cpp
-  amg_h1_dim1.cpp amg_h1_dim2.cpp amg_h1_dim3.cpp
-  amg_elast_2d.cpp amg_elast_3d.cpp
-  amg_spmstuff.cpp amg_map.cpp amg_smoother.cpp
-  amg_matrix.cpp amg_contract.cpp python_smoothers.cpp
-  boomer.cpp amg_smoother2.cpp amg_smoother3.cpp
-  amg_discard.cpp amg_blocksmoother.cpp
-  amg_mcs_gg_2d.cpp amg_mcs_gg_3d.cpp
-  amg_mcs_epseps_2d.cpp amg_mcs_epseps_3d.cpp
-  amg_stokes_gg_2d.cpp amg_bla.cpp hackystuff.cpp)
+# add_library(NgsAMG SHARED "")
+
+
+# We are building two libraries:
+#  1. NgsAMGlib.so, contains everything except the python-module
+#  2. NgsAMG.so, contains ONLY the python module
+# add_ngsolve_python_module sets the install-path to the python-lib-dir
+
+add_library(NgsAMGlib SHARED)
+target_link_libraries(NgsAMGlib PUBLIC ngsolve)
+set_target_properties(NgsAMGlib PROPERTIES INSTALL_RPATH "${AMG_CLIB_INSTALL_DIR}")
+
+link_directories(${NGSOLVE_LIBRARY_DIR})
+link_directories(${CMAKE_CURRENT_BINARY_DIR})
+
+# We need to include the python headers also for the C library because python headers leak through
+# when we include NGSolve headers (e.g. comp.hpp)
+if (NETGEN_USE_PYTHON)
+  target_include_directories(NgsAMGlib PUBLIC ${NETGEN_PYTHON_INCLUDE_DIRS})
+endif(NETGEN_USE_PYTHON)
+
+if (NETGEN_USE_PYTHON)
+  add_ngsolve_python_module(NgsAMG SHARED "")
+  add_dependencies(NgsAMG NgsAMGlib)
+  target_link_libraries(NgsAMG PUBLIC NgsAMGlib)
+endif(NETGEN_USE_PYTHON)
 
 include_directories(${MPI_CXX_INCLUDE_DIRS})
 
-if (USE_BOOMER)
-   target_link_libraries(ngs_amg ${BOOMER_LIBRARIES})
-endif (USE_BOOMER)
+set_property(GLOBAL PROPERTY AT_AMG_SOURCE "")
+set_property(GLOBAL PROPERTY BASE_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/")
 
-if(USE_TAU)
-  #target_link_libraries(ngs_amg TAU)
-  # if (TAU_PRELOAD_LIB)
-  #   target_link_libraries(ngs_amg ${TAU_PRELOAD_LIB})
-  # endif (TAU_PRELOAD_LIB)
-  target_link_libraries(ngs_amg TAU-pthread)
-endif(USE_TAU)
+function(add_source_file SRCFILE)
+  # get the relative path starting from HERE
+  # get_property(bdir GLOBAL PROPERTY BASE_SRC_DIR)
+  # string(REPLACE "${bdir}" "" FINAL_SRC "${CMAKE_CURRENT_SOURCE_DIR}/${SRCFILE}")
+ 
+  # get_property(tmp  GLOBAL PROPERTY AT_AMG_SOURCE)
+  # # set(tmp "${tmp} ${FINAL_SRC}")  
+  # set(tmp "${tmp} ${CMAKE_CURRENT_SOURCE_DIR}/${SRCFILE}")  
+  # set_property(GLOBAL PROPERTY AT_AMG_SOURCE "${tmp}")
+endfunction()
 
-install(TARGETS ngs_amg DESTINATION ${CMAKE_INSTALL_PREFIX})
+add_subdirectory(base)
+add_subdirectory(h1)
+
+add_subdirectory(elasticity)
+
+if (ENABLE_STOKES)
+  add_subdirectory(stokes)
+endif(ENABLE_STOKES)
+
+get_property(source_list GLOBAL PROPERTY AT_AMG_SOURCE)
+
+
+install(TARGETS NgsAMGlib DESTINATION ${AMG_CLIB_INSTALL_DIR})
+
+if(NETGEN_USE_PYTHON)
+  install(TARGETS NgsAMG DESTINATION ${AMG_PYTHON_INSTALL_DIR})
+endif(NETGEN_USE_PYTHON)
+

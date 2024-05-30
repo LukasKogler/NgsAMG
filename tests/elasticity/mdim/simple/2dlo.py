@@ -1,3 +1,13 @@
+import os, sys
+from ctypes import CDLL, RTLD_GLOBAL
+try:
+    CDLL(os.path.join(os.environ["MKLROOT"], "lib/intel64/libmkl_rt.so"), RTLD_GLOBAL)
+except:
+    try:
+        CDLL(os.path.join(os.environ["MKL_ROOT"], "lib/intel64/libmkl_rt.so"), RTLD_GLOBAL)
+    except:
+        pass
+
 import ngsolve, ngs_amg
 from amg_utils import *
 
@@ -7,11 +17,12 @@ def Solve(a, f, c, ms = 100):
     with ngs.TaskManager():
         a.Assemble()
         f.Assemble()
-        ngs.ngsglobals.msg_level = 5
+        ngs.ngsglobals.msg_level = 1
         if c is None:
             c = a.mat.Inverse(V.FreeDofs())
         else:
             c.Test()
+        quit()
         cb = None if a.space.mesh.comm.rank != 0 else lambda k, x: print("it =", k , ", err =", x)
         cg = ngs.krylovspace.CGSolver(mat=a.mat, pre=c, callback = cb, maxsteps=ms, tol=1e-6)
         cg.Solve(sol=gfu.vec, rhs=f.vec)
@@ -22,11 +33,14 @@ def Solve(a, f, c, ms = 100):
 maxh = 0.05
 rots = True
 geo, mesh = gen_beam(dim=2, maxh=maxh, lens=[5,1], nref=1, comm=ngsolve.mpi_world)
-V, a, f = setup_elast(mesh, rotations = rots, f_vol = ngsolve.CoefficientFunction( (0, -0.005) ), diri="left")
+V, a, f = setup_elast(mesh, rotations = rots, f_vol = ngsolve.CoefficientFunction( (0, -0.005) ), diri="")
+u, v = V.TnT()
+a += 1e-10 * u * v * ngsolve.dx
+
 print('V ndof', V.ndof)
 pc_opts = { "ngs_amg_rots" : rots,
-            "ngs_amg_max_levels" : 2,
-            "ngs_amg_max_clev" : "none",
+            "ngs_amg_max_levels" : 20,
+            "ngs_amg_max_clev" : "inv",
             #"ngs_amg_first_aaf" : 0.1,
             "ngs_amg_log_level" : "extra",
             "ngs_amg_max_coarse_size" : 10,

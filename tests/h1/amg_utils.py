@@ -1,5 +1,7 @@
 import ngsolve as ngs
 import netgen as ng
+import netgen.geom2d as geom2d
+import netgen.csg as csg
 import netgen, netgen.geom2d, netgen.csg
 import ngsolve.krylovspace
 

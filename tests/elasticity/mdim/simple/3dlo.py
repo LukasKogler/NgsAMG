@@ -1,20 +1,30 @@
+import os, sys
+from ctypes import CDLL, RTLD_GLOBAL
+try:
+    CDLL(os.path.join(os.environ["MKLROOT"], "lib/intel64/libmkl_rt.so"), RTLD_GLOBAL)
+except:
+    try:
+        CDLL(os.path.join(os.environ["MKL_ROOT"], "lib/intel64/libmkl_rt.so"), RTLD_GLOBAL)
+    except:
+        pass
+
 import ngsolve, ngs_amg
 from amg_utils import *
 
-maxh = 0.25
-geo, mesh = gen_beam(dim=3, maxh=maxh, lens=[10,1,1], nref=0, comm=ngsolve.mpi_world)
-V, a, f = setup_elast(mesh, rotations = False, f_vol = ngsolve.CoefficientFunction( (0, -1e-5, -1e-5) ), diri="left")
+maxh = 0.1
+geo, mesh = gen_beam(dim=3, maxh=maxh, lens=[1,1,1], nref=1, comm=ngsolve.mpi_world)
+V, a, f = setup_elast(mesh, rotations = False, f_vol = ngsolve.CoefficientFunction( (0, -1e-5, -1e-5) ), diri="")
+u, v = V.TnT()
+a += 1e-7 * u * v * ngsolve.dx
+
 #pc_opts = { "ngs_amg_reg_rmats" : True }
 pc_opts = { "ngs_amg_reg_rmats" : True,
-            "ngs_amg_rots" : False,
-            "mgs_amg_max_levels" : 2,
-            #"ngs_amg_aaf" : 0.25,
+            "ngs_amg_max_levels" : 20,
+            "ngs_amg_enable_redist" : False,
             "ngs_amg_max_coarse_size" : 20,
-            #"ngs_amg_max_levels" : 4,
             "ngs_amg_log_level" : "extra",
             "ngs_amg_enable_sp" : True,
             "ngs_amg_sp_max_per_row" : 4,
-            "ngs_amg_enable_redist" : True,
             "ngs_amg_first_aaf" : 0.025}
 
 gfu = ngsolve.GridFunction(V)
