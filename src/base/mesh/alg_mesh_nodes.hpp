@@ -11,15 +11,15 @@ namespace amg_nts
 {
   typedef int vert;
   typedef int id_type;
-  struct edge { INT<2,vert> v; };
-  struct face { INT<3,vert> v; };
-  struct cell { INT<4,vert> v; };
+  struct edge { IVec<2,vert> v; };
+  struct face { IVec<3,vert> v; };
+  struct cell { IVec<4,vert> v; };
   struct idedge : edge { id_type id; };
   struct idface : face { id_type id; };
   struct idcell : cell { id_type id; };
-  struct cedge : edge { INT<2,int> eqc; };
-  struct cface : face { INT<3,int> eqc; };
-  struct ccell : cell { INT<4,int> eqc; };
+  struct cedge : edge { IVec<2,int> eqc; };
+  struct cface : face { IVec<3,int> eqc; };
+  struct ccell : cell { IVec<4,int> eqc; };
 
   INLINE bool operator == (const idedge & a, const idedge & b) { return (a.v==b.v) && (a.id==b.id); }
   INLINE bool operator == (const idface & a, const idface & b) { return (a.v==b.v) && (a.id==b.id); }
@@ -70,98 +70,98 @@ template<> INLINE amg_nts::id_type GetNodeId<NT_VERTEX> (const AMG_Node<NT_VERTE
 namespace ngcore
 {
 template<> struct MPI_typetrait<amg::amg_nts::edge> {
-  static MPI_Datatype MPIType () {
-    return GetMPIType<typename ngstd::INT<2> >();
+  static NG_MPI_Datatype MPIType () {
+    return GetMPIType<typename ngstd::IVec<2> >();
   }
 };
 
 template<> struct MPI_typetrait<amg::AMG_Node<ngfem::NT_EDGE>> {
-  static MPI_Datatype MPIType() {
-    static MPI_Datatype MPI_T = 0;
-    if(!MPI_T)
+  static NG_MPI_Datatype MPIType() {
+    static NG_MPI_Datatype NG_MPI_T = 0;
+    if(!NG_MPI_T)
   {
     int block_len[2] = {1,1};
-    MPI_Aint displs[2] = {0, sizeof(decltype(amg::AMG_Node<ngfem::NT_EDGE>::v))};
-  MPI_Datatype types[2] = {GetMPIType<decltype(amg::AMG_Node<ngfem::NT_EDGE>::v)>(), GetMPIType<decltype(amg::AMG_Node<ngfem::NT_EDGE>::id)>()};
-    MPI_Type_create_struct(2, block_len, displs, types, &MPI_T);
-    MPI_Type_commit ( &MPI_T );
+    NG_MPI_Aint displs[2] = {0, sizeof(decltype(amg::AMG_Node<ngfem::NT_EDGE>::v))};
+  NG_MPI_Datatype types[2] = {GetMPIType<decltype(amg::AMG_Node<ngfem::NT_EDGE>::v)>(), GetMPIType<decltype(amg::AMG_Node<ngfem::NT_EDGE>::id)>()};
+    NG_MPI_Type_create_struct(2, block_len, displs, types, &NG_MPI_T);
+    NG_MPI_Type_commit ( &NG_MPI_T );
   }
-    return MPI_T;
+    return NG_MPI_T;
   }
 };
 
 template<> struct MPI_typetrait<amg::AMG_Node<ngfem::NT_FACE>> {
-  static MPI_Datatype MPIType() {
-    static MPI_Datatype MPI_T = 0;
-    if(!MPI_T)
+  static NG_MPI_Datatype MPIType() {
+    static NG_MPI_Datatype NG_MPI_T = 0;
+    if(!NG_MPI_T)
   {
     int block_len[2] = {1,1};
-    MPI_Aint displs[2] = {0, sizeof(decltype(amg::AMG_Node<ngfem::NT_FACE>::v))};
-  MPI_Datatype types[2] = {GetMPIType<decltype(amg::AMG_Node<ngfem::NT_FACE>::v)>(), GetMPIType<decltype(amg::AMG_Node<ngfem::NT_FACE>::id)>()};
-    MPI_Type_create_struct(2, block_len, displs, types, &MPI_T);
-    MPI_Type_commit ( &MPI_T );
+    NG_MPI_Aint displs[2] = {0, sizeof(decltype(amg::AMG_Node<ngfem::NT_FACE>::v))};
+  NG_MPI_Datatype types[2] = {GetMPIType<decltype(amg::AMG_Node<ngfem::NT_FACE>::v)>(), GetMPIType<decltype(amg::AMG_Node<ngfem::NT_FACE>::id)>()};
+    NG_MPI_Type_create_struct(2, block_len, displs, types, &NG_MPI_T);
+    NG_MPI_Type_commit ( &NG_MPI_T );
   }
-    return MPI_T;
+    return NG_MPI_T;
   }
 };
 
 template<> struct MPI_typetrait<amg::AMG_Node<ngfem::NT_CELL>> {
-  static MPI_Datatype MPIType() {
-    static MPI_Datatype MPI_T = 0;
-    if(!MPI_T)
+  static NG_MPI_Datatype MPIType() {
+    static NG_MPI_Datatype NG_MPI_T = 0;
+    if(!NG_MPI_T)
   {
     int block_len[2] = {1,1};
-    MPI_Aint displs[2] = {0, sizeof(decltype(amg::AMG_Node<ngfem::NT_CELL>::v))};
-  MPI_Datatype types[2] = {GetMPIType<decltype(amg::AMG_Node<ngfem::NT_CELL>::v)>(), GetMPIType<decltype(amg::AMG_Node<ngfem::NT_CELL>::id)>()};
-    MPI_Type_create_struct(2, block_len, displs, types, &MPI_T);
-    MPI_Type_commit ( &MPI_T );
+    NG_MPI_Aint displs[2] = {0, sizeof(decltype(amg::AMG_Node<ngfem::NT_CELL>::v))};
+  NG_MPI_Datatype types[2] = {GetMPIType<decltype(amg::AMG_Node<ngfem::NT_CELL>::v)>(), GetMPIType<decltype(amg::AMG_Node<ngfem::NT_CELL>::id)>()};
+    NG_MPI_Type_create_struct(2, block_len, displs, types, &NG_MPI_T);
+    NG_MPI_Type_commit ( &NG_MPI_T );
   }
-    return MPI_T;
+    return NG_MPI_T;
   }
 };
 
 template<> struct MPI_typetrait<amg::AMG_CNode<ngfem::NT_EDGE>> {
-  static MPI_Datatype MPIType() {
-    static MPI_Datatype MPI_T = 0;
-    if(!MPI_T)
+  static NG_MPI_Datatype MPIType() {
+    static NG_MPI_Datatype NG_MPI_T = 0;
+    if(!NG_MPI_T)
   {
     int block_len[2] = {1,1};
-    MPI_Aint displs[2] = {0, sizeof(decltype(amg::AMG_CNode<ngfem::NT_EDGE>::v))};
-  MPI_Datatype types[2] = {GetMPIType<decltype(amg::AMG_CNode<ngfem::NT_EDGE>::v)>(), GetMPIType<decltype(amg::AMG_CNode<ngfem::NT_EDGE>::eqc)>()};
-    MPI_Type_create_struct(2, block_len, displs, types, &MPI_T);
-    MPI_Type_commit ( &MPI_T );
+    NG_MPI_Aint displs[2] = {0, sizeof(decltype(amg::AMG_CNode<ngfem::NT_EDGE>::v))};
+  NG_MPI_Datatype types[2] = {GetMPIType<decltype(amg::AMG_CNode<ngfem::NT_EDGE>::v)>(), GetMPIType<decltype(amg::AMG_CNode<ngfem::NT_EDGE>::eqc)>()};
+    NG_MPI_Type_create_struct(2, block_len, displs, types, &NG_MPI_T);
+    NG_MPI_Type_commit ( &NG_MPI_T );
   }
-    return MPI_T;
+    return NG_MPI_T;
   }
 };
 
 template<> struct MPI_typetrait<amg::AMG_CNode<ngfem::NT_FACE>> {
-  static MPI_Datatype MPIType() {
-    static MPI_Datatype MPI_T = 0;
-    if(!MPI_T)
+  static NG_MPI_Datatype MPIType() {
+    static NG_MPI_Datatype NG_MPI_T = 0;
+    if(!NG_MPI_T)
   {
     int block_len[2] = {1,1};
-    MPI_Aint displs[2] = {0, sizeof(decltype(amg::AMG_CNode<ngfem::NT_FACE>::v))};
-  MPI_Datatype types[2] = {GetMPIType<decltype(amg::AMG_CNode<ngfem::NT_FACE>::v)>(), GetMPIType<decltype(amg::AMG_CNode<ngfem::NT_FACE>::eqc)>()};
-    MPI_Type_create_struct(2, block_len, displs, types, &MPI_T);
-    MPI_Type_commit ( &MPI_T );
+    NG_MPI_Aint displs[2] = {0, sizeof(decltype(amg::AMG_CNode<ngfem::NT_FACE>::v))};
+  NG_MPI_Datatype types[2] = {GetMPIType<decltype(amg::AMG_CNode<ngfem::NT_FACE>::v)>(), GetMPIType<decltype(amg::AMG_CNode<ngfem::NT_FACE>::eqc)>()};
+    NG_MPI_Type_create_struct(2, block_len, displs, types, &NG_MPI_T);
+    NG_MPI_Type_commit ( &NG_MPI_T );
   }
-    return MPI_T;
+    return NG_MPI_T;
   }
 };
 
 template<> struct MPI_typetrait<amg::AMG_CNode<ngfem::NT_CELL>> {
-  static MPI_Datatype MPIType() {
-    static MPI_Datatype MPI_T = 0;
-    if(!MPI_T)
+  static NG_MPI_Datatype MPIType() {
+    static NG_MPI_Datatype NG_MPI_T = 0;
+    if(!NG_MPI_T)
   {
     int block_len[2] = {1,1};
-    MPI_Aint displs[2] = {0, sizeof(decltype(amg::AMG_CNode<ngfem::NT_CELL>::v))};
-  MPI_Datatype types[2] = {GetMPIType<decltype(amg::AMG_CNode<ngfem::NT_CELL>::v)>(), GetMPIType<decltype(amg::AMG_CNode<ngfem::NT_CELL>::eqc)>()};
-    MPI_Type_create_struct(2, block_len, displs, types, &MPI_T);
-    MPI_Type_commit ( &MPI_T );
+    NG_MPI_Aint displs[2] = {0, sizeof(decltype(amg::AMG_CNode<ngfem::NT_CELL>::v))};
+  NG_MPI_Datatype types[2] = {GetMPIType<decltype(amg::AMG_CNode<ngfem::NT_CELL>::v)>(), GetMPIType<decltype(amg::AMG_CNode<ngfem::NT_CELL>::eqc)>()};
+    NG_MPI_Type_create_struct(2, block_len, displs, types, &NG_MPI_T);
+    NG_MPI_Type_commit ( &NG_MPI_T );
   }
-    return MPI_T;
+    return NG_MPI_T;
   }
 };
 

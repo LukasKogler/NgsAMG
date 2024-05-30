@@ -77,13 +77,13 @@ protected:
 
   shared_ptr<BitArray> m_dofs;
 
-  Array<MPI_Request> m_reqs;
-  Array<MPI_Request> m_send, m_recv;
+  Array<NG_MPI_Request> m_reqs;
+  Array<NG_MPI_Request> m_send, m_recv;
   Table<int> m_ex_dofs;      // master ex-DOFs for each dist-proc (we are master of these)
   Table<TSCAL> m_buffer;    // buffer for master-DOF vals for each dist-proc
 
-  Array<MPI_Request> g_reqs;
-  Array<MPI_Request> g_send, g_recv;
+  Array<NG_MPI_Request> g_reqs;
+  Array<NG_MPI_Request> g_send, g_recv;
   Table<int> g_ex_dofs;      // ghost ex-DOFs  for each dist-proc (they are master of these)
   Table<TSCAL> g_buffer;    // buffer for ghost-DOF vals  for each dist-proc
 

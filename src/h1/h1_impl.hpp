@@ -31,7 +31,7 @@ if (cv != -1)
   mesh->Apply<NT_EDGE>( [&](const auto & fedge) LAMBDA_INLINE {
 if (emap[fedge.id] == -1) {
   /** connection to ground goes into vertex weight **/
-  INT<2, int> cvs ( { map[fedge.v[0]], map[fedge.v[1]] } );;
+  IVec<2, int> cvs ( { map[fedge.v[0]], map[fedge.v[1]] } );;
   if (cvs[0] != cvs[1]) { // max. and min. one is -1
     int l = (cvs[0] == -1) ? 1 : 0;
     int cvnr = map[fedge.v[l]];
@@ -120,7 +120,7 @@ void ElmatVAMG<FACTORY, HTVD, HTED> :: CalcAuxWeightsSC (FlatArray<int> dnums, c
         ai(1,1) = ext_elmat(ndof, ndof);
         ai = Inv(ai);
         double weight = fabs(ai(0,0));
-        // vertex_weights_ht.Do(INT<1>(dnums[i]), [weight] (auto & v) { v += weight; });
+        // vertex_weights_ht.Do(IVec<1>(dnums[i]), [weight] (auto & v) { v += weight; });
         (*ht_vertex)[dnums[i]] += weight;
         if (elmat_evs)
           { aux_elmat(i,i) += weight; }
@@ -140,8 +140,8 @@ void ElmatVAMG<FACTORY, HTVD, HTED> :: CalcAuxWeightsSC (FlatArray<int> dnums, c
           ai(1,2) = ai(2,1) = ext_elmat(j,ndof);
           ai = Inv(ai);
           double weight = fabs(ai(0,0));
-          // edge_weights_ht.Do(INT<2>(dnums[j], dnums[i]).Sort(), [weight] (auto & v) { v += weight; });
-          (*ht_edge)[INT<2, int>(dnums[j], dnums[i]).Sort()] += weight;
+          // edge_weights_ht.Do(IVec<2>(dnums[j], dnums[i]).Sort(), [weight] (auto & v) { v += weight; });
+          (*ht_edge)[IVec<2, int>(dnums[j], dnums[i]).Sort()] += weight;
           if (elmat_evs)
           {
             aux_elmat(i,i) += weight;
@@ -217,7 +217,7 @@ void ElmatVAMG<FACTORY, HTVD, HTED> :: CalcAuxWeightsALG (FlatArray<int> dnums, 
           double weight = fabs(elmat(i,j));
           if (relwt)
             { weight /= ( sqrt(elmat(i,i)) * sqrt(elmat(j,j)) ); }
-          (*ht_edge)[INT<2, int>(dnums[j], dnums[i]).Sort()] += weight;
+          (*ht_edge)[IVec<2, int>(dnums[j], dnums[i]).Sort()] += weight;
           if (elmat_evs)
           {
             aux_elmat(i,i) += weight;
@@ -401,7 +401,7 @@ VertexAMGPC<FCC> :: BuildAlgMesh_ALG_scal (shared_ptr<BlockTM> top_mesh, shared_
   // TODO: normalzing with unreduced vertex data, (?? an oops??)
   // TODO: parallel vertex weights would be wrong!
   const auto& cspm = *dspm;
-  auto a = new H1VData(Array<INT<2,double>>(top_mesh->GetNN<NT_VERTEX>()), DISTRIBUTED); auto ad = a->Data(); ad = 0.0;
+  auto a = new H1VData(Array<IVec<2,double>>(top_mesh->GetNN<NT_VERTEX>()), DISTRIBUTED); auto ad = a->Data(); ad = 0.0;
   auto b = new H1EData(Array<double>(top_mesh->GetNN<NT_EDGE>()), DISTRIBUTED); auto bd = b->Data(); bd = 0;
 
   for (auto k : Range(top_mesh->GetNN<NT_VERTEX>()))
@@ -445,7 +445,7 @@ VertexAMGPC<FCC> :: BuildAlgMesh_ALG_blk (shared_ptr<BlockTM> top_mesh, shared_p
     { throw Exception("Could not cast sparse matrix!"); }
 
   const auto& cspm = *dspm;
-  auto a = new H1VData(Array<INT<2,double>>(top_mesh->GetNN<NT_VERTEX>()), DISTRIBUTED); auto ad = a->Data(); ad = 0.0;
+  auto a = new H1VData(Array<IVec<2,double>>(top_mesh->GetNN<NT_VERTEX>()), DISTRIBUTED); auto ad = a->Data(); ad = 0.0;
   auto b = new H1EData(Array<double>(top_mesh->GetNN<NT_EDGE>()), DISTRIBUTED); auto bd = b->Data(); bd = 0;
 
   for (auto k : Range(top_mesh->GetNN<NT_VERTEX>()))
@@ -477,7 +477,7 @@ VertexAMGPC<FCC> :: BuildAlgMesh_TRIV (shared_ptr<BlockTM> top_mesh) const
 {
   static Timer t("BuildAlgMesh_TRIV"); RegionTimer rt(t);
   /** vertex-weights are 0, edge-weihts are 1 **/
-  auto a = new H1VData(Array<INT<2, double>>(top_mesh->GetNN<NT_VERTEX>()), CUMULATED); a->Data() = 0.0;
+  auto a = new H1VData(Array<IVec<2, double>>(top_mesh->GetNN<NT_VERTEX>()), CUMULATED); a->Data() = 0.0;
   auto ad = a->Data();
   for (auto j : Range(ad))
     { ad[j][1] = 1.0; }

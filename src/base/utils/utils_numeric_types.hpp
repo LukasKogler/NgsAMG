@@ -47,7 +47,7 @@ INLINE bool is_zero (const Mat<N, M,  TSCAL> & m)
 } // is_zero
 
 template<int N, typename TSCAL>
-INLINE bool is_zero (const INT<N, TSCAL> & m)
+INLINE bool is_zero (const IVec<N, TSCAL> & m)
 {
   for (auto k : Range(N))
     if (!is_zero(m[k]))

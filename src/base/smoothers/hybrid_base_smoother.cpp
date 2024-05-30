@@ -21,7 +21,7 @@ public:
   BackgroundMPIThread ()
   {
 #ifdef USE_TAU
-    TAU_PROFILE_SET_NODE(NgMPI_Comm(MPI_COMM_WORLD).Rank());
+    TAU_PROFILE_SET_NODE(NgMPI_Comm(NG_MPI_COMM_WORLD).Rank());
 #endif
     t = make_unique<std::thread>([this](){ this->thread_fpf(); });
   } // BackgroundMPIThread (..)
@@ -31,7 +31,7 @@ public:
   void thread_fpf () {
 #ifdef USE_TAU
     TAU_REGISTER_THREAD();
-    TAU_PROFILE_SET_NODE(NgMPI_Comm(MPI_COMM_WORLD).Rank());
+    TAU_PROFILE_SET_NODE(NgMPI_Comm(NG_MPI_COMM_WORLD).Rank());
 #endif
     while( !end_thread ) {
 // cout << "--- ulock" << endl;
@@ -95,7 +95,7 @@ HybridBaseSmoother (shared_ptr<HybridBaseMatrix<TSCAL>> A,
 {
   _stashedGx = GetHybridA().CreateVector();
 
-  mpi_thread = _commInThread ? GetGlobMPIThread() : nullptr;
+  NG_MPI_thread = _commInThread ? GetGlobMPIThread() : nullptr;
 } // HybridBaseSmoother (..)
 
 
@@ -115,7 +115,7 @@ StartDIS2CO (BaseVector &vec) const
 {
   if ( _overlapComm && _commInThread )
   {
-    mpi_thread->StartInThread([&]()
+    NG_MPI_thread->StartInThread([&]()
     {
       auto &dCCMap = GetHybridA().GetDCCMap();
 
@@ -147,7 +147,7 @@ FinishDIS2CO (BaseVector &vec) const
   {
     if ( _commInThread )
     {
-      mpi_thread->WaitForThread();
+      NG_MPI_thread->WaitForThread();
     }
     else
     {
@@ -168,7 +168,7 @@ StartCO2CU (BaseVector &vec) const
   {
     auto &dCCMap = GetHybridA().GetDCCMap();
 
-    mpi_thread->StartInThread([&] () {
+    NG_MPI_thread->StartInThread([&] () {
       dCCMap.StartCO2CU(vec);
       dCCMap.ApplyCO2CU(vec);
       dCCMap.FinishCO2CU(); // probably dont take a shortcut ??
@@ -198,7 +198,7 @@ FinishCO2CU (BaseVector &vec) const
   {
     if ( _commInThread )
     {
-      mpi_thread->WaitForThread();
+      NG_MPI_thread->WaitForThread();
     }
     else
     {

@@ -68,7 +68,7 @@ public:
   HybridDISmoother (shared_ptr<BaseMatrix> A,
                     shared_ptr<BitArray> freedofs,
                     bool overlap = false,
-                    bool mpi_thread = false);
+                    bool NG_MPI_thread = false);
 
 
 protected:

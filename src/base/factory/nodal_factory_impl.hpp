@@ -33,7 +33,7 @@ namespace amg
       const auto & m (*btm_ptr);
       auto nng = m.template GetNNGlobal<NT_VERTEX>();
       size_t nnloc = (m.GetEQCHierarchy()->GetNEQCS() > 1) ? m.template GetENN<NT_VERTEX>(0) : 0;
-      auto nnlocg = m.GetEQCHierarchy()->GetCommunicator().AllReduce(nnloc, MPI_SUM);
+      auto nnlocg = m.GetEQCHierarchy()->GetCommunicator().AllReduce(nnloc, NG_MPI_SUM);
       return double(nnlocg) / nng;
     }
   } // NodalAMGFactory::ComputeLocFrac
@@ -110,7 +110,7 @@ namespace amg
     //   const auto& ecw = coarsen_opts->ecw;
     //   size_t n_s_e = 0;
     //   cmesh->template Apply<NT_EDGE>([&](const auto & e) { if (ecw[e.id] > MIN_ECW) { n_s_e++; } }, true);
-    //   n_s_e = cmesh->GetEQCHierarchy()->GetCommunicator().AllReduce(n_s_e, MPI_SUM);
+    //   n_s_e = cmesh->GetEQCHierarchy()->GetCommunicator().AllReduce(n_s_e, NG_MPI_SUM);
     //   double s_e_per_v = 2 * double(n_s_e) / double(cmesh->template GetNNGlobal<NT_VERTEX>());
     //   double dynamic_goal_fac = 1.0 / ( 1 + s_e_per_v );
     //   goal_meas = max( size_t(min2(0.5, dynamic_goal_fac) * curr_meas), max(O.max_meas, size_t(1)));

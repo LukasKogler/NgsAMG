@@ -504,19 +504,19 @@ def Solve(a, f, c, ms = 100, tol=1e-6, nocb=True):
         c.Test()
         cb = None if a.space.mesh.comm.rank != 0 or nocb else lambda k, x: print("it =", k , ", err =", x)
         cg = ngs.krylovspace.CGSolver(mat=a.mat, pre=c, callback = cb, maxsteps=ms, tol=tol)
-        ngs.mpi_world.Barrier()
-        ts = ngs.mpi_world.WTime()
+        ngs.NG_MPI_world.Barrier()
+        ts = ngs.NG_MPI_world.WTime()
         cg.Solve(sol=gfu.vec, rhs=f.vec)
-        ngs.mpi_world.Barrier()
-        ts = ngs.mpi_world.WTime() - ts
-        if ngs.mpi_world.rank == 0:
+        ngs.NG_MPI_world.Barrier()
+        ts = ngs.NG_MPI_world.WTime() - ts
+        if ngs.NG_MPI_world.rank == 0:
             print("---")
             print("multi-dim ", a.space.dim)
             print("(vectorial) ndof ", a.space.ndofglobal)
             print("(scalar) ndof ", a.space.dim * a.space.ndofglobal)
             print("used nits = ", cg.iterations)
-            print("(vec) dofs / (sec * np) = ", a.space.ndofglobal / (ts * max(ngs.mpi_world.size-1,1)))
-            print("(scal) dofs / (sec * np) = ", (a.space.ndofglobal * a.space.dim) / (ts * max(ngs.mpi_world.size-1,1)))
+            print("(vec) dofs / (sec * np) = ", a.space.ndofglobal / (ts * max(ngs.NG_MPI_world.size-1,1)))
+            print("(scal) dofs / (sec * np) = ", (a.space.ndofglobal * a.space.dim) / (ts * max(ngs.NG_MPI_world.size-1,1)))
             print("---")
         
     assert cg.errors[-1] < tol * cg.errors[0]

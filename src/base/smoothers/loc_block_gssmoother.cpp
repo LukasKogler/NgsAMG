@@ -4,6 +4,7 @@
 #include "loc_block_gssmoother_impl.hpp"
 
 #include <utils_io.hpp>
+#include <utils_denseLA.hpp>
 
 namespace amg
 {
@@ -332,26 +333,6 @@ INLINE void printEvals (FlatMatrix<double> M, LocalHeap & lh, std::string const 
 
 } // CalcPseudoInverseWithTol
 
-template<int N>
-void ToFlat (FlatMatrix<Mat<N, N, double>> A, FlatMatrix<double> B)
-{
-  auto const H = A.Height();
-  auto const W = A.Width();
-
-  for (auto K : Range(H))
-  {
-    auto const KOff = K * N;
-    for (auto J : Range(W))
-    {
-      auto const JOff = J * N;
-      Iterate<N>([&](auto const &k){
-        Iterate<N>([&](auto const &j) {
-          B(KOff + k.value, JOff + j.value) = A(K, J)(k.value, j.value);
-        });
-      });
-    }
-  }
-}
 
 template<int N>
 void printEvals (FlatMatrix<Mat<N, N, double>> mat, LocalHeap & lh, std::string const &prefix = "", ostream &os = std::cout)
@@ -361,7 +342,7 @@ void printEvals (FlatMatrix<Mat<N, N, double>> mat, LocalHeap & lh, std::string 
 
   FlatMatrix<double> B(mat.Height() * N, mat.Width() * N, lh);
 
-  ToFlat(mat, B);
+  ToFlat<N>(mat, B);
 
   printEvals(B, lh, prefix, os);
 }

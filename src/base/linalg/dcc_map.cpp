@@ -35,8 +35,8 @@ a = std::move(Table<TSCAL>(perow));
   }
 
   /** alloc requests **/
-  m_reqs.SetSize(m_ex_dofs.Size()); m_reqs = MPI_REQUEST_NULL;
-  g_reqs.SetSize(g_ex_dofs.Size()); g_reqs = MPI_REQUEST_NULL;
+  m_reqs.SetSize(m_ex_dofs.Size()); m_reqs = NG_MPI_REQUEST_NULL;
+  g_reqs.SetSize(g_ex_dofs.Size()); g_reqs = NG_MPI_REQUEST_NULL;
 
   /** initialize petsistent communication **/
   m_send.SetSize(m_ex_dofs.Size()); m_recv.SetSize(m_ex_dofs.Size());
@@ -47,13 +47,21 @@ a = std::move(Table<TSCAL>(perow));
   auto ex_procs = pardofs->GetDistantProcs();
   for (auto kp : Range(ex_procs)) {
     if (g_ex_dofs[kp].Size()) { // init G send/recv
-MPI_Send_init( &g_buffer[kp][0], block_size * g_ex_dofs[kp].Size(), GetMPIType<TSCAL>(), ex_procs[kp], MPI_TAG_AMG + 4, comm, &g_send[cg]);
-MPI_Recv_init( &g_buffer[kp][0], block_size * g_ex_dofs[kp].Size(), GetMPIType<TSCAL>(), ex_procs[kp], MPI_TAG_AMG + 5, comm, &g_recv[cg]);
+#ifndef NG_MPI_WRAPPER
+MPI_Send_init( &g_buffer[kp][0], block_size * g_ex_dofs[kp].Size(), GetMPIType<TSCAL>(), ex_procs[kp], NG_MPI_TAG_AMG + 4, comm, &g_send[cg]);
+MPI_Recv_init( &g_buffer[kp][0], block_size * g_ex_dofs[kp].Size(), GetMPIType<TSCAL>(), ex_procs[kp], NG_MPI_TAG_AMG + 5, comm, &g_recv[cg]);
+#else
+throw Exception("MISSING IN NG-MPI WRAPPER!");
+#endif
 cg++;
     }
     if (m_ex_dofs[kp].Size()) { // init G send/recv
-MPI_Send_init( &m_buffer[kp][0], block_size * m_ex_dofs[kp].Size(), GetMPIType<TSCAL>(), ex_procs[kp], MPI_TAG_AMG + 5, comm, &m_send[cm]);
-MPI_Recv_init( &m_buffer[kp][0], block_size * m_ex_dofs[kp].Size(), GetMPIType<TSCAL>(), ex_procs[kp], MPI_TAG_AMG + 4, comm, &m_recv[cm]);
+#ifndef NG_MPI_WRAPPER
+MPI_Send_init( &m_buffer[kp][0], block_size * m_ex_dofs[kp].Size(), GetMPIType<TSCAL>(), ex_procs[kp], NG_MPI_TAG_AMG + 5, comm, &m_send[cm]);
+MPI_Recv_init( &m_buffer[kp][0], block_size * m_ex_dofs[kp].Size(), GetMPIType<TSCAL>(), ex_procs[kp], NG_MPI_TAG_AMG + 4, comm, &m_recv[cm]);
+#else
+throw Exception("MISSING IN NG-MPI WRAPPER!");
+#endif
 cm++;
     }
   }
@@ -85,19 +93,23 @@ StartDIS2CO (BaseVector & vec) const
     { vec.SetParallelStatus(DISTRIBUTED); return; }
   auto ex_dofs = pardofs->GetDistantProcs();
   auto comm = pardofs->GetCommunicator();
+#ifndef NG_MPI_WRAPPER
   if (g_send.Size())
-    { MPI_Startall(g_send.Size(), g_send.Data()); }
+    { NG_MPI_Startall(g_send.Size(), g_send.Data()); }
   if (m_recv.Size())
-    { MPI_Startall(m_recv.Size(), m_recv.Data()); }
+    { NG_MPI_Startall(m_recv.Size(), m_recv.Data()); }
+#else
+throw Exception("MISSING IN NG-MPI WRAPPER!");
+#endif
   // for (auto kp : Range(ex_dofs.Size())) {
   //   if (g_ex_dofs[kp].Size()) // send G vals
-  // 	{ g_reqs[kp] = MyMPI_ISend(g_buffer[kp], ex_dofs[kp], MPI_TAG_AMG + 3, comm); }
+  // 	{ g_reqs[kp] = MyMPI_ISend(g_buffer[kp], ex_dofs[kp], NG_MPI_TAG_AMG + 3, comm); }
   //   else
-  // 	{ g_reqs[kp] = MPI_REQUEST_NULL; }
+  // 	{ g_reqs[kp] = NG_MPI_REQUEST_NULL; }
   //   if (m_ex_dofs[kp].Size()) // recv M vals
-  // 	{ m_reqs[kp] = MyMPI_IRecv(m_buffer[kp], ex_dofs[kp], MPI_TAG_AMG + 3, comm); }
+  // 	{ m_reqs[kp] = MyMPI_IRecv(m_buffer[kp], ex_dofs[kp], NG_MPI_TAG_AMG + 3, comm); }
   //   else
-  // 	{ m_reqs[kp] = MPI_REQUEST_NULL; }
+  // 	{ m_reqs[kp] = NG_MPI_REQUEST_NULL; }
   // }
 } // DCCMap::StartDIS2CO
 
@@ -140,10 +152,14 @@ StartCO2CU (BaseVector & vec) const
   if (vec.GetParallelStatus() != DISTRIBUTED)
     { return; }
   BufferM(vec);
+#ifndef NG_MPI_WRAPPER
   if (m_send.Size())
-    { MPI_Startall(m_send.Size(), m_send.Data()); }
+    { NG_MPI_Startall(m_send.Size(), m_send.Data()); }
   if (g_recv.Size())
-    { MPI_Startall(g_recv.Size(), g_recv.Data()); }
+    { NG_MPI_Startall(g_recv.Size(), g_recv.Data()); }
+#else
+throw Exception("MISSING IN NG-MPI WRAPPER!");
+#endif
 } // DCCMap::StartCO2CU
 
 

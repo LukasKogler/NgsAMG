@@ -131,8 +131,6 @@ public:
 
   virtual ~Agglomerator() = default;
 
-  virtual void FormAgglomerates (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg) = 0;
-
   INLINE TMESH const &GetMesh() const { return *_mesh; }
   INLINE TMESH &GetMesh() { return *_mesh; }
 

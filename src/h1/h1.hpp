@@ -42,12 +42,12 @@ namespace amg
 //   INLINE void operator == (const H1VertexData & other) { return (cnt == other.cnt) && (wt == other.wt); }
 // }; // class H1VertexData
 
-class H1VData : public AttachedNodeData<NT_VERTEX, INT<2, double>>
+class H1VData : public AttachedNodeData<NT_VERTEX, IVec<2, double>>
 {
 public:
   static constexpr NODE_TYPE TNODE = NT_VERTEX;
-  // using AttachedNodeData<NT_VERTEX, INT<2, double>, H1VData>::map_data;
-  H1VData (Array<INT<2, double>> && _data, PARALLEL_STATUS _stat) : AttachedNodeData<NT_VERTEX, INT<2, double>>(std::move(_data), _stat) {}
+  // using AttachedNodeData<NT_VERTEX, IVec<2, double>, H1VData>::map_data;
+  H1VData (Array<IVec<2, double>> && _data, PARALLEL_STATUS _stat) : AttachedNodeData<NT_VERTEX, IVec<2, double>>(std::move(_data), _stat) {}
   template<class TMAP> INLINE void map_data_impl (const TMAP & cmap, H1VData & ch1v) const;
   INLINE void map_data (const BaseCoarseMap & cmap, H1VData *ch1v) const
     { map_data_impl(cmap, *ch1v); }
@@ -112,11 +112,11 @@ using H1Mesh = BlockAlgMesh<H1VData, H1EData>;
 
 
 template<int ADIM>
-class H1AMGFactory : public VertexAMGFactory<H1Energy<ADIM, INT<2,double>, double>, H1Mesh, ADIM>
+class H1AMGFactory : public VertexAMGFactory<H1Energy<ADIM, IVec<2,double>, double>, H1Mesh, ADIM>
 {
 public:
   static constexpr int DIM = ADIM;
-  using ENERGY = H1Energy<DIM, INT<2,double>, double>;
+  using ENERGY = H1Energy<DIM, IVec<2,double>, double>;
   using TMESH = H1Mesh;
   static constexpr int BS = ENERGY::DPV;
   using BASE = VertexAMGFactory<ENERGY, TMESH, BS>;

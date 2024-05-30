@@ -79,10 +79,10 @@ void NoCoH1FESpace :: Update ()
 
   //   // cout << " reduce EL all <-> defined" << endl;
   //   ma->AllReduceNodalData ( (ma->GetDimension() == 2) ? NT_FACE : NT_CELL,
-  //           e2de, MPI_LOR);
+  //           e2de, NG_MPI_LOR);
   //   // cout << " reduce PSN all <-> defined" << endl;
   //   ma->AllReduceNodalData ( (ma->GetDimension() == 2) ? NT_VERTEX : NT_EDGE,
-  //           psn2dpsn, MPI_LOR);
+  //           psn2dpsn, NG_MPI_LOR);
 
   //   // COUNT defined ->  all
   //   nve_defon = 0; npsn_defon = 0;
@@ -133,7 +133,7 @@ void NoCoH1FESpace :: Update ()
   //   { a2f_facet[k] = fine_facet->Test(k) ? 1.0 : 0.0; }
 
   // ma->AllReduceNodalData ((ma->GetDimension()==2) ? NT_EDGE : NT_FACE,
-  //       a2f_facet, MPI_LOR);
+  //       a2f_facet, NG_MPI_LOR);
 
   // nff = 0;
 

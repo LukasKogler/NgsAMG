@@ -5,7 +5,7 @@ from netgen.meshing import MeshPoint, Pnt, FaceDescriptor, Element3D, Element2D
 __VFEMB__ = None
 
 def OneTet():
-    if mpi_world.size > 1:
+    if NG_MPI_world.size > 1:
         raise 'simple mesh not parallel'
     ngmesh = netgen.meshing.Mesh()
     pids = [ ngmesh.Add(MeshPoint(Pnt(*t))) for t in [(0,0,0), (1,0,0), (0,1,0), (0,0,1)]]
@@ -20,7 +20,7 @@ def OneTet():
     return mesh
 
 def TwoTets():
-    if mpi_world.size > 1:
+    if NG_MPI_world.size > 1:
         raise 'simple mesh not parallel'
     ngmesh = netgen.meshing.Mesh()
     rs = 2**(-1/2)

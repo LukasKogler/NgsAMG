@@ -207,7 +207,7 @@ struct StokesVData
   INLINE void operator = (const StokesVData<DIM, TVD> & other) { vd = other.vd; vol = other.vol; }
   INLINE void operator += (const StokesVData<DIM, TVD> & other) { vd += other.vd; vol += other.vol; }
   INLINE bool operator == (const StokesVData<DIM, TVD> & other) { return (vd == other.vd) && (vol == other.vol); }
-  // workaround because the H1-V-data is actually a INT<2, double> currently because I was experimenting with
+  // workaround because the H1-V-data is actually a IVec<2, double> currently because I was experimenting with
   // absorbed-vertex-counter
   template<class TINDEX> INLINE double operator[](const TINDEX &i) const { return vd; }
 }; // struct StokesVData
@@ -246,28 +246,28 @@ namespace ngcore
 
   template<class SVD>
   struct MPI_typetrait_StokesVData {
-    static MPI_Datatype MPIType () {
-      static MPI_Datatype MPI_T = 0;
-      if (!MPI_T)
+    static NG_MPI_Datatype MPIType () {
+      static NG_MPI_Datatype NG_MPI_T = 0;
+      if (!NG_MPI_T)
       {
         int block_len[2] = { 1, 1 };
-        MPI_Aint displs[2] = { 0, sizeof(typename SVD::TVD) };
-        MPI_Datatype types[2] = { GetMPIType<typename SVD::TVD>(), GetMPIType<double>() };
-        MPI_Type_create_struct(2, block_len, displs, types, &MPI_T);
-        MPI_Type_commit ( &MPI_T );
+        NG_MPI_Aint displs[2] = { 0, sizeof(typename SVD::TVD) };
+        NG_MPI_Datatype types[2] = { GetMPIType<typename SVD::TVD>(), GetMPIType<double>() };
+        NG_MPI_Type_create_struct(2, block_len, displs, types, &NG_MPI_T);
+        NG_MPI_Type_commit ( &NG_MPI_T );
       }
-      return MPI_T;
+      return NG_MPI_T;
     }
   }; // struct MPI_typetrait_StokesVData
 
   template<> struct MPI_typetrait<amg::StokesVData<2, double>> {
-    static MPI_Datatype MPIType () {
+    static NG_MPI_Datatype MPIType () {
       return MPI_typetrait_StokesVData<amg::StokesVData<2, double>>::MPIType();
     }
   }; // struct MPI_typetrait
 
   template<> struct MPI_typetrait<amg::StokesVData<3, double>> {
-    static MPI_Datatype MPIType () {
+    static NG_MPI_Datatype MPIType () {
       return MPI_typetrait_StokesVData<amg::StokesVData<3, double>>::MPIType();
     }
   }; // struct MPI_typetrait

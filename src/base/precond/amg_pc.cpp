@@ -354,8 +354,8 @@ void BaseAMGPC::Options :: SetFromFlags (shared_ptr<FESpace> fes, shared_ptr<Bas
   sm_symm_loc.SetFromFlags(flags, pfit("sm_symm_loc"));
   sm_steps.SetFromFlags(flags, pfit("sm_steps"));
   sm_steps_loc.SetFromFlags(flags, pfit("sm_steps_loc"));
-  set_bool(sm_mpi_overlap, "sm_mpi_overlap");
-  set_bool(sm_mpi_thread, "sm_mpi_thread");
+  set_bool(sm_NG_MPI_overlap, "sm_NG_MPI_overlap");
+  set_bool(sm_NG_MPI_thread, "sm_NG_MPI_thread");
   set_bool(sm_shm, "sm_shm");
   set_bool(sm_sl2, "sm_sl2");
 
@@ -600,7 +600,7 @@ void BaseAMGPC :: Finalize ()
   // else {
   //   Array<int> perow (fine_spm->Height() ); perow = 0;
   //   Table<int> dps (perow);
-  //   NgMPI_Comm c(MPI_COMM_WORLD, false);
+  //   NgMPI_Comm c(NG_MPI_COMM_WORLD, false);
   //   Array<int> me({ c.Rank() });
   //   NgMPI_Comm mecomm = (c.Size() == 1) ? c : c.SubCommunicator(me);
   //   fine_spm->SetParallelDofs(make_shared<ParallelDofs> ( mecomm , std::move(dps), GetEntryDim(fine_spm.get()), false));
@@ -731,7 +731,7 @@ void BaseAMGPC :: BuildAMGMat ()
     netgen::printmessage_importance = 1;
     cout << IM(1) << endl << "Test AMG" << endl;
     Test();
-    // NgsAMG_Comm gcomm(MPI_COMM_WORLD);
+    // NgsAMG_Comm gcomm(NG_MPI_COMM_WORLD);
     // TestAMGMatLAPACK (GetMatrixPtr(), GetAMGMatrix(), 0, finest_freedofs, gcomm, "LAPACK AMG test");
   }
 
@@ -961,7 +961,7 @@ BuildGSSmoother (shared_ptr<BaseMatrix> A,
       if (parDOFs != nullptr)
       {
         smoother = make_shared<HybridGSSmoother<BSTM>>
-          (A, freedofs, O.regularize_cmats, O.sm_mpi_overlap, O.sm_mpi_thread);
+          (A, freedofs, O.regularize_cmats, O.sm_NG_MPI_overlap, O.sm_NG_MPI_thread);
       }
       else
       {
@@ -1014,7 +1014,7 @@ BuildBGSSmoother (shared_ptr<BaseMatrix> A,
         int nsteps_loc = 1;
 
         smoother = make_shared<HybridBS<BSTM>>
-            (A, std::move(blocks), O.regularize_cmats, O.sm_mpi_overlap, O.sm_mpi_thread,
+            (A, std::move(blocks), O.regularize_cmats, O.sm_NG_MPI_overlap, O.sm_NG_MPI_thread,
              O.sm_shm, O.sm_sl2, use_bs2, blocks_no_overlap, smooth_symm_loc, nsteps_loc);
       }
       else
@@ -1233,7 +1233,7 @@ void VertexAMGPCOptions :: SetFromFlags (shared_ptr<FESpace> fes, shared_ptr<Bas
             else
               { return fes->GetNDof(); }
           };
-          std::function<void(shared_ptr<FESpace>, size_t, Array<INT<2,size_t>> &)> set_lo_ranges =
+          std::function<void(shared_ptr<FESpace>, size_t, Array<IVec<2,size_t>> &)> set_lo_ranges =
             [&](auto afes, auto offset, auto & ranges) -> void LAMBDA_INLINE {
             if (auto comp_fes = dynamic_pointer_cast<CompoundFESpace>(afes)) {
               size_t n_spaces = comp_fes->GetNSpaces();
@@ -1247,17 +1247,17 @@ void VertexAMGPCOptions :: SetFromFlags (shared_ptr<FESpace> fes, shared_ptr<Bas
             else if (auto reo_fes = dynamic_pointer_cast<ReorderedFESpace>(afes)) {
               // presumably, all vertex-DOFs are low order, and these are still the first ones, so this should be fine
               auto base_space = reo_fes->GetBaseSpace();
-              Array<INT<2,size_t>> oranges; // original ranges - not taking reorder into account
+              Array<IVec<2,size_t>> oranges; // original ranges - not taking reorder into account
               set_lo_ranges(base_space, 0, oranges);
               size_t orange_sum = 0;
               for (auto & r : oranges)
                 { orange_sum += (r[1] - r[0]); }
-              INT<2, size_t> r = { offset, offset + orange_sum };
+              IVec<2, size_t> r = { offset, offset + orange_sum };
               ranges.Append(r);
               // set_lo_ranges(base_space, offset, ranges);
             }
             else {
-              INT<2, size_t> r = { offset, offset + get_lo_nd(afes) };
+              IVec<2, size_t> r = { offset, offset + get_lo_nd(afes) };
               ranges.Append(r);
               // ss_ranges.Append( { offset, offset + get_lo_nd(afes) } ); // for some reason does not work ??
             }

@@ -213,7 +213,7 @@ EQCHierarchy :: EQCHierarchy ()
 
     /** okay, now merge received stuff and local stuff **/
     Array<int> reps_loc(50); reps_loc.SetSize0(); // local reps
-    Array<INT<3>> reps_rec(50); reps_rec.SetSize0(); // received reps
+    Array<IVec<3>> reps_rec(50); reps_rec.SetSize0(); // received reps
 
     auto get_loc = [&](int k, Array<int> & eq_dps) {
       eq_dps.SetSize(aloc_mems[k].Size());
@@ -260,7 +260,7 @@ EQCHierarchy :: EQCHierarchy ()
 	FlatArray<int> eq_dps = msg.Part(c, ndps);
 	if (!find_loc(eq_dps))
 	  if (!find_rec(eq_dps))
-	    { reps_rec.Append(INT<3, int>({ int(k), c, ndps })); }
+	    { reps_rec.Append(IVec<3, int>({ int(k), c, ndps })); }
 	bool found = find_loc(eq_dps);
 	c += ndps;
       }
@@ -280,9 +280,9 @@ EQCHierarchy :: EQCHierarchy ()
     // cout << " reps_loc = "; prow(reps_loc); cout << endl;
     // cout << " reps_rec = "; prow(reps_rec); cout << endl;
     // create table - sorted
-    Array<INT<3>> all_reps;
+    Array<IVec<3>> all_reps;
     for (auto rl : reps_loc)
-      { all_reps.Append(INT<3>({ rl, -1, -1 })); }
+      { all_reps.Append(IVec<3>({ rl, -1, -1 })); }
     all_reps.Append(reps_rec);
     // cout << " all_reps " << endl << all_reps << endl;
 
@@ -455,12 +455,12 @@ EQCHierarchy :: EQCHierarchy ()
 	}
       }
       // cout << "send-buf: " << endl << buffer << endl;
-      Array<MPI_Request> reqs(n_v_exp);
+      Array<NG_MPI_Request> reqs(n_v_exp);
       Array<Array<int>> rbuf(n_v_exp);
       for (auto k : Range(n_v_exp))
-	{ reqs[k] = comm.ISend(buffer[k], v_exps[k], MPI_TAG_AMG); }
+	{ reqs[k] = comm.ISend(buffer[k], v_exps[k], NG_MPI_TAG_AMG); }
       for (auto k : Range(n_v_exp))
-       	{ comm.Recv(rbuf[k], v_exps[k], MPI_TAG_AMG); }
+       	{ comm.Recv(rbuf[k], v_exps[k], NG_MPI_TAG_AMG); }
       // cout << "rbuf: " << endl;
       // for (auto & row : rbuf)
       // 	{ prow(row); cout << endl; }
@@ -606,13 +606,13 @@ EQCHierarchy :: EQCHierarchy ()
     Array<int> nblocks(np);
     nblocks = 0;
 
-    MPI_Allgather(&nblocks_loc, 1, MPI_INT, nblocks.Data(), 1, MPI_INT, comm);
+    NG_MPI_Allgather(&nblocks_loc, 1, NG_MPI_INT, nblocks.Data(), 1, NG_MPI_INT, comm);
 
     int tagbase_loc = AMG_TAG_BASE + np;
     for (auto k:Range(rank))
       tagbase_loc += nblocks[k];
 
-    Array<MPI_Request> reqs;
+    Array<NG_MPI_Request> reqs;
     eqc_ids.SetSize(dist_procs.Size());
     eqc_ids = -1;
     for (auto k:Range(dist_procs.Size()))
@@ -621,10 +621,10 @@ EQCHierarchy :: EQCHierarchy ()
       else if ( rank<dist_procs[k][0] ) {
   	  eqc_ids[k] = tagbase_loc++;
   	  for (auto p:dist_procs[k])
-	    { reqs.Append(comm.ISend(FlatArray<size_t>(1, &eqc_ids[k]), p, MPI_TAG_SOLVE)); }
+	    { reqs.Append(comm.ISend(FlatArray<size_t>(1, &eqc_ids[k]), p, NG_MPI_TAG_SOLVE)); }
   	}
       else
-	{ reqs.Append(comm.IRecv(FlatArray<size_t>(1, &eqc_ids[k]), dist_procs[k][0], MPI_TAG_SOLVE)); }
+	{ reqs.Append(comm.IRecv(FlatArray<size_t>(1, &eqc_ids[k]), dist_procs[k][0], NG_MPI_TAG_SOLVE)); }
 
     MyMPI_WaitAll(reqs);
 
@@ -641,8 +641,8 @@ EQCHierarchy :: EQCHierarchy ()
     neqcs_glob -= AMG_TAG_BASE; // this is actually one too much usually (rank 0 has no loc eq-class)
 
     /** sub-comms; not needed currently!!  **/
-    // MPI_Group g_ngs;
-    // MPI_Comm_group(comm, &g_ngs);
+    // NG_MPI_Group g_ngs;
+    // NG_MPI_Comm_group(comm, &g_ngs);
     // groups.SetSize(dist_procs.Size());
     // comms.SetSize(dist_procs.Size());
     // Array<int> members(np);
@@ -653,8 +653,8 @@ EQCHierarchy :: EQCHierarchy ()
     // 	for (auto p:dist_procs[k])
     // 	  members.Append(p);
     // 	QuickSort(members); // i doint think i need this?; actually, i do!!
-    // 	MPI_Group_incl(g_ngs, members.Size(), &members[0], &groups[k]);
-    // 	MPI_Comm_create_group(comm, groups[k], eqc_ids[k], &comms[k]);
+    // 	NG_MPI_Group_incl(g_ngs, members.Size(), &members[0], &groups[k]);
+    // 	NG_MPI_Comm_create_group(comm, groups[k], eqc_ids[k], &comms[k]);
     //   }
 
     /** EQC merging and intersection **/
@@ -767,10 +767,10 @@ EQCHierarchy :: EQCHierarchy ()
     }
     else
     {
-      os << "EQCHierarchy @" << &eqc_h << " on comm " << eqc_h.comm << ", rank " << eqc_h.rank << " of " << eqc_h.np << endl;
+      os << "EQCHierarchy @" << &eqc_h << ", rank " << eqc_h.rank << " of " << eqc_h.np << endl;
       os << "NEQCS: loc=" << eqc_h.neqcs << ", glob=" << eqc_h.neqcs_glob << endl;
       os << "rank "<< eqc_h.rank << " of " << eqc_h.np << endl;
-      os << "rank in world : " << NgMPI_Comm(MPI_COMM_WORLD, false).Rank() << endl;
+      os << "rank in world : " << NgMPI_Comm(NG_MPI_COMM_WORLD, false).Rank() << endl;
       os << "EQCS: id   || dps " << endl;
       for (auto k:Range(eqc_h.neqcs)) {
         os << k << ": " << eqc_h.eqc_ids[k] << "  || ";

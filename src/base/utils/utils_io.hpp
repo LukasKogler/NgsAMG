@@ -236,7 +236,7 @@ INLINE void printTable (const T & tab, std::ostream &os = cout, std::string cons
 
 
 template<class T, int D>
-INLINE void prowtup (FlatArray<INT<D, T>> ar, std::ostream &os = cout) {
+INLINE void prowtup (FlatArray<IVec<D, T>> ar, std::ostream &os = cout) {
   for (auto v : ar) {
     os << "[";
     for (auto l : Range(D))
@@ -246,7 +246,7 @@ INLINE void prowtup (FlatArray<INT<D, T>> ar, std::ostream &os = cout) {
 };
 
 template<class T, int D>
-INLINE void prow2tup (FlatArray<INT<D, T>> ar, std::ostream &os = cout) {
+INLINE void prow2tup (FlatArray<IVec<D, T>> ar, std::ostream &os = cout) {
   for (auto k : Range(ar)) {
     auto v = ar[k];
     os << "[" << k << ": ";

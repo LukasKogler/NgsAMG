@@ -4,8 +4,9 @@
 #include <base.hpp>
 #include <utils.hpp>
 
-
 #include <ngblas.hpp>
+
+#include "utils_arrays_tables.hpp"
 
 namespace ngbla
 {

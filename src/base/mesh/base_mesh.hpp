@@ -228,7 +228,7 @@ cnt[k] = GetENN<NT>(k) + GetCNN<NT>(k);
 nreq += eqc_h->IsMasterOfEQC(k) ? (eqc_h->GetDistantProcs(k).Size()) : 1;
     }
     Table<T> ex_data(cnt);
-    Array<MPI_Request> req(nreq); nreq = 0;
+    Array<NG_MPI_Request> req(nreq); nreq = 0;
     auto comm = eqc_h->GetCommunicator();
     auto & disp_eq = disp_eqc[NT];
     auto & disp_c  = disp_cross[NT];
@@ -242,10 +242,10 @@ if (eqc_h->IsMasterOfEQC(k)) {
   // cout << disp_eq[k] << " " << disp_c[k] << endl;
   // prow2(exrow); cout << endl;
   for (auto p : eqc_h->GetDistantProcs(k))
-    { req[nreq++] = comm.ISend(exrow, p, MPI_TAG_AMG); }
+    { req[nreq++] = comm.ISend(exrow, p, NG_MPI_TAG_AMG); }
 }
 else
-  { req[nreq++] = comm.IRecv(exrow, eqc_h->GetDistantProcs(k)[0], MPI_TAG_AMG); }
+  { req[nreq++] = comm.IRecv(exrow, eqc_h->GetDistantProcs(k)[0], NG_MPI_TAG_AMG); }
     }
     // cout << " nreq " << req.Size() << " " << nreq << endl;
     MyMPI_WaitAll(req);

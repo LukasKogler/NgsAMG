@@ -23,7 +23,7 @@ void BaseStokesAMGPrecond :: CalcVertexVols (BlockTM &fineMesh, FlatArray<FVDesc
   int MAX_CODE = 0; // MINIMAL index used globally for exterior fict vertices
   for (auto k : Range(fvd))
     { MAX_CODE = max2(MAX_CODE, fvd[k].code); }
-  MAX_CODE = comm.AllReduce(MAX_CODE, MPI_MAX);
+  MAX_CODE = comm.AllReduce(MAX_CODE, NG_MPI_MAX);
 
   int UNDEF_VOL = -2 - MAX_CODE;
 

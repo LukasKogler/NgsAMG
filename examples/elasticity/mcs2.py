@@ -16,7 +16,7 @@ diri,l2c = "back", 1
 fc = 1 if l2c == 0 else 3
 fcf = CoefficientFunction((0,-fc*x*(1-x),0))
 
-geo, mesh = gen_ref_mesh (geo, maxh, nref = 0, comm=mpi_world, mesh_file = '', save = False)
+geo, mesh = gen_ref_mesh (geo, maxh, nref = 0, comm=NG_MPI_world, mesh_file = '', save = False)
 
 # mesh = TwoTets()
 

@@ -13,7 +13,7 @@ namespace amg
   {
     /** local & global nr of levels **/
     n_levels = map->GetNLevels();
-    n_levels_glob = map->GetUDofs().GetCommunicator().AllReduce(n_levels, MPI_MAX);
+    n_levels_glob = map->GetUDofs().GetCommunicator().AllReduce(n_levels, NG_MPI_MAX);
 
     /** work vectors **/
     res_level.SetSize(map->GetNLevels());
@@ -400,7 +400,7 @@ namespace amg
   {
     if (rank == 0) return n_levels_glob;
     auto comm = map->GetUDofs().GetCommunicator();
-    return comm.AllReduce((comm.Rank() == rank) ? (1 + smoothers.Size()) : 0, MPI_SUM);
+    return comm.AllReduce((comm.Rank() == rank) ? (1 + smoothers.Size()) : 0, NG_MPI_SUM);
   }
 
 
@@ -465,7 +465,7 @@ namespace amg
         if ( (arank == 0) && (dof > lev_uDofs.GetNDGlob()) )
           { input_notok = 5; }
       }
-      input_notok = gcomm.AllReduce(input_notok, MPI_MAX);
+      input_notok = gcomm.AllReduce(input_notok, NG_MPI_MAX);
       if (input_notok != 0) {
         if (gcomm.Rank() == 0) {
           cerr << "GetBF invalid input, reason = ";
@@ -528,12 +528,12 @@ namespace amg
         if ( gcomm.Rank() == 0 )
           { cerr << " no rank " << arank << " on level " << level << endl; }
       }
-      input_notok = gcomm.AllReduce(input_notok, MPI_MAX);
+      input_notok = gcomm.AllReduce(input_notok, NG_MPI_MAX);
       if ( input_notok )
       	{ return make_tuple(0, 1); }
     }
 
-    INT<2, size_t> nd_bs(0);
+    IVec<2, size_t> nd_bs(0);
     if ( have_lev ) {
       nd_bs[1] = lev_bs;
       if ( (arank > 0) && (gcomm.Rank() == arank) )
@@ -552,7 +552,7 @@ namespace amg
   {
     auto comm = map->GetUDofs().GetCommunicator();
     size_t n_levs_loc = (crs_inv == nullptr) ? smoothers.Size() : smoothers.Size() + 1;
-    size_t n_levs_glob = comm.AllReduce(n_levs_loc, MPI_MAX);
+    size_t n_levs_glob = comm.AllReduce(n_levs_loc, NG_MPI_MAX);
     Array<size_t> nzes(n_levs_glob), nops(n_levs_glob); nzes = 0.0; nops = 0.0;
 
     // for (auto k : Range(smoothers)) {

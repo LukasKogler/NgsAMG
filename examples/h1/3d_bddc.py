@@ -9,7 +9,7 @@ from ngsolve.krylovspace import CGSolver
 
 from amg_utils import *
 
-comm = mpi_world
+comm = NG_MPI_world
 
 geo, mesh = gen_cube(maxh=0.2, nref=0, comm=comm)
 

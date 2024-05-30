@@ -1813,7 +1813,7 @@ ContractMeshDOFs (StokesContractMap<TMESH> const &ctrMap,
       if (!isMe)
       {
         recvOffsets.SetSize(emap.Size() + 1);
-        fComm.Recv(recvOffsets, mem, MPI_TAG_AMG);
+        fComm.Recv(recvOffsets, mem, NG_MPI_TAG_AMG);
       }
 
       FlatArray<size_t> fOffsets = isMe ? fMeshDOFs.GetOffsets() : recvOffsets;
@@ -1865,7 +1865,7 @@ ContractMeshDOFs (StokesContractMap<TMESH> const &ctrMap,
   else
   {
     auto const master = myGroup[0];
-    fComm.Send(fMeshDOFs.GetOffsets(), master, MPI_TAG_AMG);
+    fComm.Send(fMeshDOFs.GetOffsets(), master, NG_MPI_TAG_AMG);
   }
 
   return make_tuple(cMeshDOFs, dofMaps);

@@ -61,7 +61,7 @@ void AttachedEED<DIM> :: map_data (const BaseCoarseMap & cmap, AttachedEED<DIM> 
       cemat += Trans(QHh) * FMQ;
     }
     else { /** connection to ground goes into vertex weight **/
-      INT<2, int> cvs ( { v_map[fedge.v[0]], v_map[fedge.v[1]] } );;
+      IVec<2, int> cvs ( { v_map[fedge.v[0]], v_map[fedge.v[1]] } );;
       if (cvs[0] != cvs[1]) { // max. and min. one is -1
         int l = (cvs[0] == -1) ? 1 : 0;
         int cvnr = v_map[fedge.v[l]];

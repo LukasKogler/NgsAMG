@@ -291,7 +291,7 @@ void HDivStokesAMGPC<TFACTORY> :: FillAlgMesh(TMESH const &alg_mesh, TLAM weight
 
 
 template<class TFACTORY>
-Array<INT<2, double>> HDivStokesAMGPC<TFACTORY> :: CalcFacetFlows () const
+Array<IVec<2, double>> HDivStokesAMGPC<TFACTORY> :: CalcFacetFlows () const
 {
   throw Exception("HDivStokesAMGPC::CalcFacetFlows should not be called anymore!");
 
@@ -338,7 +338,7 @@ Array<INT<2, double>> HDivStokesAMGPC<TFACTORY> :: CalcFacetFlows () const
 
   lint->SetBonusIntegrationOrder(this->GetMA().GetDimension() * curve_order);
 
-  Array<INT<2, double>> flows(auxInfo.GetNFacets_R());
+  Array<IVec<2, double>> flows(auxInfo.GetNFacets_R());
 
   BitArray facetDone(auxInfo.GetNFacets_R());
   facetDone.Clear();

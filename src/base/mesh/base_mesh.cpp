@@ -55,11 +55,11 @@ shared_ptr<SparseMatrix<double>> TopologicMesh :: GetEdgeCM() const
   for(auto & edge: GetNodes<NT_EDGE>())
     for(auto l:Range(2))
 econ_s[edge.v[l]]++;
-  Table<INT<2> > econ_i(econ_s);
+  Table<IVec<2> > econ_i(econ_s);
   econ_s = 0;
   for(auto & edge: GetNodes<NT_EDGE>())
     for(auto l:Range(2))
-econ_i[edge.v[l]][econ_s[edge.v[l]]++] = INT<2>(edge.v[1-l], edge.id);
+econ_i[edge.v[l]][econ_s[edge.v[l]]++] = IVec<2>(edge.v[1-l], edge.id);
   for(auto row:econ_i)
     QuickSort(row, [](auto & a, auto & b) { return a[0]<b[0]; });
   econ = make_shared<SparseMatrix<double>>(econ_s, nv);
@@ -237,7 +237,7 @@ namespace amg_nts
   template<ngfem::NODE_TYPE NT>
   INLINE decltype(AMG_Node<NT>::v) MAToAMG_Node (const MeshAccess & ma, size_t node_num) {
     constexpr int NODE_SIZE = sizeof(AMG_Node<NT>::v)/sizeof(AMG_Node<NT_VERTEX>);
-    INT<NODE_SIZE, AMG_Node<NT_VERTEX>> vs;
+    IVec<NODE_SIZE, AMG_Node<NT_VERTEX>> vs;
     auto ng_node = ma.GetNode<NT>(node_num);
     for (auto i : Range(NODE_SIZE)) vs[i] = ng_node.vertices[i];
     return std::move(vs);
@@ -292,7 +292,7 @@ auto eledges = ma->GetElEdges (ei);
 for(size_t j=0;j<eledges.Size();j++) fine_edge.SetBit(eledges[j]);
     }
     // do I need sth. like that??
-    // ma->AllReduceNodalData (NT_EDGE, fine_edge, MPI_LOR);
+    // ma->AllReduceNodalData (NT_EDGE, fine_edge, NG_MPI_LOR);
     // size_t num_edges = ma->GetNEdges();
     // cout << "fine edges: " << fine_edge.NumSet() << " of " << fine_edge.Size() << endl << fine_edge << endl;
     size_t num_edges = fine_edge.NumSet(), cnt = 0;

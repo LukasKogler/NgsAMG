@@ -234,8 +234,8 @@ HybridDISmoother<TM>::
 HybridDISmoother (shared_ptr<BaseMatrix> _A,
                   shared_ptr<BitArray> _freedofs,
                   bool overlap,
-                  bool mpi_thread)
-  : HybridSmoother<TM>(_A, overlap, mpi_thread, 1)
+                  bool NG_MPI_thread)
+  : HybridSmoother<TM>(_A, overlap, NG_MPI_thread, 1)
 {
   Array<TM> mod_diag = this->CalcModDiag(nullptr);
 

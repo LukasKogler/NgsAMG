@@ -35,22 +35,22 @@ template<int D> INLINE void GetNodePos (NodeId id, const MeshAccess & ma, Vec<D>
 }
 
 
-template<typename T> bool operator < (const INT<2,T> & a, const INT<2,T> & b) {
+template<typename T> bool operator < (const IVec<2,T> & a, const IVec<2,T> & b) {
   if (a[0]<b[0]) return true; else if (a[0]>b[0]) return false;
   else return a[1]<b[1];
 }
-template<typename T> bool operator < (const INT<3,T> & a, const INT<3,T> & b) {
+template<typename T> bool operator < (const IVec<3,T> & a, const IVec<3,T> & b) {
   if (a[0]<b[0]) return true; else if (a[0]>b[0]) return false;
   else if (a[1]<b[1]) return true; else if (a[1]>b[1]) return false;
   else return a[2]<b[2];
 }
-template<typename T> bool operator < (const INT<4,T> & a, const INT<3,T> & b) {
+template<typename T> bool operator < (const IVec<4,T> & a, const IVec<3,T> & b) {
   if (a[0]<b[0]) return true; else if (a[0]>b[0]) return false;
   else if (a[1]<b[1]) return true; else if (a[1]>b[1]) return false;
   else if (a[2]<b[2]) return true; else if (a[2]>b[2]) return false;
   else return a[3]<b[3];
 }
-template<typename T> bool operator < (const INT<5,T> & a, const INT<5,T> & b) {
+template<typename T> bool operator < (const IVec<5,T> & a, const IVec<5,T> & b) {
   if (a[0]<b[0]) return true; else if (a[0]>b[0]) return false;
   else if (a[1]<b[1]) return true; else if (a[1]>b[1]) return false;
   else if (a[2]<b[2]) return true; else if (a[2]>b[2]) return false;
@@ -58,7 +58,7 @@ template<typename T> bool operator < (const INT<5,T> & a, const INT<5,T> & b) {
   else return a[4]<b[4];
 }
 
-template<int N, class T> INLINE INT<N,T> & operator += (INT<N,T> & a, const INT<N,T> & b)
+template<int N, class T> INLINE IVec<N,T> & operator += (IVec<N,T> & a, const IVec<N,T> & b)
 { Iterate<N>([&](auto i) { a[i.value] += b[i.value]; }); return a; }
 
 /** size of a parameter pack **/

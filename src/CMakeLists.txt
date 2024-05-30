@@ -31,7 +31,7 @@ if (NETGEN_USE_PYTHON)
   target_link_libraries(NgsAMG PUBLIC NgsAMGlib)
 endif(NETGEN_USE_PYTHON)
 
-include_directories(${MPI_CXX_INCLUDE_DIRS})
+include_directories(${NG_MPI_CXX_INCLUDE_DIRS})
 
 set_property(GLOBAL PROPERTY AT_AMG_SOURCE "")
 set_property(GLOBAL PROPERTY BASE_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/")

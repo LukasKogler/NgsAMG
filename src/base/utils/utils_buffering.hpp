@@ -69,26 +69,26 @@ UnpackFromBuffer(Mat<N, N, double> &m, double const *buf)
   return SIZE_IN_BUFFER<Mat<N,N,double>>();
 }
 
-template<int N> struct SIZE_IN_BUFFER_TRAIT<INT<N, double>> { static constexpr int value = N; };
+template<int N> struct SIZE_IN_BUFFER_TRAIT<IVec<N, double>> { static constexpr int value = N; };
 
 template<int N>
 INLINE int
-PackIntoBuffer(INT<N, double> const &t, double *buf)
+PackIntoBuffer(IVec<N, double> const &t, double *buf)
 {
   Iterate<N>([&](auto i) {
     buf[i.value] = t[i.value];
   });
-  return SIZE_IN_BUFFER<INT<N,double>>();
+  return SIZE_IN_BUFFER<IVec<N,double>>();
 }
 
 template<int N>
 INLINE int
-UnpackFromBuffer(INT<N, double> &t, double const *buf)
+UnpackFromBuffer(IVec<N, double> &t, double const *buf)
 {
   Iterate<N>([&](auto i) {
     t[i.value] = buf[i.value];
   });
-  return SIZE_IN_BUFFER<INT<N,double>>();
+  return SIZE_IN_BUFFER<IVec<N,double>>();
 }
 
 } // namespace amg

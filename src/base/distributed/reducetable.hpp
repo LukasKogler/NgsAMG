@@ -10,7 +10,7 @@
 namespace amg
 {
 
-  const int TAG_PARTABLE = MPI_TAG_AMG;
+  const int TAG_PARTABLE = NG_MPI_TAG_AMG;
 
   INLINE Timer<TTracing, TTiming>& RTTimerHack() {
     static Timer timer("ReduceTable");
@@ -28,8 +28,8 @@ namespace amg
 
     // cout << "rank " << rank << " of " << np << "         waiting for rest in reduce.." << endl;
 
-    // MPI_Barrier(comm);
-    // double tstart = MPI_Wtime();
+    // NG_MPI_Barrier(comm);
+    // double tstart = NG_MPI_Wtime();
 
     auto demangle = [](const char* name) -> string {
       int status = -4;
@@ -122,7 +122,7 @@ namespace amg
       }
     }
 
-    // MPI_Barrier(comm);
+    // NG_MPI_Barrier(comm);
     // t0.Stop();
     // t1.Start();
 
@@ -140,29 +140,29 @@ namespace amg
     //cout << " /** Gather meta-data **/ " << endl;
     /** Gather meta-data **/
     Array<int> gather_recv_total_msg_size(np);
-    // MPI_Alltoall( &(gather_send_total_msg_size[0]), 1, MPI_INT, &(gather_recv_total_msg_size[0]), 1, MPI_INT, comm);
+    // NG_MPI_Alltoall( &(gather_send_total_msg_size[0]), 1, NG_MPI_INT, &(gather_recv_total_msg_size[0]), 1, NG_MPI_INT, comm);
   //cout << "gather_recv_total_msg_size: " << endl << gather_recv_total_msg_size << endl;
 
     Array<int> gather_recv_nr_blocks(np);
-    // MPI_Alltoall( &(gather_send_nr_blocks[0]), 1, MPI_INT, &(gather_recv_nr_blocks[0]), 1, MPI_INT, comm);
+    // NG_MPI_Alltoall( &(gather_send_nr_blocks[0]), 1, NG_MPI_INT, &(gather_recv_nr_blocks[0]), 1, NG_MPI_INT, comm);
     //cout << "gather_recv_nr_blocks: " << endl << gather_recv_nr_blocks << endl;
 
     //TODO: i think gather/recv_nr_blocks is already in m_of_row/s_of_row??
     gather_recv_total_msg_size = 0;
     gather_recv_nr_blocks = 0;
-    Array<MPI_Request> gr1;
+    Array<NG_MPI_Request> gr1;
     for (auto p:Range(rank+1, np)) {
       if (slave_of_rows[p].Size()>0) {
 	// cout << "get 2 from " << p << endl;
-	gr1.Append( comm.IRecv( gather_recv_total_msg_size[p], p, MPI_TAG_AMG) );
-	gr1.Append( comm.IRecv( gather_recv_nr_blocks[p], p, MPI_TAG_AMG) );
+	gr1.Append( comm.IRecv( gather_recv_total_msg_size[p], p, NG_MPI_TAG_AMG) );
+	gr1.Append( comm.IRecv( gather_recv_nr_blocks[p], p, NG_MPI_TAG_AMG) );
       }
     }
     for (auto p:Range(rank)) {
       if (master_of_rows[p].Size()>0) {
 	// cout << "send 2 to " << p << endl;
-	comm.Send( gather_send_total_msg_size[p], p, MPI_TAG_AMG);
-	comm.Send( gather_send_nr_blocks[p], p, MPI_TAG_AMG);
+	comm.Send( gather_send_total_msg_size[p], p, NG_MPI_TAG_AMG);
+	comm.Send( gather_send_nr_blocks[p], p, NG_MPI_TAG_AMG);
       }
     }
     if (gr1.Size()) MyMPI_WaitAll(gr1);
@@ -190,8 +190,8 @@ namespace amg
     (void) make_displs(gather_recv_nr_blocks, gather_recv_displs);
     // use .data() instead!!
     /**
-    MPI_Alltoallv( gather_send_block_sizes.Data(), &(gather_send_nr_blocks[0]), &(gather_send_displs[0]), MPI_INT,
-		   gather_recv_block_sizes.Data(), &(gather_recv_nr_blocks[0]), &(gather_recv_displs[0]), MPI_INT,
+    NG_MPI_Alltoallv( gather_send_block_sizes.Data(), &(gather_send_nr_blocks[0]), &(gather_send_displs[0]), NG_MPI_INT,
+		   gather_recv_block_sizes.Data(), &(gather_recv_nr_blocks[0]), &(gather_recv_displs[0]), NG_MPI_INT,
 		   comm);
     **/
 
@@ -207,14 +207,14 @@ namespace amg
 	  hasblock = true;
 	}
     }
-    Array<MPI_Request> gr2;
+    Array<NG_MPI_Request> gr2;
     for (auto p:Range(rank+1, np)) {
       if (gather_recv_nr_blocks[p]>0)
-	gr2.Append( comm.IRecv( gather_recv_block_sizes[p], p, MPI_TAG_AMG) );
+	gr2.Append( comm.IRecv( gather_recv_block_sizes[p], p, NG_MPI_TAG_AMG) );
     }
     for (auto p:Range(rank)) {
       if (gather_send_nr_blocks[p]>0)
-	comm.Send( gather_send_block_sizes[p], p, MPI_TAG_AMG);
+	comm.Send( gather_send_block_sizes[p], p, NG_MPI_TAG_AMG);
     }
 
     if (gr2.Size()) MyMPI_WaitAll(gr2);
@@ -242,15 +242,15 @@ namespace amg
     // t14.Start();
 
     //cout << " /** Gather data **/ " << endl;
-    Array<MPI_Request> gather_reqs;
+    Array<NG_MPI_Request> gather_reqs;
     //send to master
     for (auto p:Range(rank)) {
       if (gather_send_total_msg_size[p]>0)
-	gather_reqs.Append( comm.ISend( gather_send_data[p], p, MPI_TAG_AMG) );
+	gather_reqs.Append( comm.ISend( gather_send_data[p], p, NG_MPI_TAG_AMG) );
     }
     for (auto p:Range(rank+1, np)) {
       if (gather_recv_total_msg_size[p]>0)
-	gather_reqs.Append( comm.IRecv( gather_recv_data[p], p, MPI_TAG_AMG) );
+	gather_reqs.Append( comm.IRecv( gather_recv_data[p], p, NG_MPI_TAG_AMG) );
     }
     //copy data I am master of
     for (auto k:Range(gather_recv_data[rank].Size()))
@@ -262,7 +262,7 @@ namespace amg
 
     // t14.Stop();
 
-    // MPI_Barrier(comm);
+    // NG_MPI_Barrier(comm);
     // t1.Stop();
     // t2.Start();
 
@@ -284,7 +284,7 @@ namespace amg
     Table<FlatArray<T> > unreduced_data(unreduced_data_sizes);
 
     // cout << "have table" << endl;
-    // MPI_Barrier(comm);
+    // NG_MPI_Barrier(comm);
     // cout << "have table" << endl;
 
     // if (ASC_AMG_OUTPUT_LEVEL>=STATUS_UPDATES_ALL)
@@ -363,7 +363,7 @@ namespace amg
     // if (ASC_AMG_OUTPUT_LEVEL>=STATUS_UPDATES_ALL)
     //   cout << "TAB PIEP3.8!" << endl;
 
-    // MPI_Barrier(comm);
+    // NG_MPI_Barrier(comm);
     // t2.Stop();
     // t3.Start();
 
@@ -407,7 +407,7 @@ namespace amg
     // cout << "scatter_send_data:" << endl << scatter_send_data << endl;
 
 
-    // MPI_Barrier(comm);
+    // NG_MPI_Barrier(comm);
     // t3.Stop();
     // t4.Start();
 
@@ -415,30 +415,30 @@ namespace amg
     //cout << "/** Scatter meta-data **/" << endl;
     /** Scatter meta-data **/
     Array<int> scatter_recv_total_msg_size(np);
-    // MPI_Alltoall(&(scatter_send_total_msg_size[0]), 1, MPI_INT, &(scatter_recv_total_msg_size[0]), 1, MPI_INT, comm);
+    // NG_MPI_Alltoall(&(scatter_send_total_msg_size[0]), 1, NG_MPI_INT, &(scatter_recv_total_msg_size[0]), 1, NG_MPI_INT, comm);
     //cout << "scatter_recv_total_msg_size: " << endl << scatter_recv_total_msg_size << endl;
     Array<int> scatter_recv_nr_blocks(np);
-    // MPI_Alltoall(&(scatter_send_nr_blocks[0]), 1, MPI_INT, &(scatter_recv_nr_blocks[0]), 1, MPI_INT, comm);
+    // NG_MPI_Alltoall(&(scatter_send_nr_blocks[0]), 1, NG_MPI_INT, &(scatter_recv_nr_blocks[0]), 1, NG_MPI_INT, comm);
     //cout << "scatter_recv_nr_blocks:" << endl << scatter_recv_nr_blocks << endl;
 
     // cout << "rank np: " << rank << " " << np << endl;
 
     scatter_recv_total_msg_size = 0;
     scatter_recv_nr_blocks = 0;
-    Array<MPI_Request> gr3;
+    Array<NG_MPI_Request> gr3;
     // for (auto p:Range(1,rank)) {
     for (int p=0;p<rank;p++) {
       // cout << "get 2x from " << p << endl;
       if (master_of_rows[p].Size()>0) {
-	gr3.Append( comm.IRecv( scatter_recv_total_msg_size[p], p, MPI_TAG_AMG) );
-	gr3.Append( comm.IRecv( scatter_recv_nr_blocks[p], p, MPI_TAG_AMG) );
+	gr3.Append( comm.IRecv( scatter_recv_total_msg_size[p], p, NG_MPI_TAG_AMG) );
+	gr3.Append( comm.IRecv( scatter_recv_nr_blocks[p], p, NG_MPI_TAG_AMG) );
       }
     }
     for (auto p:Range(rank+1, np)) {
       // cout << "send 2x to " << p << endl;
       if (slave_of_rows[p].Size()>0) {
-	comm.Send( scatter_send_total_msg_size[p], p, MPI_TAG_AMG);
-	comm.Send( scatter_send_nr_blocks[p], p, MPI_TAG_AMG);
+	comm.Send( scatter_send_total_msg_size[p], p, NG_MPI_TAG_AMG);
+	comm.Send( scatter_send_nr_blocks[p], p, NG_MPI_TAG_AMG);
       }
     }
     // cout << "wait for " << gr3.Size() << "msgs.." << endl;
@@ -461,8 +461,8 @@ namespace amg
     Array<int> scatter_recv_displs(np);
     (void) make_displs(scatter_recv_nr_blocks, scatter_recv_displs);
     /**
-    MPI_Alltoallv( scatter_send_block_sizes.Data(), &(scatter_send_nr_blocks[0]), &(scatter_send_displs[0]), MPI_INT,
-		   scatter_recv_block_sizes.Data(), &(scatter_recv_nr_blocks[0]), &(scatter_recv_displs[0]), MPI_INT,
+    NG_MPI_Alltoallv( scatter_send_block_sizes.Data(), &(scatter_send_nr_blocks[0]), &(scatter_send_displs[0]), NG_MPI_INT,
+		   scatter_recv_block_sizes.Data(), &(scatter_recv_nr_blocks[0]), &(scatter_recv_displs[0]), NG_MPI_INT,
 		   comm);
     **/
     //cout << "scatter_recv_block_sizes" << endl << scatter_recv_block_sizes << endl;
@@ -478,17 +478,17 @@ namespace amg
       }
     }
 
-    Array<MPI_Request> gr4;
+    Array<NG_MPI_Request> gr4;
     for (auto p:Range(rank)) {
       if (scatter_recv_total_msg_size[p]) {
 	// cout << "get BS from " << p << endl;
-	gr4.Append( comm.IRecv( scatter_recv_block_sizes[p], p, MPI_TAG_AMG) );
+	gr4.Append( comm.IRecv( scatter_recv_block_sizes[p], p, NG_MPI_TAG_AMG) );
       }
     }
     for (auto p:Range(rank+1, np)) {
       if (scatter_send_total_msg_size[p]) {
 	// cout << "send to " << p << endl;
-	comm.Send( scatter_send_block_sizes[p], p, MPI_TAG_AMG);
+	comm.Send( scatter_send_block_sizes[p], p, NG_MPI_TAG_AMG);
       }
     }
     if (gr4.Size()) MyMPI_WaitAll(gr4);
@@ -513,18 +513,18 @@ namespace amg
 
     //cout << "/** Scatter data **/" << endl;
     /** Scatter data **/
-    Array<MPI_Request> req_scatter_data;
+    Array<NG_MPI_Request> req_scatter_data;
     for (auto p:Range(rank+1, np)) {
       //cout << "send " << scatter_send_data[p].Size() << " to " << p << endl;
       if (scatter_send_total_msg_size[p]>0) {
-	req_scatter_data.Append( comm.ISend(scatter_send_data[p], p, MPI_TAG_AMG) );
+	req_scatter_data.Append( comm.ISend(scatter_send_data[p], p, NG_MPI_TAG_AMG) );
       }
     }
     // for (auto p:Range(1, rank)) {
     for (auto p=0;p<rank;p++) {
       //cout << "recv " << scatter_recv_data[p].Size() << " from " << p << endl;
       if (scatter_recv_total_msg_size[p]>0) {
-	req_scatter_data.Append( comm.IRecv(scatter_recv_data[p], p, MPI_TAG_AMG) );
+	req_scatter_data.Append( comm.IRecv(scatter_recv_data[p], p, NG_MPI_TAG_AMG) );
       }
     }
     //cout << "wait" << endl;
@@ -583,9 +583,9 @@ namespace amg
      This allows lambda to be non-deterministic because it is only called once for each block of data. Non-deterministic
      lambdas might arise due to random numbers or, in some cases, rounding errors.
      No assumptions on the size of the reduced data is made (so e.g merging or intersecting the rows of the table is possible).
-     This uses MPI_Alltoall for a couple of short messages and non-blocking MPI_Isends for all others.
+     This uses NG_MPI_Alltoall for a couple of short messages and non-blocking NG_MPI_Isends for all others.
      Custom MPI-Datatypes are not used (which means unnecessary copies of data).
-     MPI_Neighbour-functions are not used either.
+     NG_MPI_Neighbour-functions are not used either.
      If lambda is deterministic or the size of the reduced data is known in advance (e.g sorting or summing up weights),
      one of the other ReduceTable-functions might be more efficient (If I have implemented them yet ...).
      !!! NUMBER AND ORDER OF ROWS HAS TO BE CONSISTENT !!!
@@ -667,19 +667,19 @@ namespace amg
     // cout << endl;
 
     // TODO: this sends a couple of empty messages from ranks that are not master of anything
-    Array<MPI_Request> reqs(ex_procs.Size()-n_smaller); reqs.SetSize(0);
+    Array<NG_MPI_Request> reqs(ex_procs.Size()-n_smaller); reqs.SetSize(0);
     for (size_t kp = n_smaller; kp < ex_procs.Size(); kp++) {
-      auto req = comm.ISend(send_buffers[kp], ex_procs[kp], MPI_TAG_AMG);
+      auto req = comm.ISend(send_buffers[kp], ex_procs[kp], NG_MPI_TAG_AMG);
       reqs.Append(req);
-      // MPI_Request_free(&req);
+      // NG_MPI_Request_free(&req);
     }
 
     // TODO: build buffer->row maps, then waitiany if this is critical
     Array<Array<T>> recv_buffers(ex_procs.Size());
     for (int kp = 0; kp < n_smaller; kp++) {
       Array<T> & rb = recv_buffers[kp];
-      comm.Recv(rb, ex_procs[kp], MPI_TAG_AMG);
-      // comm.Recv(recv_buffers[kp], ex_procs[kp], MPI_TAG_AMG);
+      comm.Recv(rb, ex_procs[kp], NG_MPI_TAG_AMG);
+      // comm.Recv(recv_buffers[kp], ex_procs[kp], NG_MPI_TAG_AMG);
     }
 
     // cout << " got data: " << endl;
@@ -733,7 +733,7 @@ namespace amg
 
 
   template<class T>
-  Array<MPI_Request>
+  Array<NG_MPI_Request>
   GatherEQCData (Array<Array<T>> &buffers, FlatTable<int> recvIndices, EQCHierarchy const &eqc_h)
   {
     auto const neqcs = eqc_h.GetNEQCS();
@@ -757,10 +757,10 @@ namespace amg
       }
     }
 
-    Array<MPI_Request> allReqs(numSendD + numRecvD);
+    Array<NG_MPI_Request> allReqs(numSendD + numRecvD);
 
-    FlatArray<MPI_Request> reqSendData = allReqs.Part(0,        numSendD);
-    FlatArray<MPI_Request> reqRecvData = allReqs.Part(numSendD, numRecvD);
+    FlatArray<NG_MPI_Request> reqSendData = allReqs.Part(0,        numSendD);
+    FlatArray<NG_MPI_Request> reqRecvData = allReqs.Part(numSendD, numRecvD);
 
     numSendD = 0;
     numRecvD = 0;
@@ -771,7 +771,7 @@ namespace amg
       {
         if (!eqc_h.IsMasterOfEQC(eqc))
         {
-          reqSendData[numSendD++] = comm.ISend(buffers[eqc], eqc_h.GetDistantProcs(eqc)[0], MPI_TAG_AMG);
+          reqSendData[numSendD++] = comm.ISend(buffers[eqc], eqc_h.GetDistantProcs(eqc)[0], NG_MPI_TAG_AMG);
         }
         else
         {
@@ -781,7 +781,7 @@ namespace amg
           {
             auto recRange = buffers[eqc].Range(recvIndices[eqc][1 + j], recvIndices[eqc][2 + j]);
 
-            reqRecvData[numRecvD++] = comm.IRecv(recRange, dPs[j], MPI_TAG_AMG);
+            reqRecvData[numRecvD++] = comm.IRecv(recRange, dPs[j], NG_MPI_TAG_AMG);
           }
         }
       }
@@ -795,7 +795,7 @@ namespace amg
    *  is appended to the EQCs row, returns Table of offsets for chunks from seperate members
    */
   template<class T>
-  std::tuple<Array<MPI_Request>, Table<int>>
+  std::tuple<Array<NG_MPI_Request>, Table<int>>
   GatherEQCData (Array<Array<T>> &buffers, const EQCHierarchy &eqc_h)
   {
     auto comm = eqc_h.GetCommunicator();
@@ -851,17 +851,17 @@ namespace amg
     }
 
     // gather sizes
-    Array<MPI_Request> sizeReqs(distProcs.Size());
+    Array<NG_MPI_Request> sizeReqs(distProcs.Size());
 
     for(auto kP : Range(distProcs))
     {
       if (distProcs[kP] < comm.Rank())
       {
-        sizeReqs[kP] = comm.ISend(msgSizes[kP], distProcs[kP], MPI_TAG_AMG);
+        sizeReqs[kP] = comm.ISend(msgSizes[kP], distProcs[kP], NG_MPI_TAG_AMG);
       }
       else
       {
-        sizeReqs[kP] = comm.IRecv(msgSizes[kP], distProcs[kP], MPI_TAG_AMG);
+        sizeReqs[kP] = comm.IRecv(msgSizes[kP], distProcs[kP], NG_MPI_TAG_AMG);
       }
     }    
 
@@ -911,12 +911,12 @@ namespace amg
     }
 
     // gather data
-    Array<MPI_Request> allReqs(numSendD + numRecvD);
+    Array<NG_MPI_Request> allReqs(numSendD + numRecvD);
 
     if ( neqcs > 1 )
     {
-      FlatArray<MPI_Request> reqSendData = allReqs.Part(0,        numSendD);
-      FlatArray<MPI_Request> reqRecvData = allReqs.Part(numSendD, numRecvD);
+      FlatArray<NG_MPI_Request> reqSendData = allReqs.Part(0,        numSendD);
+      FlatArray<NG_MPI_Request> reqRecvData = allReqs.Part(numSendD, numRecvD);
 
       numSendD = 0;
       numRecvD = 0;
@@ -925,7 +925,7 @@ namespace amg
       {
         if (!eqc_h.IsMasterOfEQC(eqc))
         {
-          reqSendData[numSendD++] = comm.ISend(buffers[eqc], eqc_h.GetDistantProcs(eqc)[0], MPI_TAG_AMG);
+          reqSendData[numSendD++] = comm.ISend(buffers[eqc], eqc_h.GetDistantProcs(eqc)[0], NG_MPI_TAG_AMG);
         }
         else
         {
@@ -935,7 +935,7 @@ namespace amg
           {
             auto recRange = buffers[eqc].Range(recvIndices[eqc][1 + j], recvIndices[eqc][2 + j]);
 
-            reqRecvData[numRecvD++] = comm.IRecv(recRange, dPs[j], MPI_TAG_AMG);
+            reqRecvData[numRecvD++] = comm.IRecv(recRange, dPs[j], NG_MPI_TAG_AMG);
           }
         }
       }

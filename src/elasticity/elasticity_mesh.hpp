@@ -121,33 +121,33 @@ namespace ngcore
   /** MPI extensions **/
 
   template<> struct MPI_typetrait<amg::ElastVData<2>> {
-    static MPI_Datatype MPIType () {
-      static MPI_Datatype MPI_T = 0;
-      if (!MPI_T)
+    static NG_MPI_Datatype MPIType () {
+      static NG_MPI_Datatype NG_MPI_T = 0;
+      if (!NG_MPI_T)
       {
         int block_len[3] = { 1, 1, 1 };
-        MPI_Aint displs[3] = { 0, sizeof(ngbla::Vec<2,double>), sizeof(ngbla::Vec<2,double>) + sizeof(amg::ElastVData<2>::TM) };
-        MPI_Datatype types[3] = { GetMPIType<ngbla::Vec<2,double>>(), GetMPIType<typename amg::ElastVData<2>::TM>(), MPI_DOUBLE };
-        MPI_Type_create_struct(3, block_len, displs, types, &MPI_T);
-        MPI_Type_commit ( &MPI_T );
+        NG_MPI_Aint displs[3] = { 0, sizeof(ngbla::Vec<2,double>), sizeof(ngbla::Vec<2,double>) + sizeof(amg::ElastVData<2>::TM) };
+        NG_MPI_Datatype types[3] = { GetMPIType<ngbla::Vec<2,double>>(), GetMPIType<typename amg::ElastVData<2>::TM>(), NG_MPI_DOUBLE };
+        NG_MPI_Type_create_struct(3, block_len, displs, types, &NG_MPI_T);
+        NG_MPI_Type_commit ( &NG_MPI_T );
       }
-      return MPI_T;
+      return NG_MPI_T;
     }
   };
 
 
   template<> struct MPI_typetrait<amg::ElastVData<3>> {
-    static MPI_Datatype MPIType () {
-      static MPI_Datatype MPI_T = 0;
-      if (!MPI_T)
+    static NG_MPI_Datatype MPIType () {
+      static NG_MPI_Datatype NG_MPI_T = 0;
+      if (!NG_MPI_T)
       {
         int block_len[3] = { 1, 1, 1 };
-        MPI_Aint displs[3] = { 0, sizeof(ngbla::Vec<3,double>), sizeof(ngbla::Vec<3,double>) +  sizeof(amg::ElastVData<3>::TM)};
-        MPI_Datatype types[3] = { GetMPIType<ngbla::Vec<3,double>>(), GetMPIType<typename amg::ElastVData<3>::TM>(), MPI_DOUBLE };
-        MPI_Type_create_struct(3, block_len, displs, types, &MPI_T);
-        MPI_Type_commit ( &MPI_T );
+        NG_MPI_Aint displs[3] = { 0, sizeof(ngbla::Vec<3,double>), sizeof(ngbla::Vec<3,double>) +  sizeof(amg::ElastVData<3>::TM)};
+        NG_MPI_Datatype types[3] = { GetMPIType<ngbla::Vec<3,double>>(), GetMPIType<typename amg::ElastVData<3>::TM>(), NG_MPI_DOUBLE };
+        NG_MPI_Type_create_struct(3, block_len, displs, types, &NG_MPI_T);
+        NG_MPI_Type_commit ( &NG_MPI_T );
       }
-      return MPI_T;
+      return NG_MPI_T;
     }
   };
 

@@ -50,7 +50,7 @@ public:
 
   INLINE bool IsMaster () const { return is_gm; }
 
-  // TODO: bad hack because NgsAMG_Comm -> MPI_Comm -> NgMPI_Comm in pardofs constructor (ownership lost!)
+  // TODO: bad hack because NgsAMG_Comm -> NG_MPI_Comm -> NgMPI_Comm in pardofs constructor (ownership lost!)
   NgsAMG_Comm _comm_keepalive_hack;
 
 protected:
@@ -66,8 +66,8 @@ protected:
   int master;
   bool is_gm;
   Table<int> dof_maps;
-  Array<MPI_Request> reqs;
-  Array<MPI_Datatype> mpi_types;
+  Array<NG_MPI_Request> reqs;
+  Array<NG_MPI_Datatype> NG_MPI_types;
   Table<TV> buffers;
 }; // class CtrMap
 

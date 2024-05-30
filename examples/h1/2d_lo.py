@@ -9,7 +9,7 @@ from ngsolve.krylovspace import CGSolver
 
 from amg_utils import *
 
-comm = mpi_world
+comm = NG_MPI_world
 
 geo, mesh = gen_square(maxh=0.05, nref=0, comm=comm)
 
@@ -22,7 +22,7 @@ ngsglobals.msg_level = 4
 # at which point we directlt invert the coarse matrix
 pc_opts = { "ngs_amg_max_coarse_size" : 5,
             "ngs_amg_oldsm" : False,
-            "ngs_amg_sm_mpi_overlap" : True,
+            "ngs_amg_sm_NG_MPI_overlap" : True,
             "ngs_amg_enable_sp" : True,
             "ngs_amg_enable_redist" : True,
             "ngs_amg_do_test" : True,

@@ -90,7 +90,7 @@ public:
 
   void Initialize (const SPWAggOptions & opts, int level);
 
-  virtual void FormAgglomerates (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg) override;
+  void FormAgglomerates (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg) override;
 
 protected:
   /** settings **/

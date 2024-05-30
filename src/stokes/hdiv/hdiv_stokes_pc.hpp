@@ -111,7 +111,7 @@ protected:
    *   - flow of facet-BF
    *   - facet surf area
    */
-  Array<INT<2, double>> CalcFacetFlows () const; // TODO: has to change for eps-eps // TODO: give this a lambda that sets the val directly?
+  Array<IVec<2, double>> CalcFacetFlows () const; // TODO: has to change for eps-eps // TODO: give this a lambda that sets the val directly?
 
   /** Embedding **/
   virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (BaseAMGFactory::AMGLevel& finest_level) override;
@@ -176,7 +176,7 @@ public:
   shared_ptr<BaseDOFMapStep>           stashedEmb;
 
   // I need the surfs from BuildEmbedding, so I am saving that stuff here FOR NOW! TODO: clean up somehow, I dont want that stuff left over!
-  // Array<INT<2, double>> savedFacetFlows; // indexed by ffnrs!
+  // Array<IVec<2, double>> savedFacetFlows; // indexed by ffnrs!
 }; // class StokesAMGPC
 
 

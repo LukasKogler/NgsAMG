@@ -5,7 +5,7 @@ namespace amg
 
 // TODO: there must be a better way to do this, right?
 //       should measure how critical this code even is
-void SplitChunk (FlatArray<INT<2, int>> chunk, Array<Array<INT<2, int>>> & split_out, LocalHeap & lh)
+void SplitChunk (FlatArray<IVec<2, int>> chunk, Array<Array<IVec<2, int>>> & split_out, LocalHeap & lh)
 {
   HeapReset hr(lh);
 
@@ -50,7 +50,7 @@ void SplitChunk (FlatArray<INT<2, int>> chunk, Array<Array<INT<2, int>>> & split
     // the split that goes over array "end" - copy to a help array
     // [spi[-1] .. S-1] \cup [0..spi[0]]
     int s1 = S - specinds.Last(), s2 = specinds[0] + (closed ? 0 : 1);
-    FlatArray<INT<2, int>> bnd_arr(s1 + s2, lh);
+    FlatArray<IVec<2, int>> bnd_arr(s1 + s2, lh);
     bnd_arr.Part(0 , s1)    = chunk.Part(specinds.Last(), s1);
     bnd_arr.Part(s1, s1+s2) = chunk.Part(closed ? 1 : 0, s2);
     // cout << " s1 s2 " << s1 << " " << s2 << endl;
@@ -68,13 +68,13 @@ void SplitChunk (FlatArray<INT<2, int>> chunk, Array<Array<INT<2, int>>> & split
   split_out.Last() = chunk;
 } // SplitChunk
 
-void SimpleLoopsFromChunks (FlatArray<FlatArray<INT<4, int>>> the_data, Array<Array<INT<2, int>>> & simple_loops, LocalHeap & lh)
+void SimpleLoopsFromChunks (FlatArray<FlatArray<IVec<4, int>>> the_data, Array<Array<IVec<2, int>>> & simple_loops, LocalHeap & lh)
 {
   // TODO: can this be simplified for only single chunks??
   // cout << "SimpleLoopsFromChunks, data (t4) =  " << the_data.Size() << endl;
   // for (auto k : Range(the_data))
     // {  cout << k << ": "; prow(the_data[k]); cout << endl; }
-  Array<INT<2, int>> sub_chunk; // need dynamically resizable memory, this is the lazy way to do it
+  Array<IVec<2, int>> sub_chunk; // need dynamically resizable memory, this is the lazy way to do it
   sub_chunk.SetSize0();
   bool foundany = false;
   int ndone = 0, totsize = std::accumulate(the_data.begin(), the_data.end(), int(0), [&](auto a, auto b) -> int { return a + b.Size(); });
@@ -95,8 +95,8 @@ void SimpleLoopsFromChunks (FlatArray<FlatArray<INT<4, int>>> the_data, Array<Ar
       for (auto k : Range(the_data)) {
         for (auto j : Range(the_data[k])) {
           if (the_data[k][j][0] > 0) { // flipped if entry
-            sub_chunk.Append(INT<2, int>({ the_data[k][j][0], the_data[k][j][1] }));
-            sub_chunk.Append(INT<2, int>({ the_data[k][j][2], the_data[k][j][3] }));
+            sub_chunk.Append(IVec<2, int>({ the_data[k][j][0], the_data[k][j][1] }));
+            sub_chunk.Append(IVec<2, int>({ the_data[k][j][2], the_data[k][j][3] }));
             tick_kj(k, j);
             break;
           }
@@ -114,13 +114,13 @@ void SimpleLoopsFromChunks (FlatArray<FlatArray<INT<4, int>>> the_data, Array<Ar
         if (the_data[k][j][0] > 0) { // flipped if entry
           if (fits(the_data[k][j], 0, sub_chunk.Last())) {
             // cout << " append " << k << " " << j << " data " << the_data[k][j] << endl;
-            sub_chunk.Append(INT<2, int>({ the_data[k][j][2], the_data[k][j][3]}));
+            sub_chunk.Append(IVec<2, int>({ the_data[k][j][2], the_data[k][j][3]}));
             tick_kj(k, j);
             // cout << " sub_chunk now "; prow(sub_chunk); cout << endl;
           }
           else if (fits(the_data[k][j], 1, sub_chunk[0])) {
             // cout << " prepend " << k << " " << j << " data " << the_data[k][j] << endl;
-            sub_chunk.Insert(0, INT<2, int>({ the_data[k][j][0], the_data[k][j][1]}));
+            sub_chunk.Insert(0, IVec<2, int>({ the_data[k][j][0], the_data[k][j][1]}));
             tick_kj(k, j);
             // cout << " sub_chunk now "; prow(sub_chunk); cout << endl;
           }

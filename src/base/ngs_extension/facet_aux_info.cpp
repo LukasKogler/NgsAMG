@@ -90,10 +90,10 @@ void FacetAuxiliaryInformation :: setup()
     // reduce relevant
     ma.AllReduceNodalData((ma.GetDimension() == 2) ? NT_FACE : NT_CELL,
                           a2r_el,
-                          MPI_LOR);
+                          NG_MPI_LOR);
     ma.AllReduceNodalData((ma.GetDimension() == 2) ? NT_VERTEX : NT_EDGE,
                           a2r_psn,
-                          MPI_LOR);
+                          NG_MPI_LOR);
 
     // mark -> [ all <-> relevant maps]
     markToSubsetMappings(a2r_el,  n_el_rel,  r2a_el );
@@ -127,7 +127,7 @@ void FacetAuxiliaryInformation :: setup()
 
   ma.AllReduceNodalData((ma.GetDimension() == 2) ? NT_EDGE : NT_FACE,
                         a2r_facet,
-                        MPI_LOR);
+                        NG_MPI_LOR);
 
   // mark -> [ all <-> relevant maps ]
   markToSubsetMappings(a2r_facet, n_facet_rel, r2a_facet);

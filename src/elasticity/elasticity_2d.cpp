@@ -389,7 +389,7 @@ CalcAuxWeightsSC (FlatArray<int>            dnums,
   // cout << " SC to first 2: " << endl << S << endl;
 
   // FlatMatrix<double> Abb(6, 6, lh);
-  // (*ht_egge)[INT<2, int>(dnums[j], dnums[i]).Sort()] += weight;
+  // (*ht_egge)[IVec<2, int>(dnums[j], dnums[i]).Sort()] += weight;
 
 } // ElmatVAMG::AddElementMatrix
 

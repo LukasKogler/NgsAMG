@@ -52,7 +52,7 @@ DecomposeSparseMatrixHybrid (shared_ptr<SparseMatrix<TM>> anA,
 
   typedef SparseMatrixTM<TM> TSPMAT_TM;
   Array<TSPMAT_TM*> send_add_diag_mats(nexp);
-  Array<MPI_Request> rsdmat (nexp);
+  Array<NG_MPI_Request> rsdmat (nexp);
   { // create & send diag-blocks for M to masters
     auto SPM_DIAG = [&] (auto dofs) LAMBDA_INLINE
     {
@@ -96,7 +96,7 @@ DecomposeSparseMatrixHybrid (shared_ptr<SparseMatrix<TM>> anA,
     for (auto kp : Range(nexp))
     {
       send_add_diag_mats[kp] = SPM_DIAG(dCCMap.GetGDOFs(kp));
-      rsdmat[kp] = comm.ISend(*send_add_diag_mats[kp], ex_procs[kp], MPI_TAG_AMG);
+      rsdmat[kp] = comm.ISend(*send_add_diag_mats[kp], ex_procs[kp], NG_MPI_TAG_AMG);
     }
   } // create & send diag-blocks for M to masters
 
@@ -107,7 +107,7 @@ DecomposeSparseMatrixHybrid (shared_ptr<SparseMatrix<TM>> anA,
 
     for (auto kp : Range(nexp))
     {
-      comm.Recv(recv_mats[kp], ex_procs[kp], MPI_TAG_AMG);
+      comm.Recv(recv_mats[kp], ex_procs[kp], NG_MPI_TAG_AMG);
       // cout << " MAT FROM kp " << kp << " proc " << ex_procs[kp] << endl;
       // print_tm_spmat(cout, *recv_mats[kp]); cout << endl;
     }
@@ -356,7 +356,7 @@ HybridBaseMatrix(shared_ptr<ParallelDofs>  parDOFs,
 
     int nzg = (_G != nullptr) ? 1 : 0;
 
-    nzg = this->GetParallelDofs()->GetCommunicator().AllReduce(nzg, MPI_SUM);
+    nzg = this->GetParallelDofs()->GetCommunicator().AllReduce(nzg, NG_MPI_SUM);
 
     g_zero = (nzg == 0);
   }
@@ -577,7 +577,7 @@ SetMG(shared_ptr<BaseMatrix> aM, shared_ptr<BaseMatrix> aG)
 
   int nzg = (_G != nullptr) ? 1 : 0;
 
-  nzg = this->GetParallelDofs()->GetCommunicator().AllReduce(nzg, MPI_SUM);
+  nzg = this->GetParallelDofs()->GetCommunicator().AllReduce(nzg, NG_MPI_SUM);
 
   g_zero = (nzg == 0);
 }

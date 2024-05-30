@@ -34,7 +34,7 @@ INLINE void BlockTM :: SetVs  (size_t annodes, TGET get_dps, TSET set_sort)
   has_nodes[NT_VERTEX] = true;
 
   if (neqcs == 0) { // rank 0
-    nnodes_glob[NT_VERTEX] = eqc_h.GetCommunicator().AllReduce(size_t(0), MPI_SUM);
+    nnodes_glob[NT_VERTEX] = eqc_h.GetCommunicator().AllReduce(size_t(0), NG_MPI_SUM);
     return;
   }
 
@@ -99,7 +99,7 @@ INLINE void BlockTM :: SetVs  (size_t annodes, TGET get_dps, TSET set_sort)
     if (eqc_h.IsMasterOfEQC(eqc))
       { nv_master += eqc_verts[eqc].Size(); }
   }
-  this->nnodes_glob[NT_VERTEX] = eqc_h.GetCommunicator().AllReduce(nv_master, MPI_SUM);
+  this->nnodes_glob[NT_VERTEX] = eqc_h.GetCommunicator().AllReduce(nv_master, NG_MPI_SUM);
 } // BlockTM::SetVs
 
 
@@ -118,7 +118,7 @@ INLINE void BlockTM :: SetNodes (size_t annodes, TGET get_node, TSET set_sort)
 
   if (neqcs == 0) {
     // empty mesh on rank 0 of a parallel mesh
-    nnodes_glob[NT] = eqc_h.GetCommunicator().AllReduce(size_t(0), MPI_SUM);
+    nnodes_glob[NT] = eqc_h.GetCommunicator().AllReduce(size_t(0), NG_MPI_SUM);
     return;
   }
 
@@ -149,7 +149,7 @@ INLINE void BlockTM :: SetNodes (size_t annodes, TGET get_node, TSET set_sort)
     // call fun_eqc on in-eqc and fun_cross on cross-eqc nodes
     auto lam_neq = [&](auto fun_eqc, auto fun_cross) LAMBDA_INLINE {
       constexpr int NODE_SIZE = sizeof(AMG_CNode<NT>::v) / sizeof(AMG_Node<NT_VERTEX>) ;
-      INT<NODE_SIZE,int> eqcs;
+      IVec<NODE_SIZE,int> eqcs;
       for (auto node_num : Range(annodes)) {
         auto vs = get_node(node_num);
         auto eq_in = GetEQCOfNode<NT_VERTEX>(vs[0]);
@@ -382,7 +382,7 @@ INLINE void BlockTM :: SetNodes (size_t annodes, TGET get_node, TSET set_sort)
   for (auto eqc : Range(neqcs))
     if (eqc_h.IsMasterOfEQC(eqc))
       { nn_master += GetENN<NT>(eqc) + GetCNN<NT>(eqc); }
-  nnodes_glob[NT] = eqc_h.GetCommunicator().AllReduce(nn_master, MPI_SUM);
+  nnodes_glob[NT] = eqc_h.GetCommunicator().AllReduce(nn_master, NG_MPI_SUM);
 }// SetNodes
 
 

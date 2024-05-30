@@ -3,23 +3,23 @@
 
 #include <comp.hpp>
 
+#include <core/ng_mpi.hpp>
+
 /**
  * Compatibility with older NGSolve (delete this code when I pull NGSolve again)
 */
-namespace ngcore
-{
-  template<> struct MPI_typetrait<float> {
-    static MPI_Datatype MPIType () { return MPI_FLOAT; }
-  };
-}
+// float not MPI-wrapped
+// namespace ngcore
+// {
+//   template<> struct MPI_typetrait<float> {
+//     static NG_MPI__Datatype MPIType () { return NG_MPI_FLOAT; }
+//   };
+// }
 
 #include <bla_extension.hpp>
-#include <ng_mpi.hpp>
 
-
-namespace ngbla
-
-namespace amg {
+namespace amg
+{
   using namespace std;
   using namespace ngcomp;
   using namespace ngbla;

@@ -37,7 +37,7 @@ void ExportAMGClass (py::module & m, string stra, string strb, TLAM lam)
     {
       auto comm = uDofs.GetCommunicator();
       int nps = (comm.Rank() > 0) ? 0 : pre.GetAMGMatrix()->GetMap()->GetUDofs(level).GetCommunicator().Size();
-      return comm.AllReduce(nps, MPI_MAX);
+      return comm.AllReduce(nps, NG_MPI_MAX);
     }
     else
     {

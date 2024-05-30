@@ -227,7 +227,7 @@ void StokesCoarseMap<TMESH> :: MapAdditionalDataB ()
    *   IV) unify loops: call AddOrientedLoops: (not 100% sure this is needed, but pretty sure overlap makes it necessary)
    *
    *  NOTE: loop_map is not a useful concept anymore because of these splits
-   *  TODO: Can PHASE I+II be combined such that we do not create the INT<4>-table for completely local loops?
+   *  TODO: Can PHASE I+II be combined such that we do not create the IVec<4>-table for completely local loops?
    *        Need to measure how time critical that would be.
    */
 
@@ -242,9 +242,9 @@ void StokesCoarseMap<TMESH> :: MapAdditionalDataB ()
    */
   auto loops = fmesh.GetLoops();
 
-  Table<INT<4, int>> init_cl_vs;
+  Table<IVec<4, int>> init_cl_vs;
   {
-    TableCreator<INT<4, int>> c_cl_vs(loops.Size());
+    TableCreator<IVec<4, int>> c_cl_vs(loops.Size());
     for (; !c_cl_vs.Done(); c_cl_vs++ ) {
       for (auto k : Range(loops)) {
         auto loop = loops[k];
@@ -294,7 +294,7 @@ void StokesCoarseMap<TMESH> :: MapAdditionalDataB ()
   // cout << endl << " init_cl_vs " << endl << init_cl_vs << endl;
 
   /** PHASE  II **/
-  Table<INT<2, int>> all_c_loops;
+  Table<IVec<2, int>> all_c_loops;
   Table<int> all_c_loopers;
   // Table<int> c_loop_buckets;
   {
@@ -311,10 +311,10 @@ void StokesCoarseMap<TMESH> :: MapAdditionalDataB ()
     auto all_dps = floop_uDofs.GetDistantProcs(); // != eqc_h.GetDistantProcs() !? not sure why/when this happens...
 
     // Exchange: [(size, -1, -1, -1), tup0, tup1, ..., tuplast]
-    Table<INT<4, int>> send_data;
-    Array<Array<INT<4, int>>> recv_data(all_dps.Size());
+    Table<IVec<4, int>> send_data;
+    Array<Array<IVec<4, int>>> recv_data(all_dps.Size());
     {
-      TableCreator<INT<4, int>> csd(all_dps.Size());
+      TableCreator<IVec<4, int>> csd(all_dps.Size());
       for (; !csd.Done(); csd++) {
         for (auto k : Range(loops)) {
           auto dlers = floop_uDofs.GetDistantProcs(k);
@@ -343,11 +343,11 @@ void StokesCoarseMap<TMESH> :: MapAdditionalDataB ()
      */
     // cout << " /** PHASE II.II **/ " << endl;
 
-    Table<INT<4, int>> chunk_ijks;
+    Table<IVec<4, int>> chunk_ijks;
     {
       auto all_dps = floop_uDofs.GetDistantProcs(); // != eqc_h.GetDistantProcs()??
       Array<int> recv_cnt(all_dps.Size());
-      TableCreator<INT<4, int>> c_ijks(loops.Size());
+      TableCreator<IVec<4, int>> c_ijks(loops.Size());
       for (; !c_ijks.Done(); c_ijks++) {
         recv_cnt = 0;
         for (auto lnr : Range(loops)) {
@@ -361,9 +361,9 @@ void StokesCoarseMap<TMESH> :: MapAdditionalDataB ()
 
             recv_cnt[kpj] += 1 + len;
 
-            c_ijks.Add(lnr, INT<4, int>({ int(kpj), pj, os, len }));
+            c_ijks.Add(lnr, IVec<4, int>({ int(kpj), pj, os, len }));
           }
-          c_ijks.Add(lnr, INT<4, int>({ -1, comm.Rank(), 0, int(loops[lnr].Size()) }));
+          c_ijks.Add(lnr, IVec<4, int>({ -1, comm.Rank(), 0, int(loops[lnr].Size()) }));
         }
       }
       chunk_ijks = c_ijks.MoveTable();
@@ -388,12 +388,12 @@ void StokesCoarseMap<TMESH> :: MapAdditionalDataB ()
      */
     // cout << " /** PHASE II.III **/ " << endl;
 
-    // auto rot_loop = [&](FlatArray<INT<2, int>> slk) { rotateVLoop(slk, rot_buffer); };
+    // auto rot_loop = [&](FlatArray<IVec<2, int>> slk) { rotateVLoop(slk, rot_buffer); };
 
 
-    Array<INT<2, int>> rot_buffer;
-    Array<Array<INT<2, int>>> simple_loops;
-    Array<FlatArray<INT<4, int>>> the_data;
+    Array<IVec<2, int>> rot_buffer;
+    Array<Array<IVec<2, int>>> simple_loops;
+    Array<FlatArray<IVec<4, int>>> the_data;
 
     /**
      * iterate through coarse loops by merging the local with
@@ -427,7 +427,7 @@ void StokesCoarseMap<TMESH> :: MapAdditionalDataB ()
         //   cout << endl;
         // }
         for (auto k : Range(simple_loops)) {
-          FlatArray<INT<2, int>> slk = simple_loops[k];
+          FlatArray<IVec<2, int>> slk = simple_loops[k];
           if (slk.Size() < 2)
             { continue; }
           bool closed = slk[0] == slk.Last();
@@ -441,7 +441,7 @@ void StokesCoarseMap<TMESH> :: MapAdditionalDataB ()
           }
           alam(flnr, simple_loops[k]);
 
-          // this did the conversion from INT<2> -> int
+          // this did the conversion from IVec<2> -> int
           // scl.SetSize0(); // dont know size a priori (off-proc edges)
           // for (auto k : Range(slk.Size()-1))
           //   { add_scl(slk[k], slk[k+1]); }
@@ -455,7 +455,7 @@ void StokesCoarseMap<TMESH> :: MapAdditionalDataB ()
 
     // count loops, no need for bucketable loops
     int ccl = 0;
-    it_loops(false, [&](auto flnr, FlatArray<INT<2, int>> cl) {
+    it_loops(false, [&](auto flnr, FlatArray<IVec<2, int>> cl) {
       // TODO: I don't think need the add_scl calls here!
       //       would it be better to have it_loops call lambda on the simple_loops
       //       and convert to the scl-loops only in rounds 2+3??
@@ -463,7 +463,7 @@ void StokesCoarseMap<TMESH> :: MapAdditionalDataB ()
       ccl++;
     });
 
-    TableCreator<INT<2, int>> c_c_loops(ccl);
+    TableCreator<IVec<2, int>> c_c_loops(ccl);
     TableCreator<int>         c_c_loopers(ccl);
     // TableCreator<int>         c_c_loop_buckets(cmesh.template GetNN<NT_EDGE>());
 
@@ -471,7 +471,7 @@ void StokesCoarseMap<TMESH> :: MapAdditionalDataB ()
     bool rot_loops = false;
     for (; !c_c_loops.Done(); c_c_loops++, c_c_loopers++) {//, c_c_loop_buckets++) {
       ccl = 0;
-      it_loops(true, [&](auto flnr, FlatArray<INT<2, int>> cl) { // TODO: we are also rotating on IT 1, is this needed??
+      it_loops(true, [&](auto flnr, FlatArray<IVec<2, int>> cl) { // TODO: we are also rotating on IT 1, is this needed??
           // if (cl.Size()) // when local chunk is empty
           //   { c_c_loop_buckets.Add(abs(cl[0])-1, ccl); } // bucket == first enr
           // does not compile for some reason:
@@ -496,7 +496,7 @@ void StokesCoarseMap<TMESH> :: MapAdditionalDataB ()
   Table<int> init_cloops, init_loopers;
   {
     /**
-     * Put the INT<2>-loops into buckets, buckets are determined by the first vertex of each loop,
+     * Put the IVec<2>-loops into buckets, buckets are determined by the first vertex of each loop,
      * which is given as (eqid, lnr). Since we can also have eqids of eqcs we don't know about,
      * we don't know a-priory how many buckets we can have. So, we go through all loops, collect the
      * appearing eqc-ids and the minimum and maximum appearing local vertex numbers.
@@ -941,17 +941,17 @@ void StokesContractMap<TMESH> :: MapAdditionalData ()
 
   // cout << endl << " send_msg to " << group[0] << endl; prow(send_msg); cout << endl << endl;
 
-  auto req_send = f_comm.ISend(send_msg, group[0], MPI_TAG_AMG);
+  auto req_send = f_comm.ISend(send_msg, group[0], NG_MPI_TAG_AMG);
   if (!this->IsMaster()) // non group masters return
   {
-    MPI_Wait(&req_send, MPI_STATUS_IGNORE);
+    NG_MPI_Wait(&req_send, NG_MPI_STATUS_IGNORE);
     return;
   }
 
   Array<Array<int>> recv_msgs(group.Size());
   for (auto k : Range(recv_msgs))
-    { f_comm.Recv(recv_msgs[k], group[k], MPI_TAG_AMG); }
-  MPI_Wait(&req_send, MPI_STATUS_IGNORE);  // wait for self-msg
+    { f_comm.Recv(recv_msgs[k], group[k], NG_MPI_TAG_AMG); }
+  NG_MPI_Wait(&req_send, NG_MPI_STATUS_IGNORE);  // wait for self-msg
 
   // cout << " recv_msgs " << endl;
   // for (auto k : Range(recv_msgs)) {

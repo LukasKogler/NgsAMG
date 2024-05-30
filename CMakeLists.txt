@@ -23,7 +23,7 @@ if (NGSOLVE_USE_MUMPS)
   if (MUMPS_INCLUDE_DIR)
     message(STATUS "NGSolve was built with MUMPS enabled, using MUMPS_INCLUDE_DIR=${MUMPS_INCLUDE_DIR}")
   else(MUMPS_INCLUDE_DIR)
-    message(FATAL_ERROR "NGSolve was built with MUMPS enabled but MUMPS_INCLUDE_DIR provided!")
+    message(FATAL_ERROR "NGSolve was built with MUMPS enabled but MUMPS_INCLUDE_DIR was not provided!")
   endif (MUMPS_INCLUDE_DIR)
 endif(NGSOLVE_USE_MUMPS)
 
@@ -51,9 +51,25 @@ if (NGSOLVE_USE_NUMA)
   message(WARNING "NGSolve was configured with USE_NUMA=ON. This might not yield optimal performance for MPI-computations.")
 endif(NGSOLVE_USE_NUMA)
 
-if (NOT MPI_FOUND)
+if (NOT NG_MPI_FOUND)
   find_package(MPI REQUIRED)
-endif(NOT MPI_FOUND)
+endif(NOT NG_MPI_FOUND)
+
+
+# Try to find METIS header/library that was built into Netgen, otherwise, if applicable, use the provided METIS
+if (NETGEN_METIS_INCLUDE_DIR AND NETGEN_METIS_LIBRARY)
+  message(STATUS "Using METIS from Netgen-build")
+  set(METIS_INCLUDE_DIR ${NETGEN_METIS_INCLUDE_DIR})
+  set(METIS_LIBRARY     ${NETGEN_METIS_LIBRARY})
+else()
+  if (NOT METIS_INCLUDE_DIR OR NOT METIS_LIBRARY)
+    message(FATAL_ERROR "Could not find METIS from Netgen-build and no Metis installation was provided.")
+  endif()
+endif()
+
+message(STATUS "Using METIS-header from ${METIS_INCLUDE_DIR}")
+message(STATUS "USing METIS-library ${METHIS_LIBRARY}")
+
 
 # check if CMAKE_INSTALL_PREFIX is set by user, if not install in NGSolve lib/python-lib directories
 if(NOT FORCED_INSTALL_DIR)

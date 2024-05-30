@@ -147,7 +147,7 @@ public:
     int master = my_group[0];
     if(!is_gm) {
       // cout << "send " << data.Size() << " times " << typeid(T).name() << " to " << master << endl;
-      comm.Send(data, master, MPI_TAG_AMG);
+      comm.Send(data, master, NG_MPI_TAG_AMG);
       return;
     }
 
@@ -172,7 +172,7 @@ public:
         auto p = my_group[pn];
         auto map = maps[pn];
         // cout << "get " << buf.Size() << " times " << typeid(T).name() << " from " << p << endl;
-        comm.Recv(buf, p, MPI_TAG_AMG);
+        comm.Recv(buf, p, NG_MPI_TAG_AMG);
         // cout << "got " << buf.Size() << " times " << typeid(T).name() << " from " << p << endl;
         // cout << "map size is: " << map.Size() << endl;
         // cout << "map : "; prow2(map); cout << endl;

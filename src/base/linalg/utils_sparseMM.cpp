@@ -215,7 +215,7 @@ MatMultABImpl (SparseMatTM<A, B> const &mata,
   t2.Stop();
   t2_time = t2.GetTime() - t2_time;
 
-  // auto gcomm = NgMPI_Comm(MPI_COMM_WORLD);
+  // auto gcomm = NgMPI_Comm(NG_MPI_COMM_WORLD);
   // if ( (gcomm.Size() == 1) || (gcomm.Rank() == 1) ) {
   //   cout << "(" << mata.Height() << ":" << EntryHeight<TMA>() << ")x("
   //         << mata.Width() << ":" << EntryWidth<TMA>() << ") X "
@@ -302,7 +302,7 @@ MatMultABUpdateValsImpl (SparseMatTM<A, B> const &mata,
   t.Stop();
   t_time = t.GetTime() - t_time;
 
-  // auto gcomm = NgMPI_Comm(MPI_COMM_WORLD);
+  // auto gcomm = NgMPI_Comm(NG_MPI_COMM_WORLD);
   // if ( (gcomm.Size() == 1) || (gcomm.Rank() == 1) ) {
   //   cout << "(" << mata.Height() << ":" << EntryHeight<TMA>() << ")x("
   //         << mata.Width() << ":" << EntryWidth<TMA>() << ") X "

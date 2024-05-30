@@ -109,7 +109,7 @@ public:
   static INLINE TSCAL
   GetApproxVWeight (TVD const &vd)
   {
-    // temporary ugly workaround due to switching the H1 data to INT<2,double>
+    // temporary ugly workaround due to switching the H1 data to IVec<2,double>
     TSCAL wt;
 
     if constexpr( is_same<TVD, double>::value )
@@ -154,7 +154,7 @@ public:
   static INLINE void
   SetVMatrix (TVD & vd, TMU const &m)
   {
-    // for dim>1, TM is Mat<DIM,DIM>, but TVD is just INT<2,double> (second entry unused ATM)
+    // for dim>1, TM is Mat<DIM,DIM>, but TVD is just IVec<2,double> (second entry unused ATM)
     if constexpr(std::is_same<TMU, float>::value ||
                  std::is_same<TMU, double>::value)
     {

@@ -23,8 +23,8 @@ CtrMap<TV> :: CtrMap (UniversalDofs originalDofs,
 template<class TV>
 CtrMap<TV> :: ~CtrMap ()
 {
-  for (auto k : Range(mpi_types))
-    { MPI_Type_free(&mpi_types[k]); }
+  for (auto k : Range(NG_MPI_types))
+    { NG_MPI_Type_free(&NG_MPI_types[k]); }
 }
 
 
@@ -82,7 +82,7 @@ anyways
   const auto & comm(GetParallelDofs()->GetCommunicator());
   if (!is_gm) {
     if (fvf.Size() > 0)
-{ MPI_Send(x_fine->Memory(), fvf.Size(), GetMPIType<TV>(), group[0], MPI_TAG_AMG, comm); }
+{ NG_MPI_Send(x_fine->Memory(), fvf.Size(), GetMPIType<TV>(), group[0], NG_MPI_TAG_AMG, comm); }
     return;
   }
   x_coarse->Distribute();
@@ -90,14 +90,14 @@ anyways
   auto loc_map = dof_maps[0];
   int nreq_tot = 0;
   for (size_t kp = 1; kp < group.Size(); kp++)
-    if (dof_maps[kp].Size()>0) { nreq_tot++; reqs[kp] = comm.IRecv(buffers[kp], group[kp], MPI_TAG_AMG); }
-    else reqs[kp] = MPI_REQUEST_NULL;
+    if (dof_maps[kp].Size()>0) { nreq_tot++; reqs[kp] = comm.IRecv(buffers[kp], group[kp], NG_MPI_TAG_AMG); }
+    else reqs[kp] = NG_MPI_REQUEST_NULL;
   for (auto j : Range(loc_map.Size()))
     fvc(loc_map[j]) += fac * fvf(j);
-  MPI_Request* rrptr = &reqs[0]; int nrr = group.Size();
-  int kp; reqs[0] = MPI_REQUEST_NULL;
+  NG_MPI_Request* rrptr = &reqs[0]; int nrr = group.Size();
+  int kp; reqs[0] = NG_MPI_REQUEST_NULL;
   for (int nreq = 0; nreq < nreq_tot; nreq++) {
-    MPI_Waitany(nrr, rrptr, &kp, MPI_STATUS_IGNORE);
+    NG_MPI_Waitany(nrr, rrptr, &kp, NG_MPI_STATUS_IGNORE);
     auto map = dof_maps[kp]; auto buf = buffers[kp];
     for (auto j : Range(map.Size()))
 fvc(map[j]) += fac * buf[j];
@@ -122,7 +122,7 @@ void CtrMap<TV> :: TransferC2F (BaseVector * x_fine, const BaseVector * x_coarse
   if (!is_gm)
     {
 if (fvf.Size() > 0)
-  { MPI_Recv(x_fine->Memory(), fvf.Size(), GetMPIType<TV>(), group[0], MPI_TAG_AMG, comm, MPI_STATUS_IGNORE); }
+  { NG_MPI_Recv(x_fine->Memory(), fvf.Size(), GetMPIType<TV>(), group[0], NG_MPI_TAG_AMG, comm, NG_MPI_STATUS_IGNORE); }
 // cout << "short x: " << endl;
 // prow(x_fine->FVDouble());
 // cout << endl;
@@ -137,9 +137,9 @@ return;
   auto fvc = x_coarse->FV<TV>();
   for (size_t kp = 1; kp < group.Size(); kp++) {
     if (dof_maps[kp].Size() > 0)
-{ MPI_Isend( x_coarse->Memory(), 1, mpi_types[kp], group[kp], MPI_TAG_AMG, comm, &reqs[kp]); }
+{ NG_MPI_Isend( x_coarse->Memory(), 1, NG_MPI_types[kp], group[kp], NG_MPI_TAG_AMG, comm, &reqs[kp]); }
     else
-{ reqs[kp] = MPI_REQUEST_NULL; }
+{ reqs[kp] = NG_MPI_REQUEST_NULL; }
   }
   auto loc_map = dof_maps[0];
   for (auto j : Range(loc_map.Size()))
@@ -148,7 +148,7 @@ return;
   // for (auto j : Range(loc_map.Size()))
   //   { cout << "[" << j << " " << loc_map[j] << " " << fvc(loc_map[j]) << "] "; }
   // cout << endl;
-  reqs[0] = MPI_REQUEST_NULL; MyMPI_WaitAll(reqs);
+  reqs[0] = NG_MPI_REQUEST_NULL; MyMPI_WaitAll(reqs);
 
   // cout << "short x: " << endl;
   // prow(x_fine->FVDouble());
@@ -175,7 +175,7 @@ void CtrMap<TV> :: AddC2F (double fac, BaseVector * x_fine, const BaseVector * x
   if (!is_gm) {
     if (fvf.Size() > 0) {
       auto b0 = buffers[0];
-      comm.Recv(b0, group[0], MPI_TAG_AMG);
+      comm.Recv(b0, group[0], NG_MPI_TAG_AMG);
       // cout << "got buf: "; prow(b0); cout << endl;
       for (auto k : Range(fvf.Size()))
         { fvf(k) += fac * b0[k]; }
@@ -189,9 +189,9 @@ void CtrMap<TV> :: AddC2F (double fac, BaseVector * x_fine, const BaseVector * x
   auto fvc = x_coarse->FV<TV>();
   for (size_t kp = 1; kp < group.Size(); kp++) {
     if (dof_maps[kp].Size() > 0)
-      { MPI_Isend( x_coarse->Memory(), 1, mpi_types[kp], group[kp], MPI_TAG_AMG, comm, &reqs[kp]); }
+      { NG_MPI_Isend( x_coarse->Memory(), 1, NG_MPI_types[kp], group[kp], NG_MPI_TAG_AMG, comm, &reqs[kp]); }
     else
-      { reqs[kp] = MPI_REQUEST_NULL; }
+      { reqs[kp] = NG_MPI_REQUEST_NULL; }
   }
 
   auto loc_map = dof_maps[0];
@@ -204,7 +204,7 @@ void CtrMap<TV> :: AddC2F (double fac, BaseVector * x_fine, const BaseVector * x
     // { cout << "[" << j << " " << loc_map[j] << " " << fvc(loc_map[j]) << "] "; }
   // cout << endl;
 
-  reqs[0] = MPI_REQUEST_NULL;
+  reqs[0] = NG_MPI_REQUEST_NULL;
   
   MyMPI_WaitAll(reqs);
   // cout << "x fine " << x_fine->Size() << endl;
@@ -233,10 +233,10 @@ bool CtrMap<TV> :: DoSwap (bool in)
   if (is_gm) {
     for (auto p : group)
       if (p != comm.Rank())
-        { comm.Send(in, p, MPI_TAG_AMG); }
+        { comm.Send(in, p, NG_MPI_TAG_AMG); }
   }
   else
-    { comm.Recv(doit, master, MPI_TAG_AMG); }
+    { comm.Recv(doit, master, NG_MPI_TAG_AMG); }
   return doit != 0;
 }
 
@@ -306,7 +306,7 @@ SwapWithProl (shared_ptr<ProlMap<TM>> pm_in)
 
     shared_ptr<SparseMatrixTM<TM>> split_A_TM;
 
-    comm.Recv(split_A_TM, master, MPI_TAG_AMG);
+    comm.Recv(split_A_TM, master, NG_MPI_TAG_AMG);
 
     split_A = make_shared<SparseMatrix<TM>>(std::move(*split_A_TM));
 
@@ -314,7 +314,7 @@ SwapWithProl (shared_ptr<ProlMap<TM>> pm_in)
     // print_tm_spmat(cout, *split_A); cout << endl;
 
     // do sth like that if whe actually need non-dummy ones
-    // Table<int> pd_tab; comm.Recv(pd_tab, master, MPI_TAG_AMG);
+    // Table<int> pd_tab; comm.Recv(pd_tab, master, NG_MPI_TAG_AMG);
     // mid_pardofs = make_shared<ParallelDofs> (std::move(pd_tab), comm, pardofs->GetEntrySize(), false);
   }
   else { // is_gm
@@ -409,7 +409,7 @@ return Pchunk;
   group.Size() small tables which we distribute.
     **/
     {
-// Array<MPI_Request> sreq(group.Size());
+// Array<NG_MPI_Request> sreq(group.Size());
 
 // auot cexps = mapped_pardofs->GetDistantProcs();
 // Array<int> perow(cexps.Size());
@@ -450,7 +450,7 @@ return Pchunk;
         split_A = make_shared<SparseMatrix<TM>>(std::move(*Apart));
       }
       else
-        { comm.Send(*Apart, group[kp], MPI_TAG_AMG); }
+        { comm.Send(*Apart, group[kp], NG_MPI_TAG_AMG); }
       // cout << "DONE sending Apart for mem " << kp << " rk " << group[kp] << ": " << endl;
     }
 
@@ -497,14 +497,14 @@ void CtrMap<TV> :: SetUpMPIStuff ()
     for (auto k : Range(group.Size()))
       { max_s = max2(max_s, dof_maps[k].Size()); }
 
-    mpi_types.SetSize(group.Size());
+    NG_MPI_types.SetSize(group.Size());
     ones.SetSize(max_s); ones = 1;
-    reqs.SetSize(group.Size()); reqs = MPI_REQUEST_NULL;
+    reqs.SetSize(group.Size()); reqs = NG_MPI_REQUEST_NULL;
 
     for (auto k : Range(group.Size())) {
       auto map = dof_maps[k]; auto ms = map.Size();
-      MPI_Type_indexed(ms, (ms == 0) ? NULL : &ones[0], (ms == 0) ? NULL : &map[0], GetMPIType<TV>(), &mpi_types[k]);
-      MPI_Type_commit(&mpi_types[k]);
+      NG_MPI_Type_indexed(ms, (ms == 0) ? NULL : &ones[0], (ms == 0) ? NULL : &map[0], GetMPIType<TV>(), &NG_MPI_types[k]);
+      NG_MPI_Type_commit(&NG_MPI_types[k]);
     }
     
     perow[0] = 0;
@@ -546,7 +546,7 @@ CtrMap<TV> :: DoAssembleMatrix (shared_ptr<typename CtrMap<TV>::TSPM> mat) const
   if (!is_gm) {
     // cout << " I DROP, send mat to " << group[0] << endl;
     // cout << " MAT " << *mat << endl;
-    comm.Send(*mat, group[0], MPI_TAG_AMG);
+    comm.Send(*mat, group[0], NG_MPI_TAG_AMG);
     // cout << " sent mat to " << group[0] << endl;
     return nullptr;
   }
@@ -563,7 +563,7 @@ CtrMap<TV> :: DoAssembleMatrix (shared_ptr<typename CtrMap<TV>::TSPM> mat) const
   dist_mats[0] = mat;
   for(auto k : Range((size_t)1, group.Size())) {
     // cout << " get mat from " << k << " of " << group.Size() << endl;
-    comm.Recv(dist_mats[k], group[k], MPI_TAG_AMG);
+    comm.Recv(dist_mats[k], group[k], NG_MPI_TAG_AMG);
     // cout << " got mat from " << k << " of " << group.Size() << ", rank " << group[k] << endl;
     // cout << *dist_mats[k] << endl;
   }
@@ -573,12 +573,12 @@ CtrMap<TV> :: DoAssembleMatrix (shared_ptr<typename CtrMap<TV>::TSPM> mat) const
   size_t cndof = mapped_pardofs->GetNDofLocal();
 
   // reverse map: maps coarse dof to (k,j) such that disp_mats[k].Row(j) maps to this row!
-  TableCreator<INT<2, size_t>> crm(cndof);
+  TableCreator<IVec<2, size_t>> crm(cndof);
   for (; !crm.Done(); crm++)
     for(auto k : Range(dof_maps.Size())) {
 auto map = dof_maps[k];
 for(auto j : Range(map.Size()))
-  crm.Add(map[j],INT<2, size_t>({k,j}));
+  crm.Add(map[j],IVec<2, size_t>({k,j}));
     }
   auto reverse_map = crm.MoveTable();
   

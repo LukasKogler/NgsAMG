@@ -185,8 +185,8 @@ void ExportSmoothers (py::module & m)
   py::arg("mat") = nullptr,
   py::arg("freedofs") = nullptr,
   py::arg("pinv") = false,
-  py::arg("mpi_overlap") = false,
-  py::arg("mpi_thread") = false,
+  py::arg("NG_MPI_overlap") = false,
+  py::arg("NG_MPI_thread") = false,
   py::arg("symm") = false,
   py::arg("symm_loc") = false,
   py::arg("nsteps") = 1,
@@ -194,8 +194,8 @@ void ExportSmoothers (py::module & m)
   ); // CreateHybridGSS
 
 
-  m.def("CreateHybridBlockGSS", [](shared_ptr<BaseMatrix> A, py::object blocks, bool mpi_overlap,
-            bool mpi_thread, bool shm, bool sl2, bool bs2, bool pinv, bool blocks_no,
+  m.def("CreateHybridBlockGSS", [](shared_ptr<BaseMatrix> A, py::object blocks, bool NG_MPI_overlap,
+            bool NG_MPI_thread, bool shm, bool sl2, bool bs2, bool pinv, bool blocks_no,
             bool symm, bool symm_loc, int nsteps, int nsteps_loc)
   {
     auto parA = dynamic_pointer_cast<ParallelMatrix>(A);
@@ -250,7 +250,7 @@ void ExportSmoothers (py::module & m)
       else {
         auto pds = parA->GetParallelDofs();
         // auto eqc_h = make_shared<EQCHierarchy> (pds);
-        smoother = make_shared<HybridBS<TM>>(parA, std::move(*blocktable), pinv, mpi_overlap, mpi_thread, shm, sl2,
+        smoother = make_shared<HybridBS<TM>>(parA, std::move(*blocktable), pinv, NG_MPI_overlap, NG_MPI_thread, shm, sl2,
                 bs2, blocks_no, symm_loc, nsteps_loc);
       }
     }
@@ -261,8 +261,8 @@ void ExportSmoothers (py::module & m)
   },
   py::arg("mat"),
   py::arg("blocks"),
-  py::arg("mpi_overlap") = false,
-  py::arg("mpi_thread") = false,
+  py::arg("NG_MPI_overlap") = false,
+  py::arg("NG_MPI_thread") = false,
   py::arg("shm") = true,
   py::arg("sl2") = true,
   py::arg("bs2") = false,
@@ -275,7 +275,7 @@ void ExportSmoothers (py::module & m)
   ); // CreateHybridBlockGSS
 
 
-  m.def("CreateHybridDISmoother", [](shared_ptr<BaseMatrix> A, shared_ptr<BitArray> freedofs, bool mpi_overlap, bool mpi_thread,
+  m.def("CreateHybridDISmoother", [](shared_ptr<BaseMatrix> A, shared_ptr<BitArray> freedofs, bool NG_MPI_overlap, bool NG_MPI_thread,
               bool symm, int nsteps) {
     auto parA = dynamic_pointer_cast<ParallelMatrix>(A);
     auto locA = (parA == nullptr) ? A : parA->GetMatrix();
@@ -299,7 +299,7 @@ void ExportSmoothers (py::module & m)
       }
     else {
       auto pds = parA->GetParallelDofs();
-      smoother =  make_shared<HybridDISmoother<TM>>(A, freedofs, mpi_overlap, mpi_thread);
+      smoother =  make_shared<HybridDISmoother<TM>>(A, freedofs, NG_MPI_overlap, NG_MPI_thread);
     }
   });
     }
@@ -313,8 +313,8 @@ void ExportSmoothers (py::module & m)
   },
   py::arg("mat"),
   py::arg("freedofs") = nullptr,
-  py::arg("mpi_overlap") = false,
-  py::arg("mpi_thread") = false,
+  py::arg("NG_MPI_overlap") = false,
+  py::arg("NG_MPI_thread") = false,
   py::arg("symm") = false,
   py::arg("nsteps") = 1
   ); // CreateHybridDISmoother
@@ -348,8 +348,8 @@ void ExportSmoothers (py::module & m)
 
   m.def("CreateDynBlockSmoother", [](shared_ptr<BaseMatrix> A,
                                      shared_ptr<BitArray>  freedofs,
-                                     bool const &mpi_overlap,
-                                     bool const &mpi_thread) -> shared_ptr<BaseSmoother>
+                                     bool const &NG_MPI_overlap,
+                                     bool const &NG_MPI_thread) -> shared_ptr<BaseSmoother>
   {
     shared_ptr<BaseSmoother> sm = nullptr;
 
@@ -368,15 +368,15 @@ void ExportSmoothers (py::module & m)
     else if (auto parA = dynamic_pointer_cast<ParallelMatrix>(A))
     {
       auto hybSPA = make_shared<DynamicBlockHybridMatrix<double>>(A);
-      sm = make_shared<HybridDynBlockSmoother<double>>(parA, freedofs, 1, mpi_thread, mpi_overlap);
+      sm = make_shared<HybridDynBlockSmoother<double>>(parA, freedofs, 1, NG_MPI_thread, NG_MPI_overlap);
     }
 
     return sm;
   },
   py::arg("mat"),
   py::arg("freedofs") = nullptr,
-  py::arg("mpi_overlap") = true,
-  py::arg("mpi_thread") = true);
+  py::arg("NG_MPI_overlap") = true,
+  py::arg("NG_MPI_thread") = true);
 
 } // ExportSmoothers
 

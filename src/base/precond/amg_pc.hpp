@@ -66,8 +66,8 @@ namespace amg
       SpecOpt<int> sm_steps_loc = 1;       // # of smoothing steps
       SpecOpt<bool> sm_symm = false;       // smooth symmetrically
       SpecOpt<bool> sm_symm_loc = false;   // smooth symmetrically
-      bool sm_mpi_overlap = true;          // overlap communication/computation (only VER3)
-      bool sm_mpi_thread = false;          // do MPI-comm in seperate thread (only VER3)
+      bool sm_NG_MPI_overlap = true;          // overlap communication/computation (only VER3)
+      bool sm_NG_MPI_thread = false;          // do MPI-comm in seperate thread (only VER3)
       bool sm_shm = true;                  // shared memory parallelization for (block-)smoothers ?
       bool sm_sl2 = false;                 // use SharedLoop2 instead of ParallelFor for (block-)smoothers ?
 

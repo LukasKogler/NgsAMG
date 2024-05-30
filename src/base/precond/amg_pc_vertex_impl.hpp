@@ -212,7 +212,7 @@ void VertexAMGPC<FACTORY> :: SetUpMaps ()
         int block_s = O.block_s[block_type];
         int bos = 0;
         for (auto range_num : Range(O.ss_ranges)) {
-          INT<2,size_t> range = O.ss_ranges[range_num];
+          IVec<2,size_t> range = O.ss_ranges[range_num];
           while ( (range[1] > range[0]) && (block_type < num_block_types) ) {
             int blocks_in_range = (range[1] - range[0]) / block_s; // how many blocks can I fit in here ?
             int need_blocks = n_verts - cnt_block; // how many blocks of current size I still need.
@@ -404,7 +404,7 @@ SelectSmoother(BaseAMGFactory::AMGLevel const &aMGLevel) const
                                                                : aMGLevel.cap->uDofs.GetParallelDofs();
 
       if (pardofs != nullptr)
-        { pardofs->GetCommunicator().AllReduce(no_cmp, MPI_SUM); }
+        { pardofs->GetCommunicator().AllReduce(no_cmp, NG_MPI_SUM); }
 
       return (no_cmp == 0) ? Options::SM_TYPE::BGS
                            : Options::SM_TYPE::GS;
@@ -561,7 +561,7 @@ shared_ptr<BaseDOFMapStep> VertexAMGPC<FACTORY> :: BuildEmbedding_impl (BaseAMGF
   int have_embed = (E == nullptr) ? 0 : 1;
 
   if (fDofs.GetCommunicator().Size() > 1)
-    { have_embed = fDofs.GetCommunicator().AllReduce(have_embed, MPI_SUM); }
+    { have_embed = fDofs.GetCommunicator().AllReduce(have_embed, NG_MPI_SUM); }
 
   if (have_embed) {
 
@@ -639,7 +639,7 @@ BuildES ()
   {
     case(Options::DOF_SUBSET::RANGE_SUBSET):
     {
-      INT<2, size_t> notin_ss = {0, nd_loc };
+      IVec<2, size_t> notin_ss = {0, nd_loc };
       for (auto pair : O.ss_ranges)
       {
         if (notin_ss[0] == pair[0])
@@ -651,7 +651,7 @@ BuildES ()
       int is_triv = ( (notin_ss[1] - notin_ss[0]) == 0 ) ? 1 : 0;
 
       if (fpds != nullptr)
-        { fpds->GetCommunicator().AllReduce(is_triv, MPI_SUM); }
+        { fpds->GetCommunicator().AllReduce(is_triv, NG_MPI_SUM); }
 
       if (is_triv == 0)
       {
@@ -684,7 +684,7 @@ BuildES ()
       int is_triv = (SS.NumSet() == SS.Size()) ? 1 : 0;
 
       if (fpds != nullptr)
-        { fpds->GetCommunicator().AllReduce(is_triv, MPI_SUM); }
+        { fpds->GetCommunicator().AllReduce(is_triv, NG_MPI_SUM); }
 
       if (is_triv == 0)
       {
@@ -1091,9 +1091,9 @@ Table<int> VertexAMGPC<FACTORY> :: GetGSBlocks (const BaseAMGFactory::AMGLevel &
 
 
 template<class FACTORY>
-INT<3, double> VertexAMGPC<FACTORY> :: GetElmatEVs() const
+IVec<3, double> VertexAMGPC<FACTORY> :: GetElmatEVs() const
 {
-  return INT<3,double>({ 0.0, std::numeric_limits<double>::max(), std::numeric_limits<double>::infinity() });
+  return IVec<3,double>({ 0.0, std::numeric_limits<double>::max(), std::numeric_limits<double>::infinity() });
 } // VertexAMGPC::GetElmatEVs
 
 
@@ -1170,7 +1170,7 @@ void ElmatVAMG<FACTORY, HTVD, HTED> :: InitLevel (shared_ptr<BitArray> freedofs)
     size_t NV = lofes->GetNDof();
     ht_vertex = make_unique<HashTable<int, HTVD>>(NV);
     // maybe instead: lofes->GetMeshAccess()->GetNEdges();
-    ht_edge = make_unique<HashTable<INT<2,int>, HTED>>(12 * NV);
+    ht_edge = make_unique<HashTable<IVec<2,int>, HTED>>(12 * NV);
   }
 } // ElmatVAMG::InitLevel
 
@@ -1193,7 +1193,7 @@ void ElmatVAMG<FACTORY, HTVD, HTED> :: FinalizeLevel (shared_ptr<BaseMatrix> mat
 
 
 template<class FACTORY, class HTVD, class HTED>
-INT<3, double> ElmatVAMG<FACTORY, HTVD, HTED> :: GetElmatEVs() const
+IVec<3, double> ElmatVAMG<FACTORY, HTVD, HTED> :: GetElmatEVs() const
 {
   return elmat_evs;
 } // ElmatVAMG :: GetElmatEVs

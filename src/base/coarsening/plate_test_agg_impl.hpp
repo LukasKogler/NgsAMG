@@ -10,13 +10,13 @@ namespace amg
 {
 
 template<class T>
-INLINE INT<2, double> getVDPos(int const &v, T const &vd)
+INLINE IVec<2, double> getVDPos(int const &v, T const &vd)
 {
-  return INT<2, double>({vd.pos[0], vd.pos[1]});
+  return IVec<2, double>({vd.pos[0], vd.pos[1]});
 }
 
-template<> INLINE INT<2, double> getVDPos<double>(int const &v, double const &vd)                 { return INT<2, double>({ double(v), double(v) }); }
-template<> INLINE INT<2, double> getVDPos<INT<2, double>>(int const &v, INT<2, double> const &vd) { return INT<2, double>({ double(v), double(v) }); }
+template<> INLINE IVec<2, double> getVDPos<double>(int const &v, double const &vd)                 { return IVec<2, double>({ double(v), double(v) }); }
+template<> INLINE IVec<2, double> getVDPos<IVec<2, double>>(int const &v, IVec<2, double> const &vd) { return IVec<2, double>({ double(v), double(v) }); }
 
 template<class TMESH>
 void PlateTestAgglomerator<TMESH> ::

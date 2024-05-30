@@ -263,7 +263,7 @@ for (auto j : Range(eqc_verts)) {
   for (auto eqc : Range(neqcs))
     if (eqc_h.IsMasterOfEQC(eqc))
 { ncv_master += cmesh.GetENN<NT_VERTEX>(eqc); }
-  cmesh.nnodes_glob[NT_VERTEX] = comm.AllReduce(ncv_master, MPI_SUM);
+  cmesh.nnodes_glob[NT_VERTEX] = comm.AllReduce(ncv_master, NG_MPI_SUM);
 
   // cout << " fmesh NV " << M.nnodes[NT_VERTEX] << " " << M.nnodes_glob[NT_VERTEX] << endl;
   // cout << " fmesh eqc_verts " << endl << M.eqc_verts << endl;
@@ -363,7 +363,7 @@ sum += x;
   perow.SetSize(neqcs);
   for (auto k : Range(perow))
     { perow[k] = (k>0) ? M.template GetENN<NT_VERTEX>(k) : 0; }
-  Table<INT<3, int>> exv_map(perow); exv_map.AsArray() = INT<3, int>(-1); // -1 for verts that are not set (ex diri vs)
+  Table<IVec<3, int>> exv_map(perow); exv_map.AsArray() = IVec<3, int>(-1); // -1 for verts that are not set (ex diri vs)
   { // set up exv_map
     const auto nvloc = M.template GetENN<NT_VERTEX>(0);
     perow.SetSize(neqcs);
@@ -392,7 +392,7 @@ if (cv_eq == 0) { // must all be local
       auto [veq, v_locnr] = M.template MapENodeToEQLNR<NT_VERTEX>(v);
       // cout << "eq, lnr " << veq << " " << v_locnr << endl;
       // cout << " -> write (" << cv_eq << " " << kp << " " << cv_locnr << ") " << endl;
-      exv_map[veq][v_locnr] = INT<3>( { cv_eqid, kp, cv_locnr } );
+      exv_map[veq][v_locnr] = IVec<3>( { cv_eqid, kp, cv_locnr } );
     }
   }
 }
@@ -405,10 +405,10 @@ if (cv_eq == 0) { // must all be local
   // cout << " exc_map " << endl << exv_map << endl;
 
   // cannot use sum_table because of "-1" entries!!
-  // auto red_exv_map = ReduceTable<INT<3>, INT<3>>(exv_map, p_eqc_h, [&](auto & in) { return std::move(sum_table(in)); });
+  // auto red_exv_map = ReduceTable<IVec<3>, IVec<3>>(exv_map, p_eqc_h, [&](auto & in) { return std::move(sum_table(in)); });
 
-  auto red_exv_map = ReduceTable<INT<3>, INT<3>>(exv_map, p_eqc_h, [&](const auto & tab) {
-Array<INT<3>> out;
+  auto red_exv_map = ReduceTable<IVec<3>, IVec<3>>(exv_map, p_eqc_h, [&](const auto & tab) {
+Array<IVec<3>> out;
 auto nrows = tab.Size();
 if (nrows == 0) return out;
 auto row_s = tab[0].Size();
@@ -462,7 +462,7 @@ vmap[eq_vs[j]] = cv_nr;
   for (auto eqc : Range(neqcs))
     if (eqc_h.IsMasterOfEQC(eqc))
 { ncv_master += cmesh.GetENN<NT_VERTEX>(eqc); }
-  cmesh.nnodes_glob[NT_VERTEX] = comm.AllReduce(ncv_master, MPI_SUM);
+  cmesh.nnodes_glob[NT_VERTEX] = comm.AllReduce(ncv_master, NG_MPI_SUM);
 
 } // BaseAgglomerateCoarseMap::MapVerts_sv
 
@@ -685,7 +685,7 @@ fine edge with the lowest number for each coarse edge.
 
   // cout << " cnt_add_ce : " << endl << cnt_add_ce << endl;
 
-  Table<INT<4,int>> tent_add_ce(cnt_add_ce);
+  Table<IVec<4,int>> tent_add_ce(cnt_add_ce);
 
   cnt_add_ce = 0;
 
@@ -711,7 +711,7 @@ fine edge with the lowest number for each coarse edge.
                   //      << "   CV1 " << cv1 << " eq " << ceq1 << " id " << ceq1_id << " loc " << cv1_loc << endl;
                   // cout << "      -> INTO " << ceqc << " " << cnt_add_ce[ceqc] << endl;
 
-                  INT<4,int> tup( { ceq0_id, ceq1_id, cv0_loc, cv1_loc } );
+                  IVec<4,int> tup( { ceq0_id, ceq1_id, cv0_loc, cv1_loc } );
                   sort_tup(tup);
 
                   tent_add_ce[ceqc][cnt_add_ce[ceqc]++] = tup;
@@ -733,7 +733,7 @@ fine edge with the lowest number for each coarse edge.
   // cout << endl << "LOC ADD_CE: " << endl;
   // cout << tent_add_ce << endl << endl;
 
-  Table<INT<4,int>> add_ce = ReduceTable<INT<4,int>,INT<4,int>>(
+  Table<IVec<4,int>> add_ce = ReduceTable<IVec<4,int>,IVec<4,int>>(
     tent_add_ce,
     sp_eqc_h,
     [&less_tup](const auto & tab) LAMBDA_INLINE
@@ -837,7 +837,7 @@ fine edge with the lowest number for each coarse edge.
       auto eq1 = (tup[1] != tup[0]) ? eqc_h.GetEQCOfID(tup[1]) : eq0;
       auto v1 = CM.template MapENodeFromEQC<NT_VERTEX>(tup[3], eq1);
       cedges[id].id = id;
-      cedges[id].v = (v0 < v1) ? INT<2, int>({v0, v1}) : INT<2, int>({v1, v0});
+      cedges[id].v = (v0 < v1) ? IVec<2, int>({v0, v1}) : IVec<2, int>({v1, v0});
       // cout << " add edge id " << id << ", tup " << tup << " -> " << cedges[id] << endl;
       // cout << " map fedges ";
       FlatArray<int> memsa = c2fv[v0], memsb = c2fv[v1];
@@ -886,7 +886,7 @@ fine edge with the lowest number for each coarse edge.
 
 
       cedges[cid].id = cid;
-      cedges[cid].v = INT<2, int>({cv0, cv1});
+      cedges[cid].v = IVec<2, int>({cv0, cv1});
       it_feids([&](auto feid) LAMBDA_INLINE
       {
         emap[feid] = cid;
@@ -938,7 +938,7 @@ fine edge with the lowest number for each coarse edge.
   for (auto eqc : Range(neqcs))
     if (eqc_h.IsMasterOfEQC(eqc))
 { cmesh.nnodes_glob[NT_EDGE] += cnt_eq[eqc] + cnt_cr[eqc]; }
-  cmesh.nnodes_glob[NT_EDGE] = comm.AllReduce(cmesh.nnodes_glob[NT_EDGE], MPI_SUM);
+  cmesh.nnodes_glob[NT_EDGE] = comm.AllReduce(cmesh.nnodes_glob[NT_EDGE], NG_MPI_SUM);
 
   cmesh.nnodes[NT_FACE] = 0;
   cmesh.nnodes[NT_CELL] = 0;
@@ -962,7 +962,7 @@ fine edge with the lowest number for each coarse edge.
       CM.template AllreduceNodalData<NT_EDGE>(ce_cnt, [&](auto tab) LAMBDA_INLINE { return sum_table(tab); });
       cout << " have tested allred edge data! " << endl;
       cout << " ce_cnt: " << endl; prow2(ce_cnt); cout << endl;
-      Array<INT<2>> ce_cnt2(cmesh.nnodes[NT_EDGE]); ce_cnt2 = 0;
+      Array<IVec<2>> ce_cnt2(cmesh.nnodes[NT_EDGE]); ce_cnt2 = 0;
       int I = eqc_h.GetCommunicator().Rank() - 1;
       if ( (I == 0) || (I == 1) )
       for (auto k : Range(neqcs)) {

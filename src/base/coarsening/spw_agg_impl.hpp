@@ -619,10 +619,10 @@ INLINE void SPWAgglomerator<ENERGY, TMESH, ROBUST> :: FormAgglomerates_impl (Arr
   LocalHeap lh(lhs, "cthulu");
 
   /** check_pair/check_agg/mmax_scal/mmx_mat/l2/pair/noallowed **/
-  INT<7, int> rej; rej = 0;
-  INT<7, int> allrej = 0;
-  INT<7, int> acc; acc = 0;
-  INT<7, int> allacc = 0;
+  IVec<7, int> rej; rej = 0;
+  IVec<7, int> allrej = 0;
+  IVec<7, int> acc; acc = 0;
+  IVec<7, int> allacc = 0;
 
   auto calc_avg_scal = [&](AVG_TYPE avg, double mtra, double mtrb) LAMBDA_INLINE {
     switch(avg) {
@@ -1212,14 +1212,14 @@ INLINE void SPWAgglomerator<ENERGY, TMESH, ROBUST> :: FormAgglomerates_impl (Arr
     double max_soc = 0, msn = -1, c = 0;
     auto neibs = fecon.GetRowIndices(v);
     auto rvs = fecon.GetRowValues(v);
-    FlatArray<INT<2,double>> bsocs(neibs.Size(), lh);
+    FlatArray<IVec<2,double>> bsocs(neibs.Size(), lh);
     for (auto jn : Range(neibs)) {
       auto neib = neibs[jn];
       if ( curr_allowed_edges && !curr_allowed_edges->Test(int(rvs[jn])) )
         { cout << "FORBID " << v << " " << neib << endl; }
       if ( !curr_allowed_edges || curr_allowed_edges->Test(int(rvs[jn])) ) {
         if (allowed(v, neib))
-        { double thesoc = calc_soc_pair(robust_pick, neib_boost, cwt_pick, pmmas, pmmam, v, neib, fecon); bsocs[c++] = INT<2, double>(neib, thesoc); }
+        { double thesoc = calc_soc_pair(robust_pick, neib_boost, cwt_pick, pmmas, pmmam, v, neib, fecon); bsocs[c++] = IVec<2, double>(neib, thesoc); }
       }
     }
     // cout << endl << " ALL possible neibs for " << v << " = ";
@@ -1363,7 +1363,7 @@ INLINE void SPWAgglomerator<ENERGY, TMESH, ROBUST> :: FormAgglomerates_impl (Arr
              << conclocmap->GetMappedMesh()->template GetNN<NT_EDGE>() << endl;
       }
       if ( eqc_h.GetCommunicator().Size() > 1 ) {
-        auto rednv = eqc_h.GetCommunicator().Reduce(conclocmap->GetMappedMesh()->template GetNN<NT_VERTEX>(), MPI_SUM, 0);
+        auto rednv = eqc_h.GetCommunicator().Reduce(conclocmap->GetMappedMesh()->template GetNN<NT_VERTEX>(), NG_MPI_SUM, 0);
         if ( print_summs && (eqc_h.GetCommunicator().Rank() == 0) )
           { cout << " next glob NV = " << rednv << endl; }
       }
@@ -1376,7 +1376,7 @@ INLINE void SPWAgglomerator<ENERGY, TMESH, ROBUST> :: FormAgglomerates_impl (Arr
 
     // if (fecon.Height())
     // 	{
-    // 	  INT<5, int> cnts = 0;
+    // 	  IVec<5, int> cnts = 0;
     // 	  for (auto k : Range(fecon.Height())) {
     // 	    if (fecon.GetRowIndices(k).Size() < 5) {
     // 	      cnts[fecon.GetRowIndices(k).Size()]++;
@@ -1652,12 +1652,12 @@ INLINE void SPWAgglomerator<ENERGY, TMESH, ROBUST> :: FormAgglomerates_impl (Arr
       conclocmap->Concatenate(NCV, vmap);
     }
 
-    // rej[0] = eqc_h.GetCommunicator().Reduce(rej[0], MPI_SUM);
-    // rej[1] = eqc_h.GetCommunicator().Reduce(rej[1], MPI_SUM);
+    // rej[0] = eqc_h.GetCommunicator().Reduce(rej[0], NG_MPI_SUM);
+    // rej[1] = eqc_h.GetCommunicator().Reduce(rej[1], NG_MPI_SUM);
     if (m_print_summs) {
       auto redc = [&](auto & tup) {
         for (auto k : Range(7)) {
-          auto redval = eqc_h.GetCommunicator().Reduce(tup[k], MPI_SUM, 0);
+          auto redval = eqc_h.GetCommunicator().Reduce(tup[k], NG_MPI_SUM, 0);
           if (eqc_h.GetCommunicator().Rank() == 0)
             { tup[k] = redval; }
         }
@@ -1669,7 +1669,7 @@ INLINE void SPWAgglomerator<ENERGY, TMESH, ROBUST> :: FormAgglomerates_impl (Arr
         { NFVG = M.template GetNNGlobal<NT_VERTEX>(); }
       else {
         NFVG = fecon.Height();
-        int rval = eqc_h.GetCommunicator().Reduce(NFVG, MPI_SUM, 0);
+        int rval = eqc_h.GetCommunicator().Reduce(NFVG, NG_MPI_SUM, 0);
         if ( eqc_h.GetCommunicator().Rank() == 0)
         { NFVG = rval; }
       }
@@ -1703,7 +1703,7 @@ INLINE void SPWAgglomerator<ENERGY, TMESH, ROBUST> :: FormAgglomerates_impl (Arr
     auto vmap = conclocmap->template GetMap<NT_VERTEX>();
 
     int cntSingles = 0;
-    Array<INT<2, int>> joins;
+    Array<IVec<2, int>> joins;
     for (auto K : Range(aggs))
     {
       auto agg = aggs[K];
@@ -1732,7 +1732,7 @@ INLINE void SPWAgglomerator<ENERGY, TMESH, ROBUST> :: FormAgglomerates_impl (Arr
         }
         if (partner != -1)
         {
-          joins.Append(INT<2, int>(K, partner));
+          joins.Append(IVec<2, int>(K, partner));
         }
       }
     }
@@ -1776,7 +1776,7 @@ INLINE void SPWAgglomerator<ENERGY, TMESH, ROBUST> :: FormAgglomerates_impl (Arr
   size_t n_aggs_spec = spec_aggs.Size(), n_aggs_p = conclocmap->template GetMappedNN<NT_VERTEX>(), n_aggs_f = fixed_aggs.Size();
   size_t n_aggs_tot = n_aggs_spec + n_aggs_p + n_aggs_f, agg_id = n_aggs_spec;
   if (m_print_summs) {
-    int nspacs = eqc_h.GetCommunicator().Reduce(int(n_aggs_spec), MPI_SUM, 0);
+    int nspacs = eqc_h.GetCommunicator().Reduce(int(n_aggs_spec), NG_MPI_SUM, 0);
     if (eqc_h.GetCommunicator().Rank() > 0)
       { nspacs = n_aggs_spec; }
     if (print_summs)

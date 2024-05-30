@@ -109,7 +109,7 @@ def SetUpMCS (mesh, force = CoefficientFunction((0,0,0)), order = 1, sym = True,
 order = 1
 geo, maxh = netgen.csg.unit_cube, 0.4
 el_int = True
-geo, mesh = gen_ref_mesh (geo, maxh, nref = 0, comm=mpi_world, mesh_file = '', save = False)
+geo, mesh = gen_ref_mesh (geo, maxh, nref = 0, comm=NG_MPI_world, mesh_file = '', save = False)
 sym = True
 diri = "back"
 dovi = False

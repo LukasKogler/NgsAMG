@@ -109,9 +109,9 @@ INLINE int SortAndOrientLoop (FlatArray<TLD> loop, LocalHeap & lh, TFLIP flip, T
  * A "chunk" can have duplicate entries!
  */
 template<class TDATA>
-INLINE Array<INT<4, int>> sortChunks(TDATA &indata)
+INLINE Array<IVec<4, int>> sortChunks(TDATA &indata)
 {
-  Array<INT<4, int>> out;
+  Array<IVec<4, int>> out;
 
   // cout << endl << "LSC " << endl;
   // for (auto k : Range(indata)) {
@@ -133,14 +133,14 @@ INLINE Array<INT<4, int>> sortChunks(TDATA &indata)
   }
 
   int maxsize = std::accumulate(indata.begin(), indata.end(), int(0),
-        [&](int s, FlatArray<INT<4, int>> ar) { return s + int(ar.Size()); });
+        [&](int s, FlatArray<IVec<4, int>> ar) { return s + int(ar.Size()); });
 
 
-  INT<4, int> curr({ -1, -1, -1, -1 }), first({ -1, -1, -1, -1 });
+  IVec<4, int> curr({ -1, -1, -1, -1 }), first({ -1, -1, -1, -1 });
 
   /** find an edge to start the loop with **/
 
-  Array<INT<3, int>> iios(maxsize); // (row,col,orient) for the output
+  Array<IVec<3, int>> iios(maxsize); // (row,col,orient) for the output
   int cnt = 0;
   bool foundone = false;
 
@@ -153,7 +153,7 @@ INLINE Array<INT<4, int>> sortChunks(TDATA &indata)
     if (indata[k].Size()) {
       curr = indata[k][0];
       first = curr;
-      iios[cnt++] = INT<3, int>({ k, 0, 1 });
+      iios[cnt++] = IVec<3, int>({ k, 0, 1 });
       indata[k][0][0] *= -1;
       // cout << " start w. " << indata[k][0] << ", +1" << endl;
       foundone = true;
@@ -173,7 +173,7 @@ INLINE Array<INT<4, int>> sortChunks(TDATA &indata)
   };
 
   auto add_chunk = [&](int k, int j, bool flip) {
-    iios[cnt++] = INT<3, int>({ k, j, flip ? 1 : -1 });
+    iios[cnt++] = IVec<3, int>({ k, j, flip ? 1 : -1 });
     int osi = flip ? 2 : 0;
     int osj = flip ? 2 : 0;
     curr = indata[k][j];
@@ -361,7 +361,7 @@ INLINE tuple<Table<int>, Array<int>> ShrinkDPTable (BitArray & remove_me,
  *  The purpose is that it makes loops bucket-able by their first vertex,
  *  which makes identifying duplicates relatively. 
  */
-INLINE void rotateVLoop(FlatArray<INT<2, int>> slk, Array<INT<2, int>> &rot_buffer)
+INLINE void rotateVLoop(FlatArray<IVec<2, int>> slk, Array<IVec<2, int>> &rot_buffer)
 {
   // auto smaller = [&](const auto & ta, const auto & tb) {
     // if (ta[0] == tb[0]) { return ta[1] < tb[1]; }
@@ -371,7 +371,7 @@ INLINE void rotateVLoop(FlatArray<INT<2, int>> slk, Array<INT<2, int>> &rot_buff
   int sslk = slk.Size();
   if (closed) {
     // new start index: start at "smallest" vnr
-    int nsi = 0; INT<2, int> vstart = slk[0];
+    int nsi = 0; IVec<2, int> vstart = slk[0];
     for (auto j : Range(slk))
       if (slk[j] < vstart)
         { nsi = j; vstart = slk[j]; }
@@ -418,7 +418,7 @@ INLINE void rotateVLoop(FlatArray<INT<2, int>> slk, Array<INT<2, int>> &rot_buff
  * 
  *  NOTE: This calls itself, so it cannot be inlined!
  */
-void SplitChunk (FlatArray<INT<2, int>> chunk, Array<Array<INT<2, int>>> & split_out, LocalHeap & lh);
+void SplitChunk (FlatArray<IVec<2, int>> chunk, Array<Array<IVec<2, int>>> & split_out, LocalHeap & lh);
 
 
 /**
@@ -427,7 +427,7 @@ void SplitChunk (FlatArray<INT<2, int>> chunk, Array<Array<INT<2, int>>> & split
  *  Merges the chunks together, if necessary splits them into sub-loops that contain no
  *  cycles, and writes into the output AS "simple" loops with (eqid, lv) entries.
 */
-void SimpleLoopsFromChunks (FlatArray<FlatArray<INT<4, int>>> the_data, Array<Array<INT<2, int>>> & simple_loops, LocalHeap & lh);
+void SimpleLoopsFromChunks (FlatArray<FlatArray<IVec<4, int>>> the_data, Array<Array<IVec<2, int>>> & simple_loops, LocalHeap & lh);
   
 } // namespace amg
 

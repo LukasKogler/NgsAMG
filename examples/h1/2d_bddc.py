@@ -9,9 +9,9 @@ from ngsolve.krylovspace import CGSolver
 
 from amg_utils import *
 
-comm = mpi_world
+comm = NG_MPI_world
 
-geo, mesh = gen_square(maxh=0.05, nref=0, comm=mpi_world)
+geo, mesh = gen_square(maxh=0.05, nref=0, comm=NG_MPI_world)
 V, a, f = setup_poisson(mesh, order=4, diri="right")
 gfu = GridFunction(V)
 

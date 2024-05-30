@@ -355,7 +355,7 @@ BuildStokesMesh(MeshAccess const &MA, FacetAuxiliaryInformation const &auxInfo)
   size_t NV_ghost    = std::accumulate(recv_data.begin(), recv_data.end(), size_t(0), [](size_t a, FlatArray<int> b) ->size_t { return a + b.Size(); });
 
   size_t NV          = NV_ext_fict + NV_solid + NV_ghost;
-  size_t NV_glob     = comm.AllReduce(NV_ext_fict + NV_solid, MPI_SUM);
+  size_t NV_glob     = comm.AllReduce(NV_ext_fict + NV_solid, NG_MPI_SUM);
 
   Array<int> perow(neqcs);
   for (auto eqc : Range(perow))
@@ -451,13 +451,13 @@ BuildStokesMesh(MeshAccess const &MA, FacetAuxiliaryInformation const &auxInfo)
    * Therefore, exchange data: list of (eqid, locnr) for local vertex of solid-ghost edge
    * And [(x;y) for x,y in zip(send, recv)] are the solid-ghost edges
    */
-  Table<INT<2, int>> send_data_edge;
+  Table<IVec<2, int>> send_data_edge;
   Array<int> elnums(20); elnums.SetSize0();
   {
     Array<int> facet_dofs(20);
     Array<int> sg_cnt(all_dps.Size());
-    TableCreator<INT<2, int>> csde(all_dps.Size());
-    TableCreator<INT<2, int>> csg_ffnrs(all_dps.Size()); // (fine) facet nrs for sg edges
+    TableCreator<IVec<2, int>> csde(all_dps.Size());
+    TableCreator<IVec<2, int>> csg_ffnrs(all_dps.Size()); // (fine) facet nrs for sg edges
     if (isParallel) {
       for (; !csde.Done(); csde++) {
         sg_cnt = 0;
@@ -477,7 +477,7 @@ BuildStokesMesh(MeshAccess const &MA, FacetAuxiliaryInformation const &auxInfo)
           int vnr = VE2V[venum];
           int locnr = mesh->MapNodeToEQC<NT_VERTEX>(vnr);
           int eqc = mesh->GetEQCOfNode<NT_VERTEX>(vnr);
-          INT<2, int> tup ({ eqc_h.GetEQCID(eqc), locnr });
+          IVec<2, int> tup ({ eqc_h.GetEQCID(eqc), locnr });
           csde.Add(kp, tup);
           sg_cnt[kp]++;
           if (dps.Size() > 1)
@@ -490,11 +490,11 @@ BuildStokesMesh(MeshAccess const &MA, FacetAuxiliaryInformation const &auxInfo)
 
   // cout << " AM RANK " << comm.Rank() << " of " << comm.Size() << endl;
 
-  // Array<Array<INT<2, int>>> recv_data_edge(all_dps.Size());
+  // Array<Array<IVec<2, int>>> recv_data_edge(all_dps.Size());
   perow.SetSize(send_data_edge.Size());
   for (auto k : Range(perow))
     { perow[k] = send_data_edge[k].Size(); }
-  Table<INT<2, int>> recv_data_edge(perow);
+  Table<IVec<2, int>> recv_data_edge(perow);
   // cout << " send_data_edge : " << endl << send_data_edge << endl;
   ExchangePairWise(comm, all_dps, send_data_edge, recv_data_edge);
   // cout << " recv_data_edge : " << endl << recv_data_edge << endl;
@@ -504,7 +504,7 @@ BuildStokesMesh(MeshAccess const &MA, FacetAuxiliaryInformation const &auxInfo)
   auto fake_lam_neq = [&](auto node_num, const auto & vs) LAMBDA_INLINE {
     // cout << " lam_neq with " << vs << endl;
     constexpr int NODE_SIZE = sizeof(AMG_CNode<NT_EDGE>::v)/sizeof(AMG_Node<NT_VERTEX>);
-    INT<NODE_SIZE,int> eqcs;
+    IVec<NODE_SIZE,int> eqcs;
     auto eq_in = mesh->GetEQCOfNode<NT_VERTEX>(vs[0]);
     auto eq_cut = eq_in;
     for (auto i:Range(NODE_SIZE)) {
@@ -599,8 +599,8 @@ BuildStokesMesh(MeshAccess const &MA, FacetAuxiliaryInformation const &auxInfo)
         int kp = find_in_sorted_array(dps[0], all_dps); // <- only a single dp!
         int l = sg_cnt[kp]++;
         // cout << " kp " << kp << ", l " << l << endl;
-        FlatArray<INT<2, int>> rowa = send_data_edge[kp];
-        FlatArray<INT<2, int>> rowb = recv_data_edge[kp];
+        FlatArray<IVec<2, int>> rowa = send_data_edge[kp];
+        FlatArray<IVec<2, int>> rowb = recv_data_edge[kp];
         // cout << " sizes " << rowa.Size() << " " << rowb.Size() << endl;
         // cout << " rowa " << rowa[l] << ", rowb " << rowb[l] << endl;
         int eqa = eqc_h.GetEQCOfID(rowa[l][0]);

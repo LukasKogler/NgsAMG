@@ -325,9 +325,9 @@ INLINE void iterateFacetLoops(FacetAuxiliaryInformation const &auxInfo,
 } // iterateFacetLoops2D
 
 
-INLINE int sortTup4Loop(FlatArray<INT<4, int>> in_loop, LocalHeap &lh)
+INLINE int sortTup4Loop(FlatArray<IVec<4, int>> in_loop, LocalHeap &lh)
 {
-  // auto flip = [](auto &tup) { tup = INT<4, int>({ tup[2], tup[3], tup[0], tup[1] }) };
+  // auto flip = [](auto &tup) { tup = IVec<4, int>({ tup[2], tup[3], tup[0], tup[1] }) };
   auto flip = [](auto &tup) {
     swap(tup[0], tup[2]);
     swap(tup[1], tup[3]);
@@ -599,7 +599,7 @@ BaseStokesAMGPrecond :: CalcFacetLoops (BlockTM const &blockTM, BitArray const &
     return make_tuple(loop_facets, dps);
   };
 
-  auto encodeLoop = [&](FlatArray<int> facetLoop, FlatArray<INT<4, int>> tupLoop)
+  auto encodeLoop = [&](FlatArray<int> facetLoop, FlatArray<IVec<4, int>> tupLoop)
   {
     cout << " encodeLoop sizes " << facetLoop.Size() << " " << tupLoop.Size() << endl;
     cout << "  encode f-loop "; prow(facetLoop); cout << endl;
@@ -619,13 +619,13 @@ BaseStokesAMGPrecond :: CalcFacetLoops (BlockTM const &blockTM, BitArray const &
       cout << "    facet " << fnr << " -> EDGE " << edge << " -> CODED "
            << eqc_h.GetEQCID(eq0) << " " << lv0 << " " << eqc_h.GetEQCID(eq1) << " " << lv1 << endl;
 
-      tupLoop[j] = INT<4, int>({ eqc_h.GetEQCID(eq0), lv0, eqc_h.GetEQCID(eq1), lv1 });
+      tupLoop[j] = IVec<4, int>({ eqc_h.GetEQCID(eq0), lv0, eqc_h.GetEQCID(eq1), lv1 });
     }
   };
 
   auto reduceLoops = [&](auto &in_data)
   {
-    Array<INT<4, int>> out;
+    Array<IVec<4, int>> out;
 
     cout << " reduceLoops, in_data: " << endl << in_data << endl;
 
@@ -648,7 +648,7 @@ BaseStokesAMGPrecond :: CalcFacetLoops (BlockTM const &blockTM, BitArray const &
     return out;
   };
 
-  auto decodeLoop = [&](FlatArray<INT<4, int>> tupLoop, FlatArray<int> edgeLoop) -> int
+  auto decodeLoop = [&](FlatArray<IVec<4, int>> tupLoop, FlatArray<int> edgeLoop) -> int
   {
     // cout << "   decodeLoop, in size = " << tupLoop.Size() << " space in out = " << edgeLoop.Size() << endl;
     int cnt = 0;
@@ -688,7 +688,7 @@ BaseStokesAMGPrecond :: CalcFacetLoops (BlockTM const &blockTM, BitArray const &
     return cnt;
   };
 
-  Array<INT<2, int>> scratch;
+  Array<IVec<2, int>> scratch;
   auto localTransformLoop = [&](FlatArray<int> facetLoop, FlatArray<int> edgeLoop) {
     // fnr -> enr, sort
     for (auto j : Range(facetLoop))
@@ -738,7 +738,7 @@ BaseStokesAMGPrecond :: CalcFacetLoops (BlockTM const &blockTM, BitArray const &
 
 
   auto [loops, dps] =
-    ProduceReducedTable<int, INT<4, int>, int>
+    ProduceReducedTable<int, IVec<4, int>, int>
       (auxInfo.GetNPSN_R(),
        comm,
        produceLoop,

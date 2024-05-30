@@ -310,7 +310,7 @@ INLINE shared_ptr<StokesCoarseMap<TMESH>> StokesAMGFactory<TMESH, ENERGY> :: Bui
   mesh->CumulateData();
 
   auto edges = mesh->template GetNodes<NT_EDGE>();
-  Array<INT<2,double>> olded(edges.Size());
+  Array<IVec<2,double>> olded(edges.Size());
   auto vdata = get<0>(mesh->Data())->Data();
   auto edata = get<1>(mesh->Data())->Data();
   auto ghost_verts = mesh->GetGhostVerts();

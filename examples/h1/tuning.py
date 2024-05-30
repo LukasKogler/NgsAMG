@@ -9,7 +9,7 @@ from ngsolve.krylovspace import CGSolver
 
 from amg_utils import *
 
-comm = mpi_world
+comm = NG_MPI_world
 
 geo, mesh = gen_cube(maxh=0.05, nref=0, comm=comm)
 
@@ -75,14 +75,14 @@ pc_opts[pf + "sm_ver"] = 3             # which version, 1, 2 or 3
                                        # versions 2 and 3 are faster than 1, but need a bit more memory
                                        # version 3 can overlap MPI communication and computation
                                        # withoug overlap, 2 is probably a bit faster than 3
-pc_opts[pf + "sm_mpi_overlap"] = True  # try to overlap MPI and local communication (version 3 only)
-pc_opts[pf + "sm_mpi_thread"]  = False # do MPI communication in seperate thread (version 3 only)
+pc_opts[pf + "sm_NG_MPI_overlap"] = True  # try to overlap MPI and local communication (version 3 only)
+pc_opts[pf + "sm_NG_MPI_thread"]  = False # do MPI communication in seperate thread (version 3 only)
 
 # In general, I suggest:
 #   - [overlap=True, thread=False] with Infiniband/Omnipath/etc. or an MPI implementation that actually
 #     progresses communication in the background (OpenMPI does, in my experience, not)
 #   - [overlap=True, thread=True] with hyper-threading or multiple cores per proc
-#     the MPI library needs to support MPI_THREAD_MULTIPLE
+#     the MPI library needs to support NG_MPI_THREAD_MULTIPLE
 #   - [overlap=False, thread=..] otherwise, but in that case maybe "sm_ver"=2 might be faster anyways
 
 c = Preconditioner(a, "ngs_amg.h1_scal", **pc_opts)

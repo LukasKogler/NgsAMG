@@ -104,33 +104,33 @@ template<int DIM> using HDivGGStokesMesh = StokesMesh<AttachedSVD<HDivStokesGGVD
 namespace ngcore
 {
   template<> struct MPI_typetrait<amg::HDivStokesGGED<2>> {
-    static MPI_Datatype MPIType () {
-      static MPI_Datatype MPI_T = 0;
-      if (!MPI_T)
+    static NG_MPI_Datatype MPIType () {
+      static NG_MPI_Datatype NG_MPI_T = 0;
+      if (!NG_MPI_T)
       {
         int block_len[2] = { 2, 1 };
-        MPI_Aint displs[2] = { 0, 2 * sizeof(amg::HDivStokesGGED<2>::TED) };
-        MPI_Datatype types[2] = { GetMPIType<amg::HDivStokesGGED<2>::TED>(), GetMPIType<amg::HDivStokesGGED<2>::TFLOW>() };
-        MPI_Type_create_struct(2, block_len, displs, types, &MPI_T);
-        MPI_Type_commit ( &MPI_T );
+        NG_MPI_Aint displs[2] = { 0, 2 * sizeof(amg::HDivStokesGGED<2>::TED) };
+        NG_MPI_Datatype types[2] = { GetMPIType<amg::HDivStokesGGED<2>::TED>(), GetMPIType<amg::HDivStokesGGED<2>::TFLOW>() };
+        NG_MPI_Type_create_struct(2, block_len, displs, types, &NG_MPI_T);
+        NG_MPI_Type_commit ( &NG_MPI_T );
       }
-      return MPI_T;
+      return NG_MPI_T;
     }
   }; // struct MPI_typetrait
 
 
   template<> struct MPI_typetrait<amg::HDivStokesGGED<3>> {
-    static MPI_Datatype MPIType () {
-      static MPI_Datatype MPI_T = 0;
-      if (!MPI_T)
+    static NG_MPI_Datatype MPIType () {
+      static NG_MPI_Datatype NG_MPI_T = 0;
+      if (!NG_MPI_T)
       {
         int block_len[2] = { 2, 1 };
-        MPI_Aint displs[2] = { 0, 2 * sizeof(amg::HDivStokesGGED<3>::TED) };
-        MPI_Datatype types[2] = { GetMPIType<amg::HDivStokesGGED<3>::TED>(), GetMPIType<amg::HDivStokesGGED<3>::TFLOW>() };
-        MPI_Type_create_struct(2, block_len, displs, types, &MPI_T);
-        MPI_Type_commit ( &MPI_T );
+        NG_MPI_Aint displs[2] = { 0, 2 * sizeof(amg::HDivStokesGGED<3>::TED) };
+        NG_MPI_Datatype types[2] = { GetMPIType<amg::HDivStokesGGED<3>::TED>(), GetMPIType<amg::HDivStokesGGED<3>::TFLOW>() };
+        NG_MPI_Type_create_struct(2, block_len, displs, types, &NG_MPI_T);
+        NG_MPI_Type_commit ( &NG_MPI_T );
       }
-      return MPI_T;
+      return NG_MPI_T;
     }
   }; // struct MPI_typetrait
 

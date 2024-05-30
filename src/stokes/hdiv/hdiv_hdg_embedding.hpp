@@ -6,7 +6,7 @@
 
 #include <dof_map.hpp>
 #include <hdivhofespace.hpp>
-#include <vectorfacetfespace.hpp>
+#include <tangentialfacetfespace.hpp>
 
 // #include "preserved_vectors.hpp"
 #include "mesh_dofs.hpp"
@@ -99,7 +99,7 @@ protected:
 
   //
   int                              _vFIdx   = -1;
-  // shared_ptr<VectorFacetFESpace>   _vFSpace = nullptr;
+  // shared_ptr<TangentialFacetFESpace>   _vFSpace = nullptr;
   shared_ptr<FESpace> _vFSpace = nullptr;
   IntRange                         _vFRange = IntRange(0,0);
 

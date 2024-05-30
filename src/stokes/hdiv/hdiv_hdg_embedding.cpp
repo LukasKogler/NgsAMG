@@ -566,7 +566,7 @@ iterateTangFacetDOFsWithOrder(NodeId nodeId, int p, FlatArray<int> dNums, TLAM l
   };
 
   /**
-   *  3d VectorFacetFESpace (in python: TangentialFacetFESpace) low order face DOFs are:
+   *  3d TangentialFacetFESpace (in python: TangentialFacetFESpace) low order face DOFs are:
    *   0,1                  .. constant2
    *   1,2                  .. P1
    *   2*(p+1), 2*(p+1)+1   .. second p1
@@ -614,7 +614,7 @@ std::tuple<double, Vec<AUX_FE::NDOF, double>>
 calcFacetConvertMat (MeshAccess         const &MA,
                      int                const &facetNr,
                      bool               const &flipOrientation,
-                     INT<NSPACES + NSPACES_REVERSE, int>  const &fesND,
+                     IVec<NSPACES + NSPACES_REVERSE, int>  const &fesND,
                      ElementId          const &volEID,
                      FESpace            const &fes,
                      EVALFUNC                  evalFESShapes,
@@ -656,13 +656,13 @@ calcFacetConvertMat (MeshAccess         const &MA,
     auxAux = 0.0;
   }
 
-  INT<NSPACES + NSPACES_REVERSE, FlatMatrix<double>> trialShape;//(fesND, DIM, lh); // primal BFs
-  INT<NSPACES, FlatMatrix<double>> testShape; //(fesND, DIM, lh); // dual   BFs
+  IVec<NSPACES + NSPACES_REVERSE, FlatMatrix<double>> trialShape;//(fesND, DIM, lh); // primal BFs
+  IVec<NSPACES, FlatMatrix<double>> testShape; //(fesND, DIM, lh); // dual   BFs
 
-  INT<NSPACES, FlatMatrix<double>> fesFes; // (fesND, fesND, lh);
-  INT<NSPACES, FlatMatrix<double>> fesAux; // (fesND, auxND,    lh);
+  IVec<NSPACES, FlatMatrix<double>> fesFes; // (fesND, fesND, lh);
+  IVec<NSPACES, FlatMatrix<double>> fesAux; // (fesND, auxND,    lh);
 
-  INT<NSPACES_REVERSE, FlatMatrix<double>> auxFes; // (fesND, auxND,    lh);
+  IVec<NSPACES_REVERSE, FlatMatrix<double>> auxFes; // (fesND, auxND,    lh);
 
   Iterate<NSPACES>([&](auto i)
   {
@@ -805,7 +805,7 @@ FindSpaces()
 
           return true;
         }
-        else if (auto tFSpace = dynamic_pointer_cast<VectorFacetFESpace>(aSpace))
+        else if (auto tFSpace = dynamic_pointer_cast<TangentialFacetFESpace>(aSpace))
         {
           if (useTFIfFound)
           {
@@ -1271,12 +1271,12 @@ CreateDOFEmbeddingImpl(BlockTM  const &fMesh,
               MA,
               facetNr,
               flipOrientation,
-              INT<3, int>({ nUsedHDiv, nUsedTangFacet, PRESEL::NDOF }),
+              IVec<3, int>({ nUsedHDiv, nUsedTangFacet, PRESEL::NDOF }),
               volEId,
               fes,
               [&](auto const &mip,
-                  INT<3, FlatMatrix<double>> &trialShape,
-                  INT<2, FlatMatrix<double>> &testShape)
+                  IVec<3, FlatMatrix<double>> &trialShape,
+                  IVec<2, FlatMatrix<double>> &testShape)
                 {
                   evalHDivShape(mip,
                                 trialShape[0],
@@ -1315,12 +1315,12 @@ CreateDOFEmbeddingImpl(BlockTM  const &fMesh,
               MA,
               facetNr,
               flipOrientation,
-              INT<2, int>({ nUsedHDiv, PRESEL::NDOF }),
+              IVec<2, int>({ nUsedHDiv, PRESEL::NDOF }),
               volEId,
               fes,
               [&](auto const &mip,
-                  INT<2, FlatMatrix<double>> trialShape,
-                  INT<1, FlatMatrix<double>> testShape)
+                  IVec<2, FlatMatrix<double>> trialShape,
+                  IVec<1, FlatMatrix<double>> testShape)
                   {
                     evalHDivShape(mip,
                                   trialShape[0],
@@ -1488,13 +1488,13 @@ T_GetHDivFE (int elnr, LocalHeap & lh) const
   constexpr int DIM     = ET_trait<ET>::DIM;
   constexpr int N_FACET = ET_trait<ET>::N_FACET;
 
-  INT<ET_trait<ET>::DIM> orderInner;
+  IVec<ET_trait<ET>::DIM> orderInner;
   orderInner = 0;
 
-  INT<N_FACET> orderFacet;
+  IVec<N_FACET> orderFacet;
   orderFacet = FACET_ORDER;
 
-  // INT<N_FACET, INT<DIM-1>> orderFacet;
+  // IVec<N_FACET, IVec<DIM-1>> orderFacet;
   // Iterate<N_FACET>([&](auto i) { orderFacet[i] = 0; });
 
   hofe->SetOrderInner(orderInner); // don't need inner DOFs!

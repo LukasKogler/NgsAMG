@@ -403,7 +403,7 @@ CalcAuxWeightsSC (FlatArray<int>            dnums,
 
       auxElmat.Rows(bRows).Cols(bRows) += S;
 
-      // addToTM((*ht_edge)[INT<2, int>(dnums[j], dnums[i]).Sort()], 1.0, 0, 0, S);
+      // addToTM((*ht_edge)[IVec<2, int>(dnums[j], dnums[i]).Sort()], 1.0, 0, 0, S);
     }
   }
 
@@ -438,7 +438,7 @@ CalcAuxWeightsSC (FlatArray<int>            dnums,
   // cout << " SC to first 2: " << endl << S << endl;
 
   // FlatMatrix<double> Abb(6, 6, lh);
-  // (*ht_egge)[INT<2, int>(dnums[j], dnums[i]).Sort()] += weight;
+  // (*ht_egge)[IVec<2, int>(dnums[j], dnums[i]).Sort()] += weight;
 
 } // ElmatVAMG::AddElementMatrix
 
@@ -842,7 +842,7 @@ void ElasticityAMGFactory<3> :: CheckKVecs (FlatArray<shared_ptr<BaseAMGFactory:
 
   for (int kvnr = 0; kvnr < BS; kvnr++)
   {
-    int nlevsglob = gcomm.AllReduce(amg_levels.Size(), MPI_MAX);
+    int nlevsglob = gcomm.AllReduce(amg_levels.Size(), NG_MPI_MAX);
     int nlevsloc = map->GetNLevels();
     unique_ptr<BaseVector> cvec = std::move(map->CreateVector(nlevsloc-1));
 

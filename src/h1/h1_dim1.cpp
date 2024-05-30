@@ -27,7 +27,7 @@ template<> shared_ptr<H1Mesh> ElmatVAMG<H1AMGFactory<1>, double, double> :: Buil
   if ( (ht_vertex == nullptr) || (ht_edge == nullptr) )
     { throw Exception("elmat-energy, but have to HTs! (HOW)"); }
 
-  auto a = new H1VData(Array<INT<2,double>>(top_mesh->GetNN<NT_VERTEX>()), DISTRIBUTED);
+  auto a = new H1VData(Array<IVec<2,double>>(top_mesh->GetNN<NT_VERTEX>()), DISTRIBUTED);
   auto b = new H1EData(Array<double>(top_mesh->GetNN<NT_EDGE>()), DISTRIBUTED);
 
   FlatArray<int> vsort = node_sort[NT_VERTEX];
@@ -36,12 +36,12 @@ template<> shared_ptr<H1Mesh> ElmatVAMG<H1AMGFactory<1>, double, double> :: Buil
     rvsort[vsort[k]] = k;
   auto ad = a->Data();
   for (auto key_val : *ht_vertex) {
-    ad[rvsort[get<0>(key_val)]] = INT<2, double>(get<1>(key_val), 1.0);
+    ad[rvsort[get<0>(key_val)]] = IVec<2, double>(get<1>(key_val), 1.0);
   }
   auto bd = b->Data();
   auto edges = top_mesh->GetNodes<NT_EDGE>();
   for (auto & e : edges) {
-    bd[e.id] = (*ht_edge)[INT<2,int>(rvsort[e.v[0]], rvsort[e.v[1]]).Sort()];
+    bd[e.id] = (*ht_edge)[IVec<2,int>(rvsort[e.v[0]], rvsort[e.v[1]]).Sort()];
   }
 
   auto mesh = make_shared<H1Mesh>(std::move(*top_mesh), a, b);

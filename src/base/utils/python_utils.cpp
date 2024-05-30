@@ -178,7 +178,7 @@ void ExportUtils (py::module &m)
     }
 
 
-    return colUD.GetCommunicator().AllReduce(locMU, MPI_SUM);
+    return colUD.GetCommunicator().AllReduce(locMU, NG_MPI_SUM);
   }, py::arg("mat"));
 
 

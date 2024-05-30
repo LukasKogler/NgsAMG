@@ -9,7 +9,7 @@ from ngsolve.krylovspace import CGSolver
 
 from amg_utils import *
 
-comm = mpi_world
+comm = NG_MPI_world
 
 geo, mesh = gen_cube(maxh=0.2, nref=0, comm=comm)
 V, a, f = setup_poisson(mesh, order=5, fes_opts = {"nodalp2" : True}, diri = "left|top")

@@ -527,7 +527,7 @@ template<> void VertexAMGPC<ElasticityAMGFactory<2>> :: RegularizeMatrix (shared
     Array<int> is_zero(A.Height());
     for(auto k : Range(A.Height()))
 { is_zero[k] = (fabs(A(k,k)(2,2)) < 1e-10 ) ?  1 : 0; }
-    AllReduceDofData(is_zero, MPI_SUM, pardofs);
+    AllReduceDofData(is_zero, NG_MPI_SUM, pardofs);
     for(auto k : Range(A.Height()))
 if ( (pardofs->IsMasterDof(k)) && (is_zero[k] != 0) )
   { A(k,k)(2,2) = 1; }

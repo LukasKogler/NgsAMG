@@ -54,7 +54,7 @@ namespace amg
     void Initialize (const MISAggOptions & opts, int level);
 
   protected:
-    virtual void FormAgglomerates (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg) override;
+    void FormAgglomerates (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg) override;
     void FormAgglomeratesOld (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg);
     template<class TMU> void FormAgglomerates_impl (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg);
 

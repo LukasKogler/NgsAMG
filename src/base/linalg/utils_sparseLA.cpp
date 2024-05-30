@@ -43,10 +43,10 @@ AMGBFCheck(SparseMat<BS, BS> const &A,
   int    cntRE = 0;
 
   Vec<BS, double> badREPC = 0;
-  INT<BS, int>    badKPC  = -1;
+  IVec<BS, int>    badKPC  = -1;
 
   Vec<BS, double> avgREPC = 0;
-  INT<BS, int>    cntREPC = 0;
+  IVec<BS, int>    cntREPC = 0;
 
   for (auto k : Range(N))
   {
@@ -336,7 +336,7 @@ size_t GetScalNZE (BaseMatrix const *bMat)
     nze_scal = ptr->GetNZE();
   }
 
-  size_t nzeGlob  = rowUD.GetCommunicator().AllReduce(nze_scal, MPI_SUM);
+  size_t nzeGlob  = rowUD.GetCommunicator().AllReduce(nze_scal, NG_MPI_SUM);
 
   return rowUD.GetCommunicator().Rank() == 0 ? nzeGlob : nze_scal;
 } // GetScalNZE

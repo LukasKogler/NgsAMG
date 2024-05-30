@@ -87,7 +87,7 @@ private:
   bool _overlapComm;
 
   shared_ptr<BaseVector> _stashedGx; // to stash M * x_old
-  shared_ptr<BackgroundMPIThread> mpi_thread;
+  shared_ptr<BackgroundMPIThread> NG_MPI_thread;
 
 private:
   template<SMOOTHING_DIRECTION DIR>

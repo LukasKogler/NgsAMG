@@ -68,7 +68,7 @@ INLINE void ExportStokesAMGClass(py::module &m, string name, string desc, LAM la
           else
             { nloops = C->Width(); }
         }
-        nloops = map->GetUDofs(0).GetCommunicator().AllReduce(nloops, MPI_MAX);
+        nloops = map->GetUDofs(0).GetCommunicator().AllReduce(nloops, NG_MPI_MAX);
         return nloops;
       },
       py::arg("level") = 0,

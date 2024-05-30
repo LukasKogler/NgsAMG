@@ -144,7 +144,7 @@ public:
     return std::move(tc);
   }
 
-  template<class T> Array<MPI_Request> ScatterEQCData (T & tab_in) const
+  template<class T> Array<NG_MPI_Request> ScatterEQCData (T & tab_in) const
   {
     int nreqs = 0;
     for (auto k : Range(neqcs)) {
@@ -156,16 +156,16 @@ public:
           { nreqs++; }
       }
     }
-    Array<MPI_Request> reqs(nreqs); nreqs = 0;
+    Array<NG_MPI_Request> reqs(nreqs); nreqs = 0;
     for (auto k : Range(neqcs)) {
       auto dpsk = dist_procs[k];
       if (dpsk.Size()) {
         if ( rank < dpsk[0] ) {
           for (auto p : dpsk)
-            { reqs[nreqs++] = comm.ISend(tab_in[k], p, MPI_TAG_AMG); }
+            { reqs[nreqs++] = comm.ISend(tab_in[k], p, NG_MPI_TAG_AMG); }
         }
         else
-          { reqs[nreqs++] = comm.IRecv(tab_in[k], dpsk[0], MPI_TAG_AMG); }
+          { reqs[nreqs++] = comm.IRecv(tab_in[k], dpsk[0], NG_MPI_TAG_AMG); }
       }
     }
     return reqs;
@@ -185,16 +185,16 @@ public:
           { nreqs++; }
       }
     }
-    Array<MPI_Request> reqs(nreqs); nreqs = 0;
+    Array<NG_MPI_Request> reqs(nreqs); nreqs = 0;
     for (auto k : Range(neqcs)) {
       auto dpsk = dist_procs[k];
       if (dpsk.Size()) {
         if ( rank < dpsk[0] ) {
           for (auto p : dpsk)
-            { reqs[nreqs++] = comm.ISend(arr[k], p, MPI_TAG_AMG); }
+            { reqs[nreqs++] = comm.ISend(arr[k], p, NG_MPI_TAG_AMG); }
         }
         else
-          { reqs[nreqs++] = comm.IRecv(arr[k], dpsk[0], MPI_TAG_AMG); }
+          { reqs[nreqs++] = comm.IRecv(arr[k], dpsk[0], NG_MPI_TAG_AMG); }
       }
     }
     MyMPI_WaitAll(reqs);

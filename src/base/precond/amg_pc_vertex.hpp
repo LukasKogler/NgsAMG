@@ -115,7 +115,7 @@ protected:
 public:
   mutable shared_ptr<FACTORY> _factory;
   /** Utility for better python wrapping **/
-  virtual INT<3, double> GetElmatEVs() const;
+  virtual IVec<3, double> GetElmatEVs() const;
 }; // class VertexAMGPC
 
 
@@ -162,14 +162,14 @@ public:
   virtual void InitLevel (shared_ptr<BitArray> freedofs = nullptr) override;
   virtual void FinalizeLevel (shared_ptr<BaseMatrix> mat) override;
 
-  virtual INT<3, double> GetElmatEVs() const override;
+  virtual IVec<3, double> GetElmatEVs() const override;
 
 protected:
   using BASE::options;
   unique_ptr<HashTable<int, HTVD>> ht_vertex = nullptr;
-  unique_ptr<HashTable<INT<2,int>, HTED>> ht_edge = nullptr;
+  unique_ptr<HashTable<IVec<2,int>, HTED>> ht_edge = nullptr;
 
-  INT<3, double> elmat_evs;
+  IVec<3, double> elmat_evs;
 
 }; // class EmbedVAMG
 
@@ -192,7 +192,7 @@ public:
     SELECTED_SUBSET = 1      // given by a BitArray defining a special subset (e.g. nodalp2/low order)
   };
   DOF_SUBSET subset = RANGE_SUBSET;
-  Array<INT<2, size_t>> ss_ranges; // ranges must be non-overlapping and incresing
+  Array<IVec<2, size_t>> ss_ranges; // ranges must be non-overlapping and incresing
 
   /** If "SELECTED_SUBSET", this **/
   enum SPECIAL_SUBSET : unsigned {

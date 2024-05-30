@@ -93,7 +93,7 @@ Finalize ()
     { return; }
   int nsteps_loc = steps.Size();
   if (GetUDofs().IsParallel())
-    { nsteps_glob = GetUDofs().GetCommunicator().AllReduce(nsteps_loc, MPI_MAX); }
+    { nsteps_glob = GetUDofs().GetCommunicator().AllReduce(nsteps_loc, NG_MPI_MAX); }
   vecs.SetSize(nsteps_loc + 1);
   for (auto k : Range(nsteps_loc))
     { vecs[k] = GetStep(k)->CreateVector(); }

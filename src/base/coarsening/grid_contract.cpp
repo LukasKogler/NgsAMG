@@ -10,7 +10,6 @@
 // #include <parmetis.h>
 typedef idx_t idxtype;   
 
-
 namespace amg
 {
 
@@ -42,7 +41,7 @@ Table<int> PartitionProcsMETIS (BlockTM & mesh, int nparts, bool sep_p0)
   // per dp: dist-PROC, NV_SHARED,NE that would become loc (second not used ATM)
   auto ex_procs = eqc_h.GetDistantProcs();
 
-  Array<INT<3,size_t>> data (ex_procs.Size());
+  Array<IVec<3,size_t>> data (ex_procs.Size());
 
   data = 0;
 
@@ -88,24 +87,29 @@ Table<int> PartitionProcsMETIS (BlockTM & mesh, int nparts, bool sep_p0)
     displs[k+1] = displs[k] + rcnts[k];
     tds += rcnts[k];
   }
-  Array<INT<3,size_t>> all_data(tds);
-  MPI_Gatherv(data.Data(), data.Size(), GetMPIType<INT<3,size_t>>(), all_data.Data(), rcnts.Data(), displs.Data(), GetMPIType<INT<3,size_t>>(), root, comm);
+  Array<IVec<3,size_t>> all_data(tds);
+
+#ifdef NG_MPI_WRAPPER
+  throw Exception("Missing wrapping of MPI_Gatherv!");
+#else
+  MPI_Gatherv(data.Data(), data.Size(), GetMPIType<IVec<3,size_t>>(), all_data.Data(), rcnts.Data(), displs.Data(), GetMPIType<IVec<3,size_t>>(), root, comm);
+#endif
 
   if (comm.Rank() != root) {
     /** Send  data to root **/
-    // comm.Send(data, root, MPI_TAG_AMG);
+    // comm.Send(data, root, NG_MPI_TAG_AMG);
   }
   if (comm.Rank() == root) {
     /** Recv data from all ranks **/
     // NP receives
-    // Array<Array<INT<3,size_t>>> gdata(comm.Size());
+    // Array<Array<IVec<3,size_t>>> gdata(comm.Size());
     // gdata[root] = std::move(data);
     // for (auto k : Range(comm.Size())) {
-    // 	if (k!=root) comm.Recv(gdata[k], k, MPI_TAG_AMG);
+    // 	if (k!=root) comm.Recv(gdata[k], k, NG_MPI_TAG_AMG);
     // }
-    Array<FlatArray<INT<3,size_t>>> gdata(comm.Size());
+    Array<FlatArray<IVec<3,size_t>>> gdata(comm.Size());
     for (auto k : Range(gdata))
-{ gdata[k].Assign(FlatArray<INT<3,size_t>>(displs[k+1] - displs[k], all_data.Data() + displs[k])); }
+{ gdata[k].Assign(FlatArray<IVec<3,size_t>>(displs[k+1] - displs[k], all_data.Data() + displs[k])); }
 
     // generate metis graph structure
     Array<idx_t> partition (comm.Size()); partition = -1;
@@ -221,9 +225,9 @@ GridContractMap :: GridContractMap (Table<int> && _groups, shared_ptr<BlockTM> _
 } // GridContractMap (..)
 
 
-Table<INT<2, int>> ReverseCtrMap (FlatTable<int> maps, int NC)
+Table<IVec<2, int>> ReverseCtrMap (FlatTable<int> maps, int NC)
 {
-  TableCreator<INT<2, int>> ct(NC);
+  TableCreator<IVec<2, int>> ct(NC);
 
   for(; !ct.Done(); ct++)
   {
@@ -231,7 +235,7 @@ Table<INT<2, int>> ReverseCtrMap (FlatTable<int> maps, int NC)
     {
       for (auto j : Range(maps[k]))
       {
-        ct.Add(maps[k][j], INT<2, int>(k, j));
+        ct.Add(maps[k][j], IVec<2, int>(k, j));
       }
     }
   }
@@ -352,7 +356,7 @@ void GridContractMap :: BuildNodeMaps ()
 
   if (!is_gm) {
     auto btm = dynamic_pointer_cast<BlockTM>(this->mesh);
-    comm.Send(btm, my_group[0], MPI_TAG_AMG);
+    comm.Send(btm, my_group[0], NG_MPI_TAG_AMG);
     mapped_mesh = nullptr;
     // f_mesh.ContractData(*this);  
     FillContractedMesh();
@@ -383,7 +387,7 @@ void GridContractMap :: BuildNodeMaps ()
   mg_btms[0] = tm_mesh;
   for (size_t k = 1; k < my_group.Size(); k++) {
     // cout << "get mesh from " << my_group[k] << endl;
-    comm.Recv(mg_btms[k], my_group[k], MPI_TAG_AMG);
+    comm.Recv(mg_btms[k], my_group[k], NG_MPI_TAG_AMG);
     // cout << "got mesh from " << my_group[k] << endl;
     // cout << *mg_btms[k] << endl << endl << endl << endl;
   }
@@ -506,7 +510,7 @@ be the ugliest code I have ever seen.
   Array<size_t> ci_get(cneqcs);
   Array<size_t> annoy_havec(cneqcs);
   // eq0, v0, eq1, v1
-  typedef INT<4,int> ANNOYE;
+  typedef IVec<4,int> ANNOYE;
   Table<ANNOYE> tannoy_edges;
   auto eq_of_v = [&c_mesh](auto v) { return c_mesh.template GetEQCOfNode<NT_VERTEX>(v); };
   auto map_cv_to_ceqc = [&c_mesh](auto v) { return c_mesh.template MapNodeToEQC<NT_VERTEX>(v); };
@@ -579,7 +583,7 @@ return out;
   // cout << "reduced annoy_edges: " << endl << annoy_edges << endl;
 
 
-  Array<INT<2, size_t>> annoy_count(cneqcs);
+  Array<IVec<2, size_t>> annoy_count(cneqcs);
   for (auto ceq : Range(cneqcs)) {
     annoy_count[ceq] = 0;
     for (auto & edge: annoy_edges[ceq]) {
@@ -612,8 +616,8 @@ flip_nodes[NT_EDGE][k].Clear();
   /** count edge types in CEQs **/
   Array<size_t> ii_pos(mneqcs);
   Array<size_t> cc_pos(mneqcs);
-  Array<INT<5,size_t>> ccounts(cneqcs); // [II,CI,IANNOY,CC,CANNOY]
-  ccounts = INT<5,size_t>(0);
+  Array<IVec<5,size_t>> ccounts(cneqcs); // [II,CI,IANNOY,CC,CANNOY]
+  ccounts = IVec<5,size_t>(0);
   BitArray has_set(mneqcs); has_set.Clear();
   for (auto k : Range(my_group.Size())) {
     auto eqmap = map_om[k];
@@ -702,7 +706,7 @@ ccounts[ceq][3] += ces.Size() - ci_have[meq] - annoy_have[meq];
     ccounts[0][3] = 0;
   }
   // cout << endl << "ccounts - pos: " << endl << ccounts << endl;
-  Array<INT<2, size_t>> annoy_pos(cneqcs); // have to search here with Pos
+  Array<IVec<2, size_t>> annoy_pos(cneqcs); // have to search here with Pos
   for (auto ceq : Range(cneqcs)) {
     annoy_pos[ceq][0] = ccounts[ceq][2];
     annoy_pos[ceq][1] = cnie + ccounts[ceq][4];
@@ -780,9 +784,9 @@ for (auto l : Range(ces.Size())) {
       cci[ceq0]++;
     }
     else { // IANNOY!!
-      // weighted_cross_edge wce({INT<2>(ceq0_id, ceq1_id),
+      // weighted_cross_edge wce({IVec<2>(ceq0_id, ceq1_id),
       // 	    bare_edge(map_cv_to_ceqc(cv0), map_cv_to_ceqc(cv1)), 0.0});
-      INT<4, int> wce = {ceq0_id, map_cv_to_ceqc(cv0), ceq1_id, map_cv_to_ceqc(cv1)};
+      IVec<4, int> wce = {ceq0_id, map_cv_to_ceqc(cv0), ceq1_id, map_cv_to_ceqc(cv1)};
       auto pos = annoy_edges[ceq0].Pos(wce);
       id = annoy_pos[ceq0][0] + pos;
       // cout << "(Iannoy-edge, pos " << pos << ") , cross edge was "
@@ -798,9 +802,9 @@ for (auto l : Range(ces.Size())) {
     const auto & count = annoy_count[cutid];
     auto aces = FlatArray<ANNOYE>(count[1], &(annoy_edges[cutid][count[0]]));
     // clang-6 doesnt like this?? (see also amg_coarsen.cpp!)
-    // weighted_cross_edge wce({INT<2>(ceq0_id, ceq1_id),
+    // weighted_cross_edge wce({IVec<2>(ceq0_id, ceq1_id),
     // 	  bare_edge(map_cv_to_ceqc(cv0), map_cv_to_ceqc(cv1)), 0.0});
-    INT<4, int> wce = {ceq0_id, map_cv_to_ceqc(cv0), ceq1_id, map_cv_to_ceqc(cv1)};
+    IVec<4, int> wce = {ceq0_id, map_cv_to_ceqc(cv0), ceq1_id, map_cv_to_ceqc(cv1)};
     auto pos = aces.Pos(wce);;
     // cout << "(Cannoy-edge, pos " << pos << ") , cross edge was "
     // 	 << wce << endl;
@@ -819,7 +823,7 @@ for (auto l : Range(ces.Size())) {
     sz[k] = annoy_edges[k].Size();
   annoy_nodes[NT_EDGE] = Table<amg_nts::id_type>(sz);
   sz = 0;
-  INT<2, size_t> count;
+  IVec<2, size_t> count;
   for (auto ceq : Range(cneqcs)) {
     auto as = annoy_edges[ceq];
     auto pos = annoy_pos[ceq];
@@ -863,7 +867,6 @@ cedges[id] = {{{v0, v1}}, id};
   // f_mesh.ContractData(*this);
 
   // maps the attached node-data
-  cout << " FillContractedMesh!" << endl;
   FillContractedMesh();
 
   // c_mesh->AllocateAttachedData();
@@ -888,7 +891,6 @@ cedges[id] = {{{v0, v1}}, id};
   //   // cout << "MAPPED ALGMESH: " << endl;
   //   // cout << *mapped_mesh << endl;
   // }
-  cout << " GridContractMap :: BuildNodeMaps DONE!" << endl;
 } // GridContractMap::BuildNodeMaps
 
 
@@ -896,8 +898,6 @@ void GridContractMap :: BuildCEQCH ()
 {
   static Timer t("GridContractMap :: BuildCEQCH");
   RegionTimer rt(t);
-
-  cout << "GridContractMap :: BuildCEQCH" << endl;
 
   const auto & eqc_h(*this->eqc_h);
   NgsAMG_Comm comm = eqc_h.GetCommunicator();
@@ -916,16 +916,16 @@ void GridContractMap :: BuildCEQCH ()
   Array<int> cmembs(groups.Size()); // haha, this has to be a netgen-array
   for (auto k : Range(groups.Size()))
     { cmembs[k] = groups[k][0]; }
-  cout << " SubCommunicator! " << endl;
-  cout << " cMems: "; prow(cmembs); cout << endl;
+  // cout << " SubCommunicator! " << endl;
+  // cout << " cMems: "; prow(cmembs); cout << endl;
   auto c_comm = comm.CreateSubCommunicatorGlobal(cmembs);
-  cout << " SubCommunicator created! " << endl;
+  // cout << " SubCommunicator created! " << endl;
 
   if (!is_gm) {
     /** Send DP-tables to master and return **/
     int master = my_group[0];
-    comm.Send(eqc_h.GetDPTable(), master, MPI_TAG_AMG);
-    comm.Send(eqc_h.GetEqcIds(), master, MPI_TAG_AMG);
+    comm.Send(eqc_h.GetDPTable(), master, NG_MPI_TAG_AMG);
+    comm.Send(eqc_h.GetEqcIds(), master, NG_MPI_TAG_AMG);
     return;
   }
 
@@ -952,9 +952,9 @@ void GridContractMap :: BuildCEQCH ()
     { all_eqc_ids[0][j] = eqc_h.GetEQCID(j); }
 
   for (auto j : Range((size_t)1,my_group.Size())) {
-    comm.Recv(all_dist_eqcs[j], my_group[j], MPI_TAG_AMG);
+    comm.Recv(all_dist_eqcs[j], my_group[j], NG_MPI_TAG_AMG);
     all_eqc_ids[j].SetSize(all_dist_eqcs[j].Size());
-    comm.Recv(all_eqc_ids[j], my_group[j], MPI_TAG_AMG);
+    comm.Recv(all_eqc_ids[j], my_group[j], NG_MPI_TAG_AMG);
   }
 
   /** merge gathered eqc tables **/
@@ -1059,8 +1059,6 @@ if (ctab[l]==set) found=true;
 map_oc[k][j] = map_mc[map_om[k][j]];
     }
   }
-
-  cout << "GridContractMap :: BuildCEQCH DONE" << endl;
 } // GridContractMap::BuildCEQCH
 
 } // namespace amg
