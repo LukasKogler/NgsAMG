@@ -2,9 +2,13 @@
 # but I don't know what we really need
 cmake_minimum_required(VERSION 3.16)
 
+include(ExternalProject)
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 project(NgsAMG LANGUAGES CXX )
+
+add_library(NgsAMGlib SHARED)
 
 option( ENABLE_COMPILE_TIMING                 "time compiling"                                                ON  )
 option( USE_CCACHE                            "Use CCache"                                                    OFF )
@@ -59,8 +63,21 @@ endif(NOT NG_MPI_FOUND)
 # Try to find METIS header/library that was built into Netgen, otherwise, if applicable, use the provided METIS
 if (NETGEN_METIS_INCLUDE_DIR AND NETGEN_METIS_LIBRARY)
   message(STATUS "Using METIS from Netgen-build")
-  set(METIS_INCLUDE_DIR ${NETGEN_METIS_INCLUDE_DIR})
-  set(METIS_LIBRARY     ${NETGEN_METIS_LIBRARY})
+  find_file(METIS_HEADER metis.h ${NETGEN_METIS_INCLUDE_DIR} NO_CACHE)
+
+  if (NOT METIS_HEADER)
+    message(STATUS "Could not fine METIS-header used to build Netgen, building METIS as dependency!")
+    include(cmake/metis.cmake)
+    add_dependencies(NgsAMGlib project_metis)
+    message(STATUS "Building METIS to ${METIS_DIR}")
+    set(METIS_INCLUDE_DIR ${METIS_DIR}/include)
+    find_library(METIS_LIB metis HINTS ${METIS_DIR})
+    set(METIS_LIBRARY ${METIS_DIR}/lib/libmetis.a)
+  else(NOT METIS_HEADER)
+    message(STATUS "Using METIS from Netgen-build")
+    set(METIS_INCLUDE_DIR ${NETGEN_METIS_INCLUDE_DIR})
+    set(METIS_LIBRARY     nglib)
+    endif(NOT METIS_HEADER)
 else()
   if (NOT METIS_INCLUDE_DIR OR NOT METIS_LIBRARY)
     message(FATAL_ERROR "Could not find METIS from Netgen-build and no Metis installation was provided.")
@@ -68,7 +85,8 @@ else()
 endif()
 
 message(STATUS "Using METIS-header from ${METIS_INCLUDE_DIR}")
-message(STATUS "USing METIS-library ${METHIS_LIBRARY}")
+message(STATUS "USing METIS-library ${METIS_LIBRARY}")
+message(STATUS "METIS-HEADER = ${METIS_HEADER}")
 
 
 # check if CMAKE_INSTALL_PREFIX is set by user, if not install in NGSolve lib/python-lib directories

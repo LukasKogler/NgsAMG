@@ -5,11 +5,6 @@
 
 namespace amg
 {
-#ifdef NG_MPI_WRAPPER
-#define NG_MPI_REQUEST_NULL 0
-#else
-#define NG_MPI_REQUEST_NULL NG_MPI_REQUEST_NULL
-#endif
 
 
 enum {
@@ -226,9 +221,6 @@ public:
 
   NgsAMG_Comm CreateSubCommunicatorGlobal (FlatArray<int> procs) const
   {
-  #ifdef NG_MPI_WRAPPER
-    return NgMPI_Comm::SubCommunicator(procs);
-  #else
     /**
       *  Unlike NgMPI_Comm::SubCommunicator, this uses NG_MPI_Comm_create
       *  instead of NG_MPI_Comm_create_group - i.e., this must be called by ALL
@@ -240,7 +232,6 @@ public:
     NG_MPI_Group_incl(gcomm, procs.Size(), procs.Data(), &gsubcomm);
     NG_MPI_Comm_create(comm, gsubcomm, &subcomm);
     return (subcomm == NG_MPI_COMM_NULL) ? NgsAMG_Comm() : NgsAMG_Comm(subcomm, true);
-  #endif
   }
 }; // class NgsAMG_Comm
 

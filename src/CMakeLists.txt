@@ -12,7 +12,6 @@
 #  2. NgsAMG.so, contains ONLY the python module
 # add_ngsolve_python_module sets the install-path to the python-lib-dir
 
-add_library(NgsAMGlib SHARED)
 target_link_libraries(NgsAMGlib PUBLIC ngsolve)
 set_target_properties(NgsAMGlib PROPERTIES INSTALL_RPATH "${AMG_CLIB_INSTALL_DIR}")
 
