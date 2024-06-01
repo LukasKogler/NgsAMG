@@ -1047,6 +1047,7 @@ GetBlocksForStage (SMOOTH_STAGE const &stage) const
     case(SMOOTH_STAGE::LOC_PART_1): { return _locBlockNums.Range(0, _splitInd); }
     case(SMOOTH_STAGE::EX_PART):    { return _exBlockNums; }
     case(SMOOTH_STAGE::LOC_PART_2): { return _locBlockNums.Range(_splitInd, _locBlockNums.Size()); }
+    default:                        { return FlatArray<unsigned>(0, nullptr); }
   }
 } // HybridDynBlockSmoother::GetBlocksForStage
 

@@ -10,8 +10,17 @@
 #include "utils_sparseMM.hpp"
 #undef FILE_UTILS_SPARSEMM_CPP
 
-#include <mumpsinverse.hpp>
-#include <umfpackinverse.hpp>
+// #ifdef USE_MUMPS
+// #include <mumpsinverse.hpp>
+// #endif
+
+// #ifdef USE_UMFPACK
+// // #include <umfpackinverse.hpp>
+// #endif
+
+// undef USE_<INVERSE> such that we don't get problems with missing headers
+#undef USE_UMFPACK
+#undef USE_MUMPS
 #include <sparsematrix_impl.hpp>
 
 namespace ngbla

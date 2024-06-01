@@ -107,19 +107,48 @@ message(STATUS "METIS-HEADER = ${METIS_HEADER}")
 
 
 # check if CMAKE_INSTALL_PREFIX is set by user, if not install in NGSolve lib/python-lib directories
-if(NOT FORCED_INSTALL_DIR)
-  message(STATUS "No FORCED_INSTALL_DIR was provided, installing under NGSolve!")
-  set(AMG_CLIB_INSTALL_DIR ${NGSOLVE_LIBRARY_DIR} CACHE PATH "Install dir" FORCE)
-  set(AMG_PYTHON_INSTALL_DIR ${NGSOLVE_INSTALL_DIR}/${NGSOLVE_INSTALL_DIR_PYTHON}/NgsAMG CACHE PATH "Install dir" FORCE)
-else(NOT FORCED_INSTALL_DIR)
-  message(STATUS "A FORCED_INSTALL_DIR was provided, installing there!")
-  set(AMG_CLIB_INSTALL_DIR ${FORCED_INSTALL_DIR} CACHE PATH "Install dir" FORCE)
-  set(AMG_PYTHON_INSTALL_DIR ${FORCED_INSTALL_DIR} CACHE PATH "Install dir" FORCE)
-endif(NOT FORCED_INSTALL_DIR)
+if(NGS_PYTHON_CONFIG)
+  message(STATUS "Setting Install dir based on NGSolve python-config")
 
-message(STATUS "NGSOLVE_LIBRARY_DIR = ${NGSOLVE_LIBRARY_DIR}")
-message(STATUS "        C-library will be installed to: ${AMG_CLIB_INSTALL_DIR}")
-message(STATUS "   python-package will be installed to: ${AMG_PYTHON_INSTALL_DIR}")
+  execute_process(
+    COMMAND ${Python3_EXECUTABLE} -c "import sys,sysconfig,os.path; print(os.path.relpath(sysconfig.get_path('platlib'), sys.prefix))"
+    OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE python3_library_dir
+  )
+
+  execute_process(COMMAND ${Python3_EXECUTABLE} -c "import sys; print(sys.prefix)"
+    OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE install_prefix
+  )
+  execute_process(COMMAND ${Python3_EXECUTABLE} -m site --user-base
+    OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE user_base RESULT_VARIABLE ret
+  )
+
+  if (ret EQUAL 0)
+    set(install_prefix ${user_base})
+  endif()
+  set(CMAKE_INSTALL_PREFIX ${install_prefix} CACHE PATH "Install dir" FORCE)
+  set(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT OFF)
+
+  set(AMG_PYTHON_INSTALL_DIR ${CMAKE_INSTALL_PREFIX}/${python3_library_dir}/NgsAMG CACHE PATH "Install dir" FORCE)
+  set(AMG_CLIB_INSTALL_DIR   ${AMG_PYTHON_INSTALL_DIR} CACHE PATH "Install dir" FORCE)
+else(NGS_PYTHON_CONFIG)
+    if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+      message(STATUS "Installing NgsAMG into NGSolve-installation!")
+      message(STATUS "   NGSOLVE_INSTALL_DIR        = ${NGSOLVE_INSTALL_DIR}")
+      message(STATUS "   NGSOLVE_LIBRARY_DIR        = ${NGSOLVE_LIBRARY_DIR}")
+      message(STATUS "   NGSOLVE_INSTALL_DIR_PYTHON = ${NGSOLVE_INSTALL_DIR_PYTHON}")
+      set(AMG_CLIB_INSTALL_DIR   ${NGSOLVE_LIBRARY_DIR} CACHE PATH "Install dir" FORCE)
+      set(AMG_PYTHON_INSTALL_DIR ${NGSOLVE_INSTALL_DIR}/${NGSOLVE_INSTALL_DIR_PYTHON}/NgsAMG CACHE PATH "Install dir" FORCE)
+    else(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+      message(STATUS "Installing NgsAMG to explicitly specified ${CMAKE_INSTALL_PREFIX}!")
+      set(AMG_CLIB_INSTALL_DIR   ${CMAKE_INSTALL_PREFIX} CACHE PATH "Install dir" FORCE)
+      set(AMG_PYTHON_INSTALL_DIR ${CMAKE_INSTALL_PREFIX} CACHE PATH "Install dir" FORCE)
+    endif(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+endif(NGS_PYTHON_CONFIG)
+
+
+message(STATUS " CMAKE_INSTALL_PREFIX = ${CMAKE_INSTALL_PREFIX}")
+message(STATUS " NgsAMG  C-library      will be installed to: ${AMG_CLIB_INSTALL_DIR}")
+message(STATUS " NgsAMG  python-package will be installed to: ${AMG_PYTHON_INSTALL_DIR}")
 
 if (NOT ENABLE_MIS_AGG)
   if (NOT ENABLE_SPW_AGG)

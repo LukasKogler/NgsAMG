@@ -15,6 +15,6 @@ setup(
     name="NgsAMG",
     version="0.0.1",
     author="Lukas Kogler",
-    license=" GNU LESSER GENERAL PUBLIC LICENSE Version3",
+    license="GNU LESSER GENERAL PUBLIC LICENSE Version3",
     cmake_args=_cmake_args
 )
