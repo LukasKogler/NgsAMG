@@ -18,6 +18,23 @@ option( ENABLE_MIS_AGG                        "Enable (M)aximal (I)ndependent (S
 option( ENABLE_SPW_AGG                        "Enable (S)uccessive(P)air(W)ise agglomeration algorithms"      ON  )
 option( ENABLE_STOKES                         "Enable Stokes AMG"                                             OFF )
 option( NGS_COMPATIBILITY                     "Compatibility with public NGSolve "                            ON  )
+option( NGS_PYTHON_CONFIG                     "Use python to find NGSolve (for pip build)"                    OFF )
+
+# for pip build, use python to find NGSolve, otherwise, e.g. for non-python builds, have to rely on NETGENDIR being set 
+if(NGS_PYTHON_CONFIG)
+  message(STATUS "Using python to find NGSolve...")
+  if(CMAKE_VERSION VERSION_LESS "3.18")
+    find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+  else()
+    find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
+  endif()
+  execute_process(COMMAND ${Python3_EXECUTABLE} -m netgen.config OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE Netgen_DIR)
+  execute_process(COMMAND ${Python3_EXECUTABLE} -m ngsolve.config OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE NGSolve_DIR)
+  message(STATUS  "Found Netgen  at ${Netgen_DIR}")
+  message(STATUS  "Found NGSolve at ${NGSolve_DIR}")
+else(NGS_PYTHON_CONFIG)
+  message(STATUS "Looking for NGSolve in the usual places...")
+endif(NGS_PYTHON_CONFIG)
 
 find_package(NGSolve CONFIG REQUIRED
   HINTS $ENV{NETGENDIR}/.. /opt/netgen/ /Applications/Netgen.app/Contents/Resources/CMake C:/netgen
