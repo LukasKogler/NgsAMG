@@ -2,7 +2,8 @@
 #define FILE_ELAST_PC_IMPL_HPP
 
 #include "base_factory.hpp"
-#include "utils_denseLA.hpp"
+#include <utils_denseLA.hpp>
+#include <utils_sparseLA.hpp>
 
 namespace amg
 {
@@ -127,7 +128,7 @@ void VertexAMGPC<FCC> :: SetDefaultOptions (BaseAMGPC::Options& base_O)
   if (inStrictAlgMode())
   {
     // best guess in strict alg mode is that we have a displacement-only formulation,
-    // and that we are using sparse matrice swith Mat<DIM,DIM> entries 
+    // and that we are using sparse matrice swith Mat<DIM,DIM> entries
     O.block_s          = Array<size_t>({1});
     O.with_rots        = false;
     O.regularize_cmats = true;
@@ -204,6 +205,112 @@ double leastSquaresFit(TM const &A,
   return InnerProduct(A, B) / InnerProduct(B, B);
 }
 
+namespace
+{
+
+template<int DIM, class TMESH, class TVD, class V2D, class D2V, class TED>
+void
+CalcEdgeWeightsSimple(TMESH const                &mesh,
+                      FlatArray<TVD>              vData,
+                      FlatArray<int>              vSort,
+                      V2D                         vert2Dof,
+                      D2V                         dof2Vert,
+                      SparseMat<DIM, DIM>  const &A,
+                      FlatArray<TED>              eData,
+                      FlatArray<double>           rot_scalings)
+{
+  // edge-weights for order 1 multi-dim H1, displacements only
+  //  rank 1 edge-matrices E_ij = alpha_ij t_ij\dyad t_ij
+  for (auto & e : mesh.template GetNodes<NT_EDGE>())
+  {
+    auto const di = vert2Dof(e.v[0]);
+    auto const dj = vert2Dof(e.v[1]);
+
+    Mat<DIM, DIM, double> negOD = -A(di, dj);
+
+    Vec<DIM> tang = vData[e.v[1]].pos - vData[e.v[0]].pos;
+    tang /= L2Norm(tang);
+
+    // l2-norm of t\circ t is now 1
+    // t\circ t :: negOD = trans(T) negOD T
+    Vec<DIM> odTang = negOD * tang;
+    double const fac = abs(InnerProduct(odTang, tang));
+
+
+    auto & emat = eData[e.id]; emat = 0.0;
+    Iterate<DIM>([&](auto i) LAMBDA_INLINE {
+      Iterate<DIM>([&](auto j) LAMBDA_INLINE {
+        emat(i.value, j.value) = fac * tang(i.value) * tang(j.value);
+      });
+    });
+
+    // double const alpha = leastSquaresFit(emat, A(di, dj));
+
+    // auto fsem = fabsum(emat);
+    // // cout << " initial fabsum " << fsem << endl;
+    // emat *= etrs / fsem;
+    // scale rotations with 1/h - approx. same energy norm as displacements
+    // const double linv = 1.0/len;
+    // rot_scalings[e.v[0]] = (rot_scalings[e.v[0]] == 0.0) ? 1.0/len : min(rot_scalings[e.v[0]], linv);
+    // rot_scalings[e.v[1]] = (rot_scalings[e.v[1]] == 0.0) ? 1.0/len : min(rot_scalings[e.v[1]], linv);
+
+
+    rot_scalings[e.v[0]] = 1.0;
+    rot_scalings[e.v[1]] = 1.0;
+  }
+}
+
+template<int DIM, class TMESH, class TVD, class V2D, class D2V, class TED>
+void
+CalcEdgeWeightsP2(TMESH const                &mesh,
+                  FlatArray<TVD>              vData,
+                  FlatArray<int>              vSort,
+                  V2D                         vert2Dof,
+                  D2V                         dof2Vert,
+                  SparseMat<DIM, DIM>  const &A,
+                  FlatArray<TED>              eData,
+                  FlatArray<double>           rot_scalings)
+{
+  cout << " CalcEdgeWeightsP2 ! " << endl;
+  // edge-weights for nodal-p2, a bit up in the air, but
+  // try to give it full rank?
+  // edge-weights for order 1 multi-dim H1, displacements only
+  //  rank 1 edge-matrices E_ij = alpha_ij t_ij\dyad t_ij
+  for (auto & e : mesh.template GetNodes<NT_EDGE>())
+  {
+    auto const di = vert2Dof(e.v[0]);
+    auto const dj = vert2Dof(e.v[1]);
+
+    Mat<DIM, DIM, double> negOD = -A(di, dj);
+
+    Vec<DIM> tang = vData[e.v[1]].pos - vData[e.v[0]].pos;
+    auto const lenInv = 1.0/L2Norm(tang);
+    tang *= lenInv;
+
+    // l2-norm of t\circ t is now 1
+    // t\circ t :: negOD = trans(T) negOD T
+    Vec<DIM> odTang = negOD * tang;
+    double const fac = abs(InnerProduct(odTang, tang));
+
+
+    auto & emat = eData[e.id];
+    emat = 0.0;
+    Iterate<DIM>([&](auto i) LAMBDA_INLINE {
+      emat(i.value, i.value) = fac;
+    });
+
+    rot_scalings[e.v[0]] = 1.0;
+    rot_scalings[e.v[1]] = 1.0;
+
+    // // scale rotations with 1/h - approx. same energy norm as displacements
+    // rot_scalings[e.v[0]] = lenInv;
+    // rot_scalings[e.v[1]] = lenInv;
+  }
+}
+
+
+}
+
 template<class FCC> template<class TD2V, class TV2D> shared_ptr<typename FCC::TMESH>
 VertexAMGPC<FCC> :: BuildAlgMesh_ALG_scal (shared_ptr<BlockTM> top_mesh,
                                             shared_ptr<BaseSparseMatrix> spmat,
@@ -220,7 +327,7 @@ VertexAMGPC<FCC> :: BuildAlgMesh_ALG_scal (shared_ptr<BlockTM> top_mesh,
   auto a = new AttachedEVD<DIM>(Array<ElastVData<FCC::DIM>>(top_mesh->GetNN<NT_VERTEX>()), CUMULATED); // !! otherwise pos is garbage
   auto vdata = a->Data(); // TODO: get penalty dirichlet from row-sums (only taking x/y/z displacement entries)
   FlatArray<int> vsort = node_sort[NT_VERTEX];
-  
+
   if (O.vertexSpecification == VertexAMGPCOptions::VERT_SPEC::FROM_MESH_NODES)
   {
     const auto & MA(*ma);
@@ -251,52 +358,19 @@ VertexAMGPC<FCC> :: BuildAlgMesh_ALG_scal (shared_ptr<BlockTM> top_mesh,
 
   Array<double> rot_scalings(top_mesh->GetNN<NT_VERTEX>()); rot_scalings = 0.0;
 
-  if (auto spm_tm = dynamic_pointer_cast<SparseMatrixTM<Mat<FCC::ENERGY::DISPPV,FCC::ENERGY::DISPPV,double>>>(spmat)) { // disp only
+  if (auto spm_tm = dynamic_pointer_cast<SparseMat<FCC::ENERGY::DISPPV,FCC::ENERGY::DISPPV>>(spmat))
+  { // disp only
     const auto& A(*spm_tm);
-    for (auto & e : edges) {
-      auto di = V2D(e.v[0]); auto dj = V2D(e.v[1]);
-      // cout << "edge " << e << endl << " dofs " << di << " " << dj << endl;
-      // cout << " mat etr di-di" << endl; print_tm(cout, A(di, di)); cout << endl;
-      // cout << " mat etr dj-dj" << endl; print_tm(cout, A(dj, dj)); cout << endl;
-      // cout << " mat etr di-dj" << endl; print_tm(cout, A(di, dj)); cout << endl;
-      // after BBDC, diri entries are compressed and mat has no entry (multidim BDDC doesnt work anyways)
 
-      Mat<FCC::DIM, FCC::DIM, double> negOD = -A(di, dj);
-      Vec<FCC::DIM> tang = vdata[e.v[1]].pos - vdata[e.v[0]].pos;
-      tang /= L2Norm(tang);
-
-      // cout << "scaled tang " << endl << tang << endl;
-      
-      // l2-norm of t\circ t is now 1
-      // t\circ t :: negOD = trans(T) negOD T
-      Vec<FCC::DIM> odTang = negOD * tang;
-      double const fac = abs(InnerProduct(odTang, tang));
-
-      // cout << " negOD " << endl; print_tm(cout, negOD); cout << endl;
-      // cout << " odTang " << endl << odTang << endl;
-      // cout << " fac = " << fac << endl << endl;
-
-      auto & emat = edata[e.id]; emat = 0.0;
-      Iterate<FCC::ENERGY::DISPPV>([&](auto i) LAMBDA_INLINE {
-        Iterate<FCC::ENERGY::DISPPV>([&](auto j) LAMBDA_INLINE {
-          emat(i.value, j.value) = fac * tang(i.value) * tang(j.value);
-        });
-      });
-      
-      // cout << " -> emat = " << endl; print_tm(cout, emat); cout << endl;
-
-      // double const alpha = leastSquaresFit(emat, A(di, dj));
-
-      // auto fsem = fabsum(emat);
-      // // cout << " initial fabsum " << fsem << endl;
-      // emat *= etrs / fsem;
-      // scale rotations with 1/h - approx. same energy norm as displacements
-      // const double linv = 1.0/len;
-      // rot_scalings[e.v[0]] = (rot_scalings[e.v[0]] == 0.0) ? 1.0/len : min(rot_scalings[e.v[0]], linv);
-      // rot_scalings[e.v[1]] = (rot_scalings[e.v[1]] == 0.0) ? 1.0/len : min(rot_scalings[e.v[1]], linv);
-      rot_scalings[e.v[0]] = 1.0;
-      rot_scalings[e.v[1]] = 1.0;
+    if ( this->use_p2_emb )
+    {
+      CalcEdgeWeightsP2<FCC::ENERGY::DISPPV>(*top_mesh, vdata, vsort, V2D, D2V, A, edata, rot_scalings);
     }
+    else
+    {
+      CalcEdgeWeightsSimple<FCC::ENERGY::DISPPV>(*top_mesh, vdata, vsort, V2D, D2V, A, edata, rot_scalings);
+    }
+
   }
   else if (auto spm_tm = dynamic_pointer_cast<SparseMatrixTM<typename FCC::ENERGY::TM>>(spmat)) // disp+rot
   {
@@ -305,7 +379,7 @@ VertexAMGPC<FCC> :: BuildAlgMesh_ALG_scal (shared_ptr<BlockTM> top_mesh,
     for (auto & e : edges) {
       auto di = V2D(e.v[0]); auto dj = V2D(e.v[1]);
       // after BBDC, diri entries are compressed and mat has no entry (mult multidim BDDC doesnt work anyways)
-      double fc = (ffds.Test(di) && ffds.Test(dj)) ? fabsum(A(di, dj)) / FCC::ENERGY::DPV : 1e-4; // after BBDC, diri entries are compressed and mat has no entry 
+      double fc = (ffds.Test(di) && ffds.Test(dj)) ? fabsum(A(di, dj)) / FCC::ENERGY::DPV : 1e-4; // after BBDC, diri entries are compressed and mat has no entry
       // double fc = (ffds.Test(di) && ffds.Test(dj)) ? fabsum(A(di, dj)) / sqrt(fabsum(A(di,di)) * fabsum(A(dj,dj))) / dofpv(C::DIM) : 1e-4;
       auto & emat = edata[e.id]; emat = 0;
       Iterate<FCC::ENERGY::DPV>([&](auto i) LAMBDA_INLINE { emat(i.value, i.value) = fc; });
@@ -471,30 +545,121 @@ BuildED (size_t height, shared_ptr<TopologicMesh> mesh)
 
   typedef SparseMat<BSA, FCC::BS> TED;
 
-  if (O.dof_ordering != Options::DOF_ORDERING::REGULAR_ORDERING)
-    { throw Exception("BuildED only implemented for regular ordering"); }
+  // if (O.dof_ordering != Options::DOF_ORDERING::REGULAR_ORDERING)
+  //   { throw Exception("BuildED only implemented for regular ordering"); }
 
-  const auto & M(*mesh);
+  auto tMesh = my_dynamic_pointer_cast<TMESH>(mesh, "BuildED - mesh!");
+
+  const auto & M(*tMesh);
+
+  M.CumulateData();
+
+  auto vData = get<0>(M.Data())->Data();
 
   if constexpr ( BSA == FCC::ENERGY::DPV ) // TODO: rot-flipping ?!
     { return nullptr; }
-  else if constexpr ( BSA == FCC::ENERGY::DISPPV ) // disp -> disp,rot embedding
+  else if constexpr ( BSA == FCC::ENERGY::DISPPV )
   {
-    if ( O.with_rots || (O.block_s.Size() != 1) || (O.block_s[0] != 1) )
-      { throw Exception("Elasticity BuildED: disp/disp+rot, block_s mismatch"); }
-
-    Array<int> perow(M.template GetNN<NT_VERTEX>());
-    perow = 1;
-
-    auto E_D = make_shared<TED>(perow, M.template GetNN<NT_VERTEX>());
-
-    for (auto k : Range(perow))
+    if ( this->use_p2_emb )
     {
-      E_D->GetRowIndices(k)[0] = k;
-      auto & v = E_D->GetRowValues(k)[0];
-      v = 0; Iterate<FCC::ENERGY::DISPPV>([&](auto i) { v(i.value, i.value) = 1; });
+      /*
+       *  P2 embedding:
+       *     - for v-dofs: u_v  <- (u_v, r_v)
+       *     - for e-dofs: u_e  <- (u_e, r_e) <- 0.5 * ( Q^{vi->e} | Q^{vj->e})
+       */
+      auto &edgePointParents = this->edgePointParents;
+
+      cout << " height = " << height << endl;
+
+      Array<int> perow(height);
+      perow = 0;
+
+      // v-dofs
+      for (auto k : Range(v2d_array))
+      {
+        perow[v2d_array[k]] = 1;
+      }
+
+      // e-dofs, P2-embedding
+      for (auto k : Range(edgePointParents))
+      {
+        perow[edgePointParents[k][0]] = 2;
+      }
+
+      auto E_D = make_shared<TED>(perow, M.template GetNN<NT_VERTEX>());
+
+      for (auto vNum : Range(v2d_array))
+      {
+        auto const dNum = v2d_array[vNum];
+
+        E_D->GetRowIndices(dNum)[0] = vNum;
+
+        auto & v = E_D->GetRowValues(dNum)[0];
+        v = 0;
+        Iterate<FCC::ENERGY::DISPPV>([&](auto i) { v(i.value, i.value) = 1; });
+      }
+
+      // e-dofs, P2-embedding
+      for (auto eNum : Range(edgePointParents))
+      {
+        auto const dNum = edgePointParents[eNum][0];
+        auto const v0   = edgePointParents[eNum][1];
+        auto const v1   = edgePointParents[eNum][2];
+
+        auto ris = E_D->GetRowIndices(dNum);
+        auto rvs = E_D->GetRowValues(dNum);
+
+        auto [Qij, Qji] = FCC::ENERGY::GetQijQji(vData[v0], vData[v1]);
+
+        constexpr int BS = FCC::ENERGY::DPV;
+        Mat<BS, BS, double> M;
+        FlatMat<0, FCC::ENERGY::DISPPV, 0, BS, Mat<BS, BS, double>> dispM(M);
+
+        double scal = 0.5;
+
+        // nodal-p2
+        ris[0] = v0;
+        SetScalIdentity(scal, M);
+        Qij.MQ(M);
+        rvs[0] = dispM;
+
+        ris[1] = v1;
+        SetScalIdentity(scal, M);
+        Qji.MQ(M);
+        rvs[1] = dispM;
+
+        // edge-bubbles, dof_mid ~ [r]
+        //   bubbles are scaled to have value 0.25 at the mid-point, Qij wants to bring it to T * t = 0.5*|t| skew(t_normalized) r
+        //        -> dof-value = 4 * T * r
+        // Iterate<FCC::ENERGY::DISPPV>([&](auto i) {
+        //   rvs[0](i.value, i.value) -= scal;
+        //   rvs[1](i.value, i.value) -= scal;
+        // });
+      }
+
+      // cout << " P2-EMB DONE: !" << endl;
+      // print_tm_spmat(cout, *E_D);
+
+      return E_D;
     }
-    return E_D;
+    else // normal disp -> disp,rot embedding
+    {
+      if ( O.with_rots || (O.block_s.Size() != 1) || (O.block_s[0] != 1) )
+        { throw Exception("Elasticity BuildED: disp/disp+rot, block_s mismatch"); }
+
+      Array<int> perow(M.template GetNN<NT_VERTEX>());
+      perow = 1;
+
+      auto E_D = make_shared<TED>(perow, M.template GetNN<NT_VERTEX>());
+
+      for (auto k : Range(perow))
+      {
+        E_D->GetRowIndices(k)[0] = k;
+        auto & v = E_D->GetRowValues(k)[0];
+        v = 0; Iterate<FCC::ENERGY::DISPPV>([&](auto i) { v(i.value, i.value) = 1; });
+      }
+      return E_D;
+    }
   }
   else if ( BSA == 1 )
   {

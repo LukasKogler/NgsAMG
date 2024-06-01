@@ -29,12 +29,20 @@ protected:
   using BaseAMGPC::options;
   using BaseAMGPC::strict_alg_mode;
 
+  // TODO: this entire subset/embedding stuff needs to be refactored/redone, it is just confusing/bad
+
+  // prelim-node -> node maps
   Array<Array<int>> node_sort;
 
   bool use_v2d_tab = false;
+
+  // dof<->prelim-vertex maps
   Array<int> d2v_array, v2d_array;
   Table<int> v2d_table;
   Array<Array<Vec<DIM,double>>> node_pos;
+
+  bool use_p2_emb;
+  Array<IVec<3>> edgePointParents; // [dNum, vnum0, vnum1]   edge-dof->prelim-vertex map (for p2)
 
   shared_ptr<BitArray> free_verts;
 
@@ -89,6 +97,8 @@ protected:
   virtual shared_ptr<BlockTM> BTM_Mesh (shared_ptr<EQCHierarchy> eqc_h);
   virtual shared_ptr<BlockTM> BTM_Alg (shared_ptr<EQCHierarchy> eqc_h);
 
+  // TODO: honestly, just have all of these be regular virtual function and have elasticity/H1-PC be actual classes
+  //       that overload them instead of all that template specialization stuff
   virtual shared_ptr<TMESH> BuildAlgMesh (shared_ptr<BlockTM> top_mesh);
   virtual shared_ptr<TMESH> BuildAlgMesh_ALG (shared_ptr<BlockTM> top_mesh);
   template<class TD2V, class TV2D> // for 1 DOF per vertex (also multidim-DOF)
@@ -207,7 +217,8 @@ public:
   /** How the DOFs in the subset are mapped to vertices **/
   enum DOF_ORDERING : unsigned {
     REGULAR_ORDERING = 0,
-    VARIABLE_ORDERING = 1     // provided assignment [[not implemented]]
+    VARIABLE_ORDERING = 1,     // provided assignment [[not implemented]]
+    P2_ORDERING = 2            // first edge DOF is in subset but has no vertex!
   };
   /**	REGULAR: sum(block_s) DOFs per "vertex", defined by block_s and ss_ranges/ss_select
         e.g: block_s = [2,3], then we have NV blocks of 2 vertices, then NV blocks of 3 vertices
@@ -230,7 +241,7 @@ public:
   VERT_SPEC vertexSpecification = NOT_NEEDED;
 
   /** AMG-Vertex <-> Mesh-Node Identification **/
-  bool has_node_dofs[4] = { false, false, false, false };
+  bool has_node_dofs[4] = { false, false, false, false }; // TODO: remove this, I don't think we use it
   Array<NodeId> v_nodes;
 
   /** vertex position given from the outside **/

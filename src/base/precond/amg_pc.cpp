@@ -1371,6 +1371,10 @@ void VertexAMGPCOptions :: SetFromFlags (shared_ptr<FESpace> fes, shared_ptr<Bas
   SetEnumOpt(flags, topo, pfit("topology"), { "alg", "mesh", "elmat" }, { ALG_TOPO, MESH_TOPO, ELMAT_TOPO });
   SetEnumOpt(flags, v_pos, pfit("vpos"), { "vertex", "given" }, { VERTEX_POS, GIVEN_POS } );
 
+  cout << " dof_orderint SetEnumOpt" << endl;
+  SetEnumOpt(flags, dof_ordering, pfit("dof_ordering"), {"regular", "p2Emb"}, { REGULAR_ORDERING, P2_ORDERING});
+  cout << " dof_orderint SetEnumOpt OK" << endl;
+
   calc_elmat_evs = flags.GetDefineFlagX(pfit("calc_elmat_evs")).IsTrue();
   aux_elmat_version = max(0.0, min(2.0, flags.GetNumFlag(pfit("aux_elmat_version"), 0.0)));
 

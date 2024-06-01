@@ -146,9 +146,29 @@ shared_ptr<TopologicMesh> VertexAMGPC<FACTORY> :: BuildInitialMesh ()
 
   auto eqc_h = BuildEQCH();
 
+  // TODO: it is kinda dumb that we have the subset being decided in SetFromFlags,
+  //       which in some cases requires looping through all kinds of stuff already,
+  //       and then we have to loop through stuff in SetUpMaps again.
+  //       I guess we should do both already when the PC is created
+
+  /**
+   *  This computes initial, local maps for the AMG-embedding
+   *      - it creates the subset, i.e. the range of the embedding
+   *      - it creates a mapping DOF -> prelim-vertex
+   *  These are only preliminary, LOCAL maps
+   */
   SetUpMaps();
 
-  return BuildAlgMesh(BuildTopMesh(eqc_h));
+  /**
+   *  This creates an AlgMesh, in parallel this involves computing a
+   *  re-ordering of the prelim-vertices implicitly defined by the above
+   *  computed dof->prelim-vertex map.
+   *
+   *  That is, node_sort is the prelim-vertex -> vertex map
+   */
+  auto mesh = BuildAlgMesh(BuildTopMesh(eqc_h));
+
+  return mesh;
 } // VertexAMGPC::BuildInitialMesh
 
 
@@ -163,6 +183,8 @@ void VertexAMGPC<FACTORY> :: SetUpMaps ()
 
   size_t n_verts = -1;
 
+  use_p2_emb = false;
+
   switch(O.subset) {
   case(Options::DOF_SUBSET::RANGE_SUBSET): {
 
@@ -170,71 +192,153 @@ void VertexAMGPC<FACTORY> :: SetUpMaps ()
     for (auto range : O.ss_ranges)
       { in_ss += range[1] - range[0]; }
 
-    if (O.dof_ordering == Options::DOF_ORDERING::VARIABLE_ORDERING)
-      { throw Exception("not implemented (but easy)"); }
-    else if (O.dof_ordering == Options::DOF_ORDERING::REGULAR_ORDERING)
+    switch(O.dof_ordering)
     {
-      const size_t dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
-      n_verts = in_ss / dpv;
+      case(VertexAMGPCOptions::DOF_ORDERING::VARIABLE_ORDERING):
+      {
+        throw Exception("VARIABLE_ORDERING not implemented (how did we get here anyways?)");
+        break;
+      }
+      case(VertexAMGPCOptions::DOF_ORDERING::REGULAR_ORDERING):
+      {
+        const size_t dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
+        n_verts = in_ss / dpv;
 
-      d2v_array.SetSize(ndof); d2v_array = -1;
+        d2v_array.SetSize(ndof); d2v_array = -1;
 
-      auto n_block_types = O.block_s.Size();
+        auto n_block_types = O.block_s.Size();
 
-      if (dpv == 1) { // range subset , regular order, 1 dof per V
-        v2d_array.SetSize(n_verts);
-        int c = 0;
-        for (auto range : O.ss_ranges) {
-          for (auto dof : Range(range[0], range[1])) {
-            d2v_array[dof] = c;
-            v2d_array[c++] = dof;
+        if (dpv == 1) { // range subset , regular order, 1 dof per V
+          v2d_array.SetSize(n_verts);
+          int c = 0;
+          for (auto range : O.ss_ranges) {
+            for (auto dof : Range(range[0], range[1])) {
+              d2v_array[dof] = c;
+              v2d_array[c++] = dof;
+            }
           }
         }
-      }
-      else if (n_block_types == 1) { // range subset, regular order, N dofs per V in a single block
-        use_v2d_tab = true;
-        v2d_table = Table<int>(n_verts, dpv);
-        auto v2da = v2d_table.AsArray();
-        int c = 0;
-        for (auto range : O.ss_ranges) {
-          for (auto dof : Range(range[0], range[1])) {
-            d2v_array[dof] = c / dpv;
-            v2da[c++] = dof;
+        else if (n_block_types == 1) { // range subset, regular order, N dofs per V in a single block
+          use_v2d_tab = true;
+          v2d_table = Table<int>(n_verts, dpv);
+          auto v2da = v2d_table.AsArray();
+          int c = 0;
+          for (auto range : O.ss_ranges) {
+            for (auto dof : Range(range[0], range[1])) {
+              d2v_array[dof] = c / dpv;
+              v2da[c++] = dof;
+            }
           }
         }
-      }
-      else { // range subset , regular order, N dofs per V in multiple blocks
-        use_v2d_tab = true;
-        v2d_table = Table<int>(n_verts, dpv);
-        const int num_block_types = O.block_s.Size();
-        int block_type = 0; // we currently mapping DOFs in O.block_s[block_type]-blocks
-        int cnt_block = 0; // how many of those blocks have we gone through
-        int block_s = O.block_s[block_type];
-        int bos = 0;
-        for (auto range_num : Range(O.ss_ranges)) {
-          IVec<2,size_t> range = O.ss_ranges[range_num];
-          while ( (range[1] > range[0]) && (block_type < num_block_types) ) {
-            int blocks_in_range = (range[1] - range[0]) / block_s; // how many blocks can I fit in here ?
-            int need_blocks = n_verts - cnt_block; // how many blocks of current size I still need.
-            auto map_blocks = min2(blocks_in_range, need_blocks);
-            for (auto l : Range(map_blocks)) {
-              for (auto j : Range(block_s)) {
-                d2v_array[range[0]] = cnt_block;
-                v2d_table[cnt_block][bos+j] = range[0]++;
+        else { // range subset , regular order, N dofs per V in multiple blocks
+          use_v2d_tab = true;
+          v2d_table = Table<int>(n_verts, dpv);
+          const int num_block_types = O.block_s.Size();
+          int block_type = 0; // we currently mapping DOFs in O.block_s[block_type]-blocks
+          int cnt_block = 0; // how many of those blocks have we gone through
+          int block_s = O.block_s[block_type];
+          int bos = 0;
+          for (auto range_num : Range(O.ss_ranges)) {
+            IVec<2,size_t> range = O.ss_ranges[range_num];
+            while ( (range[1] > range[0]) && (block_type < num_block_types) ) {
+              int blocks_in_range = (range[1] - range[0]) / block_s; // how many blocks can I fit in here ?
+              int need_blocks = n_verts - cnt_block; // how many blocks of current size I still need.
+              auto map_blocks = min2(blocks_in_range, need_blocks);
+              for (auto l : Range(map_blocks)) {
+                for (auto j : Range(block_s)) {
+                  d2v_array[range[0]] = cnt_block;
+                  v2d_table[cnt_block][bos+j] = range[0]++;
+                }
+                cnt_block++;
               }
-              cnt_block++;
+              if (cnt_block == n_verts) {
+                bos += block_s;
+                block_type++;
+                cnt_block = 0;
+                if (block_type < O.block_s.Size())
+                  { block_s = O.block_s[block_type]; }
+              }
             }
-            if (cnt_block == n_verts) {
-              bos += block_s;
-              block_type++;
-              cnt_block = 0;
-              if (block_type < O.block_s.Size())
-                { block_s = O.block_s[block_type]; }
+          }
+        } // range, regular, N dofs, multiple blocks
+        break;
+      } // REGULAR_ORDERING
+      case(Options::DOF_ORDERING::P2_ORDERING):
+      {
+        this->use_v2d_tab = false;
+        this->use_p2_emb = true;
+
+        cout << " P2-ordering " << endl;
+        cout << " ndof " << ndof << endl;
+        cout << " NV " << ma->GetNV() << endl;
+
+        cout << bfa << endl;
+        cout << bfa->GetFESpace() << endl;
+
+        // max. #v == fes-#DOFs
+        // TODO: throw an error if we get here in strict alg mode
+        auto const &fes = *bfa->GetFESpace();
+
+        d2v_array.SetSize(ndof); d2v_array = -1;
+        v2d_array.SetSize(ma->GetNV());
+
+        // this->has_node_dofs[NT_EDGE] = false; // this lives in options...
+
+        // !! multidim is assumed right now ~~
+        n_verts = 0;
+        Array<int> nodeDofs;
+        for (auto k : Range(ma->GetNV()))
+        {
+          fes.GetDofNrs(NodeId(NT_VERTEX, k), nodeDofs);
+
+          if ( nodeDofs.Size() ) // e.g. definedon
+          {
+            auto const vNum = n_verts++;
+            d2v_array[nodeDofs[0]] = vNum;
+            v2d_array[vNum] = vNum;
+            // cout << " MA-V " << k << " -> DOF " << nodeDofs[0] << " <-> V " << vNum << endl;
+          }
+        }
+
+        cout << " FINAL NV " << n_verts << endl;
+
+        v2d_array.SetSize(n_verts);
+
+        // should check for order >= 2, and nodalp2 here !?
+        // cout << " ma->GetNEdges() = " << ma->GetNEdges() << std::endl;
+        edgePointParents.SetSize(ma->GetNEdges());
+        int cntEdgeVs = 0;
+        for (auto k : Range(ma->GetNEdges()))
+        {
+          fes.GetDofNrs(NodeId(NT_EDGE, k), nodeDofs);
+
+          if ( nodeDofs.Size() ) // e.g. definedon
+          {
+            auto loDOF = nodeDofs[0];
+            auto pNums  = ma->GetEdgePNums(k);
+
+            fes.GetDofNrs(NodeId(NT_VERTEX, pNums[0]), nodeDofs);
+
+            if ( nodeDofs.Size() ) // e.g. definedon
+            {
+              auto d0 = nodeDofs[0];
+
+              if ( nodeDofs.Size() ) // e.g. definedon
+              {
+                // cout << " edge " << k << ", e-dof " << loDOF << " -> parents (dof " << d0 << " v " << d2v_array[d0] << ") and (dof " << d0 << " v " << d2v_array[d0] << ")" << endl;
+                fes.GetDofNrs(NodeId(NT_VERTEX, pNums[1]), nodeDofs);
+                auto d1 = nodeDofs[0];
+
+                edgePointParents[cntEdgeVs++] = IVec<3>({loDOF, d2v_array[d0], d2v_array[d1]});
+              }
             }
           }
         }
-      } // range, regular, N dofs, multiple blocks
-    } // REGULAR_ORDERING
+        // cout << "   # MID_SIDE_V = " << cntEdgeVs << endl;
+        edgePointParents.SetSize(cntEdgeVs);
+        break;
+      } // P2_ORDERING
+    }
     break;
   } // RANGE_SUBSET
   case(Options::DOF_SUBSET::SELECTED_SUBSET): {
@@ -242,55 +346,75 @@ void VertexAMGPC<FACTORY> :: SetUpMaps ()
     const auto & subset = *O.ss_select;
     size_t in_ss = subset.NumSet();
 
-    if (O.dof_ordering == Options::DOF_ORDERING::VARIABLE_ORDERING)
-      { throw Exception("not implemented (but easy)"); }
-    else if (O.dof_ordering == Options::DOF_ORDERING::REGULAR_ORDERING) {
-    const size_t dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
-    n_verts = in_ss / dpv;
+    switch(O.dof_ordering)
+    {
+      case(VertexAMGPCOptions::DOF_ORDERING::VARIABLE_ORDERING):
+      {
+        throw Exception("VARIABLE_ORDERING not implemented (how did we get here anyways?)");
+        break;
+      }
+      case(VertexAMGPCOptions::DOF_ORDERING::REGULAR_ORDERING):
+      {
+        const size_t dpv = std::accumulate(O.block_s.begin(), O.block_s.end(), 0);
+        n_verts = in_ss / dpv;
 
-    d2v_array.SetSize(ndof); d2v_array = -1;
+        d2v_array.SetSize(ndof); d2v_array = -1;
 
-    auto n_block_types = O.block_s.Size();
+        auto n_block_types = O.block_s.Size();
 
-    if (dpv == 1) { // select subset, regular order, 1 dof per V
-      v2d_array.SetSize(n_verts);
-      auto& subset = *O.ss_select;
-      for (int j = 0, k = 0; k < n_verts; j++) {
-        // cout << j << " " << k << " " << n_verts << " ss " << subset.Test(j) << endl;
-        if (subset.Test(j)) {
-          auto d = j; auto svnr = k++;
-          d2v_array[d] = svnr;
-          v2d_array[svnr] = d;
+        if (dpv == 1) { // select subset, regular order, 1 dof per V
+          v2d_array.SetSize(n_verts);
+          auto& subset = *O.ss_select;
+          for (int j = 0, k = 0; k < n_verts; j++) {
+            // cout << j << " " << k << " " << n_verts << " ss " << subset.Test(j) << endl;
+            if (subset.Test(j)) {
+              auto d = j; auto svnr = k++;
+              d2v_array[d] = svnr;
+              v2d_array[svnr] = d;
+            }
+          }
         }
+        else { // select subset, regular order, N dofs per V
+          use_v2d_tab = true;
+          v2d_table = Table<int>(n_verts, dpv);
+          int block_type = 0; // we currently mapping DOFs in O.block_s[block_type]-blocks
+          int cnt_block = 0; // how many of those blocks have we gone through
+          int block_s = O.block_s[block_type];
+          int j = 0, col_os = 0;
+          const auto blockss = O.block_s.Size();
+          for (auto k : Range(subset.Size())) {
+            if (subset.Test(k)) {
+              d2v_array[k] = cnt_block;
+              v2d_table[cnt_block][col_os + j++] = k;
+              if (j == block_s) {
+          j = 0;
+          cnt_block++;
+              }
+              if (cnt_block == n_verts) {
+          block_type++;
+          cnt_block = 0;
+          col_os += block_s;
+          if (block_type + 1 < blockss)
+            { block_s = O.block_s[block_type]; }
+              }
+            }
+          }
+        } // select subset, reg. order, N dofs per V
+
+        break;
+      }
+      case(Options::DOF_ORDERING::P2_ORDERING):
+      {
+        throw Exception("P2-ordering needs RANGE_SUBSET !?");
       }
     }
-    else { // select subset, regular order, N dofs per V
-      use_v2d_tab = true;
-      v2d_table = Table<int>(n_verts, dpv);
-      int block_type = 0; // we currently mapping DOFs in O.block_s[block_type]-blocks
-      int cnt_block = 0; // how many of those blocks have we gone through
-      int block_s = O.block_s[block_type];
-      int j = 0, col_os = 0;
-      const auto blockss = O.block_s.Size();
-      for (auto k : Range(subset.Size())) {
-        if (subset.Test(k)) {
-          d2v_array[k] = cnt_block;
-          v2d_table[cnt_block][col_os + j++] = k;
-          if (j == block_s) {
-      j = 0;
-      cnt_block++;
-          }
-          if (cnt_block == n_verts) {
-      block_type++;
-      cnt_block = 0;
-      col_os += block_s;
-      if (block_type + 1 < blockss)
-        { block_s = O.block_s[block_type]; }
-          }
-        }
-      }
-    } // select subset, reg. order, N dofs per V
-        } // REGULAR_ORDERING
+
+    if (O.dof_ordering == Options::DOF_ORDERING::VARIABLE_ORDERING)
+      { throw Exception("not implemented (but easy)"); }
+    else if (O.dof_ordering == Options::DOF_ORDERING::REGULAR_ORDERING)
+    {
+
+    } // REGULAR_ORDERING
     break;
   } // SELECTED_SUBSET
   } // switch(O.subset)
@@ -692,9 +816,9 @@ BuildES ()
         Array<int> perow(nd_loc);
         for (auto k : Range(perow))
           { perow[k] = SS.Test(k) ? 1 : 0; }
-       
+
         E_S = make_shared<TS>(perow, cnt_cols); cnt_cols = 0;
-       
+
         for (auto k : Range(nd_loc))
         {
           if (SS.Test(k))
