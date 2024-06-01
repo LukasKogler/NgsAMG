@@ -3,12 +3,11 @@ Algebraic Multigrid Preconditioners for NGSolve.
 
 Supports H1 and elasticity problems.
 
+The library can be installed via pip:
+
+    python3 -m pip install git+https://github.com/LukasKogler/NgsAMG.git
+
 This package needs NGSolve to be built with MPI. For the elasticity AMG component,
 NGSolve also has to be built with LAPACK and MAX_SYS_DIM 6 or higher.
 
-Paths to headers of some external NGSolve projects (metis, mumps, umfpack, ..) sometimes
-need to explicitely given to cmake
-
-cmake -DCMAKE_CXX_FLAGS="-I/path_to_these_headers"
-
-If you run into any other issues, contact lukas.kogler@asc.tuwien.ac.at
+The library can also be used with non-python NGSolve builds, but that requires building from source.
