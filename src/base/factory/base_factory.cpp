@@ -49,6 +49,7 @@ void BaseAMGFactory::Options::SetFromFlags (const Flags & flags, string prefix)
   sp_min_frac.SetFromFlags(flags, prefix +  "sp_min_frac");
   sp_max_per_row.SetFromFlags(flags, prefix +  "sp_max_per_row");
   sp_omega.SetFromFlags(flags, prefix +  "sp_omega");
+  use_emb_sp = flags.GetDefineFlagX(prefix + "use_emb_sp").IsTrue();
 
   set_bool(keep_grid_maps, "keep_grid_maps");
 
@@ -379,7 +380,7 @@ shared_ptr<BaseDOFMapStep> BaseAMGFactory::DoStep (shared_ptr<AMGLevel> & f_lev,
     // we need to redistrubte if possible
     state.need_rd |= (goal_meas < c_meas);
     state.need_rd |= meas_fac > O.rd_crs_thresh;
-    prol_map = BuildCoarseDOFMap(state.crs_map, f_cap, state.curr_cap);
+    prol_map = BuildCoarseDOFMap(state.crs_map, f_cap, state.curr_cap, f_lev->embed_map);
 
     if (O.enable_redist && TryContractStep(state)) {
       // contract map constructed successfully

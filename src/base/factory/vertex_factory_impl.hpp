@@ -12,8 +12,10 @@
 #include <utils_buffering.hpp>
 
 #include "base_smoother.hpp"
+#include "dof_map.hpp"
 #include "reducetable.hpp"
 #include "utils.hpp"
+#include "utils_sparseLA.hpp"
 #include "utils_sparseMM.hpp"
 #include "vertex_factory.hpp"
 #include "nodal_factory.hpp"
@@ -164,6 +166,292 @@ InitState (BaseAMGFactory::State & state, shared_ptr<BaseAMGFactory::AMGLevel> &
 } // VertexAMGFactory::InitState
 
 
+
+
+template<int BSF, int BS, class ENERGY, class TMESH, class Options>
+shared_ptr<SparseMat<BSF, BS>>
+EmbeddedSProl (Options const &O,
+               SparseMat<BSF, BS>  const &emb,
+               SparseMat<BSF, BSF> const &fMat,
+               ParallelDofs              *fParDofs,
+               TMESH               const &fMesh,
+               TMESH               const &cMesh,
+               BaseCoarseMap       const &cMap)
+{
+  /**
+   *  Creates a smoothed prolongation using an actual fine-matrix,
+   *  which is connected to the fine mesh by the embedding.
+   *  The "embedding" can e.g. have elements of
+   *      - dist+rot->dist embedding,
+   *      - the reordering we do in parallel
+   *      - embedding from low to high order
+   *      - the elasticity p2-embeddong
+   *  The embedding must be a C2C operator.
+   *
+   *  The output DOF-step goes from fine matrix to AMG-level 1
+   *  (that is, it already includes the embedding)!
+   *
+   *   A row of the prolongation is something like
+   *     (I - \omega d^{-1} rowA) E Phat cEXT
+   *   where cEXT is a coarse extension that maps from used-cols to
+   *   all cols appearing in "AP := rowA E Phat"
+   *
+   *   cEXT is done implicitly by simply adding all off-diag contribs
+   *   belonging to non-used cols to the used ones instead.
+   *   [[ for the p2-emb, these contribs are divided equally by the two parent-verts ]]
+   *
+   * TODO: could compute PTAP easier here since we already have AP
+   */
+  const double MIN_PROL_FRAC = O.sp_min_frac.GetOpt(0);
+  const double MIN_SUM_FRAC  = 1.0 - sqrt(MIN_PROL_FRAC); // MPF 0.15 -> 0.61
+  const int MAX_PER_ROW = O.sp_max_per_row.GetOpt(0);
+  const int MAX_PER_ROW_CLASSIC = O.sp_max_per_row_classic.GetOpt(0);
+  const double omega = O.sp_omega.GetOpt(0);
+
+
+  fMesh.CumulateData();
+  cMesh.CumulateData();
+
+  auto const &eqc_h = *fMesh.GetEQCHierarchy();
+  auto const &fECon = *fMesh.GetEdgeCM();
+
+  auto fVData = get<0>(fMesh.Data())->Data();
+  auto fEData = get<1>(fMesh.Data())->Data();
+
+  auto cVData = get<0>(cMesh.Data())->Data();
+
+  auto vMap = cMap.template GetMap<NT_VERTEX>();
+
+  auto const FNV = fMesh.template GetNN<NT_VERTEX>();
+  auto const CNV = cMesh.template GetNN<NT_VERTEX>();
+
+  Array<double> dg_wt(FNV);
+
+  dg_wt = 0;
+
+  fMesh.template Apply<NT_EDGE>([&](auto & edge) LAMBDA_INLINE
+  {
+    auto approx_wt = ENERGY::GetApproxWeight(fEData[edge.id]);
+    dg_wt[edge.v[0]] = max2(dg_wt[edge.v[0]], approx_wt);
+    dg_wt[edge.v[1]] = max2(dg_wt[edge.v[1]], approx_wt);
+  }, false );
+
+  fMesh.template AllreduceNodalData<NT_VERTEX>(dg_wt, [](auto & tab){return std::move(max_table(tab)); }, false);
+
+  // create prol-graph  [[ L0-mesh <- L1-mesh ]]
+  Array<int> cols;
+  Array<IVec<2,double>> trow;
+  Array<int> tcv;
+
+  auto getCols = [&](auto EQ, auto V)
+  {
+    cols.SetSize0();
+
+    auto CV = vMap[V];
+
+    if ( is_invalid(CV) )
+      { return; }
+
+    trow.SetSize0(); tcv.SetSize0();
+
+    auto ovs = fECon.GetRowIndices(V);
+    auto edgeNums = fECon.GetRowValues(V);
+
+    size_t pos;
+    double in_wt = 0;
+
+    for (auto j : Range(ovs.Size()))
+    {
+      auto ov = ovs[j];
+      auto cov = vMap[ov];
+
+      if ( is_invalid(cov) )
+        { continue; }
+
+      if (cov == CV)
+      {
+        in_wt += ENERGY::GetApproxWeight(fEData[int(edgeNums[j])]);
+        continue;
+      }
+
+      auto oeq = cMesh.template GetEQCOfNode<NT_VERTEX>(cov);
+
+      if (eqc_h.IsLEQ(EQ, oeq))
+      {
+        // auto wt = self.template GetWeight<NT_EDGE>(fmesh, all_fedges[int(eis[j])]);
+        auto wt = ENERGY::GetApproxWeight(fEData[int(edgeNums[j])]);
+
+        if ( (pos = tcv.Pos(cov)) == size_t(-1))
+        {
+          trow.Append(IVec<2,double>(cov, wt));
+          tcv.Append(cov);
+        }
+        else
+          { trow[pos][1] += wt; }
+      }
+    }
+
+    QuickSort(trow, [](const auto & a, const auto & b) LAMBDA_INLINE { return a[1]>b[1]; });
+
+    int max_adds = min2(MAX_PER_ROW-1, int(trow.Size()));
+
+    double cw_sum = 0.0; // all edges in the same agg are automatically assembled (penalize so we dont pw-ize too many)
+    double dgwt   = dg_wt[V];
+
+    cols.Append(CV);
+
+    for (auto j : Range(max_adds))
+    {
+      auto const newWt = trow[j][1];
+
+      if ( ( newWt < MIN_PROL_FRAC * cw_sum ) || // contrib weak compared to what we already have
+           ( newWt < MIN_PROL_FRAC * dgwt ) )    // weak compared to diagonal
+      {
+        break;
+      }
+      cols.Append(trow[j][0]);
+    }
+    // NOTE: these cols are unsorted - they are sorted later!
+  }; // getCols
+
+  Array<int> perowM2M(FNV);
+  perowM2M = 0;
+
+  fMesh.template ApplyEQ2<NT_VERTEX>([&](auto eqc, auto nodes)
+  {
+    for (auto vNr : nodes)
+    {
+      getCols(eqc, vNr);
+      perowM2M[vNr] = cols.Size();
+    }
+  },
+  true);
+
+  fMesh.template ScatterNodalData<NT_VERTEX>(perowM2M);
+
+  auto meshProl = make_shared<SparseMat<BS, BS>>(perowM2M, CNV);
+
+  // set cols, initialize with pw-prol vals
+  fMesh.template ApplyEQ2<NT_VERTEX>([&](auto eqc, auto nodes)
+  {
+    for (auto vNr : nodes)
+    {
+      auto ris = meshProl->GetRowIndices(vNr);
+      auto rvs = meshProl->GetRowValues(vNr);
+
+      getCols(eqc, vNr);
+      QuickSort(cols);
+      ris = cols;
+
+      if ( rvs.Size() )
+      {
+        auto const cVNr = vMap[vNr];
+
+        rvs = 0;
+
+        auto &v = rvs[find_in_sorted_array(cVNr, cols)];
+
+        SetIdentity(v); ENERGY::GetQiToj(cVData[cVNr], fVData[vNr]).MQ(v);
+      }
+    }
+  },
+  true);
+
+  // TODO: exchange prol-vals, exchange A_embP row-vals (somehow?)
+
+  // embProl = emb * prol  [[ L0 <- L1-mesh ]]
+  auto embProl = MatMultAB(emb, *meshProl); // vals will be updated
+
+  // AP = A * embProl
+  auto A_embP = MatMultAB(fMat, *embProl);
+
+  // {std::ofstream of("justEmb.out"); print_tm_spmat(of, emb);}
+  // {std::ofstream of("meshProl.out"); print_tm_spmat(of, *meshProl);}
+  // {std::ofstream of("initEmbProl.out"); print_tm_spmat(of, *embProl);}
+  // {std::ofstream of("A_embP.out"); print_tm_spmat(of, *A_embP);}
+
+  // smooth prol-rows
+  Array<int> replaceColPos;
+  for (auto k : Range(fMat.Height()))
+  {
+    auto prolCols = embProl->GetRowIndices(k);
+    auto prolVals = embProl->GetRowValues(k);
+
+    if ( prolCols.Size() < 2 )
+    {
+      // not in range of emb, Dirichlet, or prols from single CV -> nothing to do
+      continue;
+    }
+
+    auto allCols = A_embP->GetRowIndices(k);
+    auto aepVals = A_embP->GetRowValues(k);
+
+
+    // cout << " update row " << k << endl;
+
+    Mat<BSF, BSF, double> dInv = fMat(k, k);
+    // cout << " diag: " << endl; print_tm(cout, dInv); cout << endl;
+    CalcInverse(dInv); // no issues with inverse here!
+    // cout << " dInv: " << endl; print_tm(cout, dInv); cout << endl;
+
+    double repFac = 1.0;
+
+    if( prolCols.Size() < allCols.Size() )
+    {
+      // find CVs to use for contribs for unused cols
+      //    just divide equally between all cvs of cols appearin in emb
+      auto embCols = emb.GetRowIndices(k);
+
+      replaceColPos.SetSize0();
+      for (auto fv : embCols)
+      {
+        auto cv = vMap[fv];
+
+        int pos;
+        if ( (cv != -1) &&
+             (pos = find_in_sorted_array(cv, prolCols)) != -1 )
+        {
+          replaceColPos.Append(pos);
+          // break;
+        }
+      }
+      repFac = 1.0 / replaceColPos.Size();
+    }
+
+    iterate_AC(allCols, prolCols, [&](auto where, auto idxA, auto idxP)
+    {
+      Mat<BSF, BS, double> upVal = dInv * aepVals[idxA];
+
+      // cout << idxA << ", col " << allCols[idxA] << endl;
+      // cout << " dinv x offd: " << endl; print_tm(cout, upVal); cout << endl;
+
+      if ( where == INTERSECTION ) // used col
+      {
+        // cout << " USED @ " << idxP << endl;
+        prolVals[idxP] -= omega * upVal;
+      }
+      else // unused col 
+      {
+        // instead add as contrib to reCols (i.e. cvs of fvs from initial emb!)
+        for (auto idx : replaceColPos)
+        {
+          auto const repCol = prolCols[idx];
+
+          // cout << " REPLACE w. " << repCol << " @ " << idx << endl;
+          prolVals[idx] += ENERGY::GetQiToj(cVData[repCol], cVData[allCols[idxA]]).GetMQ(-omega * repFac, upVal);
+        }
+      }
+    });
+  }
+
+  // TOOD: re-smooth?
+
+  // std::ofstream of("embProl.out");
+  // print_tm_spmat(of, *embProl);
+
+  return embProl;
+} // EmbeddedSProl
+
 template<class ENERGY, class TMESH, int BS>
 shared_ptr<BaseCoarseMap>
 VertexAMGFactory<ENERGY, TMESH, BS>::
@@ -210,6 +498,23 @@ BuildCoarseMap (BaseAMGFactory::State & state, shared_ptr<BaseAMGFactory::LevelC
 
   return cmap;
 } // VertexAMGFactory::BuildCoarseMap
+
+
+template<class ENERGY, class TMESH, int BS>
+shared_ptr<BaseDOFMapStep>
+VertexAMGFactory<ENERGY, TMESH, BS>::
+MapLevel (FlatArray<shared_ptr<BaseDOFMapStep>> dofSteps,
+          shared_ptr<AMGLevel> &fCap,
+          shared_ptr<AMGLevel> &cCap)
+{
+  auto & O = static_cast<Options&>(*options);
+
+  cout << " MapLevel!" << endl;
+
+  size_t off = (fCap->level == 0 && O.use_emb_sp) ? 1 : 0;
+
+  return BaseAMGFactory::MapLevel(dofSteps.Range(off, dofSteps.Size()), fCap, cCap);  
+}
 
 
 template<class ENERGY, class TMESH, int BS>
@@ -303,7 +608,8 @@ shared_ptr<BaseDOFMapStep>
 VertexAMGFactory<ENERGY, TMESH, BS>::
 BuildCoarseDOFMap (shared_ptr<BaseCoarseMap>                cmap,
                    shared_ptr<BaseAMGFactory::LevelCapsule> fcap,
-                   shared_ptr<BaseAMGFactory::LevelCapsule> ccap)
+                   shared_ptr<BaseAMGFactory::LevelCapsule> ccap,
+                   shared_ptr<BaseDOFMapStep> embMap)
 {
   Options &O (static_cast<Options&>(*options));
 
@@ -313,11 +619,48 @@ BuildCoarseDOFMap (shared_ptr<BaseCoarseMap>                cmap,
 
   shared_ptr<BaseDOFMapStep> step = nullptr;
 
-  switch(prol_type)
+  if( fcap->baselevel == 0 && O.use_emb_sp )
   {
-    case(Options::PROL_TYPE::PIECEWISE)         : { step = PWProlMap(*cmap, *fcap, *ccap); break; }
-    case(Options::PROL_TYPE::AUX_SMOOTHED)      : { step = AuxSProlMap(PWProlMap(*cmap, *fcap, *ccap), cmap, fcap); break; }
-    case(Options::PROL_TYPE::SEMI_AUX_SMOOTHED) : { step = SemiAuxSProlMap(PWProlMap(*cmap, *fcap, *ccap), cmap, fcap); break; }
+    auto fMat = cap->mat;
+
+    DispatchSquareMatrix(*fMat, [&](auto const &fineA, auto BSSF)
+    {
+      constexpr int BSF = BSSF.value;
+
+      // prevent some weird/irrelevant cases from compiling
+      if constexpr( IsProlMapCompiled<BSF, BS>() && BSF < BS && (BSF > 1 == BS > 1) )
+      {
+        cout << " FL-PROL, BSF = " << BSF << endl;
+
+        auto embProlMap = my_dynamic_pointer_cast<ProlMap<StripTM<BSF, BS>>>(embMap, "emb-prol");
+        auto embProl    = embProlMap->GetProl();
+
+        auto const &fMesh = *my_dynamic_pointer_cast<TMESH>(fcap->mesh, "TMESH");
+        auto const &cMesh = *my_dynamic_pointer_cast<TMESH>(ccap->mesh, "TMESH");
+
+        auto fUDofs = embMap->GetUDofs();
+
+        auto sprol = EmbeddedSProl<BSF, BS, ENERGY>(
+                        O,
+                        *embProl,
+                        fineA,
+                        nullptr, // fParDofs,
+                        fMesh,
+                        cMesh,
+                        *cmap);
+
+        step = make_shared<ProlMap<StripTM<BSF, BS>>>(sprol, fUDofs, ccap->uDofs);
+      }
+    });
+  }
+  else
+  {
+    switch(prol_type)
+    {
+      case(Options::PROL_TYPE::PIECEWISE)         : { step = PWProlMap(*cmap, *fcap, *ccap); break; }
+      case(Options::PROL_TYPE::AUX_SMOOTHED)      : { step = AuxSProlMap(PWProlMap(*cmap, *fcap, *ccap), cmap, fcap); break; }
+      case(Options::PROL_TYPE::SEMI_AUX_SMOOTHED) : { step = SemiAuxSProlMap(PWProlMap(*cmap, *fcap, *ccap), cmap, fcap); break; }
+    }
   }
 
   return step;
@@ -431,7 +774,6 @@ SemiAuxSProlMap (shared_ptr<ProlMap<TM>> pw_step,
   const double omega = O.sp_omega.GetOpt(baselevel);
   // const bool aux_only = O.sp_aux_only.GetOpt(baselevel); // TODO:placeholder
   const bool aux_only = O.prol_type.GetOpt(baselevel) == Options::PROL_TYPE::AUX_SMOOTHED;
-  int const extraSmoothingSteps = O.sp_extra_steps.GetOpt(baselevel);
 
   // NOTE: something is funky with the meshes here ...
   const auto & FM = *static_pointer_cast<TMESH>(fcap->mesh);
@@ -901,491 +1243,7 @@ SemiAuxSProlMap (shared_ptr<ProlMap<TM>> pw_step,
 } // VertexAMGFactory::SemiAuxSProlMap
 
 
-template<int BSF, class ENERGY, class TMESH, int BS, class Options>
-shared_ptr<BaseDOFMapStep>
-EmbeddedSProl (Options const &options,
-               SparseMat<BSF, BS>  const &emb,
-               SparseMat<BSF, BSF> const &fMat,
-               ParallelDofs              *fParDofs,
-               TMESH               const &fMesh,
-               TMESH               const &cMesh,
-               BaseCoarseMap       const &cMap)
-{
-  /**
-   *  Creates a smoothed prolongation using an actual fine-matrix,
-   *  which is connected to the fine mesh by the embedding.
-   *  The "embedding" can e.g. have elements of
-   *      - dist+rot->dist embedding,
-   *      - the reordering we do in parallel
-   *      - embedding from low to high order
-   *      - the elasticity p2-embeddong
-   *  The embedding must be a C2C operator.
-   *
-   *  The output DOF-step goes from fine matrix to AMG-level 1
-   *  (that is, it already includes the embedding)!
-   *
-   *   A row of the prolongation is something like
-   *     (I - \omega d^{-1} rowA) E Phat cEXT
-   *   where cEXT is a coarse extension that maps from used-cols to
-   *   all cols appearing in "AP := rowA E Phat"
-   *
-   *   cEXT is done implicitly by simply adding all off-diag contribs
-   *   belonging to non-used cols to the used ones instead.
-   *   [[ for the p2-emb, these contribs are divided equally by the two parent-verts ]]
-   *
-   * TODO: could compute PTAP easier here since we already have AP
-   */
 
-  Options &O (static_cast<Options&>(*options));
-
-  const double MIN_PROL_FRAC = O.sp_min_frac.GetOpt(0);
-  const double MIN_SUM_FRAC  = 1.0 - sqrt(MIN_PROL_FRAC); // MPF 0.15 -> 0.61
-  const int MAX_PER_ROW = O.sp_max_per_row.GetOpt(0);
-  const int MAX_PER_ROW_CLASSIC = O.sp_max_per_row_classic.GetOpt(0);
-  const double omega = O.sp_omega.GetOpt(0);
-
-
-  fMesh.CumulateData();
-  cMesh.CumulateData();
-
-  auto const &eqc_h = *fMesh.GetEQCHierarchy();
-  auto const &fECon = *fMesh.GetEdgeCM();
-
-  auto fVdata = get<0>(fMesh.Data())->Data();
-  auto fEdata = get<1>(fMesh.Data())->Data();
-
-  auto cVdata = get<0>(cMesh.Data())->Data();
-
-  auto vMap = cMap.template GetMap<NT_VERTEX>();
-
-  auto embT = TransposeSPM(*emb);
-
-  Array<double> dg_wt(FNV); dg_wt = 0;
-  fMesh.template Apply<NT_EDGE>([&](auto & edge) LAMBDA_INLINE {
-    auto approx_wt = ENERGY::GetApproxWeight(fedata[edge.id]);
-    dg_wt[edge.v[0]] = max2(dg_wt[edge.v[0]], approx_wt);
-    dg_wt[edge.v[1]] = max2(dg_wt[edge.v[1]], approx_wt);
-  }, false );
-  fMesh.template AllreduceNodalData<NT_VERTEX>(dg_wt, [](auto & tab){return std::move(max_table(tab)); }, false);
-
-  // create prol-graph  [[ L0-mesh <- L1-mesh ]]
-  shared_ptr<SparseMat<BS, BS>> meshProl;
-
-  Array<int> cols;
-  Array<IVec<2,double>> trow;
-  Array<int> tcv;
-
-  auto getCols = [&](auto EQ, auto V)
-  {
-    cols.SetSize0();
-
-    auto CV = vMap[V];
-
-    if ( is_invalid(CV) )
-      { return; }
-
-    trow.SetSize0(); tcv.SetSize0();
-
-    auto ovs = fECon.GetRowIndices(V);
-    auto edgeNums = fECon.GetRowValues(V);
-
-    size_t pos;
-    double in_wt = 0;
-
-    for (auto j : Range(ovs.Size()))
-    {
-      auto ov = ovs[j];
-      auto cov = vMap[ov];
-
-      if ( is_invalid(cov) )
-        { continue; }
-
-      if (cov == CV)
-      {
-        in_wt += ENERGY::GetApproxWeight(fEdata[int(edgeNums[j])]);
-        continue;
-      }
-
-      auto oeq = cMesh.template GetEQCOfNode<NT_VERTEX>(cov);
-
-      if (eqc_h.IsLEQ(EQ, oeq))
-      {
-        // auto wt = self.template GetWeight<NT_EDGE>(fmesh, all_fedges[int(eis[j])]);
-        auto wt = ENERGY::GetApproxWeight(fEdata[int(edgeNums[j])]);
-        if ( (pos = tcv.Pos(cov)) == size_t(-1)) {
-          trow.Append(IVec<2,double>(cov, wt));
-          tcv.Append(cov);
-        }
-        else
-          { trow[pos][1] += wt; }
-      }
-    }
-    QuickSort(trow, [](const auto & a, const auto & b) LAMBDA_INLINE { return a[1]>b[1]; });
-    double cw_sum = 0.2 * in_wt; // all edges in the same agg are automatically assembled (penalize so we dont pw-ize too many)
-    double dgwt = dg_wt[V];
-    cols.Append(CV);
-    size_t max_adds = min2(MAX_PER_ROW-1, int(trow.Size()));
-    for (auto j : Range(max_adds)) {
-      cw_sum += trow[j][1];
-      if ( ( !(trow[j][1] > MIN_PROL_FRAC * cw_sum) ) ||
-            ( trow[j][1] < MIN_PROL_FRAC * dgwt ) )
-        { break; }
-      cols.Append(trow[j][0]);
-    }
-    // NOTE: these cols are unsorted - they are sorted later!
-  }; // get_cols_aux
-
-  // initialize L0-mesh <- L1-mesh as pw-prol
-
-  // embProl = emb * prol  [[ L0 <- L1-mesh ]]
-
-  // AP = A * embProl
-
-  // do smoothing iterations
-
-  // create tentative prol
-  shared_ptr<SparseMat<BSF, BS>> embProl;
-
-  shared_ptr<SparseMat<BSF, BS>> embP;
-
-  embP = MatMultAB(emb, Phat);
-  auto AembP = MatMultAB(fMat, *embP);
-
-
-
-
-
-
-  for (auto step : Range(numSmoothingSteps))
-  {
-    if ( step > 0 )
-    {
-      // update AP
-    }
-
-
-  }
-
-}
-
-
-
-template<class ENERGY, class TMESH, int BS>
-shared_ptr<BaseDOFMapStep>
-VertexAMGFactory<ENERGY, TMESH, BS>::
-SemiAuxSProlMap (shared_ptr<BaseCoarseMap> cmap,
-                 shared_ptr<BaseAMGFactory::LevelCapsule> fcap)
-{
-  static Timer t("SemiAuxSProlMap");
-  RegionTimer rt(t);
-
-  /** Use fine level matrix to smooth prolongation ("classic prol") where we can, that is whenever:
-       I) We would not break MAX_PER_ROW, so if all algebraic neibs map to <= MAX_PER_ROW coarse verts.
-      II) We would not break the hierarchy, so if all algebraic neibs map to coarse verts in the same, or higher EQCs
-      Where we cannot, smooth using the replacement matrix ("aux prol"). **/
-  Options &O (static_cast<Options&>(*options));
-
-  const int baselevel = fcap->baselevel;
-  const double MIN_PROL_FRAC = O.sp_min_frac.GetOpt(baselevel);
-  const double MIN_SUM_FRAC  = 1.0 - sqrt(MIN_PROL_FRAC); // MPF 0.15 -> 0.61
-  const int MAX_PER_ROW = O.sp_max_per_row.GetOpt(baselevel);
-  const int MAX_PER_ROW_CLASSIC = O.sp_max_per_row_classic.GetOpt(baselevel);
-  const double omega = O.sp_omega.GetOpt(baselevel);
-  // const bool aux_only = O.sp_aux_only.GetOpt(baselevel); // TODO:placeholder
-  const bool aux_only = O.prol_type.GetOpt(baselevel) == Options::PROL_TYPE::AUX_SMOOTHED;
-  int const extraSmoothingSteps = O.sp_extra_steps.GetOpt(baselevel);
-
-  // NOTE: something is funky with the meshes here ...
-  const auto & FM = *static_pointer_cast<TMESH>(fcap->mesh);
-  const auto & CM = *static_pointer_cast<TMESH>(cmap->GetMappedMesh());
-  const auto & eqc_h = *FM.GetEQCHierarchy();
-  const int neqcs = eqc_h.GetNEQCS();
-  const auto & fecon = *FM.GetEdgeCM();
-  // auto fpds = pw_step->GetUDofs().GetParallelDofs();
-  // auto cpds = pw_step->GetMappedUDofs().GetParallelDofs();
-
-  FM.CumulateData();
-  CM.CumulateData();
-
-  /** Because of embedding, this can be nullptr for level 0!
-      I think using pure aux on level 0 should not be an issue. **/
-  auto fmat = dynamic_pointer_cast<TSPM>(fcap->mat);
-  /** "fmat" can be the pre-embedded matrix. In that case we can't use it for smoothing. **/
-  bool have_fmat = (fmat != nullptr);
-  /** if "fmat" has no pardofs, it is not the original finest level matrix, so fine to use! !**/
-  if ( have_fmat && (fmat->GetParallelDofs() != nullptr) )
-    { have_fmat &= (fmat->GetParallelDofs() == fpds); }
-
-  // cout << " have fmat " << have_fmat << " " << (fmat != nullptr) << endl; //" " << (fmat->GetParallelDofs() == fpds) << endl;
-  // cout << " pds " << fmat->GetParallelDofs() << fpds << endl;
-
-  // const TSPM & pwprol = *pw_step->GetProl();
-
-  auto vmap = cmap->GetMap<NT_VERTEX>();
-
-  const size_t FNV = FM.template GetNN<NT_VERTEX>(), CNV = CM.template GetNN<NT_VERTEX>();
-
-  // 16 MB = 16777216 bytes
-  LocalHeap lh(64 * 1024 * 1024, "muchmemory", false);
-
-  /** Find Graph, decide if classic or aux prol. **/
-  auto fvdata = get<0>(FM.Data())->Data();
-  auto fedata = get<1>(FM.Data())->Data();
-
-  auto cvdata = get<0>(CM.Data())->Data();
-
-  auto fedges = FM.template GetNodes<NT_EDGE>();
-
-  // cout << "FM: " << endl << FM << endl;
-  // cout << "fecon: " << endl << fecon << endl;
-
-  /** Judge connection to coarse neibs by sum of fine connections. **/
-  Array<double> dg_wt(FNV); dg_wt = 0;
-  FM.template Apply<NT_EDGE>([&](auto & edge) LAMBDA_INLINE {
-    auto approx_wt = ENERGY::GetApproxWeight(fedata[edge.id]);
-    dg_wt[edge.v[0]] = max2(dg_wt[edge.v[0]], approx_wt);
-    dg_wt[edge.v[1]] = max2(dg_wt[edge.v[1]], approx_wt);
-  }, false );
-  FM.template AllreduceNodalData<NT_VERTEX>(dg_wt, [](auto & tab){return std::move(max_table(tab)); }, false);
-
-  Array<int> cols(20); cols.SetSize0();
-  Array<IVec<2,double>> trow;
-  Array<int> tcv;
-  auto get_cols = [&](auto EQ, auto V) {
-    cols.SetSize0();
-    auto CV = vmap[V];
-    if ( is_invalid(CV) )
-      { return; }
-    trow.SetSize0(); tcv.SetSize0();
-    auto ovs = fecon.GetRowIndices(V);
-    int nniscv = 0; // number neibs in same cv
-    for (auto v : ovs)
-    if (vmap[v] == CV)
-      { nniscv++; }
-    if (nniscv == 0) { // no neib that maps to same coarse vertex - use pwprol!
-      cols.SetSize(1);
-      cols[0] = CV;
-      return;
-    }
-    auto eis = fecon.GetRowValues(V);
-    size_t pos; double in_wt = 0;
-    for (auto j : Range(ovs.Size())) {
-      auto ov = ovs[j];
-      auto cov = vmap[ov];
-      if ( is_invalid(cov) )
-        { continue; }
-      if (cov == CV) {
-        // in_wt += self.template GetWeight<NT_EDGE>(fmesh, );
-        in_wt += ENERGY::GetApproxWeight(fedata[int(eis[j])]);
-        continue;
-      }
-      // auto oeq = fmesh.template GetEQCOfNode<NT_VERTEX>(ov);
-      auto oeq = CM.template GetEQCOfNode<NT_VERTEX>(cov);
-      if (eqc_h.IsLEQ(EQ, oeq)) {
-        // auto wt = self.template GetWeight<NT_EDGE>(fmesh, all_fedges[int(eis[j])]);
-        auto wt = ENERGY::GetApproxWeight(fedata[int(eis[j])]);
-        if ( (pos = tcv.Pos(cov)) == size_t(-1)) {
-          trow.Append(IVec<2,double>(cov, wt));
-          tcv.Append(cov);
-        }
-        else
-          { trow[pos][1] += wt; }
-      }
-    }
-    QuickSort(trow, [](const auto & a, const auto & b) LAMBDA_INLINE { return a[1]>b[1]; });
-    double cw_sum = 0.2 * in_wt; // all edges in the same agg are automatically assembled (penalize so we dont pw-ize too many)
-    double dgwt = dg_wt[V];
-    cols.Append(CV);
-    size_t max_adds = min2(MAX_PER_ROW-1, int(trow.Size()));
-    for (auto j : Range(max_adds)) {
-      cw_sum += trow[j][1];
-      if ( ( !(trow[j][1] > MIN_PROL_FRAC * cw_sum) ) ||
-            ( trow[j][1] < MIN_PROL_FRAC * dgwt ) )
-        { break; }
-      cols.Append(trow[j][0]);
-    }
-    // NOTE: these cols are unsorted - they are sorted later!
-  }; // get_cols
-
-  // cout << " vmap: " << endl; prow2(vmap); cout << endl;
-
-  auto itg = [&](auto lam)
-  {
-    FM.template ApplyEQ2<NT_VERTEX>([&](auto eqc, auto nodes)
-    {
-      for (auto fvnr : nodes)
-      {
-        if (vmap[fvnr] == -1)
-          { continue; }
-
-        get_cols(eqc, fvnr);
-
-        lam(fvnr);
-      }
-    }, true);
-  };
-
-  Array<int> perow(FNV); perow = 0;
-  itg([&](auto fvnr, bool cok)
-  {
-    perow[fvnr] = cols.Size();
-  });
-
-  /** Scatter Graph per row (col-vals are garbage for non-masters here! ) **/
-  FM.template ScatterNodalData<NT_VERTEX>(perow);
-
-  Table<int> graph(perow);
-  itg([&](auto fvnr)
-  {
-    QuickSort(cols);
-    graph[fvnr] = cols;
-  });
-
-  /** Alloc sprol **/
-  auto sprol = make_shared<TSPM>(perow, CNV);
-  const auto & CSP = *sprol;
-
-  /** #classic, #aux, #triv **/
-  const double omo = 1.0 - omega;
-
-  auto fill_sprol = [&](auto fvnr)
-  {
-    auto ris = CSP.GetRowIndices(fvnr);
-
-    if (ris.Size() == 0)
-      { return; }
-
-    auto rvs = CSP.GetRowValues(fvnr);
-
-    ris = graph[fvnr];
-
-    if (ris.Size() == 1)
-    {
-      auto Q = ENERGY::GetQiToj(cvdata[ris[0]], fvdata[fvnr]);
-      SetIdentity(rvs[0]);
-      Q.MQ(rvs[0]);
-      return;
-    }
-
-    HeapReset hr(lh);
-
-    // bool const doPrint = (fvnr == 47) && (vmap[fvnr] == 58);
-    constexpr bool doPrint = false;
-
-    auto fmris = fmat->GetRowIndices(fvnr);
-    auto fmrvs = fmat->GetRowValues(fvnr);
-
-    TM d = fmrvs[find_in_sorted_array(fvnr, fmris)];
-
-    if (BS == 1)
-      { CalcInverse(d); }
-    else {
-      /** Normalize to trace of diagonal mat. More stable Pseudo inverse (?) **/
-      double trinv = double(BS) / calc_trace(d);
-      d *= trinv;
-      // CalcStabPseudoInverse(d, lh);
-      CalcPseudoInverseNew(d, lh);
-      // CalcPseudoInverseTryNormal(d, lh);
-      d *= trinv;
-    }
-
-    TM od_pwp(0);
-    rvs = 0;
-    for (auto j : Range(fmris))
-    {
-      auto fvj = fmris[j];
-      int col = vmap[fmris[j]];
-      int colind = find_in_sorted_array(col, ris);
-      if (colind == -1)
-      {
-        // Dirichlet - skip, give up kernel-perservation next to boundary
-        continue;
-        // Dirichlet - prol from CV, preserve kernels next to BND
-        auto Q = ENERGY::GetQiToj(cvdata[vmap[fvnr]], fvdata[fvnr]);
-        od_pwp = Q.GetMQ(1.0, fmrvs[j]);
-        rvs[colind] -= omega * d * od_pwp;
-      }
-      else
-      {
-        if (fvj == fvnr)
-          { rvs[colind] += pwprol(fvj, col); }
-
-        od_pwp = fmrvs[j] * pwprol(fvj, col);
-
-        rvs[colind] -= omega * d * od_pwp;
-      }
-    }
-
-  }; // fill_sprol_classic
-
-  /** Fill sprol **/
-  FM.template ApplyEQ2<NT_VERTEX>([&](auto eqc, auto nodes)
-  {
-    for (auto fvnr : nodes)
-    {
-      fill_sprol(fvnr);
-    }
-  }, true);
-
-
-  /** Scatter sprol colnrs & vals **/
-  if ( neqcs > 1 )
-  {
-    Array<int> eqc_perow(neqcs); eqc_perow = 0;
-    FM.template ApplyEQ<NT_VERTEX>( Range(1, neqcs), [&](auto EQC, auto V) {
-      eqc_perow[EQC] += perow[V];
-    }, false); // all!
-    Table<IVec<2,int>> ex_ris(eqc_perow);
-    Table<TM> ex_rvs(eqc_perow); eqc_perow = 0;
-    FM.template ApplyEQ<NT_VERTEX>( Range(1, neqcs), [&](auto EQC, auto V) {
-      auto rvs = sprol->GetRowValues(V);
-      auto ris = sprol->GetRowIndices(V);
-      for (auto j : Range(ris)) {
-        int jeq = CM.template GetEQCOfNode<NT_VERTEX>(ris[j]);
-        int jeq_id = eqc_h.GetEQCID(jeq);
-        int jlc = CM.template MapENodeToEQC<NT_VERTEX>(jeq, ris[j]);
-        ex_ris[EQC][eqc_perow[EQC]] = IVec<2,int>({ jeq_id, jlc });
-        ex_rvs[EQC][eqc_perow[EQC]++] = rvs[j];
-      }
-    }, true); // master!
-    auto reqs = eqc_h.ScatterEQCData(ex_ris);
-    reqs += eqc_h.ScatterEQCData(ex_rvs);
-    MyMPI_WaitAll(reqs);
-    eqc_perow = 0;
-    FM.template ApplyEQ<NT_VERTEX>( Range(1, neqcs), [&](auto EQC, auto V) {
-      auto rvs = CSP.GetRowValues(V);
-      auto ris = CSP.GetRowIndices(V);
-      for (auto j : Range(ris)) {
-        auto tup = ex_ris[EQC][eqc_perow[EQC]];
-        ris[j] = CM.template MapENodeFromEQC<NT_VERTEX>(tup[1], eqc_h.GetEQCOfID(tup[0]));
-        rvs[j] = ex_rvs[EQC][eqc_perow[EQC]++];
-      }
-    }, false); // master!
-  }
-
-  if ( options->log_level != Options::LOG_LEVEL::NONE ) {
-    nc = eqc_h.GetCommunicator().Reduce(nc, NG_MPI_SUM);
-    na = eqc_h.GetCommunicator().Reduce(na, NG_MPI_SUM);
-    nt = eqc_h.GetCommunicator().Reduce(nt, NG_MPI_SUM);
-    if ( eqc_h.GetCommunicator().Rank() == 0 ) {
-      size_t FNV = FM.template GetNNGlobal<NT_VERTEX>();
-      cout << "NV,   nc/na/nt " << FNV << ", " << nc << " " << na << " " << nt << endl;
-      cout << "fracs c/a/t    " << double(nc)/FNV << " " << double(na)/FNV << " " << double(nt)/FNV << endl;
-    }
-  }
-
-  if ( options->log_level == Options::LOG_LEVEL::DBG )
-  {
-    std::ofstream of("SP_semi_aux_rk_" + std::to_string(FM.GetEQCHierarchy()->GetCommunicator().Rank()) +
-                                 "_l_" + std::to_string(fcap->baselevel) + ".out");
-
-    print_tm_spmat(of, *sprol);
-  }
-
-  auto prolMap = make_shared<ProlMap<TM>>(sprol, pw_step->GetUDofs(), pw_step->GetMappedUDofs());
-
-  return prolMap;
-} // VertexAMGFactory::BetterSemiAuxSProlMap
 
 template<class ENERGY, class TMESH, int BS>
 shared_ptr<BaseDOFMapStep>

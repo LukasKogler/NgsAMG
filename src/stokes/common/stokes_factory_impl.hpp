@@ -463,7 +463,8 @@ template<class TMESH, class ENERGY>
 shared_ptr<BaseDOFMapStep>
 StokesAMGFactory<TMESH, ENERGY> :: BuildCoarseDOFMap (shared_ptr<BaseCoarseMap> cmap,
                                                       shared_ptr<BaseAMGFactory::LevelCapsule> fcap,
-                                                      shared_ptr<BaseAMGFactory::LevelCapsule> ccap)
+                                                      shared_ptr<BaseAMGFactory::LevelCapsule> ccap,
+                                                      shared_ptr<BaseDOFMapStep> embMap)
 {
 
   static Timer t("StokesAMGFactory::BuildCoarseDOFMap");

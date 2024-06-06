@@ -60,7 +60,12 @@ namespace amg
     virtual size_t ComputeGoal (const shared_ptr<AMGLevel> & f_lev, State & state) = 0;
     virtual bool TryCoarseStep (State & state);
     virtual shared_ptr<BaseCoarseMap>  BuildCoarseMap (State & state, shared_ptr<LevelCapsule> & mapped_cap) = 0;
-    virtual shared_ptr<BaseDOFMapStep> BuildCoarseDOFMap (shared_ptr<BaseCoarseMap> cmap, shared_ptr<LevelCapsule> fcap, shared_ptr<LevelCapsule> ccap) = 0;
+
+    virtual shared_ptr<BaseDOFMapStep>
+    BuildCoarseDOFMap (shared_ptr<BaseCoarseMap> cmap,
+                       shared_ptr<LevelCapsule> fcap,
+                       shared_ptr<LevelCapsule> ccap,
+                       shared_ptr<BaseDOFMapStep> embMap = nullptr) = 0;
 
     /** Redist **/
     virtual bool TryContractStep (State & state);
@@ -122,6 +127,7 @@ namespace amg
     SpecOpt<double> sp_min_frac = 0.1;                   // min. (relative) wt to include an edge
     SpecOpt<int> sp_max_per_row = 3;                     // maximum entries per row (should be >= 2!)
     SpecOpt<double> sp_omega = 1.0;                      // relaxation parameter for prol-smoothing
+    bool use_emb_sp = false;
 
 
     /** Output **/

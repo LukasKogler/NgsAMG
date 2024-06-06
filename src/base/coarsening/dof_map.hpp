@@ -105,6 +105,8 @@ public:
 
   void AddStep (const shared_ptr<BaseDOFMapStep> step);
 
+  void  PrependStep (const shared_ptr<BaseDOFMapStep> step);
+
   INLINE size_t GetNSteps () const { return steps.Size(); }
   INLINE size_t GetNLevels () const { return GetNSteps() + 1; } // we count one "empty" level if we drop
 
@@ -409,17 +411,42 @@ public:
 
 shared_ptr<BaseDOFMapStep> MakeSingleStep2 (FlatArray<shared_ptr<BaseDOFMapStep>> sub_steps);
 
+template<int N, int M> struct IsProlMapCompiledTrait { static constexpr bool value = false; };
+
+#define DEF_PROL(N, M) \
+  extern template class ProlMap<Mat<3,3,double>>; \
+  template<> struct IsProlMapCompiledTrait<N, M> { static constexpr bool value = true; }; \
+
+
 extern template class ProlMap<double>;
-extern template class ProlMap<Mat<2,2,double>>;
-extern template class ProlMap<Mat<3,3,double>>;
+template<> struct IsProlMapCompiledTrait<1, 1> { static constexpr bool value = true; };
+
+DEF_PROL(2, 2);
+DEF_PROL(3, 3);
 
 #ifdef ELASTICITY
-extern template class ProlMap<Mat<1,3,double>>;
-extern template class ProlMap<Mat<1,6,double>>;
-extern template class ProlMap<Mat<2,3,double>>;
-extern template class ProlMap<Mat<3,6,double>>;
-extern template class ProlMap<Mat<6,6,double>>;
-#endif // ELASTICITY
+DEF_PROL(1,3);
+DEF_PROL(1,6);
+DEF_PROL(2,3);
+DEF_PROL(3,6);
+DEF_PROL(6,6);
+#endif
+
+#undef DEF_PROL
+
+
+template<int N, int M> constexpr bool IsProlMapCompiled() { return IsProlMapCompiledTrait<N, M>::value; }
+
+// extern template class ProlMap<Mat<2,2,double>>;
+// extern template class ProlMap<Mat<3,3,double>>;
+
+// #ifdef ELASTICITY
+// extern template class ProlMap<Mat<1,3,double>>;
+// extern template class ProlMap<Mat<1,6,double>>;
+// extern template class ProlMap<Mat<2,3,double>>;
+// extern template class ProlMap<Mat<3,6,double>>;
+// extern template class ProlMap<Mat<6,6,double>>;
+// #endif // ELASTICITY
 }
 
 #endif // FILE_DOF_MAP_HPP

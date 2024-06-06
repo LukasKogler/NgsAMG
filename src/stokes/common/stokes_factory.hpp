@@ -137,7 +137,8 @@ protected:
 
   virtual shared_ptr<BaseDOFMapStep> BuildCoarseDOFMap (shared_ptr<BaseCoarseMap> cmap,
                                                         shared_ptr<BaseAMGFactory::LevelCapsule> fcap,
-                                                        shared_ptr<BaseAMGFactory::LevelCapsule> ccap) override;
+                                                        shared_ptr<BaseAMGFactory::LevelCapsule> ccap,
+                                                        shared_ptr<BaseDOFMapStep> embMap = nullptr) override;
 
   virtual shared_ptr<BaseDOFMapStep> RangeProlMap (shared_ptr<StokesCoarseMap<TMESH>> cmap,
                                                    shared_ptr<StokesLevelCapsule> fcap,

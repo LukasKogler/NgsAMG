@@ -362,11 +362,11 @@ VertexAMGPC<FCC> :: BuildAlgMesh_ALG_scal (shared_ptr<BlockTM> top_mesh,
   { // disp only
     const auto& A(*spm_tm);
 
-    if ( this->use_p2_emb )
-    {
-      CalcEdgeWeightsP2<FCC::ENERGY::DISPPV>(*top_mesh, vdata, vsort, V2D, D2V, A, edata, rot_scalings);
-    }
-    else
+    // if ( this->use_p2_emb )
+    // {
+    //   CalcEdgeWeightsP2<FCC::ENERGY::DISPPV>(*top_mesh, vdata, vsort, V2D, D2V, A, edata, rot_scalings);
+    // }
+    // else
     {
       CalcEdgeWeightsSimple<FCC::ENERGY::DISPPV>(*top_mesh, vdata, vsort, V2D, D2V, A, edata, rot_scalings);
     }
@@ -603,8 +603,13 @@ BuildED (size_t height, shared_ptr<TopologicMesh> mesh)
       for (auto eNum : Range(edgePointParents))
       {
         auto const dNum = edgePointParents[eNum][0];
-        auto const v0   = edgePointParents[eNum][1];
-        auto const v1   = edgePointParents[eNum][2];
+        auto       v0   = edgePointParents[eNum][1];
+        auto       v1   = edgePointParents[eNum][2];
+
+        if ( v0 > v1 )
+        {
+          std::swap(v0, v1);
+        }
 
         auto ris = E_D->GetRowIndices(dNum);
         auto rvs = E_D->GetRowValues(dNum);

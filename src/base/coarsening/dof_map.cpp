@@ -105,11 +105,22 @@ Finalize ()
   glob_dnums.SetSize(GetNLevels());
 } // DOFMap::Finalize
 
-void DOFMap :: AddStep (const shared_ptr<BaseDOFMapStep> step)
+void
+DOFMap::
+AddStep (const shared_ptr<BaseDOFMapStep> step)
 {
   if (finalized)
     throw Exception("Tried to add a step to a finalized DofMap!!");
   steps.Append(step);
+} // DOFMap :: AddStep
+
+void
+DOFMap::
+PrependStep (const shared_ptr<BaseDOFMapStep> step)
+{
+  if (finalized)
+    throw Exception("Tried to prepend step to a finalized DofMap!!");
+  steps.Insert(0, step);
 } // DOFMap :: AddStep
 
 

@@ -1,6 +1,9 @@
 
+#include "utils_sparseLA.hpp"
 #include <base.hpp>
 #include <utils.hpp>
+#include <utils_io.hpp>
+
 #define FILE_AMG_PC_CPP
 
 #include "amg_pc.hpp"
@@ -368,6 +371,8 @@ void BaseAMGPC::Options :: SetFromFlags (shared_ptr<FESpace> fes, shared_ptr<Bas
   set_bool(regularize_cmats, "regularize_cmats");
   set_bool(force_ass_flmat, "faflm");
 
+  set_bool(smooth_after_emb, "smooth_after_emb");
+
   SetEnumOpt(flags, energy, pfit("energy"), { "triv", "alg", "elmat" }, { TRIV_ENERGY, ALG_ENERGY, ELMAT_ENERGY }, Options::ENERGY::ALG_ENERGY);
 
   SetEnumOpt(flags, log_level_pc, pfit("log_level_pc"), {"none", "basic", "normal", "extra", "debug"}, { NONE, BASIC, NORMAL, EXTRA, DBG }, Options::LOG_LEVEL_PC::NONE);
@@ -641,10 +646,38 @@ void BaseAMGPC :: BuildAMGMat ()
 
   GetBaseFactory().SetUpLevels(amg_levels, dof_map);
 
-  dof_map->Finalize();
-
   /** Smoothers **/
   Array<shared_ptr<BaseSmoother>> smoothers = BuildSmoothers(amg_levels, dof_map);
+
+  if ( options->smooth_after_emb )
+  {
+    // TODO: improve logging for smooth_after_emb
+
+    // add an extra dof-step in front, the embedding!
+    dof_map->PrependStep(this->cachedEmbMap);
+    // TODO: do something better here, fix up GS-blocks while I am at it
+
+    auto smoother = BuildGSSmoother(finest_mat, finest_freedofs);
+    bool symm = O.sm_symm.GetOpt(0);
+    int nsteps = O.sm_steps.GetOpt(0);
+    if ( symm || (nsteps > 1) )
+      { smoother = make_shared<ProxySmoother>(smoother, nsteps, symm); }
+
+    smoothers.Insert(0, smoother);
+
+    // discard everything, just do 1 level
+    dof_map = make_shared<DOFMap>();
+    dof_map->AddStep(this->cachedEmbMap);
+
+    smoothers.SetSize0();
+    smoothers.Append(smoother);
+
+    amg_levels.SetSize(1);
+
+    this->cachedEmbMap = nullptr;
+  }
+
+  dof_map->Finalize();
 
   cout <<" create AMGMatrix" << endl;
   amg_mat = make_shared<AMGMatrix> (dof_map, smoothers);
@@ -668,13 +701,15 @@ void BaseAMGPC :: BuildAMGMat ()
   /** Coarsest level inverse **/
   syncUp();
 
-  if ( (amg_levels.Size() > 1) && (amg_levels.Last()->cap->mat != nullptr) )
+  if ( (amg_levels.Size() > 1 || options->smooth_after_emb) && (amg_levels.Last()->cap->mat != nullptr))
   { // otherwise, dropped out
     switch(O.clev)
     {
       case(Options::CLEVEL::INV_CLEV):
       {
         auto [cMat, cInv] = CoarseLevelInv(*amg_levels.Last());
+
+        cout << " invert cmat w. dim " << cMat->Height() << endl; 
 
         amg_mat->SetCoarseInv(cInv, cMat);
 
@@ -747,7 +782,6 @@ void BaseAMGPC :: BuildAMGMat ()
   }
 } // BaseAMGPC::BuildAMGMAt
 
-
 std::tuple<std::shared_ptr<BaseMatrix>, shared_ptr<BaseMatrix>>
 BaseAMGPC::
 CoarseLevelInv(BaseAMGFactory::AMGLevel const &coarseLevel)
@@ -762,12 +796,24 @@ CoarseLevelInv(BaseAMGFactory::AMGLevel const &coarseLevel)
 
   auto cspm = my_dynamic_pointer_cast<BaseSparseMatrix>(coarseLevel.cap->mat, "CoarseLevelInv - c sparse");
 
- // auto cspmtm = dynamic_pointer_cast<SparseMatrixTM<Mat<3,3,double>>>(cspm);
+//  auto cspmtm = dynamic_pointer_cast<SparseMatrixTM<Mat<6,6,double>>>(cspm);
+//     { std::ofstream of("ngs_amg_cmat.out"); print_tm_spmat(of, *cspmtm); }
   // cout << endl << endl << " Coarse mat: " << endl;
   // print_tm_spmat(cout, *cspmtm);
 
   if (O.regularize_cmats)
     { RegularizeMatrix(cspm, uDofs.GetParallelDofs()); }
+
+  DispatchSquareMatrix(*cspm, [&](auto const &cA, auto CBS)
+  {
+    { std::ofstream of("ngs_amg_cmat.out"); print_tm_spmat(of, cA); }
+  });
+
+  cout << " coarseLevel.cap->free_nodes = " << coarseLevel.cap->free_nodes << endl;
+  if ( coarseLevel.cap->free_nodes )
+  {
+    cout << " coarseLevel.cap->free_nodes->Size() = " << coarseLevel.cap->free_nodes->Size() << endl;
+  }
 
   auto coarseMat = WrapParallelMatrix(cspm, uDofs, uDofs, PARALLEL_OP::C2D);
 
@@ -779,14 +825,14 @@ CoarseLevelInv(BaseAMGFactory::AMGLevel const &coarseLevel)
   if (uDofs.IsTrulyParallel()) {
     // propper parallel inverse
     coarseMat->SetInverseType(O.cinv_type);
-    coarseInv = coarseMat->InverseMatrix();
+    coarseInv = coarseMat->InverseMatrix(coarseLevel.cap->free_nodes);
   }
   else {
     // local inverse
     if ( (gComm.Size() == 1) ||
          ( (gComm.Size() == 2) && (gComm.Rank() == 1) ) ) { // local inverse
       cspm->SetInverseType(O.cinv_type_loc);
-      coarseInv = cspm->InverseMatrix();
+      coarseInv = cspm->InverseMatrix(coarseLevel.cap->free_nodes);
     }
     else if (gComm.Rank() == 0) { // some dummy matrix
       Array<int> perow(0);
@@ -794,6 +840,9 @@ CoarseLevelInv(BaseAMGFactory::AMGLevel const &coarseLevel)
     }
     coarseInv = WrapParallelMatrix(coarseInv, uDofs, uDofs, PARALLEL_OP::D2C);
   }
+
+  // cout << " cinv done = " << coarseInv << endl;
+  // std::ofstream of("ngs_amg_cmat_inv.out"); of << *coarseInv << endl;
 
   return std::make_tuple(coarseMat, coarseInv);
 } // BaseAMGPC::CoarseLevelInv
@@ -864,22 +913,44 @@ void BaseAMGPC :: InitFinestLevel (BaseAMGFactory::AMGLevel & finest_level)
   // finest_level.cap->mat = (fpm == nullptr) ? dynamic_pointer_cast<BaseSparseMatrix>(finest_mat)
   //   : dynamic_pointer_cast<BaseSparseMatrix>(fpm->GetMatrix());
 
-  finest_level.cap->mat = my_dynamic_pointer_cast<BaseSparseMatrix>(GetLocalMat(finest_mat),
-                            "BaseAMGPC::InitFinestLevel");
+  auto fineMat = my_dynamic_pointer_cast<BaseSparseMatrix>(GetLocalMat(finest_mat),
+                   "BaseAMGPC::InitFinestLevel");
 
-  finest_level.embed_map = BuildEmbedding(finest_level);
+  auto embMap = BuildEmbedding(finest_level);
 
-  if (finest_level.embed_map == nullptr) {
+  if ( embMap == nullptr )
+  {
+    // trivial case - no embedding !
+    finest_level.cap->mat   = fineMat;
+    finest_level.embed_map  = nullptr;
     finest_level.cap->uDofs = MatToUniversalDofs(*finest_mat, DOF_SPACE::ROWS);
   }
-  else {
+  else if ( options->smooth_after_emb ) // smooth twice on level 0, once before, once after embed
+  {
+    cout << " IFL smooth_after_emb " << endl;
+    finest_level.cap->mat   = embMap->AssembleMatrix(fineMat);
+    cout << " IFL smooth_after_emb " << endl;
+    finest_level.embed_map  = nullptr;
+    cout << " IFL smooth_after_emb " << endl;
+    finest_level.cap->uDofs = embMap->GetMappedUDofs();
+    cout << " IFL smooth_after_emb " << endl;
+
+    this->cachedEmbMap = embMap;
+    cout << " IFL smooth_after_emb " << endl;
+  }
+  else // smooth before embedding, concatenates embedding with first dof-coarse-map
+  {
+    finest_level.cap->mat  = fineMat;
+    finest_level.embed_map = embMap;
+
     /** Explicitely assemble matrix associated with the finest mesh. **/
-    if (options->force_ass_flmat) {
-      finest_level.cap->mat = finest_level.embed_map->AssembleMatrix(finest_level.cap->mat);
+    if (options->force_ass_flmat) // TODO: is this still used anywhere?
+    {
+      finest_level.cap->mat = embMap->AssembleMatrix(finest_level.cap->mat);
       finest_level.embed_done = true;
     }
     /** Either way, pardofs associated with the mesh are the mapped pardofs of the embed step **/
-    finest_level.cap->uDofs = finest_level.embed_map->GetMappedUDofs();
+    finest_level.cap->uDofs = embMap->GetMappedUDofs();
   }
 } // BaseAMGPC::InitFinestLevel
 
@@ -901,7 +972,7 @@ BuildSmoother (const BaseAMGFactory::AMGLevel & amg_level)
   // if (O.spec_sm_types.Size() > amg_level.level)
   //   { sm_type = O.spec_sm_types[amg_level.level]; }
 
-  shared_ptr<BaseMatrix> mat = (amg_level.level == 0) ? finest_mat
+  shared_ptr<BaseMatrix> mat = (amg_level.level == 0 && !options->smooth_after_emb) ? finest_mat
                                                       : WrapParallelMatrix(amg_level.cap->mat,
                                                                            amg_level.cap->uDofs,
                                                                            amg_level.cap->uDofs,
@@ -1123,7 +1194,7 @@ shared_ptr<BitArray> BaseAMGPC :: GetFreeDofs (const BaseAMGFactory::AMGLevel & 
 // cout << endl;
     // }
   }
-  if (amg_level.level == 0)
+  if (amg_level.level == 0 && !options->smooth_after_emb)
     { return finest_freedofs; }
   else
     { return amg_level.cap->free_nodes; }

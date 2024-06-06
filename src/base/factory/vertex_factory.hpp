@@ -49,9 +49,17 @@ protected:
 #ifdef SPW_AGG
   virtual shared_ptr<BaseCoarseMap> BuildSPWAggMap (State & state, shared_ptr<LevelCapsule> & mapped_cap);
 #endif // SPW_AGG
-  virtual shared_ptr<BaseDOFMapStep> BuildCoarseDOFMap (shared_ptr<BaseCoarseMap> cmap,
-                                                        shared_ptr<LevelCapsule> fcap,
-                                                        shared_ptr<LevelCapsule> ccap) override;
+  virtual shared_ptr<BaseDOFMapStep>
+  BuildCoarseDOFMap (shared_ptr<BaseCoarseMap> cmap,
+                     shared_ptr<LevelCapsule> fcap,
+                     shared_ptr<LevelCapsule> ccap,
+                     shared_ptr<BaseDOFMapStep> embMap = nullptr) override;
+
+  shared_ptr<BaseDOFMapStep>
+  MapLevel (FlatArray<shared_ptr<BaseDOFMapStep>> dofSteps,
+            shared_ptr<AMGLevel> &fCap,
+            shared_ptr<AMGLevel> &cCap) override;
+
 
   shared_ptr<ProlMap<TM>>
   PWProlMap (BaseCoarseMap const &cmap,

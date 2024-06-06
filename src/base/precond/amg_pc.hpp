@@ -80,6 +80,8 @@ namespace amg
       bool smooth_lo_only = false;         // smooth only on low order part -> AMG-PC is for the LO part only
       bool regularize_cmats = false;       // do we need to regularize coarse level matrices ?
       bool force_ass_flmat = false;        // force assembling of matrix belonging to finest level (embedding)
+      bool smooth_after_emb = false;
+
 
       /** How do we compute the replacement matrix **/
       enum ENERGY : unsigned {
@@ -116,6 +118,8 @@ namespace amg
     shared_ptr<BitArray> finest_freedofs;
     shared_ptr<BaseMatrix> finest_mat;
     shared_ptr<AMGMatrix> amg_mat;
+
+    shared_ptr<BaseDOFMapStep> cachedEmbMap; // TODO: find better solution!
 
     // are we running in "strict algebraic" mode,
     // i.e. without acces to mesh,fes,blf
