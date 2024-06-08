@@ -1,3 +1,4 @@
+#define FILE_DOF_MAP_CPP
 
 #ifdef USE_TAU
 #include "TAU.h"
@@ -1132,41 +1133,41 @@ GetMappedBlockSize () const
 namespace amg
 {
 
-template class ProlMap<double>;
-template class ProlMap<Mat<2,2,double>>;
-template class ProlMap<Mat<3,3,double>>;
+// template class ProlMap<double>;
+// template class ProlMap<Mat<2,2,double>>;
+// template class ProlMap<Mat<1,3,double>>;
+// template class ProlMap<Mat<2,3,double>>;
+// template class ProlMap<Mat<3,3,double>>;
 
-#ifdef ELASTICITY
-template class ProlMap<Mat<1,3,double>>;
-template class ProlMap<Mat<1,6,double>>;
-template class ProlMap<Mat<2,3,double>>;
-template class ProlMap<Mat<3,6,double>>;
-template class ProlMap<Mat<6,6,double>>;
-#endif // ELASTICITY
+// #ifdef ELASTICITY
+// template class ProlMap<Mat<1,6,double>>;
+// template class ProlMap<Mat<3,6,double>>;
+// template class ProlMap<Mat<6,6,double>>;
+// #endif // ELASTICITY
 
 // TODO: these seem to be needed from SOMEWHERE in the stokes AMG,
 //       probably one of the distach-BS calls. They should not be,
 //       but instead of finding that spot I just instantiate it here.
-template class ProlMap<Mat<2,1,double>>;
-template class ProlMap<Mat<1,2,double>>;
-template class ProlMap<Mat<3,1,double>>;
-template class ProlMap<Mat<3,2,double>>;
-#if MAX_SYS_DIM >= 4
-template class ProlMap<Mat<4,1,double>>;
-template class ProlMap<Mat<1,4,double>>;
-#endif
-#if MAX_SYS_DIM >= 5
-template class ProlMap<Mat<5,1,double>>;
-template class ProlMap<Mat<1,5,double>>;
-#endif
-#if MAX_SYS_DIM >= 6
-template class ProlMap<Mat<6,1,double>>;
-template class ProlMap<Mat<6,2,double>>;
-#endif
+// template class ProlMap<Mat<2,1,double>>;
+// template class ProlMap<Mat<1,2,double>>;
+// template class ProlMap<Mat<3,1,double>>;
+// template class ProlMap<Mat<3,2,double>>;
+// #if MAX_SYS_DIM >= 4
+// template class ProlMap<Mat<4,1,double>>;
+// template class ProlMap<Mat<1,4,double>>;
+// #endif
+// #if MAX_SYS_DIM >= 5
+// template class ProlMap<Mat<5,1,double>>;
+// template class ProlMap<Mat<1,5,double>>;
+// #endif
+// #if MAX_SYS_DIM >= 6
+// template class ProlMap<Mat<6,1,double>>;
+// template class ProlMap<Mat<6,2,double>>;
+// #endif
 
 // elasticity workaround, no idea why we need these symbols now all of a sudden
-template class ProlMap<Mat<5,6,double>>;
-template class ProlMap<Mat<6,5,double>>;
+// template class ProlMap<Mat<5,6,double>>;
+// template class ProlMap<Mat<6,5,double>>;
 
 template class DynBlockProlMap<double>;
 } // namespace amg
