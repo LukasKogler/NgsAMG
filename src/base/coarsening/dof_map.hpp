@@ -421,13 +421,13 @@ template<int N, int M> struct IsProlMapCompiledTrait { static constexpr bool val
 extern template class ProlMap<double>;
 template<> struct IsProlMapCompiledTrait<1, 1> { static constexpr bool value = true; };
 
-DEF_PROL(2, 2);
-DEF_PROL(3, 3);
+DEF_PROL(2,2);
+DEF_PROL(1,3);
+DEF_PROL(2,3);
+DEF_PROL(3,3);
 
 #ifdef ELASTICITY
-DEF_PROL(1,3);
 DEF_PROL(1,6);
-DEF_PROL(2,3);
 DEF_PROL(3,6);
 DEF_PROL(6,6);
 #endif
