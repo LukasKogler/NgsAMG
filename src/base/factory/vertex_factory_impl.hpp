@@ -628,8 +628,6 @@ BuildCoarseDOFMap (shared_ptr<BaseCoarseMap>                cmap,
       // prevent some weird/irrelevant cases from compiling
       if constexpr( IsProlMapCompiled<BSF, BS>() && BSF < BS && (BSF > 1 == BS > 1) )
       {
-        cout << " FL-PROL, BSF = " << BSF << endl;
-
         auto embProlMap = my_dynamic_pointer_cast<ProlMap<StripTM<BSF, BS>>>(embMap, "emb-prol");
         auto embProl    = embProlMap->GetProl();
 

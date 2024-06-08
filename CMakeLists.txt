@@ -74,6 +74,7 @@ if(APPLE)
 else(APPLE)
   if (NGSOLVE_USE_MKL)
     message(STATUS "NGSolve was built with MKL, to find that")
+    set(MKL_INTERFACE "lp64") # 32 bit integer interface
     find_package(MKL)
     if (MKL_FOUND)
       message(STATUS "Found MKL!")
