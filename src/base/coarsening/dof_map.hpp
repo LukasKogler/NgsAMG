@@ -414,7 +414,7 @@ shared_ptr<BaseDOFMapStep> MakeSingleStep2 (FlatArray<shared_ptr<BaseDOFMapStep>
 template<int N, int M> struct IsProlMapCompiledTrait { static constexpr bool value = false; };
 
 #define DEF_PROL(N, M) \
-  extern template class ProlMap<Mat<3,3,double>>; \
+  extern template class ProlMap<Mat<N,M,double>>; \
   template<> struct IsProlMapCompiledTrait<N, M> { static constexpr bool value = true; }; \
 
 
