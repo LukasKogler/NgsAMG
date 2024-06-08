@@ -389,7 +389,7 @@ void VertexAMGPC<FACTORY> :: SetUpMaps ()
           auto const &trip = algP2Trips[k];
 
           // cout << " "
-          edgePointParents[k] = IVec<3>{trip.vMid, d2v_array[trip.vI], d2v_array[trip.vJ]};
+          edgePointParents[k] = IVec<3>{int(trip.vMid), d2v_array[trip.vI], d2v_array[trip.vJ]};
         }
         break;
       }

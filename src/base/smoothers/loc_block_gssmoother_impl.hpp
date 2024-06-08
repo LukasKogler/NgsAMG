@@ -221,6 +221,8 @@ namespace amg
   template<class TM>
   INLINE void BSmoother2<TM>::BSBlock :: Prefetch () const
   {
+#ifdef NETGEN_ARCH_AMD64
+#ifdef __GNUC__
     char *pi = reinterpret_cast<char*>(firsti.Data()),
       *pin = reinterpret_cast<char*>(cols.Data() + cols.Size());
     while (pi < pin) {
@@ -233,6 +235,8 @@ namespace amg
       _mm_prefetch (reinterpret_cast<void*>(vi), _MM_HINT_T2);
       vi += 64;
     }
+#endif
+#endif
   } // BSmoother2<TM>::BSBlock::BSmoother2<TM>::BSBlock ::
 
 
