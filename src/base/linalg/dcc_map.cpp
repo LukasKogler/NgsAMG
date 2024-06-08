@@ -24,11 +24,11 @@ AllocMPIStuff ()
   {
     Array<int> perow;
     auto alloc_bs = [&](auto & a, auto & b) {
-perow.SetSize(b.Size());
-for (auto k : Range(perow))
-  { perow[k] = block_size * b[k].Size(); }
-// a = (typename remove_reference<decltype(a)>::type)(perow);
-a = std::move(Table<TSCAL>(perow));
+      perow.SetSize(b.Size());
+      for (auto k : Range(perow))
+        { perow[k] = block_size * b[k].Size(); }
+      // a = (typename remove_reference<decltype(a)>::type)(perow);
+      a = std::move(Table<TSCAL>(perow));
     };
     alloc_bs(m_buffer, m_ex_dofs); // m_buffer = -1;
     alloc_bs(g_buffer, g_ex_dofs); // g_buffer = -1;
@@ -45,16 +45,19 @@ a = std::move(Table<TSCAL>(perow));
   int cm = 0, cg = 0;
   auto comm = pardofs->GetCommunicator();
   auto ex_procs = pardofs->GetDistantProcs();
-  for (auto kp : Range(ex_procs)) {
-    if (g_ex_dofs[kp].Size()) { // init G send/recv
-MPI_Send_init( &g_buffer[kp][0], block_size * g_ex_dofs[kp].Size(), GetMPIType<TSCAL>(), ex_procs[kp], NG_MPI_TAG_AMG + 4, comm, &g_send[cg]);
-MPI_Recv_init( &g_buffer[kp][0], block_size * g_ex_dofs[kp].Size(), GetMPIType<TSCAL>(), ex_procs[kp], NG_MPI_TAG_AMG + 5, comm, &g_recv[cg]);
-cg++;
+  for (auto kp : Range(ex_procs))
+  {
+    if (g_ex_dofs[kp].Size()) // init G send/recv
+    {
+      NG_MPI_Send_init( &g_buffer[kp][0], block_size * g_ex_dofs[kp].Size(), GetMPIType<TSCAL>(), ex_procs[kp], NG_MPI_TAG_AMG + 4, comm, &g_send[cg]);
+      NG_MPI_Recv_init( &g_buffer[kp][0], block_size * g_ex_dofs[kp].Size(), GetMPIType<TSCAL>(), ex_procs[kp], NG_MPI_TAG_AMG + 5, comm, &g_recv[cg]);
+      cg++;
     }
-    if (m_ex_dofs[kp].Size()) { // init G send/recv
-MPI_Send_init( &m_buffer[kp][0], block_size * m_ex_dofs[kp].Size(), GetMPIType<TSCAL>(), ex_procs[kp], NG_MPI_TAG_AMG + 5, comm, &m_send[cm]);
-MPI_Recv_init( &m_buffer[kp][0], block_size * m_ex_dofs[kp].Size(), GetMPIType<TSCAL>(), ex_procs[kp], NG_MPI_TAG_AMG + 4, comm, &m_recv[cm]);
-cm++;
+    if (m_ex_dofs[kp].Size()) // init G send/recv
+    {
+      NG_MPI_Send_init( &m_buffer[kp][0], block_size * m_ex_dofs[kp].Size(), GetMPIType<TSCAL>(), ex_procs[kp], NG_MPI_TAG_AMG + 5, comm, &m_send[cm]);
+      NG_MPI_Recv_init( &m_buffer[kp][0], block_size * m_ex_dofs[kp].Size(), GetMPIType<TSCAL>(), ex_procs[kp], NG_MPI_TAG_AMG + 4, comm, &m_recv[cm]);
+      cm++;
     }
   }
   g_send.SetSize(cg); g_recv.SetSize(cg);

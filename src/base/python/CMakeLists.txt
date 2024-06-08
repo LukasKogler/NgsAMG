@@ -1,6 +1,9 @@
 target_include_directories(NgsAMGlib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 if (NETGEN_USE_PYTHON)
   target_include_directories(NgsAMG PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  if(NGS_PYTHON_CONFIG)
+    target_include_directories(NgsAMG PRIVATE ${Python3_INCLUDE_DIRS})
+  endif(NGS_PYTHON_CONFIG)
 endif(NETGEN_USE_PYTHON)
 
 target_sources(NgsAMG

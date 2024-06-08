@@ -32,6 +32,11 @@ if(NGS_PYTHON_CONFIG)
   execute_process(COMMAND ${Python3_EXECUTABLE} -m ngsolve.config OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE NGSolve_DIR)
   message(STATUS  "Found Netgen  at ${Netgen_DIR}")
   message(STATUS  "Found NGSolve at ${NGSolve_DIR}")
+  if (NOT Netgen_DIR OR NOT NGSolve_DIR)
+    message(FATAL_ERROR "COULD NOT FIND Netgen/NGSolve!")
+  endif (NOT Netgen_DIR OR NOT NGSolve_DIR)
+  message(STATUS  "Found python-headers at ${Python3_INCLUDE_DIRS}")
+  target_include_directories(NgsAMGlib PRIVATE ${Python3_INCLUDE_DIRS})
 else(NGS_PYTHON_CONFIG)
   message(STATUS "Looking for NGSolve in the usual places...")
 endif(NGS_PYTHON_CONFIG)
@@ -39,6 +44,21 @@ endif(NGS_PYTHON_CONFIG)
 find_package(NGSolve CONFIG REQUIRED
   HINTS $ENV{NETGENDIR}/.. /opt/netgen/ /Applications/Netgen.app/Contents/Resources/CMake C:/netgen
 )
+
+# # ninja -t graph > graph
+# # dot -Tsvg graph > ngsGraph.svg
+# message(STATUS "   ")
+# message(STATUS "   ")
+# message(STATUS "Giving out ALL variables:")
+# get_cmake_property(_variableNames VARIABLES)
+# list (SORT _variableNames)
+# foreach (_variableName ${_variableNames})
+#     message(STATUS "${_variableName}=${${_variableName}}")
+# endforeach()
+# message(STATUS "   ")
+# message(STATUS "   ")
+# message(STATUS "CALLED WITH CMAKE_C_COMPILER = ${CMAKE_C_COMPILER}")
+# message(STATUS "CALLED WITH CMAKE_CXX_COMPILER = ${CMAKE_CXX_COMPILER}")
 
 if (NGSOLVE_USE_MUMPS)
   if (MUMPS_INCLUDE_DIR)
@@ -76,75 +96,78 @@ if (NOT NG_MPI_FOUND)
   find_package(MPI REQUIRED)
 endif(NOT NG_MPI_FOUND)
 
-
 # Try to find METIS header/library that was built into Netgen, otherwise, if applicable, use the provided METIS
 if (NETGEN_METIS_INCLUDE_DIR AND NETGEN_METIS_LIBRARY)
   message(STATUS "Using METIS from Netgen-build")
   find_file(METIS_HEADER metis.h ${NETGEN_METIS_INCLUDE_DIR} NO_CACHE)
 
   if (NOT METIS_HEADER)
-    message(STATUS "Could not fine METIS-header used to build Netgen, building METIS as dependency!")
-    include(cmake/metis.cmake)
-    add_dependencies(NgsAMGlib project_metis)
-    message(STATUS "Building METIS to ${METIS_DIR}")
-    set(METIS_INCLUDE_DIR ${METIS_DIR}/include)
-    find_library(METIS_LIB metis HINTS ${METIS_DIR})
-    set(METIS_LIBRARY ${METIS_DIR}/lib/libmetis.a)
+    message(STATUS "Could not find METIS-header used to build Netgen!!")
+    set(BUILD_METIS 1)
   else(NOT METIS_HEADER)
     message(STATUS "Using METIS from Netgen-build")
     set(METIS_INCLUDE_DIR ${NETGEN_METIS_INCLUDE_DIR})
     set(METIS_LIBRARY     nglib)
+    set(BUILD_METIS 0)
     endif(NOT METIS_HEADER)
 else()
   if (NOT METIS_INCLUDE_DIR OR NOT METIS_LIBRARY)
-    message(FATAL_ERROR "Could not find METIS from Netgen-build and no Metis installation was provided.")
+    message(STATUS "Could not find METIS from Netgen-build and no Metis installation was provided.")
+    set(BUILD_METIS 1)
   endif()
 endif()
+
+if (BUILD_METIS)
+  enable_language(C)
+  include(cmake/metis.cmake)
+  message(STATUS "Building METIS as a dependency to ${METIS_DIR}")
+  add_dependencies(NgsAMGlib project_metis)
+  set(METIS_INCLUDE_DIR ${METIS_DIR}/include)
+  # find_library(METIS_LIB metis HINTS ${METIS_DIR})
+  set(METIS_LIBRARY ${METIS_DIR}/lib/libmetis.a)
+endif(BUILD_METIS)
+
 
 message(STATUS "Using METIS-header from ${METIS_INCLUDE_DIR}")
 message(STATUS "USing METIS-library ${METIS_LIBRARY}")
 message(STATUS "METIS-HEADER = ${METIS_HEADER}")
 
+message(STATUS "CMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}")
+message(STATUS "CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT=${CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT}")
+message(STATUS "SKBUILD_PLATLIB_DIR=${SKBUILD_PLATLIB_DIR}")
 
 # check if CMAKE_INSTALL_PREFIX is set by user, if not install in NGSolve lib/python-lib directories
-if(NGS_PYTHON_CONFIG)
-  message(STATUS "Setting Install dir based on NGSolve python-config")
-
-  execute_process(
-    COMMAND ${Python3_EXECUTABLE} -c "import sys,sysconfig,os.path; print(os.path.relpath(sysconfig.get_path('platlib'), sys.prefix))"
-    OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE python3_library_dir
+if(NGS_PYTHON_CONFIG) # pip-install
+  # get the path where local python packages are installed
+  execute_process(COMMAND ${Python3_EXECUTABLE} -m site --user-site
+    OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE install_prefix RESULT_VARIABLE ret
   )
-
-  execute_process(COMMAND ${Python3_EXECUTABLE} -c "import sys; print(sys.prefix)"
-    OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE install_prefix
-  )
-  execute_process(COMMAND ${Python3_EXECUTABLE} -m site --user-base
-    OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE user_base RESULT_VARIABLE ret
-  )
-
-  if (ret EQUAL 0)
-    set(install_prefix ${user_base})
-  endif()
-  set(CMAKE_INSTALL_PREFIX ${install_prefix} CACHE PATH "Install dir" FORCE)
+  if (NOT ret EQUAL 0)
+    # as fallback, get the path where global python packages are installed
+    execute_process(
+      COMMAND ${Python3_EXECUTABLE} -c "import sys,sysconfig,os.path; print(sysconfig.get_path('platlib'))"
+      OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE install_prefix
+    )
+  endif (NOT ret EQUAL 0)
+  message(STATUS "I think the location to install python packages to is ${install_prefix} !")
+  set(CMAKE_INSTALL_PREFIX ${install_prefix}/NgsAMG CACHE PATH "Install dir" FORCE)
   set(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT OFF)
-
-  set(AMG_PYTHON_INSTALL_DIR ${CMAKE_INSTALL_PREFIX}/${python3_library_dir}/NgsAMG CACHE PATH "Install dir" FORCE)
+  set(AMG_PYTHON_INSTALL_DIR ${CMAKE_INSTALL_PREFIX} CACHE PATH "Install dir" FORCE)
   set(AMG_CLIB_INSTALL_DIR   ${AMG_PYTHON_INSTALL_DIR} CACHE PATH "Install dir" FORCE)
 else(NGS_PYTHON_CONFIG)
-    if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-      message(STATUS "Installing NgsAMG into NGSolve-installation!")
-      message(STATUS "   NGSOLVE_INSTALL_DIR        = ${NGSOLVE_INSTALL_DIR}")
-      message(STATUS "   NGSOLVE_LIBRARY_DIR        = ${NGSOLVE_LIBRARY_DIR}")
-      message(STATUS "   NGSOLVE_INSTALL_DIR_PYTHON = ${NGSOLVE_INSTALL_DIR_PYTHON}")
-      set(AMG_CLIB_INSTALL_DIR   ${NGSOLVE_LIBRARY_DIR} CACHE PATH "Install dir" FORCE)
-      set(AMG_PYTHON_INSTALL_DIR ${NGSOLVE_INSTALL_DIR}/${NGSOLVE_INSTALL_DIR_PYTHON}/NgsAMG CACHE PATH "Install dir" FORCE)
-    else(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-      message(STATUS "Installing NgsAMG to explicitly specified ${CMAKE_INSTALL_PREFIX}!")
-      set(AMG_CLIB_INSTALL_DIR   ${CMAKE_INSTALL_PREFIX} CACHE PATH "Install dir" FORCE)
-      set(AMG_PYTHON_INSTALL_DIR ${CMAKE_INSTALL_PREFIX} CACHE PATH "Install dir" FORCE)
-    endif(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+  if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT OR NOT CMAKE_INSTALL_PREFIX)
+    message(STATUS "No explicit INSTALL_DIR specified, installing NgsAMG into NGSolve-installation!")
+    message(STATUS "   NGSOLVE_INSTALL_DIR        = ${NGSOLVE_INSTALL_DIR}")
+    message(STATUS "   NGSOLVE_LIBRARY_DIR        = ${NGSOLVE_LIBRARY_DIR}")
+    message(STATUS "   NGSOLVE_INSTALL_DIR_PYTHON = ${NGSOLVE_INSTALL_DIR_PYTHON}")
+    set(AMG_CLIB_INSTALL_DIR   ${NGSOLVE_LIBRARY_DIR} CACHE PATH "Install dir" FORCE)
+    set(AMG_PYTHON_INSTALL_DIR ${NGSOLVE_INSTALL_DIR}/${NGSOLVE_INSTALL_DIR_PYTHON}/NgsAMG CACHE PATH "Install dir" FORCE)
+  else(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT OR NOT CMAKE_INSTALL_PREFIX)
+    message(STATUS "Installing NgsAMG to explicitly specified ${CMAKE_INSTALL_PREFIX}!")
+    set(AMG_CLIB_INSTALL_DIR   ${CMAKE_INSTALL_PREFIX} CACHE PATH "Install dir" FORCE)
+    set(AMG_PYTHON_INSTALL_DIR ${CMAKE_INSTALL_PREFIX} CACHE PATH "Install dir" FORCE)
+  endif(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT OR NOT CMAKE_INSTALL_PREFIX)
 endif(NGS_PYTHON_CONFIG)
-
 
 message(STATUS " CMAKE_INSTALL_PREFIX = ${CMAKE_INSTALL_PREFIX}")
 message(STATUS " NgsAMG  C-library      will be installed to: ${AMG_CLIB_INSTALL_DIR}")
@@ -173,7 +196,7 @@ endif (ENABLE_SPW_AGG)
 if (ENABLE_ELASTICITY)
   message(STATUS "Turning ON elasticity AMG")
   if ( "${NGSOLVE_MAX_SYS_DIM}" LESS "6")
-    message(FATAL_ERROR "NGSolve was built with MAX_SYS_DIM = ${NGSOLVE_MAX_SYS_DIM}. Need at least 6 for elasticity preconditioners!")
+    message(WARNING "NGSolve was built with MAX_SYS_DIM = ${NGSOLVE_MAX_SYS_DIM}. Direct coarse grid inverse not available for elasticity preconditioners in 3d for MAX_SYS_DIM<6!")
   endif ( "${NGSOLVE_MAX_SYS_DIM}" LESS "6")
 
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DELASTICITY")

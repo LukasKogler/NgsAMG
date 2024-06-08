@@ -15,6 +15,8 @@ ExternalProject_Add(project_metis
 	 -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
 	 -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
   UPDATE_COMMAND "" # Disable update
+  BUILD_BYPRODUCTS dependencies/metis/include/metis.h
+  BUILD_BYPRODUCTS dependencies/metis/lib/libmetis.a
   BUILD_IN_SOURCE 1
   )
 

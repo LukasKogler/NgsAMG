@@ -1,0 +1,51 @@
+[build-system]
+requires = ["scikit-build-core>=0.3.3", "pybind11", "pybind11_stubgen", "cmake>=3.26", "netgen-mesher", "ngsolve"]
+build-backend = "scikit_build_core.build"
+# do not set these, otherwise it will install netgen/ngsolve without MPI which breaks the build
+#requires = ["scikit-build-core>=0.3.3", "pybind11", "pybind11_stubgen", "cmake>=3.26", "netgen-mesher", "ngsolve"]
+
+[project]
+name="NgsAMG"
+version="0.0.1"
+description="A minimal example for an NGSolve addon"
+author=""
+readme = "README.md"
+authors = [ { name = "Lukas Kogler" } ]
+requires-python = ">=3.10"
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "License :: GNU LESSER GENERAL PUBLIC LICENSE Version3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.pytest.ini_options]
+# testpaths = ["tests"]
+
+[tool.cibuildwheel]
+skip = """
+  pp*
+  *_i686
+  *musllinux*
+  *win32
+"""
+
+[tool.cibuildwheel.linux]
+repair-wheel-command = ""
+
+[tool.cibuildwheel.macos]
+environment = {MACOSX_DEPLOYMENT_TARGET=10.15}
+repair-wheel-command = ""
+archs = ["universal2"]
+
+[tool.scikit-build]
+cmake.args = [ "-DNGS_PYTHON_CONFIG=ON", "-DCMAKE_BUILD_TYPE=RELEASE", "-DENABLE_ELASTICITY=ON", "-DENABLE_STOKES=ON", "-DENABLE_MIS_AGG=ON", "-DENABLE_SPW_AGG=ON", "-DENABLE_ROBUST_ELASTICITY_COARSENING=OFF", "-DNGS_COMPATIBILITY=ON"]
+# -build-dir = "/home/lukask/test/{wheel_tag}" # build debugging - set a build-directly
+
