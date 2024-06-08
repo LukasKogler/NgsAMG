@@ -89,7 +89,7 @@ Table<int> PartitionProcsMETIS (BlockTM & mesh, int nparts, bool sep_p0)
   }
   Array<IVec<3,size_t>> all_data(tds);
 
-  MPI_Gatherv(data.Data(), data.Size(), GetMPIType<IVec<3,size_t>>(), all_data.Data(), rcnts.Data(), displs.Data(), GetMPIType<IVec<3,size_t>>(), root, comm);
+  NG_MPI_Gatherv(data.Data(), data.Size(), GetMPIType<IVec<3,size_t>>(), all_data.Data(), rcnts.Data(), displs.Data(), GetMPIType<IVec<3,size_t>>(), root, comm);
 
   if (comm.Rank() != root) {
     /** Send  data to root **/

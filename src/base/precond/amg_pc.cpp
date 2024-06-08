@@ -666,24 +666,20 @@ void BaseAMGPC :: BuildAMGMat ()
     smoothers.Insert(0, smoother);
 
     // discard everything, just do 1 level
-    dof_map = make_shared<DOFMap>();
-    dof_map->AddStep(this->cachedEmbMap);
-
-    smoothers.SetSize0();
-    smoothers.Append(smoother);
-
-    amg_levels.SetSize(1);
+    // dof_map = make_shared<DOFMap>();
+    // dof_map->AddStep(this->cachedEmbMap);
+    // smoothers.SetSize0();
+    // smoothers.Append(smoother);
+    // amg_levels.SetSize(1);
 
     this->cachedEmbMap = nullptr;
   }
 
   dof_map->Finalize();
 
-  cout <<" create AMGMatrix" << endl;
   amg_mat = make_shared<AMGMatrix> (dof_map, smoothers);
   amg_mat->SetVWB(O.mg_cycle);
 
-  cout <<" TEST LEVELS?" << endl;
   if ( O.test_levels )
   {
     for (int k = 0; k < amg_levels.Size() - 1; k++)
@@ -804,16 +800,16 @@ CoarseLevelInv(BaseAMGFactory::AMGLevel const &coarseLevel)
   if (O.regularize_cmats)
     { RegularizeMatrix(cspm, uDofs.GetParallelDofs()); }
 
-  DispatchSquareMatrix(*cspm, [&](auto const &cA, auto CBS)
-  {
-    { std::ofstream of("ngs_amg_cmat.out"); print_tm_spmat(of, cA); }
-  });
+  // DispatchSquareMatrix(*cspm, [&](auto const &cA, auto CBS)
+  // {
+  //   { std::ofstream of("ngs_amg_cmat.out"); print_tm_spmat(of, cA); }
+  // });
 
-  cout << " coarseLevel.cap->free_nodes = " << coarseLevel.cap->free_nodes << endl;
-  if ( coarseLevel.cap->free_nodes )
-  {
-    cout << " coarseLevel.cap->free_nodes->Size() = " << coarseLevel.cap->free_nodes->Size() << endl;
-  }
+  // cout << " coarseLevel.cap->free_nodes = " << coarseLevel.cap->free_nodes << endl;
+  // if ( coarseLevel.cap->free_nodes )
+  // {
+  //   cout << " coarseLevel.cap->free_nodes->Size() = " << coarseLevel.cap->free_nodes->Size() << endl;
+  // }
 
   auto coarseMat = WrapParallelMatrix(cspm, uDofs, uDofs, PARALLEL_OP::C2D);
 
@@ -927,16 +923,11 @@ void BaseAMGPC :: InitFinestLevel (BaseAMGFactory::AMGLevel & finest_level)
   }
   else if ( options->smooth_after_emb ) // smooth twice on level 0, once before, once after embed
   {
-    cout << " IFL smooth_after_emb " << endl;
     finest_level.cap->mat   = embMap->AssembleMatrix(fineMat);
-    cout << " IFL smooth_after_emb " << endl;
     finest_level.embed_map  = nullptr;
-    cout << " IFL smooth_after_emb " << endl;
     finest_level.cap->uDofs = embMap->GetMappedUDofs();
-    cout << " IFL smooth_after_emb " << endl;
 
     this->cachedEmbMap = embMap;
-    cout << " IFL smooth_after_emb " << endl;
   }
   else // smooth before embedding, concatenates embedding with first dof-coarse-map
   {
@@ -1063,7 +1054,8 @@ BuildBGSSmoother (shared_ptr<BaseMatrix> A,
   UniversalDofs const &rowUD = rRowUD;
 
   auto blocks = std::move(_blocks);
-  // cout << " BGSS w. blocks " << blocks.Size() << " blocks for " << spm->Height() << " DOFs " << endl;
+
+  // cout << " BGSS w. blocks " << blocks.Size() << " blocks for " << A->Height() << " DOFs " << endl;
 
   DispatchSquareMatrix(locA, [&](auto spA, auto BS)
   {
@@ -1078,9 +1070,10 @@ BuildBGSSmoother (shared_ptr<BaseMatrix> A,
       // turn off optimization for non-overlapping blocks for now
       bool blocks_no_overlap = false;
 
+      bool use_bs2 = true;
+
       if (rowUD.IsParallel())
       {
-        bool use_bs2 = true;
         bool smooth_symm_loc = false;
         int nsteps_loc = 1;
 
@@ -1090,13 +1083,19 @@ BuildBGSSmoother (shared_ptr<BaseMatrix> A,
       }
       else
       {
-        smoother = make_shared<BSmoother<BSTM>>
-            (spA, std::move(blocks), O.sm_shm, O.sm_sl2, O.regularize_cmats);
         // Note: I am not sure Bsmoother2 works for elasticity that can be singular
         // SM-parallel for BSmoother2 was never implemented!
         // bool const shm = false; // O.sm_shm
-        // smoother = make_shared<BSmoother2<BSTM>>
-        //     (tm_spm, std::move(blocks), shm, O.sm_sl2, O.regularize_cmats, blocks_no_overlap);
+        if ( use_bs2 )
+        {
+          smoother = make_shared<BSmoother2<BSTM>>
+              (spA, std::move(blocks), O.sm_shm, O.sm_sl2, O.regularize_cmats, blocks_no_overlap);
+        }
+        else
+        {
+          smoother = make_shared<BSmoother<BSTM>>
+              (spA, std::move(blocks), O.sm_shm, O.sm_sl2, O.regularize_cmats);
+        }
       }
       return;
     }

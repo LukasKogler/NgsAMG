@@ -53,7 +53,7 @@ void CtrMap<TV> :: TransferF2C (const BaseVector * x_fine, BaseVector * x_coarse
 #endif
 
   RegionTimer rt(timer_hack_ctr_f2c());
-  /** 
+  /**
 We HAVE to null out coarse vec, because there are DOFs that get vals from multiple
 sources that have to be added up, and because we can have DOFs that cannot be mapped "within-group-locally".
 These DOFs have to be nulled so we have no garbage vals left.
@@ -72,7 +72,7 @@ void CtrMap<TV> :: AddF2C (double fac, const BaseVector * x_fine, BaseVector * x
 #endif
 
   RegionTimer rt(timer_hack_ctr_f2c());
-  /** 
+  /**
 We can have DOFs that cannot be mapped "within-group-locally".
 typically this does not matter, because F2C works with DISTRIBUTED vectors
 anyways
@@ -80,9 +80,12 @@ anyways
   x_fine->Distribute();
   auto fvf = x_fine->FV<TV>();
   const auto & comm(GetParallelDofs()->GetCommunicator());
-  if (!is_gm) {
+  if (!is_gm)
+  {
     if (fvf.Size() > 0)
-{ NG_MPI_Send(x_fine->Memory(), fvf.Size(), GetMPIType<TV>(), group[0], NG_MPI_TAG_AMG, comm); }
+    {
+      NG_MPI_Send(x_fine->Memory(), fvf.Size(), GetMPIType<TV>(), group[0], NG_MPI_TAG_AMG, comm);
+    }
     return;
   }
   x_coarse->Distribute();
@@ -100,7 +103,9 @@ anyways
     NG_MPI_Waitany(nrr, rrptr, &kp, NG_MPI_STATUS_IGNORE);
     auto map = dof_maps[kp]; auto buf = buffers[kp];
     for (auto j : Range(map.Size()))
-fvc(map[j]) += fac * buf[j];
+    {
+      fvc(map[j]) += fac * buf[j];
+    }
   }
   // cout << " x coarse is: " << endl << fvc << endl;
 }
@@ -164,7 +169,7 @@ void CtrMap<TV> :: AddC2F (double fac, BaseVector * x_fine, const BaseVector * x
 #endif
 
   /**
-     some values are transfered to multiple ranks 
+     some values are transfered to multiple ranks
       does not matter because coarse grid vectors are typically CUMULATED
     **/
   RegionTimer rt(timer_hack_ctr_c2f());
@@ -205,7 +210,7 @@ void CtrMap<TV> :: AddC2F (double fac, BaseVector * x_fine, const BaseVector * x
   // cout << endl;
 
   reqs[0] = NG_MPI_REQUEST_NULL;
-  
+
   MyMPI_WaitAll(reqs);
   // cout << "x fine " << x_fine->Size() << endl;
   // cout << *x_fine << endl;
@@ -291,10 +296,10 @@ SwapWithProl (shared_ptr<ProlMap<TM>> pm_in)
 {
 
   NgsAMG_Comm comm = GetUDofs().GetCommunicator();
-  
+
   // cout << "SWAP WITH PROL, AM RANK " << comm.Rank() << " of " << comm.Size() << endl;
   // cout << "loc glob nd " << pardofs->GetNDofLocal() << " " << pardofs->GetNDofGlobal() << endl;
-  
+
   // // TODO: new (mid) paralleldofs !?
 
   shared_ptr<SparseMatrix<TM>> split_A;
@@ -323,7 +328,7 @@ SwapWithProl (shared_ptr<ProlMap<TM>> pm_in)
 
     // cout << "prol dims " << P->Height() << " x " << P->Width() << endl;
     // cout << " mapped loc glob nd " << mapped_pardofs->GetNDofLocal() << " " << mapped_pardofs->GetNDofGlobal() << endl;
-  
+
     /**
  For each member:
         - get rows of P corresponding to it's DOFs (keep col-indices) [Pchunk]
@@ -390,7 +395,7 @@ return Pchunk;
 
     /**
  New dist-procs: DUMMIES, should not ever need them
-      
+
   But we could do this if we need them:
   -        C
   - MID  ---->  FIN
@@ -403,7 +408,7 @@ return Pchunk;
   Have access to INI, CRS and FIN pardofs. Need to construct MID pardofs.
 
   For each FIN DOF, masters know who, in their group, has them.
-      
+
   So, for each contracted ex-proc, write pre-contracted members for all ex-dofs into a table
   and exchange tables. Merge these tables into one NDOF-sized one, then break that up into
   group.Size() small tables which we distribute.
@@ -493,7 +498,7 @@ void CtrMap<TV> :: SetUpMPIStuff ()
     Array<int> perow(group.Size());
     Array<int> ones;
     size_t max_s = 0;
-    
+
     for (auto k : Range(group.Size()))
       { max_s = max2(max_s, dof_maps[k].Size()); }
 
@@ -506,7 +511,7 @@ void CtrMap<TV> :: SetUpMPIStuff ()
       NG_MPI_Type_indexed(ms, (ms == 0) ? NULL : &ones[0], (ms == 0) ? NULL : &map[0], GetMPIType<TV>(), &NG_MPI_types[k]);
       NG_MPI_Type_commit(&NG_MPI_types[k]);
     }
-    
+
     perow[0] = 0;
     for (auto k : Range(size_t(1), group.Size()))
       { perow[k] = dof_maps[k].Size(); }
@@ -581,7 +586,7 @@ for(auto j : Range(map.Size()))
   crm.Add(map[j],IVec<2, size_t>({k,j}));
     }
   auto reverse_map = crm.MoveTable();
-  
+
   timer_hack_ctrmat(2).Start();
   Array<int*> merge_ptrs(group.Size()); Array<int> merge_sizes(group.Size());
   Array<int> perow(cndof);
@@ -661,7 +666,7 @@ MergeArrays(merge_ptrs, merge_sizes, [&](auto k) { perow[rownr]++; colnr_buffer[
 
   // cout << "perow: " << endl; prow2(perow); cout << endl;
   // cout << "colnr-buffer: " << endl; prow(colnr_buffer); cout << endl;
-  
+
   timer_hack_ctrmat(3).Start();
   max_nze = 0;
   auto cmat = make_shared<TSPM> (perow, cndof);

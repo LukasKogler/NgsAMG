@@ -430,7 +430,7 @@ EmbeddedSProl (Options const &O,
         // cout << " USED @ " << idxP << endl;
         prolVals[idxP] -= omega * upVal;
       }
-      else // unused col 
+      else // unused col
       {
         // instead add as contrib to reCols (i.e. cvs of fvs from initial emb!)
         for (auto idx : replaceColPos)
@@ -509,11 +509,9 @@ MapLevel (FlatArray<shared_ptr<BaseDOFMapStep>> dofSteps,
 {
   auto & O = static_cast<Options&>(*options);
 
-  cout << " MapLevel!" << endl;
-
   size_t off = (fCap->level == 0 && O.use_emb_sp) ? 1 : 0;
 
-  return BaseAMGFactory::MapLevel(dofSteps.Range(off, dofSteps.Size()), fCap, cCap);  
+  return BaseAMGFactory::MapLevel(dofSteps.Range(off, dofSteps.Size()), fCap, cCap);
 }
 
 

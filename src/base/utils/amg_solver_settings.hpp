@@ -43,6 +43,18 @@ public:
   virtual std::vector<double> &getVertexCoordinates() = 0;
   virtual std::vector<double> const &getVertexCoordinates() const = 0;
 
+  // provide nodal-p2 mapping
+  struct NodalP2Triple
+  {
+    unsigned vI;
+    unsigned vJ;
+    unsigned vMid;
+  };
+
+  virtual void setNodalP2Connectivity(std::vector<NodalP2Triple> &p2Triples) = 0;
+  virtual std::vector<NodalP2Triple>       &getNodalP2Connectivity()       = 0;
+  virtual std::vector<NodalP2Triple> const &getNodalP2Connectivity() const = 0;
+  
   virtual ngcore::Flags const& getFlags() const = 0;
 
   virtual bool checkValidity() const = 0;

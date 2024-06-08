@@ -2,6 +2,7 @@
 #define FILE_AMGPC_VERTEX_HPP
 
 #include "amg_pc.hpp"
+#include "amg_solver_settings.hpp"
 
 namespace amg
 {
@@ -41,8 +42,14 @@ protected:
   Table<int> v2d_table;
   Array<Array<Vec<DIM,double>>> node_pos;
 
+  // TODO: also set up p2V -> dof map so we can get mid-pint positions
+  //       from mesh (or from specified pos in strict alg mode)
+  //       that then works with rot-scaling and does not rely on p2-pos
+  //       being the mid-point as defined by ENERGY
   bool use_p2_emb;
   Array<IVec<3>> edgePointParents; // [dNum, vnum0, vnum1]   edge-dof->prelim-vertex map (for p2)
+
+  FlatArray<AMGSolverSettings::NodalP2Triple> algP2Trips;
 
   shared_ptr<BitArray> free_verts;
 
@@ -59,6 +66,8 @@ public:
   virtual void SetVertexCoordinates(FlatArray<double> coords);
 
   virtual void SetEmbProjScalRows(shared_ptr<BitArray> scalFree);
+
+  virtual void SetNodalP2Connectivity(FlatArray<AMGSolverSettings::NodalP2Triple> p2Trips);
 
   /** BaseAMGPC overloads **/
   virtual void InitLevel (shared_ptr<BitArray> freedofs = nullptr) override;
@@ -218,7 +227,8 @@ public:
   enum DOF_ORDERING : unsigned {
     REGULAR_ORDERING = 0,
     VARIABLE_ORDERING = 1,     // provided assignment [[not implemented]]
-    P2_ORDERING = 2            // first edge DOF is in subset but has no vertex!
+    P2_ORDERING = 2,           // first edge DOF is in subset but has no vertex!
+    P2_ORDERING_ALG = 3        // like P2_ORDERING, but info comes from supplied info and not FESpace
   };
   /**	REGULAR: sum(block_s) DOFs per "vertex", defined by block_s and ss_ranges/ss_select
         e.g: block_s = [2,3], then we have NV blocks of 2 vertices, then NV blocks of 3 vertices

@@ -265,6 +265,8 @@ void VertexAMGPC<FACTORY> :: SetUpMaps ()
       } // REGULAR_ORDERING
       case(Options::DOF_ORDERING::P2_ORDERING):
       {
+        assert(strict_alg_mode == false); // "P2_ORDERING with strict alg-mode!"
+
         this->use_v2d_tab = false;
         this->use_p2_emb = true;
 
@@ -338,6 +340,59 @@ void VertexAMGPC<FACTORY> :: SetUpMaps ()
         edgePointParents.SetSize(cntEdgeVs);
         break;
       } // P2_ORDERING
+      case(Options::DOF_ORDERING::P2_ORDERING_ALG):
+      {
+        assert(strict_alg_mode == false); // "P2_ORDERING_ALG without strict alg-mode!");
+
+        this->use_v2d_tab = false;
+        this->use_p2_emb = true;
+
+        n_verts = 0;
+
+        // map all edges that do not appear as MSVs to actual vertices
+        BitArray isP2Vert(in_ss);
+        isP2Vert.Clear();
+
+        for (auto const &trip : algP2Trips)
+        {
+          // v0, v1, p2-vert
+          isP2Vert.SetBit(trip.vMid);
+        }
+
+        n_verts = in_ss - isP2Vert.NumSet();
+
+        cout << " P2_ORDERING_ALG " << endl;
+        cout << " in_ss = " << in_ss << endl;
+        cout << " trips " << algP2Trips.Size() << " -> " << isP2Vert.NumSet() << endl;
+        cout << "   -> " << n_verts << " proper verts left! " << endl;
+
+        d2v_array.SetSize(in_ss); d2v_array = -1;
+        v2d_array.SetSize(n_verts);
+
+        n_verts = 0;
+        for (auto k : Range(in_ss))
+        {
+          if ( !isP2Vert.Test(k) )
+          {
+            auto const vNum = n_verts++;
+            v2d_array[vNum] = k;
+            d2v_array[k]    = vNum;
+          }
+        }
+
+        // cout << "   -> " << n_verts << " proper verts CHECK! " << endl;
+
+        edgePointParents.SetSize(algP2Trips.Size());
+
+        for (auto k : Range(algP2Trips))
+        {
+          auto const &trip = algP2Trips[k];
+
+          // cout << " "
+          edgePointParents[k] = IVec<3>{trip.vMid, d2v_array[trip.vI], d2v_array[trip.vJ]};
+        }
+        break;
+      }
     }
     break;
   } // RANGE_SUBSET
@@ -1163,10 +1218,15 @@ Table<int> VertexAMGPC<FACTORY> :: GetGSBlocks (const BaseAMGFactory::AMGLevel &
     }
   };
   auto vmap = amg_level.crs_map->GetMap<NT_VERTEX>();
+
+  // TODO: clean BGS-blocks for pre/post L0 emb, enable BGS for pre-emb when smooth_after_emb (somehow?)
+  //                add something like pre_emb_sm_type option, add a "GetPreEmbBlocks", route getgsblocks there
+  //                if not smooth_after_emb
+
   for (; !cblocks.Done(); cblocks++) {
     if (true) { // (amg_level.disc_map == nullptr) {
       auto map_v = [&](auto v) -> int LAMBDA_INLINE { return vmap[v]; };
-      if (amg_level.level == 0)
+      if (amg_level.level == 0 && (!O.smooth_after_emb)) // if smooth_after_emb, need mesh-canonic blocks
         { it_blocks_2(vmap.Size(), map_v); }
       else
         { it_blocks(vmap.Size(), map_v); }
@@ -1219,6 +1279,19 @@ IVec<3, double> VertexAMGPC<FACTORY> :: GetElmatEVs() const
 {
   return IVec<3,double>({ 0.0, std::numeric_limits<double>::max(), std::numeric_limits<double>::infinity() });
 } // VertexAMGPC::GetElmatEVs
+
+
+template<class FACTORY>
+void
+VertexAMGPC<FACTORY>::
+SetNodalP2Connectivity(FlatArray<AMGSolverSettings::NodalP2Triple> p2Trips)
+{
+  auto & O = static_cast<Options&>(*options);
+
+  O.subset = Options::DOF_SUBSET::RANGE_SUBSET;
+  O.dof_ordering = Options::DOF_ORDERING::P2_ORDERING_ALG;
+  this->algP2Trips.Assign(p2Trips);
+}
 
 
 /** END VertexAMGPC **/
