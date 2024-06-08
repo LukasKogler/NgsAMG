@@ -54,8 +54,8 @@ template<> INLINE void print_tm (ostream &os, const double & mat)
 template<class T>
 INLINE void print_tm_mat (ostream &os, const T & mat)
 {
-  constexpr int H = mat_traits<typename std::remove_reference<typename std::invoke_result<T(int, int)>::type>::type>::HEIGHT;
-  constexpr int W = mat_traits<typename std::remove_reference<typename std::invoke_result<T(int, int)>::type>::type>::WIDTH;
+  constexpr int H = mat_traits<typename std::remove_reference<typename std::invoke_result<T,int, int>::type>::type>::HEIGHT;
+  constexpr int W = mat_traits<typename std::remove_reference<typename std::invoke_result<T,int, int>::type>::type>::WIDTH;
   for (auto k : Range(mat.Height())) {
     for (int kH : Range(H)) {
       for (auto j : Range(mat.Width())) {
@@ -80,8 +80,8 @@ template<> INLINE void print_tm_mat (ostream &os, const FlatMatrix<double> & mat
 template<class T>
 INLINE void prow_tm (ostream &os, const T & ar)
 {
-  constexpr int H = mat_traits<typename std::remove_reference<typename std::invoke_result<T(int)>::type>::type>::HEIGHT;
-  constexpr int W = mat_traits<typename std::remove_reference<typename std::invoke_result<T(int)>::type>::type>::WIDTH;
+  constexpr int H = mat_traits<typename std::remove_reference<typename std::invoke_result<T,int>::type>::type>::HEIGHT;
+  constexpr int W = mat_traits<typename std::remove_reference<typename std::invoke_result<T,int>::type>::type>::WIDTH;
   for (int kH : Range(H)) {
     for (auto k : Range(ar.Size())) {
       if (kH==0)
@@ -101,8 +101,8 @@ INLINE void prow_tm (ostream &os, const T & ar)
 
 template<class T>
 INLINE void print_tm_spmat (ostream &os, const T & mat) {
-  constexpr int H = mat_traits<typename std::remove_reference<typename std::invoke_result<T(int, int)>::type>::type>::HEIGHT;
-  constexpr int W = mat_traits<typename std::remove_reference<typename std::invoke_result<T(int, int)>::type>::type>::WIDTH;
+  constexpr int H = mat_traits<typename std::remove_reference<typename std::invoke_result<T,int, int>::type>::type>::HEIGHT;
+  constexpr int W = mat_traits<typename std::remove_reference<typename std::invoke_result<T,int, int>::type>::type>::WIDTH;
   for (auto k : Range(mat.Height())) {
     auto ri = mat.GetRowIndices(k);
     auto rv = mat.GetRowValues(k);
