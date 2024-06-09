@@ -87,6 +87,8 @@ protected:
   virtual Table<int> GetGSBlocks (const BaseAMGFactory::AMGLevel & amg_level) override;
   virtual BaseAMGFactory& GetBaseFactory() const override { return GetFactory(); };
 
+  Table<int> GetFESpaceGSBlocks() override;
+
   // virtual shared_ptr<BaseAMGFactory> BuildFactory () override;
   virtual shared_ptr<BaseDOFMapStep> BuildEmbedding (BaseAMGFactory::AMGLevel & mesh) override;
 

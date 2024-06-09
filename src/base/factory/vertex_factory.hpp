@@ -74,7 +74,8 @@ protected:
   shared_ptr<BaseDOFMapStep>
   SemiAuxSProlMap (shared_ptr<ProlMap<TM>>   pw_step,
                    shared_ptr<BaseCoarseMap> cmap,
-                   shared_ptr<LevelCapsule>  fcap);
+                   shared_ptr<LevelCapsule>  fcap,
+                   shared_ptr<BaseDOFMapStep>   const &embMap);
 
   shared_ptr<ProlMap<TM>>
   GroupWiseSProl (BaseCoarseMap &cmap,

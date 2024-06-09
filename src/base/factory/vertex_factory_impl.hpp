@@ -70,6 +70,8 @@ public:
   SpecOpt<int> sp_max_per_row_classic = 5;     // maximum entries per row (should be >= 2!) where " newst" uses classic
   SpecOpt<bool> improve_avgs = false;
 
+  SpecOpt<int> sp_improve_its = 0;
+
   // /** Discard **/
   // int disc_max_bs = 5;
 
@@ -118,6 +120,7 @@ public:
 
     ecw_geom.SetFromFlags(flags, prefix + "ecw_geom");
 
+    sp_improve_its.SetFromFlags(flags, prefix + "sp_improve_its");
     rot_scale.SetFromFlags(flags, prefix + "rot_scale");
   } // VertexAMGFactoryOptions::SetFromFlags
 
@@ -655,7 +658,7 @@ BuildCoarseDOFMap (shared_ptr<BaseCoarseMap>                cmap,
     {
       case(Options::PROL_TYPE::PIECEWISE)         : { step = PWProlMap(*cmap, *fcap, *ccap); break; }
       case(Options::PROL_TYPE::AUX_SMOOTHED)      : { step = AuxSProlMap(PWProlMap(*cmap, *fcap, *ccap), cmap, fcap); break; }
-      case(Options::PROL_TYPE::SEMI_AUX_SMOOTHED) : { step = SemiAuxSProlMap(PWProlMap(*cmap, *fcap, *ccap), cmap, fcap); break; }
+      case(Options::PROL_TYPE::SEMI_AUX_SMOOTHED) : { step = SemiAuxSProlMap(PWProlMap(*cmap, *fcap, *ccap), cmap, fcap, embMap); break; }
     }
   }
 
@@ -746,12 +749,103 @@ PWProlMap (BaseCoarseMap                const &cmap,
 // }
 
 
+template<class ENERGY, class TMESH, class TAMAT, class TAPMAT, class UPVALS>
+INLINE
+void
+ImproveSProlRow (int            const &fvnr,
+                 FlatArray<int>        prolCols,
+                 FlatArray<int>        extCols,
+                 double         const &omega,
+                 TMESH          const &CM,
+                 TAMAT          const &A,  // sys-mat   // TPMAT          const &P,  // prol
+                 TAPMAT         const &AP, // A * P
+                 UPVALS                updateValues,
+                 LocalHeap            &lh)
+{
+  typedef typename ENERGY::TM TM;
+
+  /**
+    * Improve an sprol-row without changing the graph.
+    *
+    * We do something like normal prol-smoothing of the form
+    *      P -> (I-omega Dinv A)P = P - omega Dinv AP,
+    * with the exception that we add a coarse extension E that maps
+    *      E: extCols -> all-AP-cols
+    * and the prol-update becomes
+    *      P -> P - omega Dinv APE
+    * That is, this does NOT increase the graph of "P"!
+    *
+    * The extension E is simple weighted Q-prol with equal weights.
+    * Most of the time, extCols only contains vmap[fvnr].
+    */
+
+  static Timer t("ImproveSProlRow");
+  RegionTimer rt(t);
+
+  FlatArray<int> extColIdx(extCols.Size(), lh);
+
+  for (auto l : Range(extColIdx))
+  {
+    extColIdx[l] = find_in_sorted_array(extCols[l], prolCols);
+  }
+
+  double const ecFactor = - omega / extCols.Size();
+
+  auto cVData = get<0>(CM.Data())->Data();
+
+  auto aCols = A.GetRowIndices(fvnr);
+  auto aVals = A.GetRowValues(fvnr);
+
+  TM dInv = aVals[find_in_sorted_array(fvnr, aCols)];
+
+  if constexpr( Height<TM>() > 1 )
+  {
+    FlatMatrix<double> flatDI(Height<TM>(), Height<TM>(), &dInv(0, 0));
+    CalcPseudoInverseWithTol(flatDI, lh);
+  }
+  else
+  {
+    CalcInverse(dInv);
+  }
+
+  auto apCols = AP.GetRowIndices(fvnr);
+  auto apVals = AP.GetRowValues(fvnr);
+
+  FlatArray<TM> upVals(prolCols.Size(), lh);
+
+  upVals = 0.0;
+
+  iterate_AC(apCols, prolCols, [&](auto where, auto const &idxAP, auto const &idxP)
+  {
+    if ( where == INTERSECTION )
+    {
+      upVals[idxP] -= omega * dInv * apVals[idxAP];
+    }
+    else
+    {
+      auto const apCol = apCols[idxAP];
+
+      auto const &apColD = cVData[apCol];
+
+      for (auto l : Range(extCols))
+      {
+        TM upVal = dInv * apVals[idxAP];
+        upVals[extColIdx[l]] += ENERGY::GetQiToj(cVData[extCols[l]], cVData[apCol]).GetMQ(ecFactor, upVal);
+      }
+    }
+  });
+
+  updateValues(upVals);
+} // ImproveSProlRow
+
+
 template<class ENERGY, class TMESH, int BS>
 shared_ptr<BaseDOFMapStep>
 VertexAMGFactory<ENERGY, TMESH, BS>::
 SemiAuxSProlMap (shared_ptr<ProlMap<TM>> pw_step,
                  shared_ptr<BaseCoarseMap> cmap,
-                 shared_ptr<BaseAMGFactory::LevelCapsule> fcap)
+                 shared_ptr<BaseAMGFactory::LevelCapsule> fcap,
+                 shared_ptr<BaseDOFMapStep>   const &embMap)
 {
   static Timer t("SemiAuxSProlMap");
   RegionTimer rt(t);
@@ -770,6 +864,7 @@ SemiAuxSProlMap (shared_ptr<ProlMap<TM>> pw_step,
   const double omega = O.sp_omega.GetOpt(baselevel);
   // const bool aux_only = O.sp_aux_only.GetOpt(baselevel); // TODO:placeholder
   const bool aux_only = O.prol_type.GetOpt(baselevel) == Options::PROL_TYPE::AUX_SMOOTHED;
+  int const improveIts = O.sp_improve_its.GetOpt(baselevel); // TODO: via options
 
   // NOTE: something is funky with the meshes here ...
   const auto & FM = *static_pointer_cast<TMESH>(fcap->mesh);
@@ -785,7 +880,14 @@ SemiAuxSProlMap (shared_ptr<ProlMap<TM>> pw_step,
 
   /** Because of embedding, this can be nullptr for level 0!
       I think using pure aux on level 0 should not be an issue. **/
-  auto fmat = dynamic_pointer_cast<TSPM>(fcap->mat);
+  auto actualFmat = dynamic_pointer_cast<TSPM>(fcap->mat);
+  shared_ptr<TSPM> fmat = actualFmat;
+
+  // if ( baselevel == 0 )
+  // {
+  //   fmat = nullptr;
+  // }
+
   /** "fmat" can be the pre-embedded matrix. In that case we can't use it for smoothing. **/
   bool have_fmat = (fmat != nullptr);
   /** if "fmat" has no pardofs, it is not the original finest level matrix, so fine to use! !**/
@@ -1220,10 +1322,81 @@ SemiAuxSProlMap (shared_ptr<ProlMap<TM>> pw_step,
     }
   }
 
+  if (improveIts > 0 && (neqcs == 1)) // MPI is TODO
+  {
+    static Timer tImp("SemiAuxSProlMap 0 improve-its");
+    auto const &CSP = *sprol;
+
+    fmat = actualFmat;
+
+    if ( fmat == nullptr )
+    {
+      shared_ptr<BaseMatrix> mat = embMap->AssembleMatrix(fcap->mat);
+
+      fmat = my_dynamic_pointer_cast<TSPM>(mat, "SemiAuxSProlMap - emb-A!");
+    }
+
+    shared_ptr<SparseMat<BS,BS>> AP;
+
+
+    RegionTimer rt(tImp);
+
+    for (auto improveIt : Range(improveIts))
+    {
+      if ( improveIt == 0 )
+      {
+        AP = MatMultAB(*fmat, CSP);
+      }
+      else
+      {
+        MatMultABUpdateVals(*fmat, CSP, *AP);
+      }
+
+      /**
+       * Only updates local rows! MPI is TODO, we need "full" rows of AP.
+       */
+      FM.template ApplyEQ2<NT_VERTEX>(Range(0, 1), [&](auto eqc, auto nodes)
+      {
+        for (auto fvnr : nodes)
+        {
+          auto ris = CSP.GetRowIndices(fvnr);
+
+          if (ris.Size() > 1)
+          {
+            auto rvs = CSP.GetRowValues(fvnr);
+
+            HeapReset hr(lh);
+
+            FlatArray<int> extCols(1, lh);
+            extCols[0] = vmap[fvnr];
+
+            ImproveSProlRow<ENERGY>(
+              fvnr,
+              ris,
+              extCols,
+              omega,
+              CM,
+              *fmat,
+              *AP,
+              [&](auto update)
+              {
+                for (auto j : Range(ris))
+                {
+                  rvs[j] += update[j];
+                }
+              },
+              lh
+            );
+          }
+        }
+      }, true);
+    }
+  }
+
   if ( options->log_level == Options::LOG_LEVEL::DBG )
   {
     std::ofstream of("SP_semi_aux_rk_" + std::to_string(FM.GetEQCHierarchy()->GetCommunicator().Rank()) +
-                                 "_l_" + std::to_string(fcap->baselevel) + ".out");
+                     "_l_" + std::to_string(fcap->baselevel) + ".out");
 
     print_tm_spmat(of, *sprol);
   }
@@ -1232,7 +1405,6 @@ SemiAuxSProlMap (shared_ptr<ProlMap<TM>> pw_step,
 
   return prolMap;
 } // VertexAMGFactory::SemiAuxSProlMap
-
 
 
 

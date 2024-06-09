@@ -59,8 +59,6 @@ template<class TMESH> INLINE void H1EData :: map_data_impl (const TMESH & cmap, 
 
 #ifdef FILE_AMGH1_CPP
 
-#include "amg_pc_vertex_impl.hpp"
-
 namespace amg
 {
 /** Need this only if we also include the PC headers **/

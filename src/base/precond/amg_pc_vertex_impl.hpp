@@ -1,6 +1,7 @@
 #ifndef FILE_AMG_PC_VERTEX_IMPL_HPP
 #define FILE_AMG_PC_VERTEX_IMPL_HPP
 
+#include <fespace.hpp>
 namespace amg
 {
 /** Options **/
@@ -1273,6 +1274,26 @@ Table<int> VertexAMGPC<FACTORY> :: GetGSBlocks (const BaseAMGFactory::AMGLevel &
   return std::move(blocks);
 } // VertexAMGPC<FACTORY>::GetGSBlocks
 
+
+template<class FACTORY>
+Table<int>
+VertexAMGPC<FACTORY>::
+GetFESpaceGSBlocks()
+{
+  if (strict_alg_mode)
+  {
+    throw Exception("GetFESpaceGSBlocks called in strict alg mode!");
+  }
+  
+  Flags flags;
+  flags.SetFlag("eliminate_internal", bfa->UsesEliminateInternal());
+
+  auto fesBlocks = bfa->GetFESpace()->CreateSmoothingBlocks(flags);
+
+  Table<int> blocks(*fesBlocks);
+
+  return blocks;
+}
 
 template<class FACTORY>
 IVec<3, double> VertexAMGPC<FACTORY> :: GetElmatEVs() const

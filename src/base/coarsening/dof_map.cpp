@@ -734,7 +734,7 @@ Concatenate (shared_ptr<BaseDOFMapStep> other)
     // std::cout << " isSparseMatrixCompiled<H, W>() " << H << " " << 6 << " = " << isSparseMatrixCompiled<H, 6>() << std::endl;
     // std::cout << " isSparseMatrixCompiled<H, W>() " << 6 << " " << 6 << " = " << isSparseMatrixCompiled<5, 6>() << std::endl;
 
-    DispatchOverMatrixDimensions(*otherPM->GetBaseProl(), [&](auto const &spO, auto OH, auto OW)
+    DispatchOverMatrixDimensions(*otherPM->GetBaseProl(), [&](auto const &spO, auto OH, auto OW) LAMBDA_INLINE
     {
       if constexpr( (W == OH) &&
                     (OH == OW) &&
@@ -1136,41 +1136,39 @@ GetMappedBlockSize () const
 namespace amg
 {
 
-// template class ProlMap<double>;
-// template class ProlMap<Mat<2,2,double>>;
-// template class ProlMap<Mat<1,3,double>>;
-// template class ProlMap<Mat<2,3,double>>;
-// template class ProlMap<Mat<3,3,double>>;
+// clang workaround
+#define DEF_PROL(N, M) \
+  template class ProlMap<Mat<N,M,double>>; \
+  template<> struct IsProlMapCompiledTrait<N, M> { static constexpr bool value = true; }; \
 
-// #ifdef ELASTICITY
-// template class ProlMap<Mat<1,6,double>>;
-// template class ProlMap<Mat<3,6,double>>;
-// template class ProlMap<Mat<6,6,double>>;
-// #endif // ELASTICITY
+#define DEF_PROL_SYM(N, M) \
+  DEF_PROL(N, M); \
+  DEF_PROL(M, N); \
 
-// TODO: these seem to be needed from SOMEWHERE in the stokes AMG,
-//       probably one of the distach-BS calls. They should not be,
-//       but instead of finding that spot I just instantiate it here.
-// template class ProlMap<Mat<2,1,double>>;
-// template class ProlMap<Mat<1,2,double>>;
-// template class ProlMap<Mat<3,1,double>>;
-// template class ProlMap<Mat<3,2,double>>;
-// #if MAX_SYS_DIM >= 4
-// template class ProlMap<Mat<4,1,double>>;
-// template class ProlMap<Mat<1,4,double>>;
-// #endif
-// #if MAX_SYS_DIM >= 5
-// template class ProlMap<Mat<5,1,double>>;
-// template class ProlMap<Mat<1,5,double>>;
-// #endif
-// #if MAX_SYS_DIM >= 6
-// template class ProlMap<Mat<6,1,double>>;
-// template class ProlMap<Mat<6,2,double>>;
-// #endif
 
-// elasticity workaround, no idea why we need these symbols now all of a sudden
-// template class ProlMap<Mat<5,6,double>>;
-// template class ProlMap<Mat<6,5,double>>;
+template class ProlMap<double>;
+template<> struct IsProlMapCompiledTrait<1, 1> { static constexpr bool value = true; };
+
+DEF_PROL_SYM(1,2);
+DEF_PROL(2,2);
+
+DEF_PROL_SYM(1,3);
+DEF_PROL_SYM(2,3);
+DEF_PROL(3,3);
+
+#ifdef ELASTICITY
+DEF_PROL_SYM(1,4);
+DEF_PROL_SYM(1,5);
+DEF_PROL_SYM(1,6);
+DEF_PROL_SYM(3,6);
+DEF_PROL_SYM(5,6);
+DEF_PROL(6,6);
+#endif
+
+#undef DEF_PROL
+#undef DEF_PROL_SYM
+
+
 
 template class DynBlockProlMap<double>;
 } // namespace amg

@@ -208,6 +208,8 @@ namespace amg
 
     virtual Table<int> GetGSBlocks (const BaseAMGFactory::AMGLevel & amg_level);
 
+    virtual Table<int> GetFESpaceGSBlocks() { return Table<int>(); } ;
+
     virtual Options::SM_TYPE
     SelectSmoother(BaseAMGFactory::AMGLevel const &amgLevel) const = 0;
 

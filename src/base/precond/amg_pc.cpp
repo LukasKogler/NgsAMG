@@ -665,7 +665,21 @@ void BaseAMGPC :: BuildAMGMat ()
     dof_map->PrependStep(this->cachedEmbMap);
     // TODO: do something better here, fix up GS-blocks while I am at it
 
-    auto smoother = BuildGSSmoother(finest_mat, finest_freedofs);
+    // auto smoother = BuildGSSmoother(finest_mat, finest_freedofs);
+
+    // std::cout << " GetFESpaceGSBlocks = " << GetFESpaceGSBlocks() << endl;
+
+    shared_ptr<BaseSmoother> smoother;
+
+    if ( O.sm_type.GetOpt(0) == Options::SM_TYPE::GS )
+    {
+      smoother = BuildGSSmoother(finest_mat, finest_freedofs);
+    }
+    else
+    {
+      smoother = BuildBGSSmoother(finest_mat, std::move(GetFESpaceGSBlocks()));
+    }
+
     bool symm = O.sm_symm.GetOpt(0);
     int nsteps = O.sm_steps.GetOpt(0);
     if ( symm || (nsteps > 1) )
@@ -705,7 +719,7 @@ void BaseAMGPC :: BuildAMGMat ()
   /** Coarsest level inverse **/
   syncUp();
 
-  if ( (amg_levels.Size() > 1 || options->smooth_after_emb) && (amg_levels.Last()->cap->mat != nullptr))
+  if ( (amg_levels.Size() > 1) && (amg_levels.Last()->cap->mat != nullptr))
   { // otherwise, dropped out
     switch(O.clev)
     {
@@ -713,7 +727,7 @@ void BaseAMGPC :: BuildAMGMat ()
       {
         auto [cMat, cInv] = CoarseLevelInv(*amg_levels.Last());
 
-        cout << " invert cmat w. dim " << cMat->Height() << endl; 
+        // cout << " invert cmat w. dim " << cMat->Height() << endl; 
 
         amg_mat->SetCoarseInv(cInv, cMat);
 
@@ -912,7 +926,7 @@ CoarseLevelInv(BaseAMGFactory::AMGLevel const &coarseLevel)
   {
     constexpr int BS = CBS;
 
-    if ( BS > MAX_SYS_DIM )
+    if constexpr( BS > MAX_SYS_DIM )
     {
       if constexpr(BS == 6)
       {
@@ -1094,15 +1108,30 @@ BuildSmoother (const BaseAMGFactory::AMGLevel & amg_level)
   // if (O.spec_sm_types.Size() > amg_level.level)
   //   { sm_type = O.spec_sm_types[amg_level.level]; }
 
-  shared_ptr<BaseMatrix> mat = (amg_level.level == 0 && !options->smooth_after_emb) ? finest_mat
-                                                      : WrapParallelMatrix(amg_level.cap->mat,
-                                                                           amg_level.cap->uDofs,
-                                                                           amg_level.cap->uDofs,
-                                                                           PARALLEL_OP::C2D);
+  bool const smoothAfterEmb = options->smooth_after_emb;
+  bool const isFESpaceLevel = (amg_level.level == 0 && !smoothAfterEmb);
+
+
+  shared_ptr<BaseMatrix> mat = isFESpaceLevel ? finest_mat
+                                              : WrapParallelMatrix(amg_level.cap->mat,
+                                                                   amg_level.cap->uDofs,
+                                                                   amg_level.cap->uDofs,
+                                                                   PARALLEL_OP::C2D);
 
   switch(sm_type) {
     case(Options::SM_TYPE::GS):     { smoother = BuildGSSmoother(mat, GetFreeDofs(amg_level)); break; }
-    case(Options::SM_TYPE::BGS):    { smoother = BuildBGSSmoother(mat, std::move(GetGSBlocks(amg_level))); break; }
+    case(Options::SM_TYPE::BGS):
+    {
+      if ( isFESpaceLevel )
+      {
+        smoother = BuildBGSSmoother(mat, std::move(GetFESpaceGSBlocks()));
+      }
+      else
+      {
+        smoother = BuildBGSSmoother(mat, std::move(GetGSBlocks(amg_level)));
+      }
+      break;
+    }
     case(Options::SM_TYPE::JACOBI): { smoother = BuildJacobiSmoother(mat, GetFreeDofs(amg_level)); break; }
     case(Options::SM_TYPE::DYNBGS): { smoother = BuildJacobiSmoother(mat, GetFreeDofs(amg_level)); break; }
     default:                        { throw Exception("Invalid Smoother type!"); break; }

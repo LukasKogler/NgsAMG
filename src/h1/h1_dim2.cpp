@@ -1,12 +1,13 @@
 #define FILE_AMGH1_CPP
 #define FILE_AMGH1_CPP_DIM1
 
+#include <dof_map.hpp>
 #include "h1.hpp"
 #include <amg_pc_vertex.hpp>
+#include <amg_pc_vertex_impl.hpp>
 
 #include "h1_impl.hpp"
 #include "h1_energy_impl.hpp"
-#include <amg_pc_vertex_impl.hpp>
 
 #include <amg_register.hpp>
 // #define AMG_EXTERN_TEMPLATES

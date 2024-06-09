@@ -5,6 +5,16 @@
 
 #include <core/ng_mpi.hpp>
 
+#ifdef ELASTICITY
+  #if MAX_SYS_DIM < 6
+    #define AMG_MAX_SYS_DIM 6
+  #else
+    #define AMG_MAX_SYS_DIM MAX_SYS_DIM
+  #endif
+#else
+  #define AMG_MAX_SYS_DIM MAX_SYS_DIM
+#endif
+
 /**
  * Compatibility with older NGSolve (delete this code when I pull NGSolve again)
 */

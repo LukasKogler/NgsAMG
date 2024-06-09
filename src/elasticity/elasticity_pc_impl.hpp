@@ -597,6 +597,12 @@ BuildED (size_t height, shared_ptr<TopologicMesh> mesh)
         auto & v = E_D->GetRowValues(dNum)[0];
         v = 0;
         Iterate<FCC::ENERGY::DISPPV>([&](auto i) { v(i.value, i.value) = 1; });
+
+        // for testing (with this, can invert post-emb mat)
+        if ( finest_freedofs && !finest_freedofs->Test(dNum) )
+        {
+          v = 0;
+        }
       }
 
       // e-dofs, P2-embedding
@@ -620,13 +626,27 @@ BuildED (size_t height, shared_ptr<TopologicMesh> mesh)
         Mat<BS, BS, double> M;
         FlatMat<0, FCC::ENERGY::DISPPV, 0, BS, Mat<BS, BS, double>> dispM(M);
 
-        double scal = 0.5;
-
+        double scal;
+        
+        scal = 0.5;
+        // for testing (with this, can invert post-emb mat)
+        if ( finest_freedofs && !finest_freedofs->Test(v2d_array[v0]) )
+        {
+          scal = 0;
+        }
+        
         // nodal-p2
         ris[0] = v0;
         SetScalIdentity(scal, M);
         Qij.MQ(M);
         rvs[0] = dispM;
+
+        scal = 0.5;
+        // for testing (with this, can invert post-emb mat)
+        if ( finest_freedofs && !finest_freedofs->Test(v2d_array[v1]) )
+        {
+          scal = 0;
+        }
 
         ris[1] = v1;
         SetScalIdentity(scal, M);
