@@ -150,7 +150,7 @@ void ExportSmoothers (py::module & m)
     if (spA == nullptr)
       { throw Exception("Need a SPARSE matrix for HybridGSS!"); }
     shared_ptr<BaseSmoother> smoother;
-    Switch<MAX_SYS_DIM>
+    Switch<AMG_MAX_SYS_DIM>
       ( GetEntryDim(spA.get())-1, [&] (auto BSM)
   {
     constexpr int BS = BSM + 1;
@@ -226,7 +226,7 @@ void ExportSmoothers (py::module & m)
     }
 
     shared_ptr<BaseSmoother> smoother;
-    Switch<MAX_SYS_DIM>
+    Switch<AMG_MAX_SYS_DIM>
       ( GetEntryDim(spA.get())-1, [&] (auto BSM)
   {
     constexpr int BS = BSM + 1;
@@ -284,7 +284,7 @@ void ExportSmoothers (py::module & m)
       { throw Exception("Need a SPARSE matrix for HybridGSS!"); }
     shared_ptr<BaseSmoother> smoother;
     if (parA != nullptr) {
-      Switch<MAX_SYS_DIM>
+      Switch<AMG_MAX_SYS_DIM>
       ( GetEntryDim(spA.get())-1, [&] (auto BSM)
   {
     constexpr int BS = BSM + 1;
@@ -327,7 +327,7 @@ void ExportSmoothers (py::module & m)
       auto spm = dynamic_pointer_cast<BaseSparseMatrix>(Aloc);
       if (spm == nullptr)
         { throw Exception("Need a sparse matrix for Jacobi!"); }
-      Switch<MAX_SYS_DIM> (GetEntryDim(spm.get())-1, [&] (auto BSM) {
+      Switch<AMG_MAX_SYS_DIM> (GetEntryDim(spm.get())-1, [&] (auto BSM) {
         constexpr int BS = BSM + 1;
 #if MAX_SYS_DIM < 6 // missing DiagonalMatrix in NGSolve
         if constexpr(BS == 6)

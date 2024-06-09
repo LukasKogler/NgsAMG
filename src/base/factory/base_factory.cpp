@@ -217,11 +217,22 @@ shared_ptr<BaseAMGFactory::LevelCapsule> BaseAMGFactory::AllocCap () const
   return make_shared<BaseAMGFactory::LevelCapsule>();
 } // BaseAMGFactory::AllocCap
 
-void BaseAMGFactory::SetUpLevels (Array<shared_ptr<BaseAMGFactory::AMGLevel>> & amg_levels, shared_ptr<DOFMap> & dof_map)
+
+void
+BaseAMGFactory::
+SetUpLevels (Array<shared_ptr<BaseAMGFactory::AMGLevel>> & amg_levels, shared_ptr<DOFMap> & dof_map)
 {
   static Timer t("SetUpLevels"); RegionTimer rt(t);
 
   const auto & O(*options);
+
+  if ( options->log_level > Options::LOG_LEVEL::BASIC)
+  {
+    if ( amg_levels[0]->cap->uDofs.GetCommunicator().Rank() == 0 )
+    {
+      std::cout << "Set up AMG-levels..." << std::endl;
+    }
+  }
 
   amg_levels.SetAllocSize(O.max_n_levels);
   auto & finest_level = amg_levels[0];
@@ -229,6 +240,14 @@ void BaseAMGFactory::SetUpLevels (Array<shared_ptr<BaseAMGFactory::AMGLevel>> & 
   auto state = NewState(amg_levels[0]);
 
   RSU(amg_levels, dof_map, *state);
+
+  if ( options->log_level > Options::LOG_LEVEL::BASIC)
+  {
+    if ( amg_levels[0]->cap->uDofs.GetCommunicator().Rank() == 0 )
+    {
+      std::cout << "Done setting up AMG-levels!" << std::endl;
+    }
+  }
 
   if (options->print_log) {
     if (options->log_file.size() > 0)
@@ -249,7 +268,9 @@ void BaseAMGFactory::SetUpLevels (Array<shared_ptr<BaseAMGFactory::AMGLevel>> & 
 } // BaseAMGFactory::SetUpLevels
 
 
-void BaseAMGFactory::RSU (Array<shared_ptr<AMGLevel>> & amg_levels, shared_ptr<DOFMap> & dof_map, State & state)
+void
+BaseAMGFactory::
+RSU (Array<shared_ptr<AMGLevel>> & amg_levels, shared_ptr<DOFMap> & dof_map, State & state)
 {
   const auto & O(*options);
 
@@ -259,9 +280,9 @@ void BaseAMGFactory::RSU (Array<shared_ptr<AMGLevel>> & amg_levels, shared_ptr<D
 
   logger->LogLevel (*f_lev);
 
-  cout << " DoStep " << amg_levels.Last()->level << "!" << endl;
+  // cout << " DoStep " << amg_levels.Last()->level << "!" << endl;
   shared_ptr<BaseDOFMapStep> step = DoStep(f_lev, c_lev, state);
-  cout << " DoStep " << amg_levels.Last()->level << " DONE!" << endl;
+  // cout << " DoStep " << amg_levels.Last()->level << " DONE!" << endl;
 
   int step_bad = 0;
 
@@ -273,29 +294,21 @@ void BaseAMGFactory::RSU (Array<shared_ptr<AMGLevel>> & amg_levels, shared_ptr<D
   }
   if (c_lev->cap->mesh != nullptr)
   { // not dropped out
-    cout << " ComputeMeshMeasure!" << endl;
     auto const cMeas = ComputeMeshMeasure(*c_lev->cap->mesh);
-    cout << " ComputeMeshMeasure BACK, cMeas = " << cMeas << "!" << endl;
     if (cMeas == 0)
       { step_bad = 1; } // e.g stokes: when coarsening down to 1 vertex, no more edges left!
     else if ( cMeas < O.min_meas)
       { step_bad = 1; } // coarse grid is too small
     else
     {
-      cout << " ComputeMeshMeasure! fMeas" << endl;
       auto const fMeas = ComputeMeshMeasure(*f_lev->cap->mesh);
-      cout << " ComputeMeshMeasure BACK, fMeas = " << fMeas << "!" << endl;
 
       if (cMeas == fMeas)
         { step_bad = 1; } // probably just a contract without coarse map
     }
   }
 
-  cout << "step_bad F =" << step_bad << endl;
-
   step_bad = f_lev->cap->eqc_h->GetCommunicator().AllReduce(step_bad, NG_MPI_SUM);
-
-  cout << "step_bad F all =" << step_bad << endl;
 
   if (step_bad != 0)
   {
@@ -408,15 +421,13 @@ shared_ptr<BaseDOFMapStep> BaseAMGFactory::DoStep (shared_ptr<AMGLevel> & f_lev,
   if (rd_map != nullptr)
     { init_steps.Append(rd_map); }
 
-  cout << " MAPS " << f_lev->level << "  -> " << f_lev->level+1 << ": " << endl << init_steps << endl;
+  // cout << " MAPS " << f_lev->level << "  -> " << f_lev->level+1 << ": " << endl << init_steps << endl;
 
   /** assemble coarse level matrix, set return vals, etc. **/
   c_lev->level = f_lev->level + 1;
   c_lev->cap = state.curr_cap; c_lev->cap->baselevel = c_lev->level;
 
-  cout << " MapLevel!" << endl;
   auto final_step = MapLevel(init_steps, f_lev, c_lev);
-  cout << " MapLevel OK!" << endl;
 
   if (final_step == nullptr)
     { c_lev->cap = f_lev->cap; }
@@ -448,7 +459,6 @@ BaseAMGFactory :: MapLevel (FlatArray<shared_ptr<BaseDOFMapStep>> dof_steps, sha
   //       somewhere instead of MakeSingleStep2
   if ( (dof_steps.Size() > 1) && (f_lev->embed_map != nullptr) && (f_lev->embed_done) )
   {
-    cout << "  MapLevel A " << endl;
     /** The fine level matrix is already embedded! **/
     auto afs = MakeSingleStep3(dof_steps.Part(1));
     if (afs == nullptr) { /** No idea how this would happen. **/
@@ -465,7 +475,6 @@ BaseAMGFactory :: MapLevel (FlatArray<shared_ptr<BaseDOFMapStep>> dof_steps, sha
   }
   else
   {
-    cout << "  MapLevel B " << endl;
     /** Fine level matrix is not embedded, or there is no embedding. **/
 
     final_step = MakeSingleStep3(dof_steps);
@@ -498,25 +507,19 @@ BaseAMGFactory :: MapLevel (FlatArray<shared_ptr<BaseDOFMapStep>> dof_steps, sha
 
   if (options->log_level == Options::LOG_LEVEL::DBG)
   {
-    cout << "  MapLevel PRINT " << endl;
-
     if (f_lev->level == 0)
     {
       auto rk = f_lev->cap->uDofs.GetCommunicator().Rank();
 
       std::ofstream of("ngs_amg_mat_l0_rk" + std::to_string(rk) + ".out");
-      cout << " print_bmat F-LEV " << endl;
       print_bmat(of, f_lev->cap->mat); of << endl;
-      cout << " print_bmat F-LEV OK " << endl;
     }
 
     if (c_lev->cap->mat != nullptr)
     {
       auto rk = c_lev->cap->uDofs.GetCommunicator().Rank();
       std::ofstream of("ngs_amg_mat_l" + std::to_string(c_lev->level) + "_rk" + std::to_string(rk) + ".out");
-      cout << " print_bmat C-LEV " << endl;
       print_bmat(of, c_lev->cap->mat); of << endl;
-      cout << " print_bmat C-LEV " << endl;
     }
   }
 
@@ -666,16 +669,12 @@ bool BaseAMGFactory::TryContractStep (State & state)
   shared_ptr<LevelCapsule> c_cap = AllocCap();
   c_cap->baselevel = state.level[0];
 
-  cout << " call BuildContractMap " << endl;
   auto rd_map = BuildContractMap(rd_factor, state.curr_cap->mesh, c_cap);
-  cout << " -> GOT " << rd_map << endl;
 
   if (state.curr_cap->free_nodes != nullptr)
     { throw Exception("free-node redist update todo"); /** do sth here..**/ }
 
-  cout << " BuildContractDOFMap " << endl;
   state.dof_map = BuildContractDOFMap(rd_map, state.curr_cap, c_cap);
-  cout << " BuildContractDOFMap OK " << endl;
   state.first_redist_used = true;
   state.need_rd = false;
   state.last_redist_meas = meas;

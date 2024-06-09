@@ -728,11 +728,14 @@ Concatenate (shared_ptr<BaseDOFMapStep> other)
   {
     otherPM->Finalize(); // make suare we have SPM, not only SPMTM
 
+    // std::cout << " ProlMap::Concatenate " << H << " x " << W << " and " << typeid(*otherPM).name() << std::endl;
+    // std::cout << " other PROL type = " << typeid(*otherPM->GetBaseProl()).name() << std::endl;
+    // std::cout << " isSparseMatrixCompiled<H, W>() " << H << " " << W << " = " << isSparseMatrixCompiled<H, W>() << std::endl;
+    // std::cout << " isSparseMatrixCompiled<H, W>() " << H << " " << 6 << " = " << isSparseMatrixCompiled<H, 6>() << std::endl;
+    // std::cout << " isSparseMatrixCompiled<H, W>() " << 6 << " " << 6 << " = " << isSparseMatrixCompiled<5, 6>() << std::endl;
+
     DispatchOverMatrixDimensions(*otherPM->GetBaseProl(), [&](auto const &spO, auto OH, auto OW)
     {
-      // if constexpr( (W == OH) &&
-      //               isSparseMatrixCompiled<H, OW>() &&
-      //               IsSparseMMCompiled<H, W, OW>() )
       if constexpr( (W == OH) &&
                     (OH == OW) &&
                     isSparseMatrixCompiled<H, OW>() )

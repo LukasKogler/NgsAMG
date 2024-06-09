@@ -341,7 +341,6 @@ void GridContractMap :: BuildNodeMaps ()
   static Timer t("GridContractMap :: BuildNodeMaps"); 
   RegionTimer rt(t);
 
-  cout << " GridContractMap :: BuildNodeMaps!" << endl;
   const auto & f_eqc_h(*this->eqc_h);
   auto comm = f_eqc_h.GetCommunicator();
 

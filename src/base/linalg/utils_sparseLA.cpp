@@ -352,9 +352,9 @@ shared_ptr<BaseMatrix> TransposeAGeneric (shared_ptr<BaseMatrix> A)
 
   shared_ptr<BaseMatrix> AT = nullptr;
 
-  Switch<MAX_SYS_DIM> (GetEntryHeight(spA.get())-1,
+  Switch<AMG_MAX_SYS_DIM> (GetEntryHeight(spA.get())-1,
     [&] (auto H_A_M) {
-      Switch<MAX_SYS_DIM> (GetEntryWidth(spA.get())-1,
+      Switch<AMG_MAX_SYS_DIM> (GetEntryWidth(spA.get())-1,
       [&] (auto W_A_M) {
         constexpr int H_A = H_A_M + 1;
         constexpr int W_A = W_A_M + 1;
@@ -378,9 +378,9 @@ shared_ptr<BaseMatrix> TransposeSPMGeneric (shared_ptr<BaseMatrix> A)
   shared_ptr<BaseSparseMatrix> spA = (parA == nullptr) ? dynamic_pointer_cast<BaseSparseMatrix>(A) :
     dynamic_pointer_cast<BaseSparseMatrix>(parA->GetMatrix());
   shared_ptr<BaseMatrix> AT = nullptr;
-  Switch<MAX_SYS_DIM> (GetEntryHeight(spA.get())-1,
+  Switch<AMG_MAX_SYS_DIM> (GetEntryHeight(spA.get())-1,
     [&] (auto H_A_M) {
-      Switch<MAX_SYS_DIM> (GetEntryWidth(spA.get())-1,
+      Switch<AMG_MAX_SYS_DIM> (GetEntryWidth(spA.get())-1,
       [&] (auto W_A_M) {
         constexpr int H_A = H_A_M + 1;
         constexpr int W_A = W_A_M + 1;
@@ -442,9 +442,9 @@ shared_ptr<BaseMatrix> MatMultABGeneric (BaseMatrix const &A, BaseMatrix const &
       throw Exception(stream.str());
     }
 
-    Switch<MAX_SYS_DIM> (EHA-1, [&] (auto H_A_M) {
-      Switch<MAX_SYS_DIM> (EWA-1, [&] (auto W_A_M) {
-        Switch<MAX_SYS_DIM> (EWB-1, [&] (auto W_B_M)
+    Switch<AMG_MAX_SYS_DIM> (EHA-1, [&] (auto H_A_M) {
+      Switch<AMG_MAX_SYS_DIM> (EWA-1, [&] (auto W_A_M) {
+        Switch<AMG_MAX_SYS_DIM> (EWB-1, [&] (auto W_B_M)
         {
           constexpr int H_A = H_A_M + 1;
           constexpr int W_A = W_A_M + 1;
@@ -746,8 +746,8 @@ Block2SparseMatrix (BlockMatrix &A)
 
   shared_ptr<BaseMatrix> singleSparseMat = nullptr;
 
-  Switch<MAX_SYS_DIM> (BH - 1, [&](auto HM) {
-    Switch<MAX_SYS_DIM> (BW - 1, [&](auto WM) {
+  Switch<AMG_MAX_SYS_DIM> (BH - 1, [&](auto HM) {
+    Switch<AMG_MAX_SYS_DIM> (BW - 1, [&](auto WM) {
       constexpr int H = HM + 1;
       constexpr int W = WM + 1;
       if constexpr(isSparseMatrixCompiled<H, W>())
@@ -870,7 +870,7 @@ shared_ptr<BaseMatrix>
 createSparseIdentity(int H, int BS, BitArray const *onRows = nullptr)
 {
   shared_ptr<BaseMatrix> spI = nullptr;
-  Switch<MAX_SYS_DIM>(BS-1, [&](auto BSM) {
+  Switch<AMG_MAX_SYS_DIM>(BS-1, [&](auto BSM) {
     constexpr int BS = BSM + 1;
     spI = createSparseIdentityImpl<BS>(H, onRows);
   });

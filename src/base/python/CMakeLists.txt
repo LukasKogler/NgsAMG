@@ -12,4 +12,9 @@ target_sources(NgsAMG
     ${CMAKE_CURRENT_SOURCE_DIR}/python_amg.cpp
 )
 
-install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/__init__.py DESTINATION ${AMG_PYTHON_INSTALL_DIR})
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/__init__.py.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/__init__.py"
+    IMMEDIATE @ONLY)
+
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/__init__.py DESTINATION ${AMG_PYTHON_INSTALL_DIR})

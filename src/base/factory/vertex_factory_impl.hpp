@@ -1029,7 +1029,8 @@ SemiAuxSProlMap (shared_ptr<ProlMap<TM>> pw_step,
   }; // fill_sprol_classic
 
   TM Qij(0), Qji(0), QM(0);
-  auto fill_sprol_aux = [&](auto fvnr) {
+  auto fill_sprol_aux = [&](auto fvnr)
+  {
     auto ris = CSP.GetRowIndices(fvnr);
     if ( ris.Size() == 0)
       { return; }
@@ -1043,12 +1044,6 @@ SemiAuxSProlMap (shared_ptr<ProlMap<TM>> pw_step,
       rvs[0] = pwprol(fvnr, ris[0]);
       nt++;
       return;
-    }
-    // bool const doPrint = (fvnr == 47) && (vmap[fvnr] == 58);
-    constexpr bool doPrint = false;
-    if ( doPrint )
-    {
-      cout << " fill " << fvnr << " -> " << vmap[fvnr] << " AUX " << endl;;
     }
     // cout << " aux " << endl;
     na++;
@@ -1214,7 +1209,7 @@ SemiAuxSProlMap (shared_ptr<ProlMap<TM>> pw_step,
     }, false); // master!
   }
 
-  if ( options->log_level != Options::LOG_LEVEL::NONE ) {
+  if ( options->log_level > Options::LOG_LEVEL::NORMAL ) {
     nc = eqc_h.GetCommunicator().Reduce(nc, NG_MPI_SUM);
     na = eqc_h.GetCommunicator().Reduce(na, NG_MPI_SUM);
     nt = eqc_h.GetCommunicator().Reduce(nt, NG_MPI_SUM);

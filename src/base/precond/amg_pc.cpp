@@ -205,7 +205,8 @@ void DoTestLAPACK (BaseMatrix &mat, BaseMatrix &pc, BitArray* free, NgMPI_Comm &
   netgen::printmessage_importance = i2;
 }
 
-void DoTest (BaseMatrix &mat, BaseMatrix &pc, NgMPI_Comm & gcomm, string message)
+void
+DoTest (BaseMatrix const &mat, BaseMatrix const &pc, NgMPI_Comm gcomm, string message)
 {
   static Timer t("EVTest");
   RegionTimer rt(t);
@@ -214,16 +215,16 @@ void DoTest (BaseMatrix &mat, BaseMatrix &pc, NgMPI_Comm & gcomm, string message
   auto i2 = netgen::printmessage_importance;
   printmessage_importance = 1;
   netgen::printmessage_importance = 1;
+
   if ( (gcomm.Rank() == 0) && (message.size() > 0) )
     { cout << IM(1) << message << endl; }
+
   EigenSystem eigen(mat, pc); // need parallel mat
-  // auto v = mat.CreateColVector();
-  // cout << " mat : " << (BaseMatrix*)(&mat) << " created vec " << v.Size() << " " << v.FVDouble().Size() << endl;
-  // auto v2 = pc.CreateColVector();
-  // cout << " pc created vec " << v2.Size() << " " << v2.FVDouble().Size() << endl;
   eigen.SetPrecision(1e-12);
   // eigen.SetMaxSteps(10000);
+
   int ok = eigen.Calc();
+
   if (ok == 0) {
     double minev = 0.0; int nzero = 0;
     for (int k = 1; k <= eigen.NumEigenValues(); k++)
@@ -243,8 +244,15 @@ void DoTest (BaseMatrix &mat, BaseMatrix &pc, NgMPI_Comm & gcomm, string message
   }
   else if (gcomm.Rank() == 0)
     { cout << " EigenSystem Calc failed " << endl; }
+
   printmessage_importance = i1;
   netgen::printmessage_importance = i2;
+}
+
+void
+DoTest (BaseMatrix const &mat, BaseMatrix const &pc, std::string const &message = "")
+{
+  DoTest(mat, pc, MatToUniversalDofs(mat).GetCommunicator(), message);
 }
 
 void TestSmoother (shared_ptr<BaseMatrix> mt, shared_ptr<BaseSmoother> sm, NgMPI_Comm & gcomm, string message)
@@ -758,12 +766,8 @@ void BaseAMGPC :: BuildAMGMat ()
 
   if (options->do_test)
   {
-    printmessage_importance = 1;
-    netgen::printmessage_importance = 1;
-    cout << IM(1) << endl << "Test AMG" << endl;
-    Test();
-    // NgsAMG_Comm gcomm(NG_MPI_COMM_WORLD);
-    // TestAMGMatLAPACK (GetMatrixPtr(), GetAMGMatrix(), 0, finest_freedofs, gcomm, "LAPACK AMG test");
+    // Preconditioner::Test prints to cout on all ranks
+    DoTest(GetAMatrix(), GetMatrix(), "Test AMG");
   }
 
   if (O.log_level_pc > Options::LOG_LEVEL_PC::NONE)
@@ -777,6 +781,111 @@ void BaseAMGPC :: BuildAMGMat ()
     }
   }
 } // BaseAMGPC::BuildAMGMAt
+
+
+std::tuple<std::shared_ptr<SparseMat<3, 3>>,
+           UniversalDofs,
+           std::shared_ptr<BitArray>>
+ConvertToBSThree(SparseMat<6, 6> const &A,
+                 UniversalDofs const &origUD,
+                 shared_ptr<BitArray> origF)
+{
+  int h = A.Height();
+  int H = 2 * h;
+
+  Array<int> perow(H);
+  for (auto k : Range(h))
+  {
+    auto const nCols = A.GetRowIndices(k).Size();
+    perow[2*k]   = 2 * nCols;
+    perow[2*k+1] = 2 * nCols;
+  }
+
+  auto newA = make_shared<SparseMat<3,3>>(perow, H);
+
+  for (auto k : Range(h))
+  {
+    auto oldRIs = A.GetRowIndices(k);
+    auto ri0 = newA->GetRowIndices(2*k);
+    auto ri1 = newA->GetRowIndices(2*k+1);
+
+    for (auto j : Range(oldRIs))
+    {
+      ri0[2*j]   = 2*oldRIs[j];
+      ri0[2*j+1] = 2*oldRIs[j]+1;
+      ri1[2*j]   = 2*oldRIs[j];
+      ri1[2*j+1] = 2*oldRIs[j]+1;
+    }
+
+    auto oldRVs = A.GetRowValues(k);
+    auto rv0 = newA->GetRowValues(2*k);
+    auto rv1 = newA->GetRowValues(2*k+1);
+
+    for (auto j : Range(oldRIs))
+    {
+      Iterate<3>([&](auto ii) {
+        Iterate<3>([&](auto jj)
+        {
+          rv0[2*j]   (ii, jj) = oldRVs[j](ii    , jj);
+          rv0[2*j+1] (ii, jj) = oldRVs[j](ii    , 3 + jj);
+          rv1[2*j]   (ii, jj) = oldRVs[j](3 + ii, jj);
+          rv1[2*j+1] (ii, jj) = oldRVs[j](3 + ii, 3 + jj);
+        });
+      });
+    }
+  }
+
+  // cout << " OLD MAT: " << endl;
+  // print_tm_spmat(cout, A);
+  // cout << " NEW MAT: " << endl;
+  // print_tm_spmat(cout, *newA);
+
+  shared_ptr<ParallelDofs> newPDs = nullptr;
+
+  if ( origUD.GetParallelDofs() )
+  {
+    auto oldPDs = origUD.GetParallelDofs();
+
+    TableCreator<int> createNewDPs(H);
+
+    for(; !createNewDPs.Done(); createNewDPs++)
+    {
+      for (auto k : Range(h))
+      {
+        auto dps = oldPDs->GetDistantProcs(k);
+        createNewDPs.Add(2*k, dps);
+        createNewDPs.Add(2*k+1, dps);
+      }
+    }
+
+    newPDs =  make_shared<ParallelDofs>(oldPDs->GetCommunicator(),
+                                        createNewDPs.MoveTable(),
+                                        3,
+                                        false);
+  }
+
+  UniversalDofs newUD(newPDs, H, 3);
+
+  shared_ptr<BitArray> newF = nullptr;
+
+  if (origF)
+  {
+    newF = make_shared<BitArray>(2 * h);
+    newF->Clear();
+
+    for (auto k : Range(h))
+    {
+      if ( origF->Test(k) )
+      {
+        newF->SetBit(2*k);
+        newF->SetBit(2*k+1);
+      }
+    }
+  }
+
+  return std::make_tuple(newA, newUD, newF);
+}
+
 
 std::tuple<std::shared_ptr<BaseMatrix>, shared_ptr<BaseMatrix>>
 BaseAMGPC::
@@ -792,18 +901,39 @@ CoarseLevelInv(BaseAMGFactory::AMGLevel const &coarseLevel)
 
   auto cspm = my_dynamic_pointer_cast<BaseSparseMatrix>(coarseLevel.cap->mat, "CoarseLevelInv - c sparse");
 
-//  auto cspmtm = dynamic_pointer_cast<SparseMatrixTM<Mat<6,6,double>>>(cspm);
-//     { std::ofstream of("ngs_amg_cmat.out"); print_tm_spmat(of, *cspmtm); }
-  // cout << endl << endl << " Coarse mat: " << endl;
-  // print_tm_spmat(cout, *cspmtm);
+  auto coarseMat = WrapParallelMatrix(cspm, uDofs, uDofs, PARALLEL_OP::C2D);
+
+  shared_ptr<BitArray> usedFree = coarseLevel.cap->free_nodes;
 
   if (O.regularize_cmats)
     { RegularizeMatrix(cspm, uDofs.GetParallelDofs()); }
 
-  // DispatchSquareMatrix(*cspm, [&](auto const &cA, auto CBS)
-  // {
-  //   { std::ofstream of("ngs_amg_cmat.out"); print_tm_spmat(of, cA); }
-  // });
+  DispatchSquareMatrix(*cspm, [&](auto const &cA, auto CBS)
+  {
+    constexpr int BS = CBS;
+
+    if ( BS > MAX_SYS_DIM )
+    {
+      if constexpr(BS == 6)
+      {
+        // support for 3d elasticity with NGSolve compiled with MAX_SYS_DIM=3,
+        //   convert from block-size 6 to a block-size 3 matrix
+        auto [A, ud, f] = ConvertToBSThree(cA, uDofs, usedFree);
+        cspm     = A;
+        uDofs    = ud;
+        usedFree = f;
+      }
+      else
+      {
+        throw Exception("No inverse available for block-size = " + std::to_string(BS));
+      }
+    }
+  });
+
+  if ( cspm == nullptr )
+  {
+    return std::make_tuple(nullptr, nullptr);
+  }
 
   // cout << " coarseLevel.cap->free_nodes = " << coarseLevel.cap->free_nodes << endl;
   // if ( coarseLevel.cap->free_nodes )
@@ -811,24 +941,25 @@ CoarseLevelInv(BaseAMGFactory::AMGLevel const &coarseLevel)
   //   cout << " coarseLevel.cap->free_nodes->Size() = " << coarseLevel.cap->free_nodes->Size() << endl;
   // }
 
-  auto coarseMat = WrapParallelMatrix(cspm, uDofs, uDofs, PARALLEL_OP::C2D);
+  auto coarseMatForInv = WrapParallelMatrix(cspm, uDofs, uDofs, PARALLEL_OP::C2D);
 
   if (gComm.Rank() == 0 && O.log_level_pc > Options::LOG_LEVEL_PC::BASIC)
     { cout << " invert coarsest level matrix " << endl; }
 
   shared_ptr<BaseMatrix> coarseInv = nullptr;
 
-  if (uDofs.IsTrulyParallel()) {
+  if (uDofs.IsTrulyParallel())
+  {
     // propper parallel inverse
     coarseMat->SetInverseType(O.cinv_type);
-    coarseInv = coarseMat->InverseMatrix(coarseLevel.cap->free_nodes);
+    coarseInv = coarseMatForInv->InverseMatrix(usedFree);
   }
   else {
     // local inverse
     if ( (gComm.Size() == 1) ||
          ( (gComm.Size() == 2) && (gComm.Rank() == 1) ) ) { // local inverse
       cspm->SetInverseType(O.cinv_type_loc);
-      coarseInv = cspm->InverseMatrix(coarseLevel.cap->free_nodes);
+      coarseInv = cspm->InverseMatrix(usedFree);
     }
     else if (gComm.Rank() == 0) { // some dummy matrix
       Array<int> perow(0);
@@ -1452,9 +1583,7 @@ void VertexAMGPCOptions :: SetFromFlags (shared_ptr<FESpace> fes, shared_ptr<Bas
   SetEnumOpt(flags, topo, pfit("topology"), { "alg", "mesh", "elmat" }, { ALG_TOPO, MESH_TOPO, ELMAT_TOPO });
   SetEnumOpt(flags, v_pos, pfit("vpos"), { "vertex", "given" }, { VERTEX_POS, GIVEN_POS } );
 
-  cout << " dof_orderint SetEnumOpt" << endl;
   SetEnumOpt(flags, dof_ordering, pfit("dof_ordering"), {"regular", "p2Emb"}, { REGULAR_ORDERING, P2_ORDERING});
-  cout << " dof_orderint SetEnumOpt OK" << endl;
 
   calc_elmat_evs = flags.GetDefineFlagX(pfit("calc_elmat_evs")).IsTrue();
   aux_elmat_version = max(0.0, min(2.0, flags.GetNumFlag(pfit("aux_elmat_version"), 0.0)));

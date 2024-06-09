@@ -7,6 +7,18 @@
 #include "utils_sparseMM.hpp"
 #include "dyn_block.hpp"
 
+
+#ifdef ELASTICITY
+  #if MAX_SYS_DIM < 6
+    #define AMG_MAX_SYS_DIM 6
+  #else
+    #define AMG_MAX_SYS_DIM MAX_SYS_DIM
+  #endif
+#else
+  #define AMG_MAX_SYS_DIM MAX_SYS_DIM
+#endif
+
+
 /**
  * Utilities for sparse LA
  */
@@ -109,8 +121,8 @@ INLINE void DispatchOverMatrixDimensions(BaseMatrix const &mat, TLAM lam, bool c
 
   bool found = false;
 
-  Iterate<MAX_SYS_DIM> ([&](auto HM) {
-    Iterate<MAX_SYS_DIM> ([&](auto WM) {
+  Iterate<AMG_MAX_SYS_DIM> ([&](auto HM) {
+    Iterate<AMG_MAX_SYS_DIM> ([&](auto WM) {
       constexpr int H = HM + 1;
       constexpr int W = WM + 1;
       if constexpr(isSparseMatrixCompiled<H, W>())
@@ -137,8 +149,8 @@ INLINE void DispatchOverMatrixDimensions(BaseMatrix &mat, TLAM lam, bool const &
 
   bool found = false;
 
-  Iterate<MAX_SYS_DIM> ([&](auto HM) {
-    Iterate<MAX_SYS_DIM> ([&](auto WM) {
+  Iterate<AMG_MAX_SYS_DIM> ([&](auto HM) {
+    Iterate<AMG_MAX_SYS_DIM> ([&](auto WM) {
       constexpr int H = HM + 1;
       constexpr int W = WM + 1;
       if constexpr(isSparseMatrixCompiled<H, W>())
@@ -165,8 +177,8 @@ INLINE void DispatchOverMatrixDimensions(shared_ptr<BaseMatrix> mat, TLAM lam, b
 
   bool found = false;
 
-  Iterate<MAX_SYS_DIM> ([&](auto HM) {
-    Iterate<MAX_SYS_DIM> ([&](auto WM) {
+  Iterate<AMG_MAX_SYS_DIM> ([&](auto HM) {
+    Iterate<AMG_MAX_SYS_DIM> ([&](auto WM) {
       constexpr int H = HM + 1;
       constexpr int W = WM + 1;
       if constexpr(isSparseMatrixCompiled<H, W>())
@@ -374,7 +386,7 @@ INLINE unique_ptr<BaseVector> CreateSuitableVector(size_t N, size_t BS, shared_p
   unique_ptr<BaseVector> vec = nullptr;
   if (N != size_t(-1))
   {
-    Switch<MAX_SYS_DIM> (BS - 1, [&] (auto BSM) {
+    Switch<AMG_MAX_SYS_DIM> (BS - 1, [&] (auto BSM) {
       constexpr int cxpr_BS = BSM + 1;
       if (pardofs == nullptr)
       {
@@ -394,7 +406,7 @@ INLINE shared_ptr<BaseVector> CreateSuitableSPVector(size_t N, size_t BS, shared
   shared_ptr<BaseVector> vec = nullptr;
   if (N != size_t(-1))
   {
-    Switch<MAX_SYS_DIM> (BS - 1, [&] (auto BSM) {
+    Switch<AMG_MAX_SYS_DIM> (BS - 1, [&] (auto BSM) {
       constexpr int cxpr_BS = BSM + 1;
       if (pardofs == nullptr)
       {

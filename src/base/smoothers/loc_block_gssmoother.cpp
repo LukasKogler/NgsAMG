@@ -42,8 +42,8 @@ namespace amg
   void BSmoother2<TM> :: SetUp (shared_ptr<SparseMatrix<TM>> _spmat, FlatArray<Table<int>> _block_array,
 				FlatArray<TM> md)
   {
-    if (parallel)
-      { throw Exception("New BS parallel TODO!!"); }
+    // if (parallel)
+    //   { throw Exception("New BS parallel TODO!!"); }
 
     const auto & A(*_spmat);
     height = A.Height();

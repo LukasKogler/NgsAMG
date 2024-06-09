@@ -78,6 +78,7 @@ namespace amg
   protected:
     using BaseSmoother::sysmat; // TODO: get rid of this too..
     Array<int> buffer_inds, allgroups;
+    // TODO: this might actually be faster if we remove the block-size in BSBlock, that is we use Array<TSCAL> 
     Array<TM> buffer_vals;
     Array<BSBlock> blocks;
     size_t maxbs, height;
@@ -167,6 +168,12 @@ namespace amg
     virtual AutoVector CreateColVector () const override
     { return make_unique<VVector<TV>> (height); };
 
+    size_t GetNOps () const override
+    { return buffer_vals.Size() * TMHeight<TM>() * TMWidth<TM>(); }
+
+    size_t GetANZE () const override
+    { return GetNOps(); }
+  
     virtual void PrintTo (ostream & os, string prefix = "") const override;
 
   protected:

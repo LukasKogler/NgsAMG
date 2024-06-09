@@ -1503,6 +1503,12 @@ SelectSmoother(BaseAMGFactory::AMGLevel const &aMGLevel,
 
       break;
     }
+    default:
+    {
+      throw Exception("BaseStokesAMGPrecond::SelectSmoother - should not get here!");
+      return Options::SM_TYPE::GS;
+      break;
+    }
   }
 } // BaseStokesAMGPrecond::SelectSmoother
 
