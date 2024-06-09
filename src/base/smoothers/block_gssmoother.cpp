@@ -940,12 +940,18 @@ void HybridBS<TM> :: MultAdd (double s, const BaseVector & b, BaseVector & x) co
 namespace amg
 {
 
-template class HybridBS<double>;
-template class HybridBS<Mat<2,2,double>>;
-template class HybridBS<Mat<3,3,double>>;
+#define INSTSM(N) \
+  template class BSmoother<StripTM<N,N>>; \
+  template class HybridBS<StripTM<N,N>>; \
+
+INSTSM(1);
+INSTSM(2);
+INSTSM(3);
 #ifdef ELASTICITY
-template class HybridBS<Mat<6,6,double>>;
+INSTSM(6);
 #endif
+
+#undef INSTSM
 
 } // namespace amg
 

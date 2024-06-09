@@ -1,5 +1,4 @@
 from ngsolve import *
-from ngsolve.meshes import MakeStructured3DMesh
 
 import NgsAMG
 from amg_utils import *
