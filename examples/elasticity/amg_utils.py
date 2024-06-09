@@ -24,6 +24,16 @@ def gen_ref_mesh (geo, maxh, nref, comm, mesh_file = '', save = False):
         ngm.Refine()
     return geo, ngs.comp.Mesh(ngm)
 
+def distribute_mesh(ngmesh, comm, geo=None):
+    if comm.rank==0:
+        if comm.size > 0:
+            ngmesh.Distribute(comm)
+    else:
+        ngmesh = ng.meshing.Mesh.Receive(comm)
+        if geo is not None:
+            ngmesh.SetGeometry(geo)
+    return ngs.comp.Mesh(ngmesh)
+
 
 def gen_2dbeam(maxh, nref, comm, lens = [10,1]):
     geo = geom2d.SplineGeometry()
