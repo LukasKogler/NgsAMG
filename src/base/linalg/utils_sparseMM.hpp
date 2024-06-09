@@ -176,14 +176,32 @@ template<> struct IsMatrixCompiledTrait<1, 1> { static constexpr bool value = tr
 #endif
 
 #ifdef ELASTICITY
+
+// 1x4, 4x4, 1x5, 5x5 would be compiled into NGSolve with MAX_SYS_DIM large enough
+// so to keep it simple instantiate them too for smaller MAX_SYS_DIM
+#if MAX_SYS_DIM < 4
+  InstSPM2(1,4);
+  InstSPMS(4,4);
+#else
+  InstIMCTrait2(1,4);
+  InstIMCTrait(4,4);
+#endif
+#if MAX_SYS_DIM < 5
+  InstSPM2(1,5);
+  InstSPMS(5,5);
+#else
+  InstIMCTrait2(1,5);
+  InstIMCTrait(5,5);
+#endif
+
 #if MAX_SYS_DIM < 6
   InstSPM2(1,6);
   InstSPMS(6,6);
 #else
   InstIMCTrait2(1,6);
   InstIMCTrait(6,6);
-  InstSPM2(3, 6);
 #endif
+  InstSPM2(3, 6);
 #endif
 
 // some extra instantiations to fix missing symbols with ELASTICITY/STOKES,

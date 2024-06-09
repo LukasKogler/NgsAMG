@@ -1125,6 +1125,14 @@ BuildJacobiSmoother (shared_ptr<BaseMatrix> A,
 
   DispatchSquareMatrix(locA, [&](auto spA, auto BS)
   {
+#if MAX_SYS_DIM < 6 // missing DiagonalMatrix in NGSolve
+    if constexpr(BS == 6)
+    {
+      throw Exception("Jacobi for block-size 6 not supported - increase NGSolve MAX_SYS_DIM to 6!!");
+    }
+    else
+    {
+#endif
     if constexpr(!isSmootherSupported<BS>())
     {
       throw Exception("Smoother for that dim is not compiled!!");
@@ -1135,6 +1143,9 @@ BuildJacobiSmoother (shared_ptr<BaseMatrix> A,
 
       smoother = make_shared<JacobiSmoother<BSTM>>(spA, freedofs);
     }
+#if MAX_SYS_DIM < 6 // missing DiagonalMatrix in NGSolve
+    }
+#endif
   });
 
   smoother->Finalize();

@@ -329,6 +329,14 @@ void ExportSmoothers (py::module & m)
         { throw Exception("Need a sparse matrix for Jacobi!"); }
       Switch<MAX_SYS_DIM> (GetEntryDim(spm.get())-1, [&] (auto BSM) {
         constexpr int BS = BSM + 1;
+#if MAX_SYS_DIM < 6 // missing DiagonalMatrix in NGSolve
+        if constexpr(BS == 6)
+        {
+          throw Exception("Jacobi for block-size 6 not supported - increase NGSolve MAX_SYS_DIM to 6!!");
+        }
+        else
+        {
+#endif
         if constexpr(!isSmootherSupported<BS>()) {
           throw Exception("Smoother for that dim is not compiled!!");
           return;
@@ -339,6 +347,9 @@ void ExportSmoothers (py::module & m)
           smoother->Finalize();
           return;
         }
+#if MAX_SYS_DIM < 6
+        }
+#endif
       });
       return smoother;
     },

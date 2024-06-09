@@ -428,7 +428,7 @@ template<int N, int M> struct IsProlMapCompiledTrait { static constexpr bool val
   DEF_PROL(M, N); \
 
 
-extern template class ProlMap<double>;
+PROL_EXTERN template class ProlMap<double>;
 template<> struct IsProlMapCompiledTrait<1, 1> { static constexpr bool value = true; };
 
 DEF_PROL_SYM(1,2);

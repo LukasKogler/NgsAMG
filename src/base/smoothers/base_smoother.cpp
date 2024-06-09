@@ -367,7 +367,9 @@ template class JacobiSmoother<double>;
 template class JacobiSmoother<Mat<2,2,double>>;
 template class JacobiSmoother<Mat<3,3,double>>;
 #ifdef ELASTICITY
+#if MAX_SYS_DIM >= 6
 template class JacobiSmoother<Mat<6,6,double>>;
+#endif
 #endif
 
 } // namespace amg

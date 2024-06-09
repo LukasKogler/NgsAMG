@@ -1037,6 +1037,11 @@ CreateDOFEmbedding(BlockTM  const &fMesh,
       }
       break;
     }
+    default: {
+      throw Exception("HDivHDGEmbedding::CreateDOFEmbedding unsupported/unimplemented emb-type !?");
+      return std::make_tuple(nullptr, Array<double>(), Array<double>(), Array<shared_ptr<BaseVector>>());
+      break;
+    }
   }
 } // HDivHDGEmbedding::CreateDOFEmbedding
 

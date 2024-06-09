@@ -412,7 +412,7 @@ CalcAuxWeightsSC (FlatArray<int>            dnums,
 
   template class ElasticityAMGFactory<2>;
   template class VertexAMGPC<ElasticityAMGFactory<2>>;
-  // template class ElmatVAMG<ElasticityAMGFactory<2>, double, double>;
+  template class ElmatVAMG<ElasticityAMGFactory<2>, double, double>;
 
   template class PlateTestAgglomerator<T_MESH_WITH_DATA>;
   template class DiscreteAgglomerateCoarseMap<T_MESH, PlateTestAgglomerator<T_MESH_WITH_DATA>>;

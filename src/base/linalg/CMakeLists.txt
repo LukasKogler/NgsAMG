@@ -18,6 +18,7 @@ PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/hybrid_matrix.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/dcc_map.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/dcc_map.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/bla_extension.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/bla_extension.hpp
 )
 

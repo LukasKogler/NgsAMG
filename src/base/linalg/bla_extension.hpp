@@ -70,7 +70,6 @@ void NgGEMV (double s, BareSliceMatrix<Mat<N, M, double>,ord> a, FlatVector<Vec<
   }
 }
   
-
 } // namespace ngbla
 
 #endif // FILE_BLA_EXTENSION_HPP
