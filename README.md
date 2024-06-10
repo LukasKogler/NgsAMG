@@ -7,7 +7,7 @@ The library can be installed via pip:
 
     python3 -m pip install git+https://github.com/LukasKogler/NgsAMG.git
 
-You very probably also need to add --no-build-isolation to get the pip install working.
+You might also need to add --no-build-isolation to get the pip install working.
 
     python -m pip install --no-build-isolation git+https://github.com/LukasKogler/NgsAMG.git
 
