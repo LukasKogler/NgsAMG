@@ -29,7 +29,6 @@ option( ENABLE_MIS_AGG                        "Enable (M)aximal (I)ndependent (S
 option( ENABLE_SPW_AGG                        "Enable (S)uccessive(P)air(W)ise agglomeration algorithms"      ON  )
 option( ENABLE_STOKES                         "Enable Stokes AMG"                                             OFF )
 option( NGS_COMPATIBILITY                     "Compatibility with public NGSolve "                            ON  )
-option( NGS_PYTHON_CONFIG                     "Use python to find NGSolve (for pip build)"                    OFF )
 
 # # ninja -t graph > graph
 # # dot -Tsvg graph > ngsGraph.svg
@@ -135,15 +134,14 @@ endif(BUILD_METIS)
 
 message(STATUS "Using METIS-header from ${METIS_INCLUDE_DIR}")
 message(STATUS "USing METIS-library ${METIS_LIBRARY}")
-message(STATUS "METIS-HEADER = ${METIS_HEADER}")
 
-message(STATUS "CMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}")
-message(STATUS "CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT=${CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT}")
-message(STATUS "SKBUILD_PLATLIB_DIR=${SKBUILD_PLATLIB_DIR}")
+# message(STATUS "CMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}")
+# message(STATUS "CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT=${CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT}")
+# message(STATUS "SKBUILD_PLATLIB_DIR=${SKBUILD_PLATLIB_DIR}")
 
 message(STATUS " CMAKE_INSTALL_PREFIX = ${CMAKE_INSTALL_PREFIX}")
-message(STATUS " NgsAMG  C-library      will be installed to: ${AMG_CLIB_INSTALL_DIR}")
-message(STATUS " NgsAMG  python-package will be installed to: ${AMG_PYTHON_INSTALL_DIR}")
+# message(STATUS " NgsAMG  C-library      will be installed to: ${AMG_CLIB_INSTALL_DIR}")
+# message(STATUS " NgsAMG  python-package will be installed to: ${AMG_PYTHON_INSTALL_DIR}")
 
 if (NOT ENABLE_MIS_AGG)
   if (NOT ENABLE_SPW_AGG)

@@ -24,20 +24,6 @@ endif(NETGEN_USE_PYTHON)
 
 include_directories(${NG_MPI_CXX_INCLUDE_DIRS})
 
-set_property(GLOBAL PROPERTY AT_AMG_SOURCE "")
-set_property(GLOBAL PROPERTY BASE_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/")
-
-function(add_source_file SRCFILE)
-  # get the relative path starting from HERE
-  # get_property(bdir GLOBAL PROPERTY BASE_SRC_DIR)
-  # string(REPLACE "${bdir}" "" FINAL_SRC "${CMAKE_CURRENT_SOURCE_DIR}/${SRCFILE}")
- 
-  # get_property(tmp  GLOBAL PROPERTY AT_AMG_SOURCE)
-  # # set(tmp "${tmp} ${FINAL_SRC}")  
-  # set(tmp "${tmp} ${CMAKE_CURRENT_SOURCE_DIR}/${SRCFILE}")  
-  # set_property(GLOBAL PROPERTY AT_AMG_SOURCE "${tmp}")
-endfunction()
-
 add_subdirectory(base)
 add_subdirectory(h1)
 
@@ -47,11 +33,9 @@ if (ENABLE_STOKES)
   add_subdirectory(stokes)
 endif(ENABLE_STOKES)
 
-get_property(source_list GLOBAL PROPERTY AT_AMG_SOURCE)
-
-
 
 if(NETGEN_USE_PYTHON)
+  # message(STATUS "INSTALLING NgsAMG.so to ${AMG_PYTHON_INSTALL_DIR}")
   install(TARGETS NgsAMG DESTINATION ${AMG_PYTHON_INSTALL_DIR})
 else()
   install(TARGETS NgsAMGlib DESTINATION ${AMG_CLIB_INSTALL_DIR})
