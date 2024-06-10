@@ -239,6 +239,8 @@ namespace amg
 #ifdef ELASTICITY
   InstTransMat(1,6);
   InstTransMat(3,6);
+  InstTransMat(4,4);
+  InstTransMat(5,5);
   InstTransMat(6,6);
 #endif //ELASTICITY
 
