@@ -338,9 +338,9 @@ MatMultABUpdateValsImpl (SparseMatTM<A, B> const &mata,
   InstTransMat(5,5);
 #endif
 
-#if AMG_MAX_SYS_DIM >= 6
-  InstTransMat(6,6);
-#endif
+// #if AMG_MAX_SYS_DIM >= 6
+//   InstTransMat(6,6);
+// #endif
 
 // #if MAX_SYS_DIM < 6
 //   InstTransMat(6,6);
