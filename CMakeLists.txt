@@ -2,6 +2,16 @@
 # but I don't know what we really need
 cmake_minimum_required(VERSION 3.16)
 
+option( ENABLE_COMPILE_TIMING                 "time compiling"                                                ON  )
+option( USE_CCACHE                            "Use CCache"                                                    OFF )
+option( ENABLE_ELASTICITY                     "enable H1-ELASTICITY AMG preconditioners"                      OFF )
+option( ENABLE_ROBUST_ELASTICITY_COARSENING   "enable more robust elasticity coarsening (very long compile)"  OFF )
+option( ENABLE_MIS_AGG                        "Enable (M)aximal (I)ndependent (S)et agglomeration algorithms" ON  )
+option( ENABLE_SPW_AGG                        "Enable (S)uccessive(P)air(W)ise agglomeration algorithms"      ON  )
+option( ENABLE_STOKES                         "Enable Stokes AMG"                                             OFF )
+option( NGS_COMPATIBILITY                     "Compatibility with public NGSolve "                            ON  )
+option( ADD_TO_NGS_INSTALL                    "Install wherever Netgen/NGSolve is installed "                 OFF )
+
 include(ExternalProject)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -9,6 +19,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(addon_name NgsAMG)
 project(NgsAMG LANGUAGES CXX )
 include(ngsolve_addon.cmake)
+
+if(ADD_TO_NGS_INSTALL)
+  message(STATUS "Installing to Netgen/NGSolve python-dir ${NETGEN_PYTHON_DIR}")
+  set(CMAKE_INSTALL_PREFIX ${NETGEN_PYTHON_DIR})
+endif(ADD_TO_NGS_INSTALL)
 
 set(AMG_PYTHON_INSTALL_DIR NgsAMG)
 set(AMG_CLIB_INSTALL_DIR NgsAMG)
@@ -20,15 +35,6 @@ if(NETGEN_USE_PYTHON)
 else(NETGEN_USE_PYTHON)
   add_library(NgsAMGlib SHARED)
 endif(NETGEN_USE_PYTHON)
-
-option( ENABLE_COMPILE_TIMING                 "time compiling"                                                ON  )
-option( USE_CCACHE                            "Use CCache"                                                    OFF )
-option( ENABLE_ELASTICITY                     "enable H1-ELASTICITY AMG preconditioners"                      OFF )
-option( ENABLE_ROBUST_ELASTICITY_COARSENING   "enable more robust elasticity coarsening (very long compile)"  OFF )
-option( ENABLE_MIS_AGG                        "Enable (M)aximal (I)ndependent (S)et agglomeration algorithms" ON  )
-option( ENABLE_SPW_AGG                        "Enable (S)uccessive(P)air(W)ise agglomeration algorithms"      ON  )
-option( ENABLE_STOKES                         "Enable Stokes AMG"                                             OFF )
-option( NGS_COMPATIBILITY                     "Compatibility with public NGSolve "                            ON  )
 
 # # ninja -t graph > graph
 # # dot -Tsvg graph > ngsGraph.svg

@@ -1,16 +1,18 @@
 from ngsolve import *
+from netgen.geom2d import unit_square
+from netgen.csg import unit_cube
 
 import NgsAMG
 from amg_utils import *
 
 
 # run in 2d or 3d
-do3D=True
+do3D=False
 parallel=True
 
 if do3D:
     geo=unit_cube
-    maxh=0.025
+    maxh=0.05
     rhsCF = (0, 0, z)
 else:
     geo=unit_square
