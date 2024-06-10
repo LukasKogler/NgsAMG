@@ -10,8 +10,8 @@ set(addon_name NgsAMG)
 project(NgsAMG LANGUAGES CXX )
 include(ngsolve_addon.cmake)
 
-set(AMG_PYTHON_INSTALL_DIR ngs_amg)
-set(AMG_CLIB_INSTALL_DIR ngs_amg)
+set(AMG_PYTHON_INSTALL_DIR NgsAMG)
+set(AMG_CLIB_INSTALL_DIR NgsAMG)
 
 if(NETGEN_USE_PYTHON)
   add_ngsolve_addon(NgsAMG)
