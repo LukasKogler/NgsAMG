@@ -12,21 +12,13 @@
 #  2. NgsAMG.so, contains ONLY the python module
 # add_ngsolve_python_module sets the install-path to the python-lib-dir
 
-target_link_libraries(NgsAMGlib PUBLIC ngsolve)
-set_target_properties(NgsAMGlib PROPERTIES INSTALL_RPATH "${AMG_CLIB_INSTALL_DIR}")
 
-link_directories(${NGSOLVE_LIBRARY_DIR})
 link_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 # We need to include the python headers also for the C library because python headers leak through
 # when we include NGSolve headers (e.g. comp.hpp)
 if (NETGEN_USE_PYTHON)
-  target_include_directories(NgsAMGlib PUBLIC ${NETGEN_PYTHON_INCLUDE_DIRS})
-endif(NETGEN_USE_PYTHON)
-
-if (NETGEN_USE_PYTHON)
-  add_ngsolve_python_module(NgsAMG SHARED "")
-  add_dependencies(NgsAMG NgsAMGlib)
+  target_link_libraries(NgsAMGlib PUBLIC ngsolve Python3::Module)
   target_link_libraries(NgsAMG PUBLIC NgsAMGlib)
 endif(NETGEN_USE_PYTHON)
 
@@ -58,9 +50,10 @@ endif(ENABLE_STOKES)
 get_property(source_list GLOBAL PROPERTY AT_AMG_SOURCE)
 
 
-install(TARGETS NgsAMGlib DESTINATION ${AMG_CLIB_INSTALL_DIR})
 
 if(NETGEN_USE_PYTHON)
   install(TARGETS NgsAMG DESTINATION ${AMG_PYTHON_INSTALL_DIR})
+else()
+  install(TARGETS NgsAMGlib DESTINATION ${AMG_CLIB_INSTALL_DIR})
 endif(NETGEN_USE_PYTHON)
 

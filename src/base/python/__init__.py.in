@@ -1,8 +1,4 @@
-import ctypes
-
-#ctypes.CDLL("libNgsAMGlib.so", ctypes.RTLD_GLOBAL)
-#ctypes.CDLL(os.path.join(os.path.dirname(os.path.realpath(__file__)), "libNgsAMGlib.so"), ctypes.RTLD_GLOBAL)
-
-ctypes.CDLL("@AMG_CLIB_INSTALL_DIR@/libNgsAMGlib.so", ctypes.RTLD_GLOBAL)
+# make sure that the ngsolve shared libraries are loaded
+import ngsolve
 
 from .NgsAMG import *
