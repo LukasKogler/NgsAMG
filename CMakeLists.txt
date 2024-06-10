@@ -6,9 +6,20 @@ include(ExternalProject)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+set(addon_name NgsAMG)
 project(NgsAMG LANGUAGES CXX )
+include(ngsolve_addon.cmake)
 
-add_library(NgsAMGlib SHARED)
+set(AMG_PYTHON_INSTALL_DIR NgsAMG)
+set(AMG_CLIB_INSTALL_DIR NgsAMG)
+
+if(NETGEN_USE_PYTHON)
+  add_ngsolve_addon(NgsAMG)
+  add_library(NgsAMGlib OBJECT)
+  set_target_properties(NgsAMGlib PROPERTIES POSITION_INDEPENDENT_CODE ON)
+else(NETGEN_USE_PYTHON)
+  add_library(NgsAMGlib SHARED)
+endif(NETGEN_USE_PYTHON)
 
 option( ENABLE_COMPILE_TIMING                 "time compiling"                                                ON  )
 option( USE_CCACHE                            "Use CCache"                                                    OFF )
@@ -19,31 +30,6 @@ option( ENABLE_SPW_AGG                        "Enable (S)uccessive(P)air(W)ise a
 option( ENABLE_STOKES                         "Enable Stokes AMG"                                             OFF )
 option( NGS_COMPATIBILITY                     "Compatibility with public NGSolve "                            ON  )
 option( NGS_PYTHON_CONFIG                     "Use python to find NGSolve (for pip build)"                    OFF )
-
-# for pip build, use python to find NGSolve, otherwise, e.g. for non-python builds, have to rely on NETGENDIR being set 
-if(NGS_PYTHON_CONFIG)
-  message(STATUS "Using python to find NGSolve...")
-  if(CMAKE_VERSION VERSION_LESS "3.18")
-    find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
-  else()
-    find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
-  endif()
-  execute_process(COMMAND ${Python3_EXECUTABLE} -m netgen.config OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE Netgen_DIR)
-  execute_process(COMMAND ${Python3_EXECUTABLE} -m ngsolve.config OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE NGSolve_DIR)
-  message(STATUS  "Found Netgen  at ${Netgen_DIR}")
-  message(STATUS  "Found NGSolve at ${NGSolve_DIR}")
-  if (NOT Netgen_DIR OR NOT NGSolve_DIR)
-    message(FATAL_ERROR "COULD NOT FIND Netgen/NGSolve!")
-  endif (NOT Netgen_DIR OR NOT NGSolve_DIR)
-  message(STATUS  "Found python-headers at ${Python3_INCLUDE_DIRS}")
-  target_include_directories(NgsAMGlib PRIVATE ${Python3_INCLUDE_DIRS})
-else(NGS_PYTHON_CONFIG)
-  message(STATUS "Looking for NGSolve in the usual places...")
-endif(NGS_PYTHON_CONFIG)
-
-find_package(NGSolve CONFIG REQUIRED
-  HINTS $ENV{NETGENDIR}/.. /opt/netgen/ /Applications/Netgen.app/Contents/Resources/CMake C:/netgen
-)
 
 # # ninja -t graph > graph
 # # dot -Tsvg graph > ngsGraph.svg
@@ -154,39 +140,6 @@ message(STATUS "METIS-HEADER = ${METIS_HEADER}")
 message(STATUS "CMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}")
 message(STATUS "CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT=${CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT}")
 message(STATUS "SKBUILD_PLATLIB_DIR=${SKBUILD_PLATLIB_DIR}")
-
-# check if CMAKE_INSTALL_PREFIX is set by user, if not install in NGSolve lib/python-lib directories
-if(NGS_PYTHON_CONFIG) # pip-install
-  # get the path where local python packages are installed
-  execute_process(COMMAND ${Python3_EXECUTABLE} -m site --user-site
-    OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE install_prefix RESULT_VARIABLE ret
-  )
-  if (NOT ret EQUAL 0)
-    # as fallback, get the path where global python packages are installed
-    execute_process(
-      COMMAND ${Python3_EXECUTABLE} -c "import sys,sysconfig,os.path; print(sysconfig.get_path('platlib'))"
-      OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE install_prefix
-    )
-  endif (NOT ret EQUAL 0)
-  message(STATUS "I think the location to install python packages to is ${install_prefix} !")
-  set(CMAKE_INSTALL_PREFIX ${install_prefix}/NgsAMG CACHE PATH "Install dir" FORCE)
-  set(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT OFF)
-  set(AMG_PYTHON_INSTALL_DIR ${CMAKE_INSTALL_PREFIX} CACHE PATH "Install dir" FORCE)
-  set(AMG_CLIB_INSTALL_DIR   ${AMG_PYTHON_INSTALL_DIR} CACHE PATH "Install dir" FORCE)
-else(NGS_PYTHON_CONFIG)
-  if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT OR NOT CMAKE_INSTALL_PREFIX)
-    message(STATUS "No explicit INSTALL_DIR specified, installing NgsAMG into NGSolve-installation!")
-    message(STATUS "   NGSOLVE_INSTALL_DIR        = ${NGSOLVE_INSTALL_DIR}")
-    message(STATUS "   NGSOLVE_LIBRARY_DIR        = ${NGSOLVE_LIBRARY_DIR}")
-    message(STATUS "   NGSOLVE_INSTALL_DIR_PYTHON = ${NGSOLVE_INSTALL_DIR_PYTHON}")
-    set(AMG_CLIB_INSTALL_DIR   ${NGSOLVE_LIBRARY_DIR} CACHE PATH "Install dir" FORCE)
-    set(AMG_PYTHON_INSTALL_DIR ${NGSOLVE_INSTALL_DIR}/${NGSOLVE_INSTALL_DIR_PYTHON}/NgsAMG CACHE PATH "Install dir" FORCE)
-  else(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT OR NOT CMAKE_INSTALL_PREFIX)
-    message(STATUS "Installing NgsAMG to explicitly specified ${CMAKE_INSTALL_PREFIX}!")
-    set(AMG_CLIB_INSTALL_DIR   ${CMAKE_INSTALL_PREFIX} CACHE PATH "Install dir" FORCE)
-    set(AMG_PYTHON_INSTALL_DIR ${CMAKE_INSTALL_PREFIX} CACHE PATH "Install dir" FORCE)
-  endif(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT OR NOT CMAKE_INSTALL_PREFIX)
-endif(NGS_PYTHON_CONFIG)
 
 message(STATUS " CMAKE_INSTALL_PREFIX = ${CMAKE_INSTALL_PREFIX}")
 message(STATUS " NgsAMG  C-library      will be installed to: ${AMG_CLIB_INSTALL_DIR}")
