@@ -18,8 +18,10 @@
 // #endif
 
 // undef USE_<INVERSE> such that we don't get problems with missing headers
+#if MAX_SYS_DIM < AMG_MAX_SYS_DIM
 #undef USE_UMFPACK
 #undef USE_MUMPS
+#endif
 #include <sparsematrix_impl.hpp>
 
 namespace ngbla
