@@ -4,11 +4,11 @@ cmake_minimum_required(VERSION 3.16)
 
 option( ENABLE_COMPILE_TIMING                 "time compiling"                                                ON  )
 option( USE_CCACHE                            "Use CCache"                                                    OFF )
-option( ENABLE_ELASTICITY                     "enable H1-ELASTICITY AMG preconditioners"                      OFF )
+option( ENABLE_ELASTICITY                     "enable H1-ELASTICITY AMG preconditioners"                      ON  )
 option( ENABLE_ROBUST_ELASTICITY_COARSENING   "enable more robust elasticity coarsening (very long compile)"  OFF )
 option( ENABLE_MIS_AGG                        "Enable (M)aximal (I)ndependent (S)et agglomeration algorithms" ON  )
 option( ENABLE_SPW_AGG                        "Enable (S)uccessive(P)air(W)ise agglomeration algorithms"      ON  )
-option( ENABLE_STOKES                         "Enable Stokes AMG"                                             OFF )
+option( ENABLE_STOKES                         "Enable Stokes AMG"                                             ON  )
 option( NGS_COMPATIBILITY                     "Compatibility with public NGSolve "                            ON  )
 option( ADD_TO_NGS_INSTALL                    "Install wherever Netgen/NGSolve is installed "                 OFF )
 
