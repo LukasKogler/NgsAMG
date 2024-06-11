@@ -793,15 +793,16 @@ FindSpaces()
   std::function<bool(int, IntRange, shared_ptr<FESpace>, shared_ptr<FESpace>)> checkSpace(
     [&](int idx, IntRange range, shared_ptr<FESpace> aSpace, shared_ptr<FESpace> setSpace) -> bool
       {
+        cout << " checkSpace " << idx << " range " << range << " space " << aSpace << " type " << typeid(*aSpace).name() << endl;
         if (auto hDivSpace = dynamic_pointer_cast<HDivHighOrderFESpace>(aSpace))
         {
           _hDivSpace = ( setSpace != nullptr ) ? setSpace : hDivSpace;
           _hDivIdx   = idx;
           _hDivRange = range;
 
-          // cout << " _hDivSpace = " << _hDivSpace << endl;
-          // cout << " _hDivIdx = " << _hDivIdx << endl;
-          // cout << " _hDivRange = " << _hDivRange << endl;
+          cout << " _hDivSpace = " << _hDivSpace << endl;
+          cout << " _hDivIdx = " << _hDivIdx << endl;
+          cout << " _hDivRange = " << _hDivRange << endl;
 
           return true;
         }
@@ -812,9 +813,9 @@ FindSpaces()
             _vFSpace = ( setSpace != nullptr ) ? setSpace : tFSpace;
             _vFIdx   = idx;
             _vFRange = range;
-            // cout << " _vFSpace = " << _vFSpace << endl;
-            // cout << " _vFIdx = " << _vFIdx << endl;
-            // cout << " _vFRange = " << _vFRange << endl;
+            cout << " _vFSpace = " << _vFSpace << endl;
+            cout << " _vFIdx = " << _vFIdx << endl;
+            cout << " _vFRange = " << _vFRange << endl;
             return true;
           }
           else
@@ -843,6 +844,8 @@ FindSpaces()
   else
   {
     int foundSpaces = 0;
+
+    cout << " _fes = " << typeid(*_fes).name() << endl;
 
     if (auto compFES = dynamic_pointer_cast<CompoundFESpace>(_fes))
     {

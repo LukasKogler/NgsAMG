@@ -182,7 +182,6 @@ void AMGAsLinearSolver :: DoIteration (BaseVector &x, const BaseVector &b, BaseV
 AutoVector AMGAsLinearSolver :: CreateVector () const
 {
   auto vec = amg_mat->CreateColVector();
-  cout << " AMGAsLinearSolver create VEC, type = " << typeid(*vec).name() << " PSTAT = " << vec.GetParallelStatus() << std::endl;
   return vec;
 } // AMGAsLinearSolver::CreateVector
 

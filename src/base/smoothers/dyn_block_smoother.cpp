@@ -1,3 +1,4 @@
+#define FILE_DYN_BLOCK_SMOOTHER_CPP
 
 #include <base.hpp>
 #include <dyn_block_impl.hpp>

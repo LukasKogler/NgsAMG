@@ -176,7 +176,10 @@ private:
   shared_ptr<DynBlockSmoother<TSCAL>>         _locSmoother;
 }; // class HybridDynBlockSmoother
 
+#ifndef FILE_DYN_BLOCK_SMOOTHER_CPP
 extern template class DynBlockSmoother<double>;
+extern template class HybridDynBlockSmoother<double>;
+#endif // FILE_DYN_BLOCK_SMOOTHER_CPP
 
 } // namespace amg
 

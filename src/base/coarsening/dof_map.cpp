@@ -700,20 +700,21 @@ shared_ptr<BaseDOFMapStep>
 ProlMap<TM>::
 ConcatenateFromLeft (BaseSparseProlMap &other)
 {
-  if (auto opmap = dynamic_cast<ProlMap<TM_F>*>(&other))
-  {
-    auto comp_prol = MatMultAB(*opmap->GetProl(), *_prol);
+  // if constexpr(IsSparseMMCompiled<H,H,W>()) // NxN \times Nx1
+  // {
+    if (auto opmap = dynamic_cast<ProlMap<TM_F>*>(&other))
+    {
+      auto comp_prol = MatMultAB(*opmap->GetProl(), *_prol);
 
-    auto comp_map = make_shared<ProlMap<TM>> (comp_prol, opmap->GetUDofs(), GetMappedUDofs());
+      auto comp_map = make_shared<ProlMap<TM>> (comp_prol, opmap->GetUDofs(), GetMappedUDofs());
 
-    comp_map->Finalize();
+      comp_map->Finalize();
 
-    return comp_map;
-  }
-  else
-  {
-    return nullptr;
-  }
+      return comp_map;
+    }
+  // }
+
+  return nullptr;
 } // ProlMap::ConcatenateFromLeft
 
 
@@ -1139,7 +1140,6 @@ namespace amg
 // clang workaround
 #define DEF_PROL(N, M) \
   template class ProlMap<Mat<N,M,double>>; \
-  template<> struct IsProlMapCompiledTrait<N, M> { static constexpr bool value = true; }; \
 
 #define DEF_PROL_SYM(N, M) \
   DEF_PROL(N, M); \
@@ -1147,7 +1147,6 @@ namespace amg
 
 
 template class ProlMap<double>;
-template<> struct IsProlMapCompiledTrait<1, 1> { static constexpr bool value = true; };
 
 DEF_PROL_SYM(1,2);
 DEF_PROL(2,2);
@@ -1157,11 +1156,8 @@ DEF_PROL_SYM(2,3);
 DEF_PROL(3,3);
 
 #ifdef ELASTICITY
-DEF_PROL_SYM(1,4);
-DEF_PROL_SYM(1,5);
 DEF_PROL_SYM(1,6);
 DEF_PROL_SYM(3,6);
-DEF_PROL_SYM(5,6);
 DEF_PROL(6,6);
 #endif
 

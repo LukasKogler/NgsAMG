@@ -1,3 +1,4 @@
+#define FILE_HYBRID_SMOOTHER_CPP
 
 #include <utils_arrays_tables.hpp>
 #include <utils_io.hpp>
@@ -34,11 +35,11 @@ HybridSmoother<TM>::
 HybridSmoother (shared_ptr<BaseMatrix> _A,
                 int  _numLocSteps,
                 bool _commInThread,
-                bool _overlapCom)
+                bool _overlapComm)
   : HybridSmoother<TM>(make_shared<HybridMatrix<TM>>(_A),
                        _numLocSteps,
                        _commInThread,
-                       _overlapCom)
+                       _overlapComm)
 {
 } // HybridSmoother (..)
 

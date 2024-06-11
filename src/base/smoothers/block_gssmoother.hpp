@@ -142,4 +142,25 @@ private:
 
 } // namespace amg
 
+#ifndef FILE_BLOCK_GSSMOOTHER_CPP
+namespace amg
+{
+
+#define INSTSM(N) \
+  extern template class BSmoother<StripTM<N,N>>; \
+  extern template class HybridBS<StripTM<N,N>>; \
+
+INSTSM(1);
+INSTSM(2);
+INSTSM(3);
+#ifdef ELASTICITY
+INSTSM(6);
+#endif
+
+#undef INSTSM
+
+} // namespace amg
+
+#endif // FILE_BLOCK_GSSMOOTHER_CPP
+
 #endif

@@ -215,12 +215,15 @@ namespace amg
 
 
 #ifndef FILE_LOC_BGSS_CPP
-    extern template class BSmoother2<double>;
-    extern template class BSmoother2<Mat<2,2,double>>;
-    extern template class BSmoother2<Mat<3,3,double>>;
-  #ifdef ELASTICITY
-    extern template class BSmoother2<Mat<6,6,double>>;
-  #endif // ELASTICITY
+
+extern template class BSmoother2<double>;
+extern template class BSmoother2<Mat<2,2,double>>;
+extern template class BSmoother2<Mat<3,3,double>>;
+
+#ifdef ELASTICITY
+extern template class BSmoother2<Mat<6,6,double>>;
+#endif // ELASTICITY
+
 #endif // FILE_LOC_BGSS_CPP
 
 } // namespace amg

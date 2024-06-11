@@ -1,3 +1,4 @@
+#define FILE_UTILS_SPARSEMM_CPP
 
 #include <base.hpp>
 #include <universal_dofs.hpp>
@@ -6,9 +7,7 @@
 #include "utils.hpp"
 #include "utils_arrays_tables.hpp"
 
-#define FILE_UTILS_SPARSEMM_CPP
 #include "utils_sparseMM.hpp"
-#undef FILE_UTILS_SPARSEMM_CPP
 
 // #ifdef USE_MUMPS
 // #include <mumpsinverse.hpp>
@@ -321,188 +320,158 @@ MatMultABUpdateValsImpl (SparseMatTM<A, B> const &mata,
   // }
 }
 
-// fix some missing symbols
-#define InstTransMat(H,W)						\
-  SPARSE_MM_EXTERN template shared_ptr<SparseMat<W, H>>	\
-  TransposeSPMImpl<H,W>(SparseMatTM<H, W> const &A); \
-
-  InstTransMat(2,6);
-  InstTransMat(6,1);
-  InstTransMat(6,3);
-
-#undef InstTransMat
-
-
 } // namespace amg
 
 
+/**
+ * template instantiations
+ *     do not use instantiations in header but have these here explicitly
+ *     to hopefully fix missing symbols on apple
+ */
+ 
 namespace ngla
 {
-#define InstSPM(N,M)				  \
+/**
+ * NGSolve instantiates NxN, 1xN and Nx1 up to N=MAX_SYS_DIM.
+ * The rest of the needed sparse matrices are compiled into the AMG library.
+ */
+
+#define InstSPMS(N,M)				  \
+  template class SparseMatrixTM<Mat<N,M,double>>; \
   template class SparseMatrix<Mat<N,M,double>>; \
 
-// template class SparseMatrix<Mat<5,6,double>>;
+#define InstSPM2(N,M)\
+  InstSPMS(N, M); \
+  InstSPMS(M, N);\
 
+// does not work because of Conj(Trans(Mat<1,3>)) * double does not work for some reason...
+// template class SparseMatrix<Mat<N,M,double>, typename amg::strip_vec<Vec<M,double>>::type, typename amg::strip_vec<Vec<N,double>>::type>;
+
+#if MAX_SYS_DIM < 2
+  InstSPM2(1,2);
+  InstSPMS(2,2);
+#endif
+
+#if MAX_SYS_DIM < 3
+  InstSPM2(1,3);
+  InstSPMS(3,3);
+#endif
+InstSPM2(2,3);
+
+#ifdef ELASTICITY
+
+// 1x4, 4x4, 1x5, 5x5 would be compiled into NGSolve with MAX_SYS_DIM large enough
+// so to keep it simple instantiate them too for smaller MAX_SYS_DIM
+#if MAX_SYS_DIM < 4
+  InstSPM2(1,4);
+  InstSPMS(4,4);
+#endif
+
+#if MAX_SYS_DIM < 5
+  InstSPM2(1,5);
+  InstSPMS(5,5);
+#endif
+
+#if MAX_SYS_DIM < 6
+  InstSPM2(1,6);
+  InstSPMS(6,6);
+#endif
+
+  InstSPM2(3,6);
+
+#endif // ELASTICITY
+
+} // namespace ngla
+
+
+/** Sparse-Matrix transpose */
+
+namespace amg
+{
+#define InstTransMat(H,W) \
+  template shared_ptr<SparseMat<W, H>>	\
+  TransposeSPMImpl<H,W>(SparseMatTM<H, W> const &A); \
+
+#define InstTransMat2(N,M) \
+  InstTransMat(M,N); \
+  InstTransMat(N,M);
+
+  InstTransMat(1,1);
+
+  InstTransMat2(1,2);
+  InstTransMat(2,2);
+
+  InstTransMat2(1,3);
+  InstTransMat2(2,3);
+  InstTransMat(3,3);
+
+
+#ifdef ELASTICITY
+InstTransMat2(1,4);
+InstTransMat(4,4);
+
+InstTransMat2(1,5);
+InstTransMat(5,5);
+
+InstTransMat2(1,6);
+InstTransMat2(3,6);
+InstTransMat(6,6);
+#endif //ELASTICITY
+
+#undef InstTransMat
+#undef InstTransMat2
 }
 
-  // /**
-//  * Now the explicit instantiations
-//  */
-// namespace ngla
-// {
-// #define InstSPMS(N,M)				  \
-//   template class SparseMatrixTM<Mat<N,M,double>>; \
-//   template class SparseMatrix<Mat<N,M,double>>;
 
-//   // this does not work because of Conj(Trans(Mat<1,3>)) * double does not work for some reason...
-//   // EXTERN template class SparseMatrix<Mat<N,M,double>, typename amg::strip_vec<Vec<M,double>>::type, typename amg::strip_vec<Vec<N,double>>::type>;
+/** Sparse-Matrix multiplication */
 
-// #if MAX_SYS_DIM < 2
-//   InstSPMS(2,2);
-//   InstSPMS(1,2);
-//   InstSPMS(2,1);
-// #endif // MAX_SYS_DIM < 2
-// #if MAX_SYS_DIM < 3
-//   InstSPMS(3,3);
-//   InstSPMS(1,3);
-//   InstSPMS(3,1);
-// #endif // MAX_SYS_DIM < 3
-//   InstSPMS(2,3);
-//   InstSPMS(3,2);
-// #ifdef ELASTICITY
-// #if MAX_SYS_DIM < 6
-//   InstSPMS(6,6);
-//   InstSPMS(1,6);
-//   InstSPMS(6,1);
-// #endif // MAX_SYS_DIM < 6
-//   InstSPMS(3,6);
-//   InstSPMS(6,3);
-// #endif // ELASTICITY
+namespace amg
+{
 
-// /**
-//  * Even with large enough block-size, NGSolve instantiates SparseMatrix<Mat<1, N>> with Vec<1> col-vecs
-//  * we want these matrices with just "double" col-vecs, so instantiate that here.
-//  * The SparseMatrixTM are already instantiated, and the <1,1> case is just a normal sparse-mat which is
-//  * handled correctly.
-//  *
-//  *
-//  * ACTUALLY, cannot instantiate these!, there are some "*" operators that are not defined for
-//  * Mat<1,N> and double
-// */
-// // #define InstStrippedSPM(N) \
-// //   template class SparseMatrix<Mat<1, N, double>, double,          Vec<N, double>>; \
-// //   template class SparseMatrix<Mat<N, 1, double>, Vec<N, double>, double>;
+#define InstMultMat(A,B,C)						\
+  template shared_ptr<SparseMat<A,C>>			\
+  MatMultABImpl<A,B,C> (SparseMatTM<A, B> const &matAB, SparseMatTM<B, C> const &matBC); \
+  InstMultMatUpdate(A,B,C); \
 
-// // InstStrippedSPM(2);
-// // InstStrippedSPM(3);
+#define InstMultMatUpdate(A, B, C) \
+  template void \
+  MatMultABUpdateValsImpl<A,B,C> (SparseMatTM<A, B> const &mata, SparseMatTM<B, C> const &matb, SparseMatTM<A, C> &prod); \
 
-// // // Do I even need that??
-// // // #ifdef ELASTICITY
-// // //   InstStrippedSPM(6);
-// // // #endif
+#define InstProlMults(N,M) /* embedding NxN to MxM */	\
+  InstMultMat(N,M,M); /* conctenate prols */		\
+  InstMultMat(N,N,M); /* A * P */			\
+  InstMultMat(M,N,M); /* PT * [A*P] */
 
-// // STOKES workaround again...
-// InstSPMS(2,6);
-// InstSPMS(6,2);
+#define InstProlMults2(N,M) \
+  InstProlMults(N,M); \
+  InstProlMults(M,N); \
+  
+InstMultMat(1,1,1);
 
-// // elasticity workaround - no idea why we need those symbols suddenly
-// InstSPMS(5,6);
-// InstSPMS(6,5);
+InstMultMat(2,2,2);
+InstProlMults2(1,2);
 
+InstProlMults2(1,3);
+InstProlMults2(2,3);
+InstMultMat(3,3,3);
 
-// #undef InstSPMS
-// } // namespace ngla
+#ifdef ELASTICITY
+InstProlMults2(1,4);
+InstMultMat(4,4,4);
 
-// namespace amg
-// {
-// #define InstTransMat(N,M)						\
-//   template shared_ptr<trans_spm_tm<stripped_spm_tm<Mat<N,M,double>>>>	\
-//   TransposeSPMImpl<stripped_spm_tm<Mat<N,M,double>>> (const stripped_spm_tm<Mat<N,M,double>> & mat);
+InstProlMults2(1,5);
+InstMultMat(5,5,5);
 
-//   /** [A \times B] Transpose **/
-//   InstTransMat(1,1);
-//   InstTransMat(1,2);
-//   InstTransMat(2,1);
-//   InstTransMat(2,2);
-//   InstTransMat(3,3);
-//   InstTransMat(1,3);
-//   InstTransMat(3,1);
-//   InstTransMat(2,3);
-// #ifdef ELASTICITY
-//   InstTransMat(1,6);
-//   InstTransMat(3,6);
-//   InstTransMat(6,6);
-// #endif //ELASTICITY
+InstProlMults2(1,6);
+InstProlMults2(3,6);
+InstMultMat(6,6,6);
+#endif // ELASTICITY
 
-// // STOKES workaround, instantiate some extra stuff
-// InstTransMat(1,4);
-// InstTransMat(4,1);
-// InstTransMat(1,5);
-// InstTransMat(5,1);
-// InstTransMat(3,2);
-// InstTransMat(6,2);
+#undef InstProlMults2
+#undef InstProlMults
+#undef InstMultMatUpdate
+#undef InstMultMat
 
-// // elasticity workaround
-// InstTransMat(6,5);
-// InstTransMat(5,6);
-
-// #undef InstTransMat
-
-// #define InstMultMat(A,B,C)						\
-//   template shared_ptr<stripped_spm_tm<Mat<A,C,double>>>			\
-//   MatMultABImpl<stripped_spm_tm<Mat<A,B,double>>> (const stripped_spm_tm<Mat<A,B,double>> & mata, const stripped_spm_tm<Mat<B,C,double>> & matb);
-
-// #define InstEmbedMults(N,M) /* embedding NxN to MxM */	\
-//   InstMultMat(N,M,M); /* conctenate prols */		\
-//   InstMultMat(N,N,M); /* A * P */			\
-//   InstMultMat(M,N,M); /* PT * [A*P] */
-
-//   /** [A \times B] * [B \times C] **/
-//   InstMultMat(1,1,1);
-//   InstMultMat(2,2,2);
-//   InstMultMat(3,3,3);
-//   InstEmbedMults(1,2);
-//   InstEmbedMults(2,1);
-//   InstEmbedMults(1,3);
-//   InstEmbedMults(3,1);
-//   InstEmbedMults(2,3);
-// #ifdef ELASTICITY
-//   InstMultMat(6,6,6);
-//   InstEmbedMults(1,6);
-//   InstEmbedMults(2,6);
-//   InstEmbedMults(3,6);
-// #endif // ELASTICITY
-
-// // // STOKES workaround, instantiate some extra stuff
-// InstMultMat(1,4,1);
-// InstMultMat(1,5,1);
-// InstMultMat(1,6,1);
-// InstMultMat(2,3,2);
-// InstMultMat(2,6,2);
-// InstMultMat(3,2,1);
-// InstMultMat(3,2,2);
-// InstMultMat(3,3,2);
-// InstMultMat(4,1,1);
-// InstMultMat(4,4,1);
-// InstMultMat(5,1,1);
-// InstMultMat(5,5,1);
-// InstMultMat(6,1,1);
-// InstMultMat(6,2,1);
-// InstMultMat(6,2,2);
-// InstMultMat(6,6,2);
-// InstEmbedMults(1,4);
-// InstEmbedMults(1,5);
-
-// // elasticity workaround - no idea why we need those symbols suddenly
-// InstEmbedMults(5,6);
-// InstMultMat(6,5,5);
-// InstMultMat(5,6,5);
-// InstMultMat(6,6,5);
-
-
-// #undef InstMultMat
-// #undef InstEmbedMults
-
-// } // namespace amg
+} // namespace amg
 
 

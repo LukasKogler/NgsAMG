@@ -121,48 +121,55 @@ RestrictMatrixTM (SparseMatTM<H, H> const &A,
 
 } // namespace amg
 
-/**
- * NGSolve only has NxN, 1xN and Nx1 up to N=MAX_SYS_DIM.
- * The rest of the needed sparse matrices are compiled into the AMG library.
- */
 
-#ifdef FILE_UTILS_SPARSEMM_CPP
-#define SPARSE_MM_EXTERN
-#else
-#define SPARSE_MM_EXTERN extern
-#endif
+// this way of instantiating templates has some issue on apple (and perhaps with clang too)
+// #ifdef FILE_UTILS_SPARSEMM_CPP
+//   #define SPARSE_MM_EXTERN
+// #else
+//   #define SPARSE_MM_EXTERN extern
+// #endif
 
+#ifndef FILE_UTILS_SPARSEMM_CPP
+
+// template instantiations
+ 
 namespace ngla
 {
+
+/**
+ * NGSolve instantiates NxN, 1xN and Nx1 up to N=MAX_SYS_DIM.
+ * The rest of the needed sparse matrices are compiled into the AMG library.
+ */
 
 template<int H, int W> struct IsMatrixCompiledTrait { static constexpr bool value = false; };
 template<> struct IsMatrixCompiledTrait<1, 1> { static constexpr bool value = true; };
 
-#define InstIMCTrait(N, M)\
+#define InstIMCTrait(N, M) \
   template<> struct IsMatrixCompiledTrait<N, M> { static constexpr bool value = true; }; \
 
-#define InstIMCTrait2(N, M)\
+#define InstIMCTrait2(N, M) \
   InstIMCTrait(N, M); \
   InstIMCTrait(M, N); \
 
-#define InstSPMS(N,M)				  \
-  SPARSE_MM_EXTERN template class SparseMatrixTM<Mat<N,M,double>>; \
-  SPARSE_MM_EXTERN template class SparseMatrix<Mat<N,M,double>>; \
-  InstIMCTrait(N, M);\
+#define InstSPMS(N,M) \
+  extern template class SparseMatrixTM<Mat<N,M,double>>; \
+  extern template class SparseMatrix<Mat<N,M,double>>; \
+  InstIMCTrait(N, M); \
 
 #define InstSPM2(N,M)\
   InstSPMS(N, M); \
-  InstSPMS(M, N);\
+  InstSPMS(M, N); \
 
-  // this does not work because of Conj(Trans(Mat<1,3>)) * double does not work for some reason...
-  // EXTERN template class SparseMatrix<Mat<N,M,double>, typename amg::strip_vec<Vec<M,double>>::type, typename amg::strip_vec<Vec<N,double>>::type>;
+
+// does not work because of Conj(Trans(Mat<1,3>)) * double does not work for some reason...
+// extern template class SparseMatrix<Mat<N,M,double>, typename amg::strip_vec<Vec<M,double>>::type, typename amg::strip_vec<Vec<N,double>>::type>;
 
 #if MAX_SYS_DIM < 2
   InstSPM2(1,2);
   InstSPMS(2,2);
 #else
-  InstIMCTrait2(1, 2);
-  InstIMCTrait(2, 2);
+  InstIMCTrait2(1,2);
+  InstIMCTrait(2,2);
 #endif
 
 #if MAX_SYS_DIM < 3
@@ -170,15 +177,16 @@ template<> struct IsMatrixCompiledTrait<1, 1> { static constexpr bool value = tr
   InstSPM2(2,3);
   InstSPMS(3,3);
 #else
+  InstSPM2(2,3);
   InstIMCTrait2(1,3);
   InstIMCTrait(3,3);
-  InstSPM2(2,3);
 #endif
 
 #ifdef ELASTICITY
 
 // 1x4, 4x4, 1x5, 5x5 would be compiled into NGSolve with MAX_SYS_DIM large enough
 // so to keep it simple instantiate them too for smaller MAX_SYS_DIM
+
 #if MAX_SYS_DIM < 4
   InstSPM2(1,4);
   InstSPMS(4,4);
@@ -186,6 +194,7 @@ template<> struct IsMatrixCompiledTrait<1, 1> { static constexpr bool value = tr
   InstIMCTrait2(1,4);
   InstIMCTrait(4,4);
 #endif
+
 #if MAX_SYS_DIM < 5
   InstSPM2(1,5);
   InstSPMS(5,5);
@@ -201,19 +210,22 @@ template<> struct IsMatrixCompiledTrait<1, 1> { static constexpr bool value = tr
   InstIMCTrait2(1,6);
   InstIMCTrait(6,6);
 #endif
-  InstSPM2(3, 6);
-#endif
 
-// some extra instantiations to fix missing symbols with ELASTICITY/STOKES,
-// I am not sure why they are even there
-InstSPMS(2,6);
-InstSPMS(6,2);
-InstSPMS(5,6);
-InstSPMS(6,5);
+InstSPM2(3, 6);
 
+#endif // ELASTICITY
+
+#undef InstSPM2
+#undef InstSPMS
 #undef InstIMCTrait
-#undef InstSparseMMTrait
 #undef InstIMCTrait2
+
+template<int H, int W>
+constexpr bool IsMatrixCompiled()
+{
+  return IsMatrixCompiledTrait<H, W>::value;
+}
+
 } // namespace ngla
 
 
@@ -221,44 +233,51 @@ InstSPMS(6,5);
 
 namespace amg
 {
+  template<int H, int W> struct IsTransMatCompiledTrait { static constexpr bool value = false; };
 
-#define InstTransMat(H,W)						\
-  SPARSE_MM_EXTERN template shared_ptr<SparseMat<W, H>>	\
+#define InstTransMat(H,W) \
+  extern template shared_ptr<SparseMat<W, H>>	\
   TransposeSPMImpl<H,W>(SparseMatTM<H, W> const &A); \
+  template<> struct IsTransMatCompiledTrait<H, W> { static constexpr bool value = true; }; \
+
+#define InstTransMat2(N,M) \
+  InstTransMat(M,N); \
+  InstTransMat(N,M);
 
 
-  /** [A \times B] Transpose **/
-  InstTransMat(1,1);
-  InstTransMat(1,2);
-  InstTransMat(2,1);
-  InstTransMat(2,2);
-  InstTransMat(3,3);
-  InstTransMat(1,3);
-  InstTransMat(3,1);
-  InstTransMat(2,3);
+InstTransMat(1,1);
+
+InstTransMat2(1,2);
+InstTransMat(2,2);
+
+InstTransMat2(1,3);
+InstTransMat2(2,3);
+InstTransMat(3,3);
+
 #ifdef ELASTICITY
-  InstTransMat(1,6);
-  InstTransMat(3,6);
-  InstTransMat(4,4);
-  InstTransMat(5,5);
-  InstTransMat(6,6);
+InstTransMat2(1,4);
+InstTransMat(4,4);
+
+InstTransMat2(1,5);
+InstTransMat(5,5);
+
+InstTransMat2(1,6);
+InstTransMat2(3,6);
+InstTransMat(6,6);
 #endif //ELASTICITY
 
-// some extra instantiations to fix missing symbols with ELASTICITY/STOKES,
-// I am not sure why they are even there
-InstTransMat(1,4);
-InstTransMat(4,1);
-InstTransMat(1,5);
-InstTransMat(5,1);
-InstTransMat(3,2);
-InstTransMat(6,2);
-InstTransMat(6,5);
-InstTransMat(5,6);
 
 
-#undef InstTransMat
+template<int H, int W>
+static constexpr bool
+IsTransMatCompiled()
+{
+  return IsTransMatCompiledTrait<H,W>::value;
 }
 
+#undef InstTransMat
+#undef InstTransMat2
+}
 
 /** Sparse-Matrix multiplication */
 
@@ -270,79 +289,52 @@ template<int H, int N, int W> struct IsSparseMMCompiledTrait { static constexpr 
 #define InstSparseMMTrait(H, N, W)\
   template<> struct IsSparseMMCompiledTrait<H, N, W> { static constexpr bool value = true; }; \
 
-#define InstMultMatUpdate(A, B, C) \
-  SPARSE_MM_EXTERN template void \
-  MatMultABUpdateValsImpl<A,B,C> (SparseMatTM<A, B> const &mata, SparseMatTM<B, C> const &matb, SparseMatTM<A, C> &prod); \
-
 #define InstMultMat(A,B,C)						\
-  SPARSE_MM_EXTERN template shared_ptr<SparseMat<A,C>>			\
+  extern template shared_ptr<SparseMat<A,C>>			\
   MatMultABImpl<A,B,C> (SparseMatTM<A, B> const &matAB, SparseMatTM<B, C> const &matBC); \
   InstMultMatUpdate(A,B,C); \
   InstSparseMMTrait(A,B,C); \
 
-#define InstEmbedMults(N,M) /* embedding NxN to MxM */	\
+#define InstMultMatUpdate(A, B, C) \
+  extern template void \
+  MatMultABUpdateValsImpl<A,B,C> (SparseMatTM<A, B> const &mata, SparseMatTM<B, C> const &matb, SparseMatTM<A, C> &prod); \
+
+#define InstProlMults(N,M) /* embedding NxN to MxM */	\
   InstMultMat(N,M,M); /* conctenate prols */		\
   InstMultMat(N,N,M); /* A * P */			\
   InstMultMat(M,N,M); /* PT * [A*P] */
 
-  /** [A \times B] * [B \times C] **/
-  InstMultMat(1,1,1);
-  InstMultMat(2,2,2);
-  InstMultMat(3,3,3);
-  InstEmbedMults(1,2);
-  InstEmbedMults(2,1);
-  InstEmbedMults(1,3);
-  InstEmbedMults(3,1);
-  InstEmbedMults(2,3);
+#define InstProlMults2(N,M) \
+  InstProlMults(N,M); \
+  InstProlMults(M,N); \
+
+/** [A \times B] * [B \times C] **/
+InstMultMat(1,1,1);
+
+InstMultMat(2,2,2);
+InstProlMults2(1,2);
+
+InstProlMults2(1,3);
+InstProlMults2(2,3);
+InstMultMat(3,3,3);
+
 #ifdef ELASTICITY
-  InstMultMat(6,6,6);
-  InstEmbedMults(1,6);
-  InstEmbedMults(2,6);
-  InstEmbedMults(3,6);
+InstProlMults2(1,4);
+InstMultMat(4,4,4);
+
+InstProlMults2(1,5);
+InstMultMat(5,5,5);
+
+InstProlMults2(1,6);
+InstProlMults2(3,6);
+InstMultMat(6,6,6);
 #endif // ELASTICITY
 
-// some extra instantiations to fix missing symbols with ELASTICITY/STOKES,
-// I am not sure why they are even there
-InstMultMat(1,4,1);
-InstMultMat(1,5,1);
-InstMultMat(1,6,1);
-InstMultMat(2,3,2);
-InstMultMat(2,6,2);
-InstMultMat(3,2,1);
-InstMultMat(3,2,2);
-InstMultMat(3,3,2);
-InstMultMat(3,6,3);
-InstMultMat(4,1,1);
-InstMultMat(4,4,1);
-InstMultMat(4,4,4);
-InstMultMat(5,1,1);
-InstMultMat(5,5,1);
-InstMultMat(5,5,5);
-InstMultMat(5,5,6);
-InstMultMat(5,6,5);
-InstMultMat(5,6,6);
-InstMultMat(6,1,1);
-InstMultMat(6,2,1);
-InstMultMat(6,2,2);
-InstMultMat(6,3,3);
-InstMultMat(6,6,1);
-InstMultMat(6,6,2);
-InstMultMat(6,6,3);
-InstMultMat(6,6,5);
-InstMultMat(6,5,5);
-InstMultMat(6,5,6);
-InstEmbedMults(1,4);
-InstEmbedMults(1,5);
-
-#undef InstSparseMMTrait
+#undef InstProlMults2
+#undef InstProlMults
+#undef InstMultMatUpdate
 #undef InstMultMat
-#undef InstEmbedMults
-
-template<int H, int W>
-constexpr bool IsMatrixCompiled()
-{
-  return IsMatrixCompiledTrait<H, W>::value;
-}
+#undef InstSparseMMTrait
 
 template<int H, int N, int W>
 constexpr bool IsSparseMMCompiled()
@@ -351,7 +343,6 @@ constexpr bool IsSparseMMCompiled()
 }
 
 } // namespace amg
-
 
 namespace amg
 {
@@ -362,6 +353,12 @@ TransposeSPM (TA const &A)
 {
   static constexpr int H = Height<typename TA::TENTRY>();
   static constexpr int W = Width<typename TA::TENTRY>();
+
+  static_assert(IsMatrixCompiled<W, H>(),
+                "TransposeSPM not compiled!");
+
+  static_assert(IsTransMatCompiled<H, W>(),
+                "Uncompiled TransposeSPM specialization!" );
 
   return TransposeSPMImpl<H,W>(TMRef<H,W>(A));
 } // TransposeSPM
@@ -407,4 +404,6 @@ MatMultABUpdateVals (TA const &A, TB const &B, TC &C)
 } // MatMultABUpdateVals
 
 } // namespace amg
-#endif
+
+#endif // FILE_UTILS_SPARSEMM_CPP
+#endif // FILE_AMG_SPMSTUFF_HPP

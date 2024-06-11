@@ -94,6 +94,15 @@ protected:
 
 /** END HybridDISmoother **/
 
+#ifndef FILE_HYBRID_SMOOTHER_CPP
+extern template class HybridDISmoother<double>;
+extern template class HybridDISmoother<Mat<2,2,double>>;
+extern template class HybridDISmoother<Mat<3,3,double>>;
+#ifdef ELASTICITY
+extern template class HybridDISmoother<Mat<6,6,double>>;
+#endif // ELASTICITY
+#endif // FILE_HYBRID_SMOOTHER_CPP
+
 } // namespace amg
 
 #endif // FIL_HYBRID_SMOOTHER_HPP

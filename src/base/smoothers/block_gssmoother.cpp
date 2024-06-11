@@ -1,4 +1,5 @@
-#define FILE_AMG_BLOCKSMOOTHER_CPP
+#define FILE_BLOCK_GSSMOOTHER_CPP
+
 
 #include "block_gssmoother.hpp"
 #include <utils_arrays_tables.hpp>

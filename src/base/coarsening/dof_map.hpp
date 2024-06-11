@@ -286,6 +286,11 @@ public:
 
   virtual ~ProlMap () = default;
 
+  static_assert(IsMatrixCompiled<H, W>(),      "Trying to instantiate ProlMap with invalid SPM!");
+  static_assert(IsMatrixCompiled<W, H>(),      "Trying to instantiate ProlMap with invalid trans-SPM!");
+  static_assert(IsTransMatCompiled<H, W>(),    "Trying to instantiate ProlMap with invalid Transpose!");
+  static_assert(IsSparseMMCompiled<H, H, W>(), "Trying to instantiate ProlMap with invalid MM - AP!");
+  static_assert(IsSparseMMCompiled<W, H, W>(), "Trying to instantiate ProlMap with invalid MM - PT[AP]!");
   static_assert(std::is_same<TM, StripTM<H,W>>::value, "Need STRIP-TM!");
 
 public:
@@ -408,10 +413,10 @@ public:
   virtual int GetMappedBlockSize () const override;
 };
 
-
 shared_ptr<BaseDOFMapStep> MakeSingleStep2 (FlatArray<shared_ptr<BaseDOFMapStep>> sub_steps);
 
-template<int N, int M> struct IsProlMapCompiledTrait { static constexpr bool value = false; };
+} // namespace amg
+
 
 // #ifdef FILE_DOF_MAP_CPP
 // #define PROL_EXTERN
@@ -420,10 +425,15 @@ template<int N, int M> struct IsProlMapCompiledTrait { static constexpr bool val
 // #endif
 
 #ifndef FILE_DOF_MAP_CPP
-#define PROL_EXTERN extern
+
+namespace amg
+{
+
+template<int N, int M> struct IsProlMapCompiledTrait { static constexpr bool value = false; };
+
 
 #define DEF_PROL(N, M) \
-  PROL_EXTERN template class ProlMap<Mat<N,M,double>>; \
+  extern template class ProlMap<Mat<N,M,double>>; \
   template<> struct IsProlMapCompiledTrait<N, M> { static constexpr bool value = true; }; \
 
 #define DEF_PROL_SYM(N, M) \
@@ -431,7 +441,7 @@ template<int N, int M> struct IsProlMapCompiledTrait { static constexpr bool val
   DEF_PROL(M, N); \
 
 
-PROL_EXTERN template class ProlMap<double>;
+extern template class ProlMap<double>;
 template<> struct IsProlMapCompiledTrait<1, 1> { static constexpr bool value = true; };
 
 DEF_PROL_SYM(1,2);
@@ -442,18 +452,13 @@ DEF_PROL_SYM(2,3);
 DEF_PROL(3,3);
 
 #ifdef ELASTICITY
-DEF_PROL_SYM(1,4);
-DEF_PROL_SYM(1,5);
 DEF_PROL_SYM(1,6);
 DEF_PROL_SYM(3,6);
-DEF_PROL_SYM(5,6);
 DEF_PROL(6,6);
 #endif
 
 #undef DEF_PROL
 #undef DEF_PROL_SYM
-
-#endif
 
 template<int N, int M> constexpr bool IsProlMapCompiled() { return IsProlMapCompiledTrait<N, M>::value; }
 
@@ -467,6 +472,8 @@ template<int N, int M> constexpr bool IsProlMapCompiled() { return IsProlMapComp
 // extern template class ProlMap<Mat<3,6,double>>;
 // extern template class ProlMap<Mat<6,6,double>>;
 // #endif // ELASTICITY
-}
+} // namespace amg
+
+#endif // FILE_DOF_MAP_CPP
 
 #endif // FILE_DOF_MAP_HPP
