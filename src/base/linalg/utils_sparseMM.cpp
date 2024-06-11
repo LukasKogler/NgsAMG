@@ -11,17 +11,17 @@
 
 
 // undef USE_<INVERSE> such that we don't get problems with missing headers
-#if MAX_SYS_DIM < AMG_MAX_SYS_DIM
-#undef USE_UMFPACK
-#undef USE_MUMPS
-#else
-  #ifdef USE_MUMPS
-    #include <mumpsinverse.hpp>
-  #endif
-  #ifdef USE_UMFPACK
-    #include <umfpackinverse.hpp>
-  #endif
-#endif
+// #if MAX_SYS_DIM < AMG_MAX_SYS_DIM
+// #undef USE_UMFPACK
+// #undef USE_MUMPS
+// #else
+//   #ifdef USE_MUMPS
+//     #include <mumpsinverse.hpp>
+//   #endif
+//   #ifdef USE_UMFPACK
+//     #include <umfpackinverse.hpp>
+//   #endif
+// #endif
 #include <sparsematrix_impl.hpp>
 
 namespace ngbla
