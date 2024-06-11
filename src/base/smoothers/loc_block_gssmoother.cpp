@@ -107,7 +107,7 @@ namespace amg
 	int blocknr = fi_blocks[group_nr] + k;
 	blocks[blocknr].Alloc(ptr_i, ptr_v);
 	// blocks[blocknr].Alloc(buffer_lh);
-	maxbs = max(maxbs, blocks[k].dofnrs.Size());
+	maxbs = max(maxbs, blocks[blocknr].dofnrs.Size());
       }
     }
 
