@@ -459,19 +459,13 @@ void VertexAMGPC<FACTORY> :: SetUpMaps ()
 
         break;
       }
+      case(Options::DOF_ORDERING::P2_ORDERING_ALG):
       case(Options::DOF_ORDERING::P2_ORDERING):
       {
         throw Exception("P2-ordering needs RANGE_SUBSET !?");
+        break;
       }
     }
-
-    if (O.dof_ordering == Options::DOF_ORDERING::VARIABLE_ORDERING)
-      { throw Exception("not implemented (but easy)"); }
-    else if (O.dof_ordering == Options::DOF_ORDERING::REGULAR_ORDERING)
-    {
-
-    } // REGULAR_ORDERING
-    break;
   } // SELECTED_SUBSET
   } // switch(O.subset)
 
@@ -507,6 +501,7 @@ void VertexAMGPC<FACTORY> :: SetUpMaps ()
 
   }
 
+  // cout << "    DOF <-> AMG-VERTEX mappings:" << endl;
   // cout << " (unsorted) d2v_array: " << endl; prow2(d2v_array); cout << endl << endl;
   // if (use_v2d_tab) {
   //  cout << " (unsorted) v2d_table: " << endl << v2d_table << endl << endl;
@@ -514,7 +509,6 @@ void VertexAMGPC<FACTORY> :: SetUpMaps ()
   // else {
   //  cout << " (unsorted) v2d_array: " << endl; prow2(v2d_array); cout << endl << endl;
   // }
-
 } // VertexAMGPC::SetUpMaps
 
 

@@ -458,9 +458,6 @@ void BaseAMGPC :: InitLevel (shared_ptr<BitArray> freedofs)
   }
   else
     { finest_freedofs = freedofs; }
-
-  // CheckBAConsistency("finest_freedofs", freedofs, bfa->GetFESpace()->GetParallelDofs());
-
 } // BaseAMGPC::InitLevel
 
 
@@ -485,13 +482,6 @@ void BaseAMGPC :: FinalizeLevel (shared_ptr<BaseMatrix> mat)
   }
 
   Finalize();
-
-  // NgMPI_Comm dc(GetAMGMatrix()->GetSmoother(0)->GetAMatrix()->GetParallelDofs()->GetCommunicator());
-  // TestSmoother(GetAMGMatrix()->GetSmoother(0)->GetAMatrix(), const_pointer_cast<BaseSmoother>(GetAMGMatrix()->GetSmoother(0)),
-  // 		 dc, string("\n extra FL test smoother with own mat"));
-
-  // TestSmoother(finest_mat, const_pointer_cast<BaseSmoother>(GetAMGMatrix()->GetSmoother(0)),
-  // 		 dc, string("\n extra FL test smoother with finest_mat"));
 } // BaseAMGPC::FinalizeLevel
 
 
@@ -1406,8 +1396,10 @@ void VertexAMGPCOptions :: SetFromFlags (shared_ptr<FESpace> fes, shared_ptr<Bas
       auto &low = flags.GetNumListFlag(pfit("lower"));
       auto &up = flags.GetNumListFlag(pfit("upper"));
 
-      size_t lowi = flags.GetNumFlag(pfit("lower"), -1);
-      size_t upi = flags.GetNumFlag(pfit("upper"), -1);
+      // these stay SIGNED numbers, float->size_t conversion on MacOS
+      // converts "-1" (that is, no value) to 0, not -1ul!
+      int lowi = flags.GetNumFlag(pfit("lower"), -1);
+      int upi  = flags.GetNumFlag(pfit("upper"), -1);
 
       // multiple ranges explicitly given
       if (low.Size()) { // multiple ranges given by user
@@ -1429,9 +1421,9 @@ void VertexAMGPCOptions :: SetFromFlags (shared_ptr<FESpace> fes, shared_ptr<Bas
       }
 
       // single range explicitly given
-      if ( (lowi != size_t(-1)) && (upi != size_t(-1)) ) {
+      if ( (lowi != -1) && (upi != -1) ) {
         ss_ranges.SetSize(1);
-        ss_ranges[0] = { lowi, upi };
+        ss_ranges[0] = { size_t(lowi), size_t(upi) };
         if (log_level_pc > Options::LOG_LEVEL_PC::BASIC)
         {
           cout << IM(3) << "subset for coarsening defined by (single) user range" << endl;
