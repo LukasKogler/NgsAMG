@@ -210,13 +210,20 @@ EmbeddedSProl (Options const &O,
   const int MAX_PER_ROW = O.sp_max_per_row.GetOpt(0);
   const int MAX_PER_ROW_CLASSIC = O.sp_max_per_row_classic.GetOpt(0);
   const double omega = O.sp_omega.GetOpt(0);
+  int const improveIts = O.sp_improve_its.GetOpt(0); // TODO: via options
 
+  int const totalSteps = improveIts + 1;
 
   fMesh.CumulateData();
   cMesh.CumulateData();
 
   auto const &eqc_h = *fMesh.GetEQCHierarchy();
   auto const &fECon = *fMesh.GetEdgeCM();
+
+  if ( eqc_h.IsTrulyParallel() )
+  {
+    throw Exception("use_emb_sp not available in parallel yet!");
+  }
 
   auto fVData = get<0>(fMesh.Data())->Data();
   auto fEData = get<1>(fMesh.Data())->Data();
@@ -373,84 +380,94 @@ EmbeddedSProl (Options const &O,
   // {std::ofstream of("initEmbProl.out"); print_tm_spmat(of, *embProl);}
   // {std::ofstream of("A_embP.out"); print_tm_spmat(of, *A_embP);}
 
-  // smooth prol-rows
   Array<int> replaceColPos;
-  for (auto k : Range(fMat.Height()))
+
+  // smooth prol-rows
+  for (auto k : Range(totalSteps))
   {
-    auto prolCols = embProl->GetRowIndices(k);
-    auto prolVals = embProl->GetRowValues(k);
-
-    if ( prolCols.Size() < 2 )
+    if ( k > 0 )
     {
-      // not in range of emb, Dirichlet, or prols from single CV -> nothing to do
-      continue;
+      MatMultABUpdateVals(fMat, *embProl, *A_embP);
     }
 
-    auto allCols = A_embP->GetRowIndices(k);
-    auto aepVals = A_embP->GetRowValues(k);
-
-
-    // cout << " update row " << k << endl;
-
-    Mat<BSF, BSF, double> dInv = fMat(k, k);
-    // cout << " diag: " << endl; print_tm(cout, dInv); cout << endl;
-    CalcInverse(dInv); // no issues with inverse here!
-    // cout << " dInv: " << endl; print_tm(cout, dInv); cout << endl;
-
-    double repFac = 1.0;
-
-    if( prolCols.Size() < allCols.Size() )
+    for (auto k : Range(fMat.Height()))
     {
-      // find CVs to use for contribs for unused cols
-      //    just divide equally between all cvs of cols appearin in emb
-      auto embCols = emb.GetRowIndices(k);
+      auto prolCols = embProl->GetRowIndices(k);
+      auto prolVals = embProl->GetRowValues(k);
 
-      replaceColPos.SetSize0();
-      for (auto fv : embCols)
+      if ( prolCols.Size() < 2 )
       {
-        auto cv = vMap[fv];
-
-        int pos;
-        if ( (cv != -1) &&
-             (pos = find_in_sorted_array(cv, prolCols)) != -1 )
-        {
-          replaceColPos.Append(pos);
-          // break;
-        }
+        // not in range of emb, Dirichlet, or prols from single CV -> nothing to do
+        continue;
       }
-      repFac = 1.0 / replaceColPos.Size();
+
+      auto allCols = A_embP->GetRowIndices(k);
+      auto aepVals = A_embP->GetRowValues(k);
+
+
+      // cout << " update row " << k << endl;
+
+      Mat<BSF, BSF, double> dInv = fMat(k, k);
+      // cout << " diag: " << endl; print_tm(cout, dInv); cout << endl;
+      CalcInverse(dInv); // no issues with inverse here!
+      // cout << " dInv: " << endl; print_tm(cout, dInv); cout << endl;
+
+      double repFac = 1.0;
+
+      if( prolCols.Size() < allCols.Size() )
+      {
+        // find CVs to use for contribs for unused cols
+        //    just divide equally between all cvs of cols appearin in emb
+        auto embCols = emb.GetRowIndices(k);
+
+        replaceColPos.SetSize0();
+        for (auto fv : embCols)
+        {
+          auto cv = vMap[fv];
+
+          int pos;
+          if ( (cv != -1) &&
+              (pos = find_in_sorted_array(cv, prolCols)) != -1 )
+          {
+            replaceColPos.Append(pos);
+            // break;
+          }
+        }
+        repFac = 1.0 / replaceColPos.Size();
+      }
+
+      iterate_AC(allCols, prolCols, [&](auto where, auto idxA, auto idxP)
+      {
+        Mat<BSF, BS, double> upVal = dInv * aepVals[idxA];
+
+        // cout << idxA << ", col " << allCols[idxA] << endl;
+        // cout << " dinv x offd: " << endl; print_tm(cout, upVal); cout << endl;
+
+        if ( where == INTERSECTION ) // used col
+        {
+          // cout << " USED @ " << idxP << endl;
+          prolVals[idxP] -= omega * upVal;
+        }
+        else // unused col
+        {
+          // instead add as contrib to reCols (i.e. cvs of fvs from initial emb!)
+          for (auto idx : replaceColPos)
+          {
+            auto const repCol = prolCols[idx];
+
+            // TQ::MQ/GetMQ/etc. are hard-coded to BS x BS -> BS x BS, we need BSF x BS -> BSF x BS
+            // prolVals[idx] += ENERGY::GetQiToj(cVData[repCol], cVData[allCols[idxA]]).GetMQ(-omega * repFac, upVal);
+            Mat<BS,BS,double> Q;
+            SetIdentity(Q);
+            ENERGY::GetQiToj(cVData[repCol], cVData[allCols[idxA]]).MQ(Q);
+            
+            prolVals[idx] -= omega * upVal * Q;
+          }
+        }
+      });
     }
-
-    iterate_AC(allCols, prolCols, [&](auto where, auto idxA, auto idxP)
-    {
-      Mat<BSF, BS, double> upVal = dInv * aepVals[idxA];
-
-      // cout << idxA << ", col " << allCols[idxA] << endl;
-      // cout << " dinv x offd: " << endl; print_tm(cout, upVal); cout << endl;
-
-      if ( where == INTERSECTION ) // used col
-      {
-        // cout << " USED @ " << idxP << endl;
-        prolVals[idxP] -= omega * upVal;
-      }
-      else // unused col
-      {
-        // instead add as contrib to reCols (i.e. cvs of fvs from initial emb!)
-        for (auto idx : replaceColPos)
-        {
-          auto const repCol = prolCols[idx];
-
-          // TQ::MQ/GetMQ/etc. are hard-coded to BS x BS -> BS x BS, we need BSF x BS -> BSF x BS
-          // prolVals[idx] += ENERGY::GetQiToj(cVData[repCol], cVData[allCols[idxA]]).GetMQ(-omega * repFac, upVal);
-          Mat<BS,BS,double> Q;
-          SetIdentity(Q);
-          ENERGY::GetQiToj(cVData[repCol], cVData[allCols[idxA]]).MQ(Q);
-          
-          prolVals[idx] -= omega * upVal * Q;
-        }
-      }
-    });
   }
+
 
   // TOOD: re-smooth?
 
@@ -625,7 +642,9 @@ BuildCoarseDOFMap (shared_ptr<BaseCoarseMap>                cmap,
 
   shared_ptr<BaseDOFMapStep> step = nullptr;
 
-  if( fcap->baselevel == 0 && O.use_emb_sp )
+  if( fcap->baselevel == 0 &&
+      O.use_emb_sp &&
+      ( !cap->mesh->GetEQCHierarchy()->IsTrulyParallel() ) ) // not implemented in parallel ATM!
   {
     auto fMat = cap->mat;
 
