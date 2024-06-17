@@ -144,6 +144,72 @@ public:
 }; // class PreservedConstantsOnFacet
 
 
+template<int ADIM>
+class PreservedP1
+{
+public:
+  static constexpr int DIM  = ADIM;
+  static constexpr int NDOF = DIM * (DIM + 1); // 2d: 6, 3d: 12
+
+  PreservedP1 ()
+  { ; }
+
+  // first row is "n" and then come the constants
+  INLINE
+  void
+  CalcMappedShape(BaseMappedIntegrationPoint const &mip,
+                  SliceMatrix<double>               shapes) const
+  {
+    shapes = 0.0;
+
+    // first DIM are the constants
+    Iterate<DIM>([&](auto k) {
+      shapes(k, k) = 1;
+    });
+
+    if constexpr(DIM == 3)
+    {
+      auto pt = mip.GetPoint();
+
+      auto const x = pt[0];
+      auto const y = pt[1];
+      auto const z = pt[2];
+
+      // (x, 0, 0), (0, x, 0), (0, 0, x)
+      shapes(3, 0) = x;
+      shapes(4, 1) = x;
+      shapes(5, 2) = x;
+
+      // same w. y
+      shapes(6, 0) = y;
+      shapes(7, 1) = y;
+      shapes(8, 2) = y;
+
+      // same w. z
+      shapes(9, 0) = z;
+      shapes(10, 1) = z;
+      shapes(11, 2) = z;
+    }
+    else
+    {
+      auto pt = mip.GetPoint();
+
+      auto const x = pt[0];
+      auto const y = pt[1];
+
+      // (x, 0), (0, x)
+      shapes(2, 0) = x;
+      shapes(3, 1) = x;
+
+      // same 2. y
+      shapes(4, 0) = y;
+      shapes(5, 1) = y;
+    }
+
+  }
+}; // class PreservedP1
+
+
 template<int ADIM, class APRESVECEL = PreservedConstantsOnFacet<ADIM, true>>
 class NPlusConstantsOnFacet
 {
@@ -253,7 +319,7 @@ public:
 
   static constexpr int DIM        = ADIM;
   static constexpr int HDIV_ORDER = 1;
-  static constexpr int ND_TO_HDIV = DIM;
+  static constexpr int ND_TO_HDIV = DIM; // p1 in (DIM-1), so (DIM-1)+1
   static constexpr int TF_ORDER   = P1TF ? 1 : 0;
   static constexpr int ND_TO_TF   = (DIM - 1) * ( P1TF ? DIM : 1);
   static constexpr int NDOF       = ND_TO_HDIV + ND_TO_TF;
@@ -940,6 +1006,33 @@ CreateMeshDOFs(shared_ptr<BlockTM> fineMesh)
       }
       break;
     }
+    case(FULL_P1): {
+      auto tFOrder = GetTangFacetFESpace()->GetOrder();
+      
+      if (DIM == 3)
+      {
+        if (tFOrder == 0)
+        {
+          dofsPerFacet = HDivHDGP1Facet<3, false, PreservedP1<3>>::NDOF;
+        }
+        else
+        {
+          dofsPerFacet = HDivHDGP1Facet<3, true, PreservedP1<3>>::NDOF;
+        }
+      }
+      else
+      {
+        if (tFOrder == 0)
+        {
+          dofsPerFacet = HDivHDGP1Facet<2, false, PreservedP1<2>>::NDOF;
+        }
+        else
+        {
+          dofsPerFacet = HDivHDGP1Facet<2, true, PreservedP1<2>>::NDOF;
+        }
+      }
+      break;
+    }
   }
 
   // int const dofsPerFacet = GetTangFacetFESpace() != nullptr ? GetFESpace().GetMeshAccess()->GetDimension() : 1;
@@ -1036,6 +1129,33 @@ CreateDOFEmbedding(BlockTM  const &fMesh,
         else
         {
           return CreateDOFEmbeddingImpl<HDivHDGP1Facet<2, true>>(fMesh, meshDOFs);
+        }
+      }
+      break;
+    }
+    case(FULL_P1): {
+      auto tFOrder = GetTangFacetFESpace()->GetOrder();
+      
+      if (DIM == 3)
+      {
+        if (tFOrder == 0)
+        {
+          return CreateDOFEmbeddingImpl<HDivHDGP1Facet<3, false, PreservedP1<3>>>(fMesh, meshDOFs);
+        }
+        else
+        {
+          return CreateDOFEmbeddingImpl<HDivHDGP1Facet<3, true, PreservedP1<3>>>(fMesh, meshDOFs);
+        }
+      }
+      else
+      {
+        if (tFOrder == 0)
+        {
+          return CreateDOFEmbeddingImpl<HDivHDGP1Facet<2, false, PreservedP1<2>>>(fMesh, meshDOFs);
+        }
+        else
+        {
+          return CreateDOFEmbeddingImpl<HDivHDGP1Facet<2, true, PreservedP1<2>>>(fMesh, meshDOFs);
         }
       }
       break;
@@ -1473,7 +1593,7 @@ CreateDOFEmbeddingImpl(BlockTM  const &fMesh,
 // HDivHDGEmbedding::
 // CreatePreservedVectors(BaseDOFMapStep const &E)
 // {
-//   throw Exception("I don't think we actually need HDivHDGEmbedding::CreatePreservedVectors!");
+//   throw Exceyption("I don't think we actually need HDivHDGEmbedding::CreatePreservedVectors!");
 //   return nullptr;
 // } // HDivHDGEmbedding::CreatePreservedVectors
 

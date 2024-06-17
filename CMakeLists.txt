@@ -8,7 +8,7 @@ option( ENABLE_ELASTICITY                     "enable H1-ELASTICITY AMG precondi
 option( ENABLE_ROBUST_ELASTICITY_COARSENING   "enable more robust elasticity coarsening (very long compile)"  OFF )
 option( ENABLE_MIS_AGG                        "Enable (M)aximal (I)ndependent (S)et agglomeration algorithms" ON  )
 option( ENABLE_SPW_AGG                        "Enable (S)uccessive(P)air(W)ise agglomeration algorithms"      ON  )
-option( ENABLE_STOKES                         "Enable Stokes AMG"                                             ON  )
+option( ENABLE_STOKES                         "Enable Stokes AMG"                                             OFF )
 option( NGS_COMPATIBILITY                     "Compatibility with public NGSolve "                            ON  )
 option( ADD_TO_NGS_INSTALL                    "Install wherever Netgen/NGSolve is installed "                 OFF )
 

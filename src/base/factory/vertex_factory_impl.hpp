@@ -440,8 +440,13 @@ EmbeddedSProl (Options const &O,
         {
           auto const repCol = prolCols[idx];
 
-          // cout << " REPLACE w. " << repCol << " @ " << idx << endl;
-          prolVals[idx] += ENERGY::GetQiToj(cVData[repCol], cVData[allCols[idxA]]).GetMQ(-omega * repFac, upVal);
+          // TQ::MQ/GetMQ/etc. are hard-coded to BS x BS -> BS x BS, we need BSF x BS -> BSF x BS
+          // prolVals[idx] += ENERGY::GetQiToj(cVData[repCol], cVData[allCols[idxA]]).GetMQ(-omega * repFac, upVal);
+          Mat<BS,BS,double> Q;
+          SetIdentity(Q);
+          ENERGY::GetQiToj(cVData[repCol], cVData[allCols[idxA]]).MQ(Q);
+          
+          prolVals[idx] -= omega * upVal * Q;
         }
       }
     });

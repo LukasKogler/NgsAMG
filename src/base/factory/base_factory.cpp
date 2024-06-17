@@ -256,8 +256,8 @@ SetUpLevels (Array<shared_ptr<BaseAMGFactory::AMGLevel>> & amg_levels, shared_pt
       { logger->PrintLog(cout); }
   }
 
-  if (dof_map->GetNSteps() == 0)
-    { throw Exception("Failed to construct any coarse levels!"); }
+  // if (dof_map->GetNSteps() == 0)
+  //   { throw Exception("Failed to construct any coarse levels!"); }
 
   if (options->check_kvecs)
     { CheckKVecs(amg_levels, dof_map); }

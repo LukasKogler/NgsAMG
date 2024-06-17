@@ -21,7 +21,8 @@ public:
   {
     RTZ = 0,
     P0  = 1,
-    P1  = 2
+    P1  = 2,
+    FULL_P1 = 3
   };
 
   HDivHDGEmbedding(BaseStokesAMGPrecond const &stokesPre,
@@ -112,9 +113,10 @@ operator<<(std::ostream &os, HDivHDGEmbedding::AUX_SPACE const &auxSpace)
 {
   switch(auxSpace)
   {
-    case(HDivHDGEmbedding::AUX_SPACE::RTZ): { os << "RTZ"; break; }
-    case(HDivHDGEmbedding::AUX_SPACE::P0):  { os << "P0";  break; }
-    case(HDivHDGEmbedding::AUX_SPACE::P1):  { os << "P1";  break; }
+    case(HDivHDGEmbedding::AUX_SPACE::RTZ):     { os << "RTZ"; break; }
+    case(HDivHDGEmbedding::AUX_SPACE::P0):      { os << "P0";  break; }
+    case(HDivHDGEmbedding::AUX_SPACE::P1):      { os << "P1";  break; }
+    case(HDivHDGEmbedding::AUX_SPACE::FULL_P1): { os << "FULL_P1";  break; }
   }
   return os;
 }

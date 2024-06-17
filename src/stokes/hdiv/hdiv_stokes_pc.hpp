@@ -49,6 +49,10 @@ public:
       {
         auxSpace = HDivHDGEmbedding::AUX_SPACE::P1;
       }
+      else if (auxSpaceStr == "FULL_P1")
+      {
+        auxSpace = HDivHDGEmbedding::AUX_SPACE::FULL_P1;
+      }
       else
       {
         auxSpace = HDivHDGEmbedding::AUX_SPACE::P0;
