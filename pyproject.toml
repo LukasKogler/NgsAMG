@@ -1,5 +1,5 @@
 [build-system]
-requires = ["scikit-build-core>=0.3.3", "pybind11_stubgen", "cmake>=3.26", "netgen-mesher", "ngsolve>=6.2.2403.post68.dev0"]
+requires = ["scikit-build-core>=0.3.3", "pybind11_stubgen", "cmake>=3.26", "netgen-mesher", "ngsolve>=6.2.2403.post68.dev0", "mkl-devel", "mpi4py"]
 build-backend = "scikit_build_core.build"
 # do not set these, otherwise it will install netgen/ngsolve without MPI which breaks the build
 #requires = ["scikit-build-core>=0.3.3", "pybind11", "pybind11_stubgen", "cmake>=3.26", "netgen-mesher", "ngsolve"]
@@ -11,7 +11,7 @@ description="A minimal example for an NGSolve addon"
 author=""
 readme = "README.md"
 authors = [ { name = "Lukas Kogler" } ]
-requires-python = ">=3.10"
+requires-python = ">=3.8"
 classifiers = [
   "Development Status :: 4 - Beta",
   "License :: GNU LESSER GENERAL PUBLIC LICENSE Version3",
