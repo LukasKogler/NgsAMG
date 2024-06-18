@@ -369,6 +369,7 @@ void BaseAMGPC::Options :: SetFromFlags (shared_ptr<FESpace> fes, shared_ptr<Bas
   set_bool(sm_NG_MPI_thread, "sm_NG_MPI_thread");
   set_bool(sm_shm, "sm_shm");
   set_bool(sm_sl2, "sm_sl2");
+  set_bool(sm_use_fes_blocks, "sm_use_fes_blocks");
 
   set_bool(sync, "sync");
   set_bool(do_test, "do_test");
@@ -1112,7 +1113,7 @@ BuildSmoother (const BaseAMGFactory::AMGLevel & amg_level)
     case(Options::SM_TYPE::GS):     { smoother = BuildGSSmoother(mat, GetFreeDofs(amg_level)); break; }
     case(Options::SM_TYPE::BGS):
     {
-      if ( isFESpaceLevel )
+      if ( isFESpaceLevel && O.sm_use_fes_blocks)
       {
         smoother = BuildBGSSmoother(mat, std::move(GetFESpaceGSBlocks()));
       }

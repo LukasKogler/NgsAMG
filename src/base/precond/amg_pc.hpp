@@ -70,6 +70,7 @@ namespace amg
       bool sm_NG_MPI_thread = false;          // do MPI-comm in seperate thread (only VER3)
       bool sm_shm = true;                  // shared memory parallelization for (block-)smoothers ?
       bool sm_sl2 = false;                 // use SharedLoop2 instead of ParallelFor for (block-)smoothers ?
+      bool sm_use_fes_blocks = false;      // use BS-blocks from FESpace on the finest level
 
       /** Misc **/
       bool sync = false;                   // synchronize via MPI-Barrier in places

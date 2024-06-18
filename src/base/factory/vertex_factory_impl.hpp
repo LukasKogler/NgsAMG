@@ -210,7 +210,7 @@ EmbeddedSProl (Options const &O,
   const int MAX_PER_ROW = O.sp_max_per_row.GetOpt(0);
   const int MAX_PER_ROW_CLASSIC = O.sp_max_per_row_classic.GetOpt(0);
   const double omega = O.sp_omega.GetOpt(0);
-  int const improveIts = O.sp_improve_its.GetOpt(0); // TODO: via options
+  int const improveIts = O.sp_improve_its.GetOpt(0);
 
   int const totalSteps = improveIts + 1;
 
@@ -222,7 +222,7 @@ EmbeddedSProl (Options const &O,
 
   if ( eqc_h.IsTrulyParallel() )
   {
-    throw Exception("use_emb_sp not available in parallel yet!");
+    std::cerr << " WARNING!! sp_improve_its option is not fully parallelized!" << std::endl;
   }
 
   auto fVData = get<0>(fMesh.Data())->Data();
@@ -886,11 +886,9 @@ SemiAuxSProlMap (shared_ptr<ProlMap<TM>> pw_step,
   const int MAX_PER_ROW = O.sp_max_per_row.GetOpt(baselevel);
   const int MAX_PER_ROW_CLASSIC = O.sp_max_per_row_classic.GetOpt(baselevel);
   const double omega = O.sp_omega.GetOpt(baselevel);
-  // const bool aux_only = O.sp_aux_only.GetOpt(baselevel); // TODO:placeholder
   const bool aux_only = O.prol_type.GetOpt(baselevel) == Options::PROL_TYPE::AUX_SMOOTHED;
-  int const improveIts = O.sp_improve_its.GetOpt(baselevel); // TODO: via options
+  int const improveIts = O.sp_improve_its.GetOpt(baselevel);
 
-  // NOTE: something is funky with the meshes here ...
   const auto & FM = *static_pointer_cast<TMESH>(fcap->mesh);
   const auto & CM = *static_pointer_cast<TMESH>(cmap->GetMappedMesh());
   const auto & eqc_h = *FM.GetEQCHierarchy();
@@ -901,6 +899,11 @@ SemiAuxSProlMap (shared_ptr<ProlMap<TM>> pw_step,
 
   FM.CumulateData();
   CM.CumulateData();
+
+  if ( (improveIts > 0) && eqc_h.IsTrulyParallel() && (baselevel == 0) )
+  {
+    std::cerr << " WARNING!! sp_improve_its option is not fully parallelized!" << std::endl;
+  }
 
   /** Because of embedding, this can be nullptr for level 0!
       I think using pure aux on level 0 should not be an issue. **/
@@ -1346,7 +1349,7 @@ SemiAuxSProlMap (shared_ptr<ProlMap<TM>> pw_step,
     }
   }
 
-  if (improveIts > 0 && (neqcs == 1)) // MPI is TODO
+  if (improveIts > 0) //  && (neqcs == 1)) // MPI is TODO
   {
     static Timer tImp("SemiAuxSProlMap 0 improve-its");
     auto const &CSP = *sprol;

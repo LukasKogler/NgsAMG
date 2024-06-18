@@ -271,12 +271,12 @@ void VertexAMGPC<FACTORY> :: SetUpMaps ()
         this->use_v2d_tab = false;
         this->use_p2_emb = true;
 
-        cout << " P2-ordering " << endl;
-        cout << " ndof " << ndof << endl;
-        cout << " NV " << ma->GetNV() << endl;
+        // cout << " P2-ordering " << endl;
+        // cout << " ndof " << ndof << endl;
+        // cout << " NV " << ma->GetNV() << endl;
 
-        cout << bfa << endl;
-        cout << bfa->GetFESpace() << endl;
+        // cout << bfa << endl;
+        // cout << bfa->GetFESpace() << endl;
 
         // max. #v == fes-#DOFs
         // TODO: throw an error if we get here in strict alg mode
@@ -303,7 +303,7 @@ void VertexAMGPC<FACTORY> :: SetUpMaps ()
           }
         }
 
-        cout << " FINAL NV " << n_verts << endl;
+        // cout << " FINAL NV " << n_verts << endl;
 
         v2d_array.SetSize(n_verts);
 
@@ -362,10 +362,10 @@ void VertexAMGPC<FACTORY> :: SetUpMaps ()
 
         n_verts = in_ss - isP2Vert.NumSet();
 
-        cout << " P2_ORDERING_ALG " << endl;
-        cout << " in_ss = " << in_ss << endl;
-        cout << " trips " << algP2Trips.Size() << " -> " << isP2Vert.NumSet() << endl;
-        cout << "   -> " << n_verts << " proper verts left! " << endl;
+        // cout << " P2_ORDERING_ALG " << endl;
+        // cout << " in_ss = " << in_ss << endl;
+        // cout << " trips " << algP2Trips.Size() << " -> " << isP2Vert.NumSet() << endl;
+        // cout << "   -> " << n_verts << " proper verts left! " << endl;
 
         d2v_array.SetSize(in_ss); d2v_array = -1;
         v2d_array.SetSize(n_verts);
