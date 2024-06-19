@@ -576,7 +576,7 @@ HybridDynBlockSmoother(shared_ptr<DynamicBlockHybridMatrix<TSCAL>>  A,
     _locBlockNums.SetSize(numBlocks);
     _exBlockNums.SetSize(numBlocks);
 
-    cout << " parDofs: " << endl << *parDofs << endl;
+    // cout << " parDofs: " << endl << *parDofs << endl;
 
     int cntLoc = 0;
     int cntEx = 0;
@@ -609,18 +609,18 @@ HybridDynBlockSmoother(shared_ptr<DynamicBlockHybridMatrix<TSCAL>>  A,
 
       if ( anyMEx )
       {
-        cout << " BLOCK " << kBlock << " -> EX " << cntEx << endl;
+        // cout << " BLOCK " << kBlock << " -> EX " << cntEx << endl;
         _exBlockNums[cntEx++] = kBlock;
       }
       else if ( anyMFree )
       {
-        cout << " BLOCK " << kBlock << " -> LOC " << cntLoc << endl;
+        // cout << " BLOCK " << kBlock << " -> LOC " << cntLoc << endl;
         _locBlockNums[cntLoc++] = kBlock;
       }
-      else
-      {
-        cout << " BLOCK " << kBlock << "  -> DIRI/G! " << endl;
-      }
+      // else
+      // {
+      //   cout << " BLOCK " << kBlock << "  -> DIRI/G! " << endl;
+      // }
     }
 
     _locBlockNums.SetSize(cntLoc);
@@ -645,10 +645,10 @@ HybridDynBlockSmoother(shared_ptr<DynamicBlockHybridMatrix<TSCAL>>  A,
     //   if (A->GetDynSpM()->Height() < 200)
     //     A->GetDynSpG()->PrintTo(cout);
 
-    cout << " HYBRID-DYN block-splitting: " << numBlocks << " blocks, " << endl;
-    cout << "    " << _locBlockNums.Size() << " local -> split @ " << _splitInd << endl;
-    cout << "    " << _exBlockNums.Size()  << " ex! " << endl;
-    cout << "    total free = " << cntFree << endl;
+    // cout << " HYBRID-DYN block-splitting: " << numBlocks << " blocks, " << endl;
+    // cout << "    " << _locBlockNums.Size() << " local -> split @ " << _splitInd << endl;
+    // cout << "    " << _exBlockNums.Size()  << " ex! " << endl;
+    // cout << "    total free = " << cntFree << endl;
 
     auto modDiag = CalcScalModDiag(freeDofs);
 
@@ -664,16 +664,16 @@ HybridDynBlockSmoother(shared_ptr<DynamicBlockHybridMatrix<TSCAL>>  A,
 
     _locSmoother = make_shared<DynBlockSmoother<TSCAL>>(A->GetDynSpM(), modDiag, masterAndFree, uRel);
 
-    cout << " _locSmoother->GetAMatrix()->Height() = " << _locSmoother->GetAMatrix()->Height() << endl;
-    cout << " M->Height() = " << A->GetDynSpM()->Height() << endl;
+    // cout << " _locSmoother->GetAMatrix()->Height() = " << _locSmoother->GetAMatrix()->Height() << endl;
+    // cout << " M->Height() = " << A->GetDynSpM()->Height() << endl;
 
-    if (cntLoc > 0)
-    {
-      NgMPI_Comm dummyComm;
-      cout << " TEST _locSmoother" << endl;
-      TestSmoother(_locSmoother, dummyComm, "HYBRID-DYN smoother, _locSmoother");
-      cout << " TEST _locSmoother" << endl;
-    }
+    // if (cntLoc > 0)
+    // {
+    //   NgMPI_Comm dummyComm;
+    //   cout << " TEST _locSmoother" << endl;
+    //   TestSmoother(_locSmoother, dummyComm, "HYBRID-DYN smoother, _locSmoother");
+    //   cout << " TEST _locSmoother" << endl;
+    // }
   }
   else
   {

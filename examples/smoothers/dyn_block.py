@@ -37,19 +37,19 @@ if MPI.COMM_WORLD.rank == 0:
     print(f"#coupling DOFS = {globCoupling}")
 blocks = MakeFacetBlocks(V, V.FreeDofs(True))
 
-# convert sparse-matrix to dyn-block format (graph compression)
-dynSPA = NgsAMG.ConvertDynBlock(a.mat)
-
-TestSPMV(a.mat, "assembled SparseMatrix")
-TestSPMV(dynSPA, "assembled SparseMatrix")
 
 # normal block-GS smoothers
 if MPI.COMM_WORLD.size == 1:
     bgs = a.mat.CreateBlockSmoother(blocks)
 hybBGS = NgsAMG.CreateHybridBlockGSS(mat=a.mat,blocks=blocks)
 
-# dyn-block smoother - create either with a.mat or dynSPA (creates/converts to DynBlockMatrix in background)
-dynSM = NgsAMG.CreateDynBlockSmoother(dynSPA, V.FreeDofs(True)) 
+# dyn-block smoother - create either with a.mat or dynSPA
+# creates/converts a.mat to DynBlockMatrix in background
+dynSM = NgsAMG.CreateDynBlockSmoother(a.mat, V.FreeDofs(True)) 
+
+TestSPMV(a.mat, "assembled SparseMatrix")
+TestSPMV(dynSM.GetMatrix(), "NgsAMG Dyn-Block matrix")
+
 
 if MPI.COMM_WORLD.size == 1:
     TestSmoother(bgs,    a.mat, True, "NgSolve-Block-GS")
