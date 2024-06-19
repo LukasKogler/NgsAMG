@@ -1,5 +1,5 @@
 [build-system]
-requires = ["scikit-build-core>=0.3.3", "pybind11_stubgen", "cmake>=3.26", "netgen-mesher", "ngsolve>=6.2.2403.post68.dev0", "mkl-devel", "mpi4py"]
+requires = ["scikit-build-core>=0.3.3", "pybind11_stubgen", "cmake>=3.26", "netgen-mesher", "ngsolve>=6.2.2403.post68.dev0", "mpi4py"]
 build-backend = "scikit_build_core.build"
 # do not set these, otherwise it will install netgen/ngsolve without MPI which breaks the build
 #requires = ["scikit-build-core>=0.3.3", "pybind11", "pybind11_stubgen", "cmake>=3.26", "netgen-mesher", "ngsolve"]
