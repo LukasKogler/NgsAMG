@@ -263,9 +263,9 @@ void ExportSmoothers (py::module & m)
   py::arg("blocks"),
   py::arg("NG_MPI_overlap") = false,
   py::arg("NG_MPI_thread") = false,
-  py::arg("shm") = true,
+  py::arg("shm") = false,
   py::arg("sl2") = true,
-  py::arg("bs2") = false,
+  py::arg("bs2") = true,
   py::arg("pinv") = false,
   py::arg("blocks_no") = false,
   py::arg("symm") = false,
@@ -364,11 +364,8 @@ void ExportSmoothers (py::module & m)
   {
     shared_ptr<BaseSmoother> sm = nullptr;
 
-    cout << " A = " << A << endl;
-
     if (auto dynSPA = dynamic_pointer_cast<DynBlockSparseMatrix<double>>(A))
     {
-      cout << " dynSPA = " << dynSPA << endl;
       sm = make_shared<DynBlockSmoother<double>>(dynSPA, freedofs);
     }
     else if (auto sparseA = dynamic_pointer_cast<SparseMatrix<double>>(A))

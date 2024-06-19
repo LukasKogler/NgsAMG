@@ -63,7 +63,7 @@ computePW(FlatMatrix<double>        V,
   // # of linearly independent vectors
   size_t m = nPres;
 
-  double const tol = 1e-3;
+  double const tol = 1e-8;
 
   FlatVector<double> pCol(n, lh);
   for (auto l : Range(nPres, k))

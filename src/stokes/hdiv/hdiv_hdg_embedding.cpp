@@ -1,9 +1,11 @@
 #include "hdiv_hdg_embedding.hpp"
+#include "utils.hpp"
 
 #include <hdivlofe.hpp> // dummy HDIV-FEs
 #include <hdivhofe.hpp>
 #include <fespace.hpp>
 #include <compressedfespace.hpp>
+#include <tangentialfacetfespace.hpp>
 
 namespace amg
 {
@@ -612,7 +614,7 @@ iterateHDivP1ElementDOFsWithOrder(int const facetPos, int const numFacets, TLAM 
 template<int DIM, int ORDER, class TLAM>
 INLINE
 int
-iterateTangFacetDOFsWithOrder(NodeId nodeId, int p, FlatArray<int> dNums, TLAM lam)
+iterateTangFacetDOFsWithOrder(NodeId nodeId, int p, int effectiveFacetP, FlatArray<int> dNums, TLAM lam)
 {
   // unused, compressed, definedon, etc.
   if (dNums.Size() == 0)
@@ -650,9 +652,7 @@ iterateTangFacetDOFsWithOrder(NodeId nodeId, int p, FlatArray<int> dNums, TLAM l
     if constexpr(DIM == 3)
     {
       constexpr int P1_OFF_C0 = 2;
-      
-      // int const P1_OFF_C1 = P1_OFF_C0 + 2 * p;
-      int const P1_OFF_C1 = 2*(1+p); // = 2 + 2*p
+      int const P1_OFF_C1 = P1_OFF_C0 + 2 * effectiveFacetP; // = 2 + 2*p (or 2 + 2 * (p-1) with highest_order_dc)
 
       callLam(P1_OFF_C0,     1);
       callLam(P1_OFF_C0 + 1, 1);
@@ -688,6 +688,8 @@ calcFacetConvertMat (MeshAccess         const &MA,
                      LocalHeap                &lh)
 {
   HeapReset hr(lh);
+
+  // cout << " calcFacetConvertMat, facetNr = " << facetNr << endl;
 
   constexpr int DIM = AUX_FE::DIM;
 
@@ -732,6 +734,7 @@ calcFacetConvertMat (MeshAccess         const &MA,
 
   Iterate<NSPACES>([&](auto i)
   {
+    // cout << " fesND[" << int(i.value) << "] = " << fesND[i] << endl;
     trialShape[i].AssignMemory(fesND[i], DIM, lh);
     testShape[i].AssignMemory(fesND[i], DIM, lh);
     fesFes[i].AssignMemory(fesND[i], fesND[i], lh);
@@ -853,22 +856,22 @@ FindSpaces()
 {
   bool const useTFIfFound = (_auxSpace != RTZ);
 
-  cout << "FindSpaces, _auxSpace = " << _auxSpace << endl;
+  // cout << "FindSpaces, _auxSpace = " << _auxSpace << endl;
   _fes = _stokesPre.GetBilinearForm()->GetFESpace();
 
   std::function<bool(int, IntRange, shared_ptr<FESpace>, shared_ptr<FESpace>)> checkSpace(
     [&](int idx, IntRange range, shared_ptr<FESpace> aSpace, shared_ptr<FESpace> setSpace) -> bool
       {
-        cout << " checkSpace " << idx << " range " << range << " space " << aSpace << " type " << typeid(*aSpace).name() << endl;
+        // cout << " checkSpace " << idx << " range " << range << " space " << aSpace << " type " << typeid(*aSpace).name() << endl;
         if (auto hDivSpace = dynamic_pointer_cast<HDivHighOrderFESpace>(aSpace))
         {
           _hDivSpace = ( setSpace != nullptr ) ? setSpace : hDivSpace;
           _hDivIdx   = idx;
           _hDivRange = range;
 
-          cout << " _hDivSpace = " << _hDivSpace << endl;
-          cout << " _hDivIdx = " << _hDivIdx << endl;
-          cout << " _hDivRange = " << _hDivRange << endl;
+          // cout << " _hDivSpace = " << _hDivSpace << endl;
+          // cout << " _hDivIdx = " << _hDivIdx << endl;
+          // cout << " _hDivRange = " << _hDivRange << endl;
 
           return true;
         }
@@ -879,9 +882,9 @@ FindSpaces()
             _vFSpace = ( setSpace != nullptr ) ? setSpace : tFSpace;
             _vFIdx   = idx;
             _vFRange = range;
-            cout << " _vFSpace = " << _vFSpace << endl;
-            cout << " _vFIdx = " << _vFIdx << endl;
-            cout << " _vFRange = " << _vFRange << endl;
+            // cout << " _vFSpace = " << _vFSpace << endl;
+            // cout << " _vFIdx = " << _vFIdx << endl;
+            // cout << " _vFRange = " << _vFRange << endl;
             return true;
           }
           else
@@ -905,13 +908,13 @@ FindSpaces()
     _vFIdx   = -1;
     _vFRange = IntRange(0,0);
 
-    std::cout << "HDivHDGEmbedding::FindSpaces, SINGLE HDIV!! " << std::endl;
+    // std::cout << "HDivHDGEmbedding::FindSpaces, SINGLE HDIV!! " << std::endl;
   }
   else
   {
     int foundSpaces = 0;
 
-    cout << " _fes = " << typeid(*_fes).name() << endl;
+    // cout << " _fes = " << typeid(*_fes).name() << endl;
 
     if (auto compFES = dynamic_pointer_cast<CompoundFESpace>(_fes))
     {
@@ -925,7 +928,7 @@ FindSpaces()
       }
     }
 
-    std::cout << "HDivHDGEmbedding::FindSpaces, found " << foundSpaces << " spaces !! " << std::endl;
+    // std::cout << "HDivHDGEmbedding::FindSpaces, found " << foundSpaces << " spaces !! " << std::endl;
   }
 
   if ( ( GetTangFacetFESpace() == nullptr ) && (_auxSpace != RTZ) )
@@ -1283,10 +1286,10 @@ CreateDOFEmbeddingImpl(BlockTM  const &fMesh,
 
       if (haveTangFacet)
       {
-        auto const & tangFacetFES = *_vFSpace;
+        auto const &tangFacetFES = *my_dynamic_pointer_cast<TangentialFacetFESpace>(_vFSpace, "FACET-FES");
 
         tangFacetFES.GetDofNrs(volEId,  allTangFacetDOFs);
-        tangFacetFES.GetDofNrs(facetId, tangFacetDOFs);
+        tangFacetFES.FESpace::GetDofNrs(facetId, tangFacetDOFs);
 
         // cout << " allTangFacetDOFs = "; prow(allTangFacetDOFs); cout << endl;
         // cout << " tangFacetDOFs = "; prow(tangFacetDOFs); cout << endl;
@@ -1295,10 +1298,15 @@ CreateDOFEmbeddingImpl(BlockTM  const &fMesh,
 
         embRowsTF.SetSize0();
 
+        int const tFOrder       = tangFacetFES.FESpace::GetOrder();
+        int const effFacetOrder = tangFacetFES.UsesHighestOrderDiscontinuous() ? tFOrder - 1 : tFOrder;
+
         // cout << " iterateTangFacetDOFsWithOrder " << endl;
+        // cout << " FACETFE::TF_ORDER = " << FACETFE::TF_ORDER << endl;
         nUsedTangFacet = iterateTangFacetDOFsWithOrder<FACETFE::DIM, FACETFE::TF_ORDER>
                           (facetId,
-                           tangFacetFES.GetOrder(),
+                           tFOrder,
+                           effFacetOrder,
                            tangFacetDOFs, [&](auto j, auto dof, auto p)
                            {
                             // cout << j << " " << dof << " " << p << ", offset " << _vFRange.First() << ", pos " << allTangFacetDOFs.Pos(dof) << endl;
@@ -1311,10 +1319,9 @@ CreateDOFEmbeddingImpl(BlockTM  const &fMesh,
                              tangFacetShapePos.Append(allTangFacetDOFs.Pos(dof));
                            });
 
+        // cout << " nDOFTangFacet = " << allTangFacetDOFs.Size() << endl;
         // cout << " nUsedTangFacet = " << nUsedTangFacet << endl;
-
         // cout << "   tangFacetShapePos= "; prow(tangFacetShapePos); cout << endl;
-
         // cout << " embRowsTF after TG: "; prow(embRowsTF); cout << endl;
       }
 

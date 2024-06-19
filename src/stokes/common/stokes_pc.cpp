@@ -501,6 +501,7 @@ ProduceReducedTable(int nRows,
     }
     else {
       auto [data, dps] = generateData(row);
+      // cout << " ProduceReducedTable, localTransformData for " << row << std::endl;
       localTransformData(data, out[n_loc++]);
     }
   }
@@ -590,19 +591,19 @@ BaseStokesAMGPrecond :: CalcFacetLoops (BlockTM const &blockTM, BitArray const &
                             makeFacetLoop2D(fnr, auxInfo, ma, isFacetFree, scratch_facets, loop_facets) :
                             makeFacetLoop3D(fnr, auxInfo, ma, isFacetFree, scratch_facets, loop_facets);
 
-    if (dps.Size())
-    {
-      cout << " produce EX-Loop, PSNum " << PSNum << endl;
-      cout << "   loop_facets: "; prow2(loop_facets); cout << endl;
-    }
+    // if (dps.Size())
+    // {
+    //   cout << " produce EX-Loop, PSNum " << PSNum << endl;
+    //   cout << "   loop_facets: "; prow2(loop_facets); cout << endl;
+    // }
 
     return make_tuple(loop_facets, dps);
   };
 
   auto encodeLoop = [&](FlatArray<int> facetLoop, FlatArray<IVec<4, int>> tupLoop)
   {
-    cout << " encodeLoop sizes " << facetLoop.Size() << " " << tupLoop.Size() << endl;
-    cout << "  encode f-loop "; prow(facetLoop); cout << endl;
+    // cout << " encodeLoop sizes " << facetLoop.Size() << " " << tupLoop.Size() << endl;
+    // cout << "  encode f-loop "; prow(facetLoop); cout << endl;
     for (auto j : Range(facetLoop))
     {
       auto fnr = facetLoop[j];
@@ -616,8 +617,8 @@ BaseStokesAMGPrecond :: CalcFacetLoops (BlockTM const &blockTM, BitArray const &
       auto [eq0, lv0] = blockTM.template MapENodeToEQLNR<NT_VERTEX>(edge.v[0]);
       auto [eq1, lv1] = blockTM.template MapENodeToEQLNR<NT_VERTEX>(edge.v[1]);
 
-      cout << "    facet " << fnr << " -> EDGE " << edge << " -> CODED "
-           << eqc_h.GetEQCID(eq0) << " " << lv0 << " " << eqc_h.GetEQCID(eq1) << " " << lv1 << endl;
+      // cout << "    facet " << fnr << " -> EDGE " << edge << " -> CODED "
+      //      << eqc_h.GetEQCID(eq0) << " " << lv0 << " " << eqc_h.GetEQCID(eq1) << " " << lv1 << endl;
 
       tupLoop[j] = IVec<4, int>({ eqc_h.GetEQCID(eq0), lv0, eqc_h.GetEQCID(eq1), lv1 });
     }
@@ -627,21 +628,21 @@ BaseStokesAMGPrecond :: CalcFacetLoops (BlockTM const &blockTM, BitArray const &
   {
     Array<IVec<4, int>> out;
 
-    cout << " reduceLoops, in_data: " << endl << in_data << endl;
+    // cout << " reduceLoops, in_data: " << endl << in_data << endl;
 
     bool nonEmpty = linearizeReductionData(in_data, out);
 
-    cout << " -> linearized: "; prow(out); cout << endl;
+    // cout << " -> linearized: "; prow(out); cout << endl;
 
     if (nonEmpty) {
       auto nChunks = sortTup4Loop(out, lh);
 
-      cout << " nChunks = " << nChunks << endl;
-      cout << " -> SORTED: "; prow(out); cout << endl;
+      // cout << " nChunks = " << nChunks << endl;
+      // cout << " -> SORTED: "; prow(out); cout << endl;
 
       if (nChunks > 1)
       {
-        throw Exception(weirdDefonException);
+        throw Exception(weirdDefonException + " - CASE A");
       }
     }
 
@@ -733,7 +734,7 @@ BaseStokesAMGPrecond :: CalcFacetLoops (BlockTM const &blockTM, BitArray const &
     int nChunks = SortAndOrientLoop(edgeLoop, lh, flip, orient);
 
     if (nChunks > 1)
-      { throw Exception(weirdDefonException); }
+      { throw Exception(weirdDefonException + " - case B"); }
   };
 
 

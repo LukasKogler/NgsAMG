@@ -497,12 +497,12 @@ Finalize (SparseMatrix<TSCAL> const &A)
 
   tTemp.Stop();
 
-  cout << " Convertex to DynBlockSparseMatrix " << endl;
-  cout << "   compression vec-rows : " << nRowsScal << " -> " << nRows << endl;
-  cout << "   compression vec-cols : " << GetNumScalCols() << " -> " << GetNumBlockCols() << endl;
-  cout << "   compression mat-rows : " << nRowsScal << " -> " << _numRowBlocks << endl;
-  cout << "   compression RIS      : " << A.AsVector().Size() << " -> " << _colOffsets[_numRowBlocks] << endl;
-  cout << "   time to convert      : " << tTemp.GetTime() << endl;
+  // cout << " Convertex to DynBlockSparseMatrix " << endl;
+  // cout << "   compression vec-rows : " << nRowsScal << " -> " << nRows << endl;
+  // cout << "   compression vec-cols : " << GetNumScalCols() << " -> " << GetNumBlockCols() << endl;
+  // cout << "   compression mat-rows : " << nRowsScal << " -> " << _numRowBlocks << endl;
+  // cout << "   compression RIS      : " << A.AsVector().Size() << " -> " << _colOffsets[_numRowBlocks] << endl;
+  // cout << "   time to convert      : " << tTemp.GetTime() << endl;
 } // DynBlockSparseMatrix::Finalize
 
 

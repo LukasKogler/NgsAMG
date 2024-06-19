@@ -138,8 +138,6 @@ void ExportUtils (py::module &m)
 
     auto dynA = ConvertToDynSPM(*locMat);
 
-    cout << " -> dynA = " << dynA << endl;
-
     return WrapParallelMatrix(dynA, rowUD, colUD, opType);
   }, py::arg("mat"));
 

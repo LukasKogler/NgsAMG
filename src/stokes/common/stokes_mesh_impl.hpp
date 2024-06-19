@@ -239,9 +239,9 @@ UniversalDofs const& StokesMesh<T...> :: GetDofedEdgeUDofs (int BS) const
 
     size_t const nDE = dof2e.Size();
 
-    cout << " this " << this << endl;
-    cout << " GetDofedEdgeUDofs, comm size = " << this->GetEQCHierarchy()->GetCommunicator().Size() << endl;
-    cout << " EQCH " << *this->GetEQCHierarchy() << endl;
+    // cout << " this " << this << endl;
+    // cout << " GetDofedEdgeUDofs, comm size = " << this->GetEQCHierarchy()->GetCommunicator().Size() << endl;
+    // cout << " EQCH " << *this->GetEQCHierarchy() << endl;
 
     if (this->GetEQCHierarchy()->GetCommunicator().Size() < 2)
     {

@@ -969,7 +969,7 @@ BuildPrimarySpaceProlongation (BaseAMGFactory::LevelCapsule const &baseFCap,
 
       for (unsigned numP = 0; numP < fPres.GetNPreserved(); numP++)
       {
-        cout << "  check pV " << numP << endl;
+        cout << "  check AGG " << agg_nr << ", pres-vec " << numP << ", energy + diff(pres-vec,facet-prol*c-pres-vec) " << endl;
 
         auto pV  = fPres.GetVector(numP).FVDouble();
         auto cPV = cPres.GetVector(numP).FVDouble();

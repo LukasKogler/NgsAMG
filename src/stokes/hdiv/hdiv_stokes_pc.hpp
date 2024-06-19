@@ -39,7 +39,7 @@ public:
       TFACTORY::Options::SetFromFlags(flags, prefix);
       BaseStokesAMGPrecond::Options::SetFromFlags(fes, finest_mat, flags, prefix);
 
-      auto auxSpaceStr = flags.GetStringFlag("presVecs", "P0");
+      auto auxSpaceStr = flags.GetStringFlag("ngs_amg_pres_vecs", "P0");
 
       if (auxSpaceStr == "RTZ")
       {
