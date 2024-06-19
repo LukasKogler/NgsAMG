@@ -1382,6 +1382,7 @@ SemiAuxSProlMap (shared_ptr<ProlMap<TM>> pw_step,
       /**
        * Only updates local rows! MPI is TODO, we need "full" rows of AP.
        */
+      if ( neqcs > 0 )
       FM.template ApplyEQ2<NT_VERTEX>(Range(0, 1), [&](auto eqc, auto nodes)
       {
         for (auto fvnr : nodes)

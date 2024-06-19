@@ -235,7 +235,7 @@ def Solve(a, f, c, ms = 100, tol=1e-6, printIts=True, doTest=False, needsAssembl
             print("---")
 
         if printTimers:
-            minTime = 0.05 * (ts + tsup)
+            minTime = 0.05 * (ts.time + tsup.time)
             sigTimers = []
             for timer in ngs.Timers():
                 tt = timer["time"]

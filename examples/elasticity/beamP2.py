@@ -7,8 +7,6 @@ import NgsAMG
 from amg_utils import *
 
 
-# !! EXPERIMENTAL !!
-
 # beam of numEls_L x numEls_T x numEls_T elements,
 #   length    is  numElsL
 #   thickness is  1/N
@@ -54,14 +52,13 @@ pc_opts["ngs_amg_prol_type"] =  ["piecewise", "aux_smoothed", "semi_aux_smoothed
 pc_opts["ngs_amg_sp_omega"]  =  0.7
 pc_opts["ngs_amg_sp_max_per_row"] = 6
 
-# improve smoothed prol [[ experimental ]]
+# improve smoothed prol [[ experimental ]] (not as good in parallel)
 pc_opts["ngs_amg_sp_improve_its"] = 2
 
 
 # use block-smoother
 pc_opts["ngs_amg_sm_type"] =  "bgs"
 pc_opts["ngs_amg_sm_steps"] = 1
-
 
 # output/logging
 logLevel = ["none", "basic", "normal", "extra"][2]
@@ -74,7 +71,7 @@ pc_opts["ngs_amg_do_test"] = True         # perform preconditioner-test at end o
 # integration of nodalP2 into AMG
 if nodalP2:
     if True:
-        # special nodalP2-embedding  [[ EXPERIMENTAL ]]
+        # !! EXPERIMENTAL !! (DO NOT run in parallel)
         pc_opts["ngs_amg_lo"]           = False # per default, picks out low-order DOFs
         pc_opts["ngs_amg_dof_ordering"] = "p2Emb"
         pc_opts["ngs_amg_smooth_after_emb"] = False
@@ -90,7 +87,7 @@ c = NgsAMG.elast_3d(a, **pc_opts)
 gfu = Solve(a, f, c, ms=150, tol=1e-12, threading=False)
 
 # visualization for nodalp2 does not work correctly, draw with normal H1
-VV = H1(mesh, order=order, dim=mesh.ngmesh.dim)
+VV = H1(mesh, order=2, dim=mesh.ngmesh.dim)
 gfVis = GridFunction(VV)
 gfVis.Set(gfu)
 
