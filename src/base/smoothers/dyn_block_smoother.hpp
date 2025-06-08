@@ -73,11 +73,7 @@ protected:
   INLINE void
   IterateBlocks(FlatArray<unsigned> blockNums, TLAM lam) const;
 
-  INLINE void
-  updateBlockRHS (unsigned          const &kBlock,
-                  FlatVector<TSCAL>       &x,
-                  FlatVector<TSCAL> const &b) const;
-
+ 
   template<SMOOTHING_DIRECTION DIR>
   INLINE void
   updateBlocksRHS (FlatArray<unsigned>      blockNums,

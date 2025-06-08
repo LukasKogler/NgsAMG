@@ -255,12 +255,12 @@ MapLevel (FlatArray<shared_ptr<BaseDOFMapStep>> dof_steps,
   if (O.build_div_mats)
   {
     // note: also sets up range-range-pardofs
-    if (fcap.div_mat == nullptr)
+    if (fcap.divSparseMat == nullptr)
       { BuildDivMat(fcap); }
 
     if ( ccap.mat != nullptr ) // check if contracted out
     {
-      if (ccap.div_mat == nullptr)
+      if (ccap.divSparseMat == nullptr)
         { BuildDivMat(ccap); }
     }
   }
@@ -586,6 +586,18 @@ StokesAMGFactory<TMESH, ENERGY> :: RangeProlMap (shared_ptr<StokesCoarseMap<TMES
 } // StokesAMGFactory::RangeProlMap
 
 
+template<class TMESH, class ENERGY>
+shared_ptr<BaseDOFMapStep>
+StokesAMGFactory<TMESH, ENERGY>::
+BuildPressureProlongation(shared_ptr<StokesCoarseMap<TMESH>> cMap,
+                          shared_ptr<StokesLevelCapsule> fCap,
+                          shared_ptr<StokesLevelCapsule> cCap)
+{
+  auto fMesh = static_pointer_cast<TMESH>(cMap->GetMesh());
+  auto cMesh = static_pointer_cast<TMESH>(cMap->GetMappedMesh());
+
+  return std::make_shared<ScalarPWProl>(fMesh, cMesh, *cMap);
+} // StokesAMGFactory::BuildPressureProlongation
 
 
 template<class TMESH, class ENERGY>

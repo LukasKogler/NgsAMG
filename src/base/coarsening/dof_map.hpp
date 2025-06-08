@@ -28,7 +28,7 @@ protected:
 
 public:
   BaseDOFMapStep(UniversalDofs originDofs,
-                  UniversalDofs mappedDofs);
+                 UniversalDofs mappedDofs);
 
   BaseDOFMapStep()
     : BaseDOFMapStep(UniversalDofs(),
@@ -412,6 +412,174 @@ public:
   virtual int GetBlockSize ()       const override;
   virtual int GetMappedBlockSize () const override;
 };
+
+
+class ScalarPWProl : public BaseDOFMapStep
+{
+public:
+  template<class TMESH, class TMAP>
+  ScalarPWProl(TMESH const &fMesh,
+               TMESH const &cMesh,
+               TMAP  const &cMap)
+  : BaseDOFMapStep()
+  {
+    size_t const fNV = fMesh.template GetNN<NT_VERTEX>();
+    size_t const cNV = cMesh.template GetNN<NT_VERTEX>();
+
+    Array<int> fV2S(fNV);
+
+    fNSV = 0;
+    for (auto k : Range(fV2S))
+    {
+      fV2S[k] = fMesh.IsGhostVert(k) ? -1 : fNSV++;
+    }
+
+    TableCreator<int> cSA(cNSV);
+
+    auto vAggs = cMap.template GetMapC2F<NT_VERTEX>();
+
+    for (; !cSA.Done(); cSA++ )
+    {
+      cNSV = 0;
+
+      for (auto k : Range(cNV))
+      {
+        if ( !cMesh.IsGhostVert(k) )
+        {
+          auto const cSVNum = cNSV++;
+
+          for (auto fVNr : vAggs)
+          {
+            auto const fSVNr = fV2S[fVNr];
+
+            if ( fSVNr != -1 )
+            {
+              cSA.Add(cSVNum, fSVNr);
+            }
+          }
+        }
+      }
+    }
+
+    solidAggs = cSA.MoveTable();
+
+    SetUDofs(UniversalDofs(fNSV, 1));
+    SetMappedUDofs(UniversalDofs(cNSV, 1));
+  }
+
+  ~ScalarPWProl() = default;
+
+  int GetBlockSize ()       const override { return 1; }
+  int GetMappedBlockSize () const override { return 1; }
+
+  void TransferF2C (BaseVector const* x_fine, BaseVector *x_coarse) const override
+  {
+    auto cVec = x_coarse->FVDouble();
+    auto fVec = x_fine->FVDouble();
+
+    // strictly speaking, this is needed
+    cVec = 0.0;
+
+    for (auto cSVNr : Range(cNSV))
+    {
+      auto solidAgg = solidAggs[cSVNr];
+
+      double cVal = 0.0;
+
+      for (auto fSVNr : solidAgg)
+      {
+        cVal += fVec[fSVNr];
+      }
+
+      cVec[cSVNr] = cVal;
+    }
+  }
+
+
+  void AddF2C (double fac, BaseVector const* x_fine, BaseVector *x_coarse) const override
+  {
+    auto cVec = x_coarse->FVDouble();
+    auto fVec = x_fine->FVDouble();
+
+    for (auto cSVNr : Range(cNSV))
+    {
+      auto solidAgg = solidAggs[cSVNr];
+
+      double cVal = 0.0;
+
+      for (auto fSVNr : solidAgg)
+      {
+        cVal += fVec[fSVNr];
+      }
+
+      cVec[cSVNr] += fac * cVal;
+    }
+  }
+
+  void TransferC2F (BaseVector *x_fine, BaseVector const* x_coarse) const override
+  {
+    auto cVec = x_coarse->FVDouble();
+    auto fVec = x_fine->FVDouble();
+
+    // strictly speaking, this is needed
+    fVec = 0.0;
+
+    for (auto cSVNr : Range(cNSV))
+    {
+      auto solidAgg = solidAggs[cSVNr];
+
+      auto const cVal = cVec[cSVNr];
+
+      for (auto fSVNr : solidAgg)
+      {
+        fVec[fSVNr] = cVal;
+      }
+    }
+  }
+
+
+  void AddC2F (double fac, BaseVector *x_fine, BaseVector const* x_coarse) const override
+  {
+    auto cVec = x_coarse->FVDouble();
+    auto fVec = x_fine->FVDouble();
+
+    for (auto cSVNr : Range(cNSV))
+    {
+      auto solidAgg = solidAggs[cSVNr];
+
+      auto const cVal = cVec[cSVNr];
+
+      for (auto fSVNr : solidAgg)
+      {
+        fVec[fSVNr] += fac * cVal;
+      }
+    }
+  }
+
+  virtual shared_ptr<BaseMatrix> AssembleMatrix (shared_ptr<BaseMatrix> mat) const override
+  {
+    throw Exception("ScalarPWProl::AssembleMatrix not implemented!");
+    return nullptr;
+  }
+
+  void PrintTo (std::ostream & os, string prefix) const override
+  {
+    os << prefix << "ScalarPWProl " << fNSV << " -> " << cNSV << std::endl;
+    os << prefix << "  solidAggs:" << std::endl;
+    for (auto k : Range(solidAggs))
+    {
+      os << prefix << "    " << k << ": "; prow(solidAggs[k]); os << std::endl;
+    }
+  }
+
+private:
+  size_t fNSV;
+  size_t cNSV;
+
+  Table<int> solidAggs;
+}; // class ScalarPWProl
+
+
 
 shared_ptr<BaseDOFMapStep> MakeSingleStep2 (FlatArray<shared_ptr<BaseDOFMapStep>> sub_steps);
 

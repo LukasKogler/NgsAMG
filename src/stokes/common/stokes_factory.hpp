@@ -25,8 +25,25 @@ struct BaseStokesLevelCapsule: public BaseAMGFactory::LevelCapsule
   shared_ptr<BaseSparseMatrix>     curl_mat;          // discrete curl matrix on this level
   shared_ptr<BaseSparseMatrix>     curl_mat_T;        // discrete curl matrix transposed on this level
   UniversalDofs                    rr_uDofs;          // udofs for range of range (so the l2-like space)
-  shared_ptr<BaseSparseMatrix>     div_mat;           // discrete divergence matrix (atm. for debugging purposes)
+  shared_ptr<BaseSparseMatrix>     divSparseMat;      // discrete divergence matrix (atm. for debugging purposes)
+  shared_ptr<BaseSparseMatrix>     divSparseMatT;     // discrete (trans) divergence matrix (atm. for debugging purposes)
   shared_ptr<BaseMatrix>           AC;                // range-mat * curl-mat (opt. for hiptmair)
+
+  /**
+   * In div-div penalty mode, we work with only velocities, in that case
+   *      - BaseAMGFactory::LevelCapsule::mat == primaryMat
+   *      - divMat == nulptr.
+   * In pressure-mode, we work with velocity + pressure and a saddle-point
+   * block-matrix instead of div-div penalty. Then
+   *      - primaryMat is the velocity-matrix
+   *      - divMat/divMatT are the divergence-matrix + its transpose
+   *      - BaseAMGFactory::LevelCapsule::mat is
+   *             primaryMat  divMatT
+   *             divMat       None
+   */
+  shared_ptr<BaseMatrix>           primaryMat;
+  shared_ptr<BaseMatrix>           divMat;
+  shared_ptr<BaseMatrix>           divMatT;
 
   /**
   * For Stokes, we keep around
@@ -154,6 +171,12 @@ protected:
                                  FlatArray<int>                      emap,
                                  FlatTable<int>                      v_aggs,
                                  TSPM_TM                      const *pA) = 0;
+
+  shared_ptr<SparseMatrix<double>>
+  BuildPressureProlongation(shared_ptr<StokesCoarseMap<TMESH>> cmap,
+                            shared_ptr<StokesLevelCapsule> fcap,
+                            shared_ptr<StokesLevelCapsule> ccap);
+
 public:
   /**
    * Mostly used for setting up coarse levels, but also needs to be called from
