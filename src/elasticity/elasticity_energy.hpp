@@ -66,27 +66,38 @@ public:
     std::tuple<TQ, TQ>
     GetQijQji(TVD const &vdi, TVD const &vdj)
     {
-      double const lambda = vdj.rot_scaling / ( vdi.rot_scaling + vdi.rot_scaling );
-      double const sMid   = sqrt(vdi.rot_scaling * vdj.rot_scaling);
+      // double const lambda = vdj.rot_scaling / ( vdi.rot_scaling + vdi.rot_scaling );
+      // double const sMid   = sqrt(vdi.rot_scaling * vdj.rot_scaling);
+
+      double const sqrti = sqrt(vdi.rot_scaling);
+      double const sqrtj = sqrt(vdj.rot_scaling);
+
+      double const sMid   = sqrti * sqrtj;
+      double const lambda = sqrtj / (sqrti + sqrtj);
 
       Vec<DIM> tij = ( vdj.pos - vdi.pos ); // i -> j
       Vec<DIM> tim =  lambda      * tij;    // i -> mid
       Vec<DIM> tjm = (lambda - 1) * tij;    // j -> mid
 
-      return std::make_tuple(TQ(vdi.rot_scaling / sMid, tim),
-                             TQ(vdj.rot_scaling / sMid, tjm));
+      return std::make_tuple(TQ(vdi.rot_scaling / sMid, vdi.rot_scaling * tim),
+                             TQ(vdj.rot_scaling / sMid, vdj.rot_scaling * tjm));
     }
 
     static INLINE
     TQ
     GetQij(TVD const &vdi, TVD const &vdj)
     {
-      double const lambda = vdj.rot_scaling / ( vdi.rot_scaling + vdi.rot_scaling );
-      double const sMid   = sqrt(vdi.rot_scaling * vdj.rot_scaling);
+      // double const lambda = vdj.rot_scaling / ( vdi.rot_scaling + vdi.rot_scaling );
+      // double const sMid   = sqrt(vdi.rot_scaling * vdj.rot_scaling);
+      double const sqrti = sqrt(vdi.rot_scaling);
+      double const sqrtj = sqrt(vdj.rot_scaling);
+
+      double const sMid   = sqrti * sqrtj;
+      double const lambda = sqrtj / (sqrti + sqrtj);
 
       Vec<DIM, double> tim = lambda * (vdj.pos - vdi.pos); // i -> mid
 
-      return TQ(vdi.rot_scaling / sMid, tim);
+      return TQ(vdi.rot_scaling / sMid, vdi.rot_scaling * tim);
     }
 
     static INLINE
@@ -95,7 +106,7 @@ public:
     {
       Vec<DIM, double> tij = vdj.pos - vdi.pos;
 
-      return TQ(vdi.rot_scaling / vdj.rot_scaling, tij);
+      return TQ(vdi.rot_scaling / vdj.rot_scaling, vdi.rot_scaling * tij);
     }
 
     class TT
@@ -111,6 +122,32 @@ public:
       *     s*t1 -s*t0   0
       */
       public:
+
+      template<class TA>
+      static INLINE void
+      SetSkT(Vec<DIM, double> const &t,
+             TA                     &TT)
+      {
+        static_assert(Height<TA>() == DISPPV, "SetTT mismatch H A");
+        static_assert(Width<TA>()  == ROTPV,  "SetTT mismatch W A");
+
+        if constexpr(DIM == 2)
+        {
+          TT(0, 0) = -t(1);
+          TT(1, 0) =  t(0);
+        }
+        else
+        {
+          TT(0,0) = 0;
+          TT(1,1) = 0;
+          TT(2,2) = 0;
+          TT(1,0) = -(TT(0,1) = t[2]);
+          TT(0,2) = -(TT(2,0) = t[1]);
+          TT(2,1) = -(TT(1,2) = t[0]);
+        }
+
+      }
+
 
       template<class TA, class TB>
       static INLINE void
@@ -409,6 +446,60 @@ public:
 
     };
 
+
+    template<class TMU>
+    INLINE void
+    SetQ(double const &alpha, TMU &E) const
+    {
+      /**
+       *  |I  T |
+       *  |0 r*I|
+       */
+      // (I, 0)^T
+      Iterate<DPV>([&](auto ii)
+      {
+        Iterate<DISPPV>([&](auto jj)
+        {
+          if constexpr(ii.value == jj.value)
+          {
+            E(ii.value, jj.value) = alpha; // 1.0;
+          }
+          else
+          {
+            E(ii.value, jj.value) = 0.0;
+          }
+        });
+      });
+
+      // T
+      FlatMat<0, DISPPV, DISPPV, ROTPV,  TMU> T(E); // A and C
+      TT::SetSkT(tang, T);
+
+      // r*I
+      FlatMat<DISPPV, ROTPV, DISPPV, ROTPV,  TMU> RI(E); // A and C
+      Iterate<ROTPV>([&](auto ii)
+      {
+        Iterate<ROTPV>([&](auto jj)
+        {
+          if constexpr(ii == jj)
+          {
+            RI(ii.value, jj.value) = alpha * rs; // rs;
+          }
+          else
+          {
+            RI(ii.value, jj.value) = 0.0;
+          }
+        });
+      });
+    }
+
+    template<class TSCAL>
+    INLINE void
+    SetQ(Mat<DPV, DPV, TSCAL> &E) const
+    {
+      SetQ(1.0, E);
+    }
+
     template<class TSCAL>
     INLINE void
     MQ(Mat<DPV, DPV, TSCAL> &E) const
@@ -435,7 +526,7 @@ public:
 
     template<class TSCAL>
     INLINE void
-    MQ(TSCAL const &scal, TM const &E, TM &E_Q)
+    MQ(TSCAL const &scal, TM const &E, TM &E_Q) const
     {
       E_Q = scal * E;
       MQ(E_Q);
@@ -443,7 +534,7 @@ public:
 
     template<class TSCAL>
     INLINE TM
-    GetMQ(TSCAL const &scal, TM const &E)
+    GetMQ(TSCAL const &scal, TM const &E) const
     {
       TM E_Q;
       MQ(scal, E, E_Q);

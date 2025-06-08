@@ -27,8 +27,6 @@ void BaseAMGFactory::Options::SetFromFlags (const Flags & flags, string prefix)
   enable_multistep.SetFromFlags(flags, prefix + "enable_multistep");
   set_bool(enable_dyn_crs, "enable_dyn_crs");
 
-  check_aux_mats.SetFromFlags(flags, prefix + "check_aux_mats");
-
   set_num(aaf, "aaf");
   set_num(first_aaf, "first_aaf");
   set_num(aaf_scale, "aafaaf_scale");

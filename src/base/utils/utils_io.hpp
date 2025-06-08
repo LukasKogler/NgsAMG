@@ -353,6 +353,71 @@ StructuredPrint(FlatMatrix<Mat<BS, BS, T>> A, std::ostream &os = std::cout)
   os << std::defaultfloat;
 }
 
+
+
+INLINE void
+PrintComponent(int comp, int BS, FlatMatrix<double> mtx)
+{
+  int h = mtx.Height() / BS;
+  int w = mtx.Width() / BS;
+
+  for (auto k : Range(h))
+  {
+    for (auto j : Range(w))
+    {
+      cout << mtx(k*BS+comp, j*BS+comp) << " ";
+    }
+    cout << endl;
+  }
+}
+
+INLINE void
+PrintComponentTM(int comp, FlatMatrix<double> mtx)
+{
+  cout << mtx;
+}
+
+template<int BS>
+INLINE void
+PrintComponentTM(int comp, FlatMatrix<Mat<BS, BS, double>> mtx)
+{
+  int h = mtx.Height();
+  int w = mtx.Width();
+
+  for (auto k : Range(h))
+  {
+    for (auto j : Range(w))
+    {
+      cout << mtx(k, j)(comp, comp) << " ";
+    }
+    cout << endl;
+  }
+}
+
+template<class TI, class TJ>
+INLINE void
+CheckRange (std::string const &tag, TI off, TJ cnt, IntRange bufRange)
+{
+  cout << "checkRange " << tag << ": [" << off << ", " << off + cnt << ") in "
+        << "[" << bufRange.First() << ", " << bufRange.Next() << ")" << endl;
+
+  if ( off < bufRange.First() )
+  {
+    cout << " ERR - off UNDER!" << endl;
+  }
+  if (cnt > 0)
+  {
+    if ( off >= bufRange.Next() )
+    {
+      cout << " ERR - off OVER!" << endl;
+    }
+  }
+  if ( off + cnt > bufRange.Next() )
+  {
+    cout << " ERR - off+cnt OVER!" << endl;
+  }
+}
+
 } // namespace amg
 
 #endif // FILE_UTILS_IO_HPP

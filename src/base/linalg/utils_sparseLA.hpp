@@ -47,6 +47,12 @@ shared_ptr<BaseMatrix> TransposeSPMGeneric (shared_ptr<BaseMatrix> A);
 // remove all entrise < thresh from matrix A (computes sum of vals for block-entries)
 shared_ptr<BaseMatrix> CompressAGeneric(shared_ptr<BaseMatrix> A, double const &thresh = 1e-20);
 
+void
+TestEquivalenceAB(std::string          const &message,
+                  BaseMatrix           const &A,
+                  BaseMatrix           const &B,
+                  shared_ptr<BitArray>        freeDofs = nullptr);
+
 INLINE BaseMatrix const * GetLocalMat(BaseMatrix const *A)
 {
   if (auto par = dynamic_cast<ParallelMatrix const *>(A))
@@ -427,6 +433,9 @@ std::tuple<shared_ptr<BaseMatrix>, // AP
 RestrictMatrixKeepFactor(BaseMatrix const &A,
                          BaseMatrix const &P,
                          BaseMatrix const &PT);
+
+void DoTest (BaseMatrix const &mat, BaseMatrix const &pc, NgMPI_Comm gcomm, string message);
+void DoTest (BaseMatrix const &mat, BaseMatrix const &pc, std::string const &message = "");
 
 } // namespace amg
 

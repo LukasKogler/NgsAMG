@@ -102,8 +102,6 @@ namespace amg
     double aaf_scale = 1;                       // (static crs ratio) scale aaf, e.g if 2:   first_aaf, aaf, 2*aaf, 4*aaf, .. (or aaf, 2*aaf, ...)
     bool enable_dyn_crs = true;                 // use dynamic coarsening ratios
 
-    SpecOpt<bool> check_aux_mats = false;
-
     /** Contract (Re-Distribute) **/
     bool enable_redist = true;                  // allow re-distributing on coarse levels
     bool enable_static_redist = false;          // redist after a fixed coarsening ratio

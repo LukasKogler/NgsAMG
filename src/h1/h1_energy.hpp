@@ -96,6 +96,20 @@ public:
       TMU Q_E_QT = scal * E;
       return Q_E_QT;
     }
+
+    template<class TSCAL>
+    INLINE void
+    SetQ(TSCAL &E) const
+    {
+      E = TSCAL(1.0);
+    }
+
+    template<class TSCAL>
+    INLINE void
+    SetQ(double const &alpha, TSCAL &E) const
+    {
+      E = TSCAL(alpha);
+    }
   };
 
   template<class TSCAL = double>
@@ -158,11 +172,28 @@ public:
     if constexpr(std::is_same<TMU, float>::value ||
                  std::is_same<TMU, double>::value)
     {
-      vd[0] = m;
+      // this is dumb and should be cleaned up...
+      if constexpr(std::is_same<TVD, float>::value ||
+                   std::is_same<TVD, double>::value)
+      {
+        vd = m;
+      }
+      else
+      {
+        vd[0] = m;
+      }
     }
     else
     {
-      vd[0] = m(0,0);
+      if constexpr(std::is_same<TVD, float>::value ||
+                   std::is_same<TVD, double>::value)
+      {
+        vd[0] = m(0,0);
+      }
+      else
+      {
+        vd = m(0,0);
+      }
     }
   }
 

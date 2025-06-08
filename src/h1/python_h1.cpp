@@ -1,4 +1,5 @@
 #include "h1.hpp"
+#include "h1_impl.hpp"
 #include <amg_pc_vertex.hpp>
 
 #include "python_amg.hpp"

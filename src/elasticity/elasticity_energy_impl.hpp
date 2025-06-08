@@ -53,54 +53,64 @@ template <int DIM, class TVD, class TED>
 INLINE void EpsEpsEnergy<DIM, TVD, TED>::CalcQij(const TVD& di, const TVD& dj,
                                                  TM& Qij)
 {
-  Vec<DIM> t = 0.5 * (dj.pos - di.pos);  // i -> j
-  CalcQ(t, Qij, di.rot_scaling, sqrt(di.rot_scaling * dj.rot_scaling));
+  // Vec<DIM> t = 0.5 * (dj.pos - di.pos);  // i -> j
+  // CalcQ(t, Qij, di.rot_scaling, sqrt(di.rot_scaling * dj.rot_scaling));
+  GetQij(di, dj).SetQ(Qij);
 }  // EpsEpsEnergy::CalcQij
 
 template <int DIM, class TVD, class TED>
 INLINE void EpsEpsEnergy<DIM, TVD, TED>::ModQij(const TVD& di, const TVD& dj,
                                                 TM& Qij)
 {
-  Vec<DIM> t = 0.5 * (dj.pos - di.pos);  // i -> j
-  ModQ(t, Qij, di.rot_scaling, sqrt(di.rot_scaling * dj.rot_scaling));
+  // Vec<DIM> t = 0.5 * (dj.pos - di.pos);  // i -> j
+  // ModQ(t, Qij, di.rot_scaling, sqrt(di.rot_scaling * dj.rot_scaling));
+  GetQij(di, dj).SetQ(Qij);
 }  // EpsEpsEnergy::ModQij
 
 template <int DIM, class TVD, class TED>
 INLINE void EpsEpsEnergy<DIM, TVD, TED>::CalcQHh(const TVD& dH, const TVD& dh,
                                                  TM& QHh, double glob_scale)
 {
-  Vec<DIM> t = glob_scale * (dh.pos - dH.pos);  // H -> h
-  CalcQ(t, QHh, dH.rot_scaling, dh.rot_scaling);
+  // Vec<DIM> t = glob_scale * (dh.pos - dH.pos);  // H -> h
+  // CalcQ(t, QHh, dH.rot_scaling, dh.rot_scaling);
+  GetQiToj(dH, dh).SetQ(QHh);
 }  // EpsEpsEnergy::CalcQHh
 
 template <int DIM, class TVD, class TED>
 INLINE void EpsEpsEnergy<DIM, TVD, TED>::ModQHh(const TVD& dH, const TVD& dh,
                                                 TM& QHh, double glob_scale)
 {
-  Vec<DIM> t = glob_scale * (dh.pos - dH.pos);  // H -> h
-  ModQ(t, QHh, dH.rot_scaling, dh.rot_scaling);
+  // Vec<DIM> t = glob_scale * (dh.pos - dH.pos);  // H -> h
+  // ModQ(t, QHh, dH.rot_scaling, dh.rot_scaling);
+  GetQiToj(dH, dh).SetQ(QHh);
 }  // EpsEpsEnergy::ModQHh
 
 template <int DIM, class TVD, class TED>
 INLINE void EpsEpsEnergy<DIM, TVD, TED>::CalcQs(const TVD& di, const TVD& dj,
                                                 TM& Qij, TM& Qji)
 {
-  Vec<DIM> t = 0.5 * (dj.pos - di.pos);  // i -> j
-  const double mid_rot_scaling = sqrt(di.rot_scaling * dj.rot_scaling);
-  CalcQ(t, Qij, di.rot_scaling, mid_rot_scaling);
-  t *= -1;
-  CalcQ(t, Qji, dj.rot_scaling, mid_rot_scaling);
+  // Vec<DIM> t = 0.5 * (dj.pos - di.pos);  // i -> j
+  // const double mid_rot_scaling = sqrt(di.rot_scaling * dj.rot_scaling);
+  // CalcQ(t, Qij, di.rot_scaling, mid_rot_scaling);
+  // t *= -1;
+  // CalcQ(t, Qji, dj.rot_scaling, mid_rot_scaling);
+  auto [TQij, TQji] = GetQijQji(di, dj);
+  TQij.SetQ(Qij);
+  TQji.SetQ(Qji);
 }  // EpsEpsEnergy::CalcQs
 
 template <int DIM, class TVD, class TED>
 INLINE void EpsEpsEnergy<DIM, TVD, TED>::CalcInvQs(const TVD& di, const TVD& dj,
                                                 TM& Qij, TM& Qji)
 {
-  Vec<DIM> t = 0.5 * (dj.pos - di.pos);  // i -> j
-  const double mid_rot_scaling = sqrt(di.rot_scaling * dj.rot_scaling);
-  CalcQ(t, Qji, mid_rot_scaling, dj.rot_scaling); // Qji^{-1} ~ mid -> j 
-  t *= -1;
-  CalcQ(t, Qij, mid_rot_scaling, di.rot_scaling); // Qij^{-1} ~ mid -> i
+  // Vec<DIM> t = 0.5 * (dj.pos - di.pos);  // i -> j
+  // const double mid_rot_scaling = sqrt(di.rot_scaling * dj.rot_scaling);
+  // CalcQ(t, Qji, mid_rot_scaling, dj.rot_scaling); // Qji^{-1} ~ mid -> j 
+  // t *= -1;
+  // CalcQ(t, Qij, mid_rot_scaling, di.rot_scaling); // Qij^{-1} ~ mid -> i
+  auto [TQij, TQji] = GetQijQji(di, dj);
+  TQji.SetQ(Qij);
+  TQij.SetQ(Qji);
 }  // EpsEpsEnergy::CalcQs
 
 template <int DIM, class TVD, class TED>
@@ -174,7 +184,7 @@ INLINE void EpsEpsEnergy<DIM, TVD, TED>::ModQs(const TVD& di, const TVD& dj,
   // t *= -1;
   // ModQ(t, Qji, dj.rot_scaling, mid_rot_scaling);
 
-  /**
+  /** [[ WRONG ]]
    * mid-point is choosen such that Qji = Qij^{-1}
    * This works out to
    *      p_mid = pi + lambda * (pj - pi)
@@ -185,16 +195,32 @@ INLINE void EpsEpsEnergy<DIM, TVD, TED>::ModQs(const TVD& di, const TVD& dj,
    *          = (1 - lambda) * pi + lambda * pj
    */
 
-  double const lambda = dj.rot_scaling / ( di.rot_scaling + di.rot_scaling );
-  const double mid_rot_scaling = sqrt(di.rot_scaling * dj.rot_scaling);
+  /**
+   * mid-point is choosen such that Qji = Qij^{-1}
+   * This works out to
+   *      p_mid = pi + lambda * (pj - pi)
+   * with
+   *      lambda = 1 / (1 + sqrt(scale_i / scale_j) )
+   * or
+   *      lambda = sqrt(scale_j) / ( sqrt(scale_i) + sqrt(scale_j) )
+   * In other words,
+   *    p_mid = scale_i / (scale_i + scale_j) * pi + scale_j * (scale_i + scale_j) * pj
+   *          = (1 - lambda) * pi + lambda * pj
+   */
+  // double const lambda = dj.rot_scaling / ( di.rot_scaling + di.rot_scaling );
+  // const double mid_rot_scaling = sqrt(di.rot_scaling * dj.rot_scaling);
 
-  Vec<DIM> tij = ( dj.pos - di.pos );
+  // Vec<DIM> tij = ( dj.pos - di.pos );
 
-  Vec<DIM> tim = lambda * tij;  // i -> j
-  ModQ(tim, Qij, di.rot_scaling, mid_rot_scaling);
+  // Vec<DIM> tim = lambda * tij;  // i -> j
+  // ModQ(tim, Qij, di.rot_scaling, mid_rot_scaling);
 
-  Vec<DIM> tjm = (lambda - 1) * tij;  // i -> j
-  ModQ(tjm, Qji, dj.rot_scaling, mid_rot_scaling);
+  // Vec<DIM> tjm = (lambda - 1) * tij;  // i -> j, (lambda - 1) flips the tang! 
+  // ModQ(tjm, Qji, dj.rot_scaling, mid_rot_scaling);
+
+  auto [TQij, TQji] = GetQijQji(di, dj);
+  TQij.SetQ(Qij);
+  TQji.SetQ(Qji);
 }  // EpsEpsEnergy::ModQs
 
 template <int DIM, class TVD, class TED>
@@ -218,10 +244,16 @@ EpsEpsEnergy<DIM, TVD, TED>::CalcMPData(const TVD& da, const TVD& db)
    */
 
   TVD o(0);
-  double const lambda = db.rot_scaling / ( da.rot_scaling + db.rot_scaling );
+  // double const lambda = db.rot_scaling / ( da.rot_scaling + db.rot_scaling );
+
+  double const sqrti = sqrt(da.rot_scaling);
+  double const sqrtj = sqrt(db.rot_scaling);
+
+  double const sMid   = sqrti * sqrtj;
+  double const lambda = sqrtj / (sqrti + sqrtj);
 
   o.pos         = (1 - lambda) * da.pos + lambda * db.pos;
-  o.rot_scaling = sqrt(da.rot_scaling * db.rot_scaling);
+  o.rot_scaling = sqrti * sqrtj;
 
   return o;
 }  // EpsEpsEnergy::CalcMPData

@@ -27,9 +27,10 @@
 #include <mis_agg_map.hpp>
 #include <plate_test_agg_map.hpp>
 
+#include <aux_mat.hpp>
+
 namespace amg
 {
-
 /** Options **/
 
 class VertexAMGFactoryOptions : public BaseAMGFactory::Options
@@ -71,12 +72,21 @@ public:
   SpecOpt<bool> improve_avgs = false;
 
   SpecOpt<int> sp_improve_its = 0;
+  SpecOpt<bool> sp_use_roots = true;
+  SpecOpt<bool> sp_use_asb   = false;
+
+  SpecOpt<bool> improve_c_aux_mats = false;
 
   // /** Discard **/
   // int disc_max_bs = 5;
 
   /** for elasticity - scaling of rotations on level 0 **/
   SpecOpt<double> rot_scale = 1.0;
+
+  /** mostly for debugging **/
+  bool use_aux_mat = false;
+  SpecOpt<bool> check_aux_mats = false;
+
 
 public:
 
@@ -121,7 +131,17 @@ public:
     ecw_geom.SetFromFlags(flags, prefix + "ecw_geom");
 
     sp_improve_its.SetFromFlags(flags, prefix + "sp_improve_its");
+    sp_use_roots.SetFromFlags(flags, prefix + "sp_use_roots");
+    sp_use_asb.SetFromFlags(flags, prefix + "sp_use_asb");
+    improve_c_aux_mats.SetFromFlags(flags, prefix + "improve_c_aux_mats");
+
+    // TURNED OFF because it does not (yet?) work
+    improve_c_aux_mats = false;
+
     rot_scale.SetFromFlags(flags, prefix + "rot_scale");
+
+    use_aux_mat = flags.GetDefineFlagX(prefix + "use_aux_mat").IsTrue();
+    check_aux_mats.SetFromFlags(flags, prefix + "check_aux_mats");
   } // VertexAMGFactoryOptions::SetFromFlags
 
 }; // VertexAMGFactoryOptions
@@ -209,10 +229,13 @@ EmbeddedSProl (Options const &O,
   const double MIN_SUM_FRAC  = 1.0 - sqrt(MIN_PROL_FRAC); // MPF 0.15 -> 0.61
   const int MAX_PER_ROW = O.sp_max_per_row.GetOpt(0);
   const int MAX_PER_ROW_CLASSIC = O.sp_max_per_row_classic.GetOpt(0);
-  const double omega = O.sp_omega.GetOpt(0);
   int const improveIts = O.sp_improve_its.GetOpt(0);
 
   int const totalSteps = improveIts + 1;
+
+  double const baseOmega = O.sp_omega.GetOpt(0);
+  double const omega     = 1 - pow(1 - baseOmega, 1./totalSteps);
+  // double const omega     = baseOmega;
 
   fMesh.CumulateData();
   cMesh.CumulateData();
@@ -231,6 +254,7 @@ EmbeddedSProl (Options const &O,
   auto cVData = get<0>(cMesh.Data())->Data();
 
   auto vMap = cMap.template GetMap<NT_VERTEX>();
+  auto aggs = cMap.template GetMapC2F<NT_VERTEX>();
 
   auto const FNV = fMesh.template GetNN<NT_VERTEX>();
   auto const CNV = cMesh.template GetNN<NT_VERTEX>();
@@ -263,6 +287,12 @@ EmbeddedSProl (Options const &O,
       { return; }
 
     trow.SetSize0(); tcv.SetSize0();
+
+    if ( aggs[CV][0] == V )
+    {
+      cols.Append(CV);
+      return;
+    }
 
     auto ovs = fECon.GetRowIndices(V);
     auto edgeNums = fECon.GetRowValues(V);
@@ -404,13 +434,8 @@ EmbeddedSProl (Options const &O,
       auto allCols = A_embP->GetRowIndices(k);
       auto aepVals = A_embP->GetRowValues(k);
 
-
-      // cout << " update row " << k << endl;
-
       Mat<BSF, BSF, double> dInv = fMat(k, k);
-      // cout << " diag: " << endl; print_tm(cout, dInv); cout << endl;
       CalcInverse(dInv); // no issues with inverse here!
-      // cout << " dInv: " << endl; print_tm(cout, dInv); cout << endl;
 
       double repFac = 1.0;
 
@@ -440,12 +465,8 @@ EmbeddedSProl (Options const &O,
       {
         Mat<BSF, BS, double> upVal = dInv * aepVals[idxA];
 
-        // cout << idxA << ", col " << allCols[idxA] << endl;
-        // cout << " dinv x offd: " << endl; print_tm(cout, upVal); cout << endl;
-
         if ( where == INTERSECTION ) // used col
         {
-          // cout << " USED @ " << idxP << endl;
           prolVals[idxP] -= omega * upVal;
         }
         else // unused col
@@ -461,7 +482,7 @@ EmbeddedSProl (Options const &O,
             SetIdentity(Q);
             ENERGY::GetQiToj(cVData[repCol], cVData[allCols[idxA]]).MQ(Q);
             
-            prolVals[idx] -= omega * upVal * Q;
+            prolVals[idx] -= omega * repFac * upVal * Q;
           }
         }
       });
@@ -470,9 +491,11 @@ EmbeddedSProl (Options const &O,
 
 
   // TOOD: re-smooth?
-
-  // std::ofstream of("embProl.out");
-  // print_tm_spmat(of, *embProl);
+  if ( O.log_level == Options::LOG_LEVEL::DBG )
+  {
+    std::ofstream of("embProl.out");
+    print_tm_spmat(of, *embProl);
+  }
 
   return embProl;
 } // EmbeddedSProl
@@ -525,19 +548,163 @@ BuildCoarseMap (BaseAMGFactory::State & state, shared_ptr<BaseAMGFactory::LevelC
 } // VertexAMGFactory::BuildCoarseMap
 
 
+template<int BS>
+constexpr int FINEBS()
+{
+  if constexpr(BS == 6)
+  {
+    return 3;
+  }
+  else if constexpr(BS == 3)
+  {
+    return 2;
+  }
+  else {
+    return BS;
+  }
+} // FINEBS
+
+
+template<int IMIN, int N, int NN> INLINE void RegTMXX (Mat<NN,NN,double> & m, double maxadd = -1)
+{
+  // static Timer t(string("RegTM<") + to_string(IMIN) + string(",") + to_string(3) + string(",") + to_string(6) + string(">")); RegionTimer rt(t);
+  static_assert( (IMIN + N <= NN) , "ILLEGAL RegTM!!");
+  static Matrix<double> M(N,N), evecs(N,N);
+  static Vector<double> evals(N);
+  Iterate<N>([&](auto i) {
+    Iterate<N>([&](auto j) {
+      M(i.value, j.value) = m(IMIN+i.value, IMIN+j.value);
+    });
+  });
+  LapackEigenValuesSymmetric(M, evals, evecs);
+  const double eps = max2(1e-15, 1e-8 * evals(N-1));
+  double min_nzev = 0; int nzero = 0;
+  for (auto k : Range(N))
+    if (evals(k) > eps)
+      { min_nzev = evals(k); break; }
+    else
+      { nzero++; }
+  if (maxadd >= 0)
+    { min_nzev = min(maxadd, min_nzev); }
+  if (nzero < N) {
+    for (auto l : Range(nzero)) {
+      Iterate<N>([&](auto i) {
+          Iterate<N>([&](auto j) {
+            m(IMIN+i.value, IMIN+j.value) += min_nzev * evecs(l, i.value) * evecs(l, j.value);
+          });
+      });
+    }
+  }
+  else {
+    SetIdentity(m);
+    if (maxadd >= 0)
+      { m *= maxadd; }
+  }
+} // RegTM
+
 template<class ENERGY, class TMESH, int BS>
 shared_ptr<BaseDOFMapStep>
 VertexAMGFactory<ENERGY, TMESH, BS>::
 MapLevel (FlatArray<shared_ptr<BaseDOFMapStep>> dofSteps,
-          shared_ptr<AMGLevel> &fCap,
-          shared_ptr<AMGLevel> &cCap)
+          shared_ptr<AMGLevel> &fLev,
+          shared_ptr<AMGLevel> &cLev)
 {
   auto & O = static_cast<Options&>(*options);
 
-  size_t off = (fCap->level == 0 && O.use_emb_sp) ? 1 : 0;
+  if ( O.check_aux_mats.GetOpt(0) )
+  {
+    shared_ptr<BaseMatrix> A    = nullptr;
+    shared_ptr<BaseMatrix> Ahat = nullptr;
 
-  return BaseAMGFactory::MapLevel(dofSteps.Range(off, dofSteps.Size()), fCap, cCap);
-}
+    auto fM = my_dynamic_pointer_cast<TMESH>(fLev->cap->mesh, "Vertex MapLevel - for CheckAux F-MESH");
+
+    if ( fLev->level == 0 )
+    {
+      static constexpr int FBS = FINEBS<BS>();
+      typedef stripped_spm<Mat<FBS,FBS,double>> TSPM_F;
+
+      if ( auto fA = dynamic_pointer_cast<TSPM_F>(fLev->cap->mat) )
+      {
+        A = fA;
+
+        Ahat = AssembleAhatSparse<ENERGY, TMESH, TSPM_F>(*fM, true, [&](auto &a, auto const &b) {
+          if constexpr(BS  != 1) // so it compiles
+          {
+            Iterate<FBS>([&](auto j) {
+              Iterate<FBS>([&](auto i) {
+                a(i.value, j.value) += b(i.value, j.value);
+              });
+            });
+          }
+          else
+          {
+            a += b;
+          }
+        });
+      }
+    }
+
+    if ( A == nullptr )
+    {
+      typedef stripped_spm<Mat<BS,BS,double>> TSPM_F;
+
+      auto fA = my_dynamic_pointer_cast<TSPM_F>(fLev->cap->mat, "Vertex MapLevel - for CheckAux F-MAT");
+
+      A = fA;
+      auto Ah = AssembleAhatSparse<ENERGY, TMESH>(*fM, true);
+      Ahat = Ah;
+
+      if ( fLev->level > 0 )
+      {
+        if constexpr( BS > 1 ) // hacks, hacks everywhere ...
+        {
+          for (auto k : Range(A->Height()))
+          {
+            RegTMXX<0,BS,BS>((*fA)(k,k));
+            RegTMXX<0,BS,BS>((*Ah)(k,k));
+          }
+        }
+      }
+
+      {
+        std::ofstream out("ngs_amg_Ahat_l_" + std::to_string(fLev->level) + ".out");
+        // out << *Ahat << std::endl;
+        print_tm_spmat(out, *Ah); out << endl;
+      }
+    }
+
+    std::string msg0 = "Aux-Matrix equivalence on level " + std::to_string(fLev->level) + " (lam_lin Ahat <= A <=lam_max Ahat)";
+
+    Ahat->SetInverseType(SPARSECHOLESKY);
+
+    auto AhatInv = Ahat->InverseMatrix(fLev->cap->free_nodes);
+    // cout << " AhatInv = " << endl << *AhatInv << endl;
+
+    auto comm = fM->GetEQCHierarchy()->GetCommunicator();
+
+    cout << endl << endl;
+    DoTest(*A, *AhatInv, comm, msg0);
+    cout << endl << endl;
+  }
+
+  // if (O.check_aux_mats.GetOpt(cLev->level))
+  // {
+  //   auto cA = my_dynamic_pointer_cast<TSPM>(cLev->cap->mat, "Vertex MapLevel - for CheckAux C-MAT");
+  //   auto cM = my_dynamic_pointer_cast<TMESH>(cLev->cap->mesh, "Vertex MapLevel - for CheckAux C-MESH");
+
+  //   std::string msg = "Aux-Matrix equivalence on level " + std::to_string(cLev->level);
+
+  //   cout << endl << endl;
+  //   CheckAuxMatEquivalence<ENERGY, TMESH, TSPM>(*cM, cLev->cap->free_nodes, *cA, msg);
+  //   cout << endl << endl;
+  // }
+
+  // With use_emb_sp, the first step (EmbeddedSProl) already includes the embedding so
+  // we don't need it here!
+  size_t off = (fLev->level == 0 && O.use_emb_sp) ? 1 : 0;
+
+  return BaseAMGFactory::MapLevel(dofSteps.Range(off, dofSteps.Size()), fLev, cLev);
+} // VertexAMGFactory::MapLevel
 
 
 template<class ENERGY, class TMESH, int BS>
@@ -643,6 +810,7 @@ BuildCoarseDOFMap (shared_ptr<BaseCoarseMap>                cmap,
   shared_ptr<BaseDOFMapStep> step = nullptr;
 
   if( fcap->baselevel == 0 &&
+      ( prol_type != Options::PROL_TYPE::PIECEWISE ) &&
       O.use_emb_sp &&
       ( !cap->mesh->GetEQCHierarchy()->IsTrulyParallel() ) ) // not implemented in parallel ATM!
   {
@@ -686,8 +854,746 @@ BuildCoarseDOFMap (shared_ptr<BaseCoarseMap>                cmap,
     }
   }
 
+  // if ( ( O.improve_c_aux_mats.GetOpt( fcap->baselevel ) ) &&
+  //      ( prol_type != Options::PROL_TYPE::PIECEWISE ) )
+  if ( O.improve_c_aux_mats.GetOpt( fcap->baselevel ) )
+  {
+    ImproveCoarseEnergy(*fcap, *ccap, *step);
+  }
+
   return step;
 } // BuildCoarseDOFMap
+
+
+template<class ENERGY, class TMESH, int BS>
+void
+VertexAMGFactory<ENERGY, TMESH, BS>::
+ImproveCoarseEnergy(LevelCapsule         &fCap,
+                    LevelCapsule         &cCap,
+                    BaseDOFMapStep const &dofStep)
+{
+  TMESH const &fMesh = *my_dynamic_pointer_cast<TMESH const>(fCap.mesh, " ImproveCoarseEnergy - FMESH");
+  TMESH const &cMesh = *my_dynamic_pointer_cast<TMESH const>(cCap.mesh, " ImproveCoarseEnergy - CMESH");
+
+  ProlMap<TM> const &prolMap = *my_dynamic_cast<ProlMap<TM> const>(&dofStep, " ImproveCoarseEnergy - map");
+
+  fMesh.CumulateData();
+  cMesh.CumulateData();
+
+  auto const fNV = fMesh.template GetNN<NT_VERTEX>();
+  auto const fNE = fMesh.template GetNN<NT_EDGE>();
+
+  auto const cNV = cMesh.template GetNN<NT_VERTEX>();
+
+  // coarserst level
+  if ( cMesh.template GetNN<NT_EDGE>() == 0 )
+  {
+    return;
+  }
+
+  auto fVData = get<0>(fMesh.Data())->Data();
+  auto fEData = get<1>(fMesh.Data())->Data();
+
+  auto cVData = get<0>(cMesh.Data())->Data();
+  auto cEData = get<1>(cMesh.Data())->Data();
+
+  auto const &P  = *prolMap.GetProl();
+  auto const &PT = *prolMap.GetProlTrans();
+
+  auto fEdges = fMesh.template GetNodes<NT_EDGE>();
+
+  auto AhatF = AssembleAhatSparse<ENERGY>(fMesh, true);
+  auto AhatC = AssembleAhatSparse<ENERGY>(cMesh, true);
+
+if constexpr(BS == 1) // makes it easier for init. version
+{
+  cout << " ImproveCoarseEnergy, NV " << fNV << " -> " << cNV << endl;
+  cout << " ImproveCoarseEnergy, NE " << fNE << " -> " <<  cMesh.template GetNN<NT_EDGE>() << endl;
+
+  // A ~ Ahat = GT Alpha G
+  Array<int> perow(fNE);
+  perow = 1;
+  // auto Alpha = make_shared<DiagonalMatrix<TM>>(fNV);
+
+  auto Alpha = make_shared<SparseMat<BS,BS>>(perow, fNE);
+
+  for (auto k : Range(fNE))
+  {
+    Alpha->GetRowIndices(k)[0] = k;
+    // Alpha(k, k) = ENERGY::GetEMatrix(fEdata[k]);
+    Alpha->GetRowValues(k)[0] = ENERGY::GetEMatrix(fEData[k]);
+  }
+
+  // We have
+  //    PT Ahat P = (PG)^T Alpha PG = G_H^T S^T Alpha S G_H
+  // Where "S" is the |fine edge| x |coarse edge| matrix with entries
+  //   S_{ij,IJ} = P_iI P_jJ
+  // We write M := S^T Alpha S and try to find diagonal Alpha_H
+  // such that AlphaH ~ M and therefore A_H = PT A P ~ G_H^T Alpha_H G_H = Ahat_H
+
+  perow.SetSize(fNE);
+  perow = 2;
+
+  auto pG_h = make_shared<SparseMat<BS,BS>>(perow, fNV);
+  auto const &G_h = *pG_h;
+
+  for (auto k : Range(fNE))
+  {
+    auto fEdge = fEdges[k];
+
+    G_h.GetRowIndices(k)[0] = fEdge.v[0];
+    G_h.GetRowIndices(k)[1] = fEdge.v[1];
+
+    auto [Qij, Qji] = ENERGY::GetQijQji(fVData[fEdge.v[0]], fVData[fEdge.v[1]]);
+    
+    Qij.SetQ(-1.0, G_h.GetRowValues(k)[0]);
+    Qji.SetQ(G_h.GetRowValues(k)[1]);
+  }
+
+  auto pG_h_T = TransposeSPM(G_h);
+  auto const &G_h_T = *pG_h_T;
+
+  bool upCEs = true;
+
+  size_t cNE = cMesh.template GetNN<NT_EDGE>();
+  FlatArray<AMG_Node<NT_EDGE>> cEdges = cMesh.template GetNodes<NT_EDGE>();
+
+  shared_ptr<SparseMatrix<double>> pNewCEcon;
+  Array<AMG_Node<NT_EDGE>> newCEdges;
+
+  if ( upCEs )
+  {
+    std::set<std::tuple<int, int>> setCE;
+
+    auto ItCreateEdges = [&](auto lam)
+    {
+      auto baseCEdges = cMesh.template GetNodes<NT_EDGE>();
+
+      for (auto cENr : Range(cMesh.template GetNN<NT_EDGE>()))
+      {
+        lam(baseCEdges[cENr].v[0], baseCEdges[cENr].v[1]);
+      }
+
+      for (auto fENr : Range(fNE))
+      {
+        auto const &fEdge = fEdges[fENr];
+
+        auto colsi = P.GetRowIndices(fEdge.v[0]);    
+        auto colsj = P.GetRowIndices(fEdge.v[1]);    
+
+        // an entry for every edge I-J, I in colsi, j in colsj
+        // cout << " itGraph, fENr = " << fENr << endl;
+        // cout << "    colsi = "; prow(colsi); cout << endl;
+        // cout << "    colsj = "; prow(colsj); cout << endl;
+
+        for (auto I : colsi)
+        {
+          for (auto J : colsj)
+          {
+            if ( I != J )
+            {
+              lam(I, J);
+            }
+          }
+        }
+      }
+    };
+    
+    ItCreateEdges([&](int const &I, int const &J)
+    {
+      if ( I < J )
+      {
+        setCE.insert(std::make_tuple(I, J));
+      }
+      else
+      {
+        setCE.insert(std::make_tuple(J, I));
+      }
+    });
+
+    cNE = setCE.size();
+
+    cout << " #CE " << cMesh.template GetNN<NT_EDGE>() << " -> " << cNE << endl;
+
+    perow.SetSize(cNV);
+
+    newCEdges.SetSize(setCE.size());
+    cEdges.Assign(newCEdges);
+
+    int cnt = 0;
+    for (auto const &tup : setCE)
+    {
+      int const eID = cnt++;
+
+      auto [ v0, v1 ] = tup;
+
+      cEdges[eID].id = eID;
+      cEdges[eID].v  = { v0, v1 };
+
+      perow[v0]++;
+      perow[v1]++;
+    }
+
+    pNewCEcon = make_shared<SparseMatrix<double>>(perow, cNV);
+    auto const &cEcon = *pNewCEcon;
+
+    perow = 0;
+
+    for (auto const &cEdge : cEdges)
+    {
+      for (auto l : Range(2))
+      {
+        cEcon.GetRowIndices(cEdge.v[l])[perow[cEdge.v[l]]] = cEdge.v[1-l];
+        cEcon.GetRowValues(cEdge.v[l])[perow[cEdge.v[l]]]  = int(cEdge.id);
+        perow[cEdge.v[l]]++;
+      }
+    }
+  }
+
+  SparseMatrix<double> const &cEcon = upCEs ? *pNewCEcon: *cMesh.GetEdgeCM();
+
+  perow.SetSize(cNE);
+  perow = 2;
+
+  auto pG_H = make_shared<SparseMat<BS,BS>>(perow, cNV);
+  auto const &G_H = *pG_H;
+
+  for (auto k : Range(cNE))
+  {
+    auto cEdge = cEdges[k];
+
+    G_H.GetRowIndices(k)[0] = cEdge.v[0];
+    G_H.GetRowIndices(k)[1] = cEdge.v[1];
+
+    auto [Qij, Qji] = ENERGY::GetQijQji(cVData[cEdge.v[0]], cVData[cEdge.v[1]]);
+    
+    Qij.SetQ(-1.0, G_H.GetRowValues(k)[0]);
+    Qji.SetQ(G_H.GetRowValues(k)[1]);
+  }
+
+  auto pG_H_T = TransposeSPM(G_H);
+  auto const &G_H_T = *pG_H_T;
+
+  // there are better ways to do this, but for now, for testing, explicitly set up
+  // S as a sparse-matrix
+  perow.SetSize(fNE);
+  perow = 0;
+
+  std::set<int> cols; // sorted!
+
+  auto itGraph = [&](auto lam)
+  {
+    for (auto fENr : Range(fNE))
+    {
+      auto const &fEdge = fEdges[fENr];
+
+      auto colsi = P.GetRowIndices(fEdge.v[0]);    
+      auto colsj = P.GetRowIndices(fEdge.v[1]);    
+
+      // an entry for every edge I-J, I in colsi, j in colsj
+      cols.clear();
+
+      // cout << " itGraph, fEdge = " << fEdge << endl;
+      // cout << "    colsi = "; prow(colsi); cout << endl;
+      // cout << "    colsj = "; prow(colsj); cout << endl;
+
+      for (auto I : colsi)
+      {
+        for (auto J : colsj)
+        {
+          if ( I != J )
+          {
+            int pos = find_in_sorted_array(J, cEcon.GetRowIndices(I));
+
+            if ( pos != -1 )
+            {
+              int const cENum(cEcon.GetRowValues(I)[pos]);
+
+              // cout << " add " << I << " x " << J << " = cE " << cENum << endl;
+
+              cols.insert(cENum);
+            }
+            else
+            {
+              // // find connection I <-> K <-> J to take the weight
+              // auto commonNeibs = intersect_sorted_arrays(cEcon.GetRowIndices(I),
+              //                                            cEcon.GetRowIndices(J),
+              //                                            lh);
+
+              auto neibsI = cEcon.GetRowIndices(I);
+              auto eidsI  = cEcon.GetRowValues(I);
+              auto neibsJ = cEcon.GetRowIndices(J);
+              auto eidsJ  = cEcon.GetRowValues(J);
+
+              int c = 0;
+              iterate_intersection(
+                neibsI, neibsJ,
+                [&](auto idxNI, auto idxNJ)
+                {
+                  auto const neib = neibsI[idxNI];
+
+                  int const eIdIN = int(eidsI[idxNI]);
+                  int const eIdJN = int(eidsI[idxNJ]);
+
+                  cols.insert(eIdIN);
+                  cols.insert(eIdJN);
+
+                  // cout << " redirecting " << I << " - " << J << " over " << neib << endl;
+
+                  c++;
+                }
+              );
+
+              if ( c == 0 )
+              {
+                cout << " connection " << I << " - " << J << " NO COMMON NEIB FOUND! " << endl;
+              }
+
+
+            }
+          }
+        }
+      }
+
+      lam(fENr, cols);
+    }
+  };
+
+  itGraph([&](auto row, auto const &cols) { perow[row] = cols.size(); });
+
+  auto spS = make_shared<SparseMat<BS, BS>>(perow, cNE);
+
+  auto const &S = *spS;
+
+  // better would be second iteration with std::map or sth
+  itGraph(
+    [&](auto row, auto const &cols)
+    {
+      // cout << " itG2, row " << row << " f " << fNE << ", cols " << cols.size() << " into " << S.GetRowIndices(row).Size() << endl;
+      std::copy(cols.begin(), cols.end(), S.GetRowIndices(row).begin());
+      // cout << "     OK " << endl;
+    }
+  );
+
+  for (auto fENr : Range(fNE))
+  {
+    auto rCols = S.GetRowIndices(fENr);
+    auto rVals = S.GetRowValues(fENr);
+
+    auto const &fEdge = fEdges[fENr];
+
+    auto colsi = P.GetRowIndices(fEdge.v[0]);    
+    auto valsi = P.GetRowValues(fEdge.v[0]);    
+
+    auto colsj = P.GetRowIndices(fEdge.v[1]);    
+    auto valsj = P.GetRowValues(fEdge.v[1]);    
+
+    rVals = 0.0;
+
+    // cout << " FILL " << fENr << " f " << fNE << endl;
+    // cout << "    colsi = "; prow(colsi); cout << endl;
+    // cout << "    colsj = "; prow(colsj); cout << endl;
+    // cout << " rCols: "; prow(rCols); cout << endl;
+    // cout << " rVals: "; prow(rVals); cout << endl;
+
+    for (auto idxI : Range(colsi))
+    {
+      auto const I = colsi[idxI];
+
+      for (auto idxJ : Range(colsj))
+      {
+        auto const J = colsj[idxJ];
+
+        if ( I != J )
+        {
+          int pos = find_in_sorted_array(J, cEcon.GetRowIndices(I));
+
+          if ( pos != -1 )
+          {
+            int const cENum(cEcon.GetRowValues(I)[pos]);
+
+            int const rPos = find_in_sorted_array(cENum, rCols);
+
+            // cout << " add " << I << " x " << J << " = cE " << cENum << " -> " << rPos << endl;
+
+            // fEdge.v[0] < fEdge.v[1] is given
+            double const orient = ( I < J ) ? 1.0 : -1.0;
+
+            auto const piI = valsi[idxI];
+            auto const pjJ = valsj[idxJ];
+
+            rVals[rPos] += orient * piI * pjJ;
+            // rVals[rPos] += piI * pjJ;
+
+            // cout << " vals are " << piI << " " << pjJ << " -> rVal now " << rVals[rPos] << endl;
+          }
+          else
+          {
+
+            auto neibsI = cEcon.GetRowIndices(I);
+            auto eidsI  = cEcon.GetRowValues(I);
+            auto neibsJ = cEcon.GetRowIndices(J);
+            auto eidsJ  = cEcon.GetRowValues(J);
+
+            double totStrength = 0;
+
+            // move weight from I-J to I-N, N-J proportionally
+            // to I-N,N-J connection strength
+            iterate_intersection(
+              neibsI, neibsJ,
+              [&](auto idxNI, auto idxNJ)
+              {
+                auto const neib = neibsI[idxNI];
+
+                int const eIdIN = int(eidsI[idxNI]);
+                int const eIdJN = int(eidsI[idxNJ]);
+
+                double sIN = ENERGY::GetApproxWeight(cEData[eIdIN]);
+                double sJN = ENERGY::GetApproxWeight(cEData[eIdJN]);
+
+                double s = 2 * sIN * sJN / ( sIN + sJN );
+
+                totStrength += s;
+              }
+            );
+
+            auto const piI = valsi[idxI];
+            auto const pjJ = valsj[idxJ];
+
+            iterate_intersection(
+              neibsI, neibsJ,
+              [&](auto idxNI, auto idxNJ)
+              {
+                auto const neib = neibsI[idxNI];
+
+                int const eIdIN = int(eidsI[idxNI]);
+                int const eIdJN = int(eidsI[idxNJ]);
+
+                double sIN = ENERGY::GetApproxWeight(cEData[eIdIN]);
+                double sJN = ENERGY::GetApproxWeight(cEData[eIdJN]);
+
+                double s = 2 * sIN * sJN / ( sIN + sJN );
+
+                double frac = s / totStrength;
+
+                int const rPosI = find_in_sorted_array(eIdIN, rCols);
+                int const rPosJ = find_in_sorted_array(eIdJN, rCols);
+
+                double const orientI = ( I < neib ) ? 1.0 : -1.0;
+                double const orientJ = ( J < neib ) ? 1.0 : -1.0;
+
+                // cols IN, jN
+                rVals[rPosI] += orientI * frac * piI * pjJ; // * QN->J or sth
+                rVals[rPosJ] += orientJ * frac * piI * pjJ;
+              }
+            );
+          }
+        }
+      }
+    }
+  }
+  
+  auto spST = TransposeSPM(S);
+  auto const &ST = *spST;
+
+  auto Alpha_S = MatMultAB(*Alpha, S);
+
+  auto spM = MatMultAB(ST, *Alpha_S);
+  auto const &M = *spM;
+
+  auto spDiagM = make_shared<DiagonalMatrix<TM>>(cNE);
+  auto &diagM = *spDiagM;
+
+  auto spDiagMInv = make_shared<DiagonalMatrix<TM>>(cNE);
+  auto &diagMInv = *spDiagMInv;
+
+
+  perow.SetSize(cNE);
+  perow = 1;
+  auto spDiagMS = make_shared<SparseMat<BS,BS>>(perow, cNE);
+  auto &diagMS = *spDiagMS;
+
+  auto spCAlpha = make_shared<DiagonalMatrix<TM>>(cNE);
+  auto &cAlpha = *spCAlpha;
+
+  auto spCAlphaSPM = make_shared<SparseMat<BS,BS>>(perow, cNE);
+  auto &cAlphaSPM = *spCAlphaSPM;
+
+  // auto spCAlphaInv = make_shared<DiagonalMatrix<TM>>(cNE);
+  // auto &cAlphaInv = *spCAlphaInv;
+
+  for (auto k : Range(cNE))
+  {
+    // cout << " diag " << k << "/" << cNE << endl;
+    TM d = M(k,k);
+
+    // TM d = 0;
+    // for (auto v : M.GetRowValues(k))
+    // {
+    //   d += v;
+    // }
+
+    diagM(k) = d;
+    diagMS.GetRowIndices(k)[0] = k;
+    diagMS.GetRowValues(k)[0]  = d;
+
+    CalcInverse(d);
+    diagMInv(k) = d;
+
+    if ( upCEs )
+    {
+      d = 1;
+    }
+    else
+    {
+      d = ENERGY::GetEMatrix(cEData[k]);
+    }
+    cAlpha(k) = d;
+    cAlphaSPM(k,k) = d;
+    // CalcInverse(d);
+    // cAlphaInv(k) = d;
+  }
+
+  auto dM_G    = MatMultAB(diagMS, G_H);
+  auto GT_dM_G = MatMultAB(G_H_T, *dM_G);
+
+  auto M_G = MatMultAB(M, G_H);
+  auto GT_M_G = MatMultAB(G_H_T, *M_G);
+
+  auto Ahat_P = MatMultAB(*AhatF, P);
+  auto PT_Ahat_P = MatMultAB(PT, *Ahat_P);
+
+  auto Alpha_G = MatMultAB(cAlphaSPM, G_H);
+  auto GT_Alpha_G = MatMultAB(G_H_T, *Alpha_G);
+
+  if ( !upCEs ) // only do that if we make cEdges complete
+  { // check that PT Ahat P = G_HT M G_H
+    cout << " CHECK PT_Ahat_P - M :" << endl;
+    for (auto k : Range(cNV))
+    {
+      auto risPAP = PT_Ahat_P->GetRowIndices(k);
+      auto rvsPAP = PT_Ahat_P->GetRowValues(k);
+
+      auto risGMG = GT_M_G->GetRowIndices(k);
+      auto rvsGMG = GT_M_G->GetRowValues(k);
+
+      cout << " row " << k << "/" << cNE << ":" << endl;
+
+      bool isOK = true;
+      if ( risPAP.Size() != risGMG.Size() )
+      {
+        cout << " SIZE mismatch!" << endl;
+        isOK = false;
+      }
+
+      if ( isOK )
+      {
+        for (auto j : Range(risPAP))
+        {
+          auto diff = abs(rvsPAP[j] - rvsGMG[j]);
+
+          if ( diff > 1e-12 * min(abs(rvsPAP[j]), abs(rvsGMG[j])))
+          {
+            cout << " VAL mismatch " << j << " diff " << diff << ", rel = " << diff / min(abs(rvsPAP[j]), abs(rvsGMG[j])) << endl;
+            isOK = false;
+          }
+        }
+      }
+
+      double msum = 0.0;
+
+      for ( auto j : Range(risGMG))
+      {
+        msum += rvsGMG[j];
+      }
+
+      if ( msum > 1e-12 )
+      {
+        isOK = false;
+        cout << " RSUM M is non-zero, rs = " << msum << endl;
+      }
+
+      if ( !isOK )
+      {
+        cout << "    ris PAP "; prow2(risPAP); cout << endl;
+        cout << "    ris GMG "; prow2(risGMG); cout << endl;
+        cout << "    rvs PAP "; prow2(rvsPAP); cout << endl;
+        cout << "    rvs GMG "; prow2(rvsGMG); cout << endl;
+      }
+
+    }
+
+  }
+
+  shared_ptr<BitArray> fn = cCap.free_nodes;
+
+  if ( fn != nullptr )
+  {
+    fn = make_shared<BitArray>(*fn);
+  }
+  else
+  {
+    fn = make_shared<BitArray>(cNV);
+    fn->Clear();
+    fn->Invert();
+  }
+
+  for (auto k : Range(cNV))
+  {
+    if ( GT_dM_G->GetRowIndices(k).Size() == 0 )
+    {
+      // isolated vertex - set Dirichlet
+      //   GT_X_G has no entries in these rows, instead of adding a way to force
+      //   an entry into MatMultAB result, add it DIRI, that is easier
+      fn->SetBit(k);
+    }
+    else
+    {
+      double const vW = cVData[k][0];
+
+      // if (vW > 0)
+      // {
+      //   cout << " add C v-ctrb " << vW << " to " << k << "/" << cNV << endl;
+      // }
+
+      // (*PT_Ahat_P)(k,k)  += vW;
+      (*GT_dM_G)(k,k)    += vW;
+      (*GT_M_G)(k,k)     += vW;
+      (*GT_Alpha_G)(k,k) += vW;
+    }
+  }
+
+  {
+    std::ofstream of("ngs_amg_G_H_l_" + std::to_string(fCap.baselevel) + ".out");
+    print_tm_spmat(of, G_H);
+  }
+  {
+    std::ofstream of("ngs_amg_G_H_T_l_" + std::to_string(fCap.baselevel) + ".out");
+    print_tm_spmat(of, G_H_T);
+  }
+  {
+    std::ofstream of("ngs_amg_Alpha_l_" + std::to_string(fCap.baselevel) + ".out");
+    print_tm_spmat(of, *Alpha);
+  }
+  {
+    std::ofstream of("ngs_amg_PT_Ahat_P_l_" + std::to_string(fCap.baselevel) + ".out");
+    print_tm_spmat(of, *PT_Ahat_P);
+  }
+  {
+    std::ofstream of("ngs_amg_GT_dM_G_l_" + std::to_string(fCap.baselevel) + ".out");
+    print_tm_spmat(of, *GT_dM_G);
+  }
+  {
+    std::ofstream of("ngs_amg_S_l_" + std::to_string(fCap.baselevel) + ".out");
+    print_tm_spmat(of, S);
+  }
+  {
+    std::ofstream of("ngs_amg_ST_l_" + std::to_string(fCap.baselevel) + ".out");
+    print_tm_spmat(of, ST);
+  }
+  {
+    std::ofstream of("ngs_amg_M_l_" + std::to_string(fCap.baselevel) + ".out");
+    print_tm_spmat(of, M);
+  }
+  // auto fn = make_shared<BitArray>(cNV);
+  // fn->Clear();
+  // fn->Invert();
+  // fn->Clear(0); // set one row do DIRI
+  // if ( fn->Size() > 1 )
+  //   fn->Clear(1); // set one row do DIRI
+  // if ( fn->Size() > 2 )
+  //   fn->Clear(2); // set one row do DIRI
+  // if ( fn->Size() > 1 )
+  //   fn->Clear(fn->Size()-1); // set one row do DIRI
+  // if ( fn->Size() > 2 )
+  //   fn->Clear(fn->Size()-2); // set one row do DIRI
+
+  // auto fn = cCap.free_nodes;
+
+  cout << " fn: " << fn << flush; if ( fn ) cout << " s " << fn->Size() << endl << *fn; cout << endl;
+
+  GT_dM_G->SetInverseType(SPARSECHOLESKY);
+  auto GT_dM_G_inv = GT_dM_G->InverseMatrix(fn);
+
+  PT_Ahat_P->SetInverseType(SPARSECHOLESKY);
+  auto PT_Ahat_P_inv = PT_Ahat_P->InverseMatrix(fn);
+  // auto PT_Ahat_P_inv = MatMultAB(PT, *Ahat_P);
+
+  if ( false ) // not super useful
+  {
+    std::ofstream of("ngs_amg_diagsCMP_l_" + std::to_string(fCap.baselevel) + ".out");
+
+    // auto cEdges = cMesh.template GetNodes<NT_EDGE>();
+  
+    int mindod_idx = -1;
+    double mindod = 1e12;
+
+    for (auto k : Range(cNE))
+    {
+      double rSum = 0;
+      double odSum = 0;
+
+      auto ris = M.GetRowIndices(k);
+      auto rvs = M.GetRowValues(k);
+      for (auto j : Range(rvs))
+      {
+        auto v = rvs[j];
+        rSum += abs(v);
+        if ( ris[j] != k )
+          odSum += abs(v);
+      }
+
+      of << " cEdge " << cEdges[k] << ": " << endl;
+      // of << "       Alpha = " << cAlpha(k) << endl;
+      of << "       dM = "    << diagM(k) << endl;
+      // of << "       dM/Alpha = " << diagM(k)/cAlpha(k) << endl;
+      of << "       M abs-rsum = " << rSum << endl;
+      of << "       M abs-od-sum = " << odSum << endl;
+      of << "       dM / rsum = " << diagM(k) / rSum << endl;
+      of << "       dM / od-sum = " << diagM(k) / odSum << endl;
+
+      auto dod = diagM(k) / odSum;
+
+      if ( dod < mindod)
+      {
+        mindod = dod;
+        mindod_idx = k;
+      }
+    }
+
+    of << endl;
+    of << " MIN DIAG / OFF-DIAG RATIO = " << mindod << " @ " << mindod_idx << endl;
+
+    cout << " MIN DIAG / OFF-DIAG RATIO = " << mindod << " @ " << mindod_idx << endl;
+
+    of << endl;
+  }
+
+  DoTest(M, diagMInv,  "EV-Test diagMInv  x M level " + std::to_string(fCap.baselevel));
+  DoTest(*GT_Alpha_G, *PT_Ahat_P_inv, "EV-Test PT_Ahat_P-inv x GT_Alpha_GT level " + std::to_string(fCap.baselevel));
+  DoTest(*GT_M_G, *PT_Ahat_P_inv, "EV-Test PT_Ahat_P-inv x GT_M_GT level " + std::to_string(fCap.baselevel));
+  DoTest(*GT_M_G, *GT_dM_G_inv, "EV-Test GT_diagM_GT-inv x GT_M_GT level " + std::to_string(fCap.baselevel));
+  DoTest(*PT_Ahat_P, *GT_dM_G_inv, "EV-Test GT_diagM_GT-inv x PT_Ahat_P level " + std::to_string(fCap.baselevel));
+  DoTest(*GT_dM_G, *PT_Ahat_P_inv, "EV-Test PT_Ahat_P-inv x GT_diagM_GT level " + std::to_string(fCap.baselevel));
+
+  // DoTest(M, cAlphaInv, "EV-Test cAlphaInv x M level " + std::to_string(fCap.baselevel));
+  // DoTest(M, diagMInv, "EV-Test cAhatInv x M level " + std::to_string(fCap.baselevel));
+
+  cout << " cEData " << cEData.Size() << " cNE " << cNE << " diagM " << diagM.Height() << " " << diagM.Width() << endl;
+
+  if ( !upCEs )
+  {
+    for (auto k : Range(cNE))
+    {
+      cEData[k] = diagM(k);
+    }
+  }
+
+  cout << " cEData " << cEData.Size() << " cNE " << cNE << " diagM " << diagM.Height() << " " << diagM.Width() << endl;
+}
+
+
+} // VertexAMGFactory::ImproveCoarseEnergy
 
 
 template<class ENERGY, class TMESH, int BS>
@@ -753,24 +1659,86 @@ PWProlMap (BaseCoarseMap                const &cmap,
 } // VertexAMGFactory::PWProlMap
 
 
-// template<int N, int M, class T>
-// void
-// operator += (SliceMatrix<T> a, const Mat<N, M, double> & b)
-// {
-//   Iterate<N>([&](auto I) {
-//     Iterate<M>([&](auto J) {
-//       a(N, M) += b(N, M);
-//     });
-//   });
-// }
+template<int N, int M, class T>
+void
+operator += (SliceMatrix<T> a, const Mat<N, M, double> & b)
+{
+  Iterate<N>([&](auto I) {
+    Iterate<M>([&](auto J) {
+      a(N, M) += b(N, M);
+    });
+  });
+}
 
-// // scalar case - keep this only here because it is ugly
-// template<class T>
-// void
-// operator += (SliceMatrix<T> a, T & b)
-// {
-//   a(0) += b;
-// }
+// scalar case - keep this only here because it is ugly
+template<class T>
+void
+operator += (SliceMatrix<T> a, T & b)
+{
+  a(0) += b;
+}
+
+
+
+INLINE void
+RegularizeMatrix (BaseSparseMatrix& mat)
+{
+  auto spA = dynamic_cast<SparseMatrix<Mat<6, 6, double>>*>(&mat);
+
+  if (spA == nullptr)
+  {
+    throw Exception("RegularizeMatrix called on garbate!");
+    return;
+  }
+
+  auto &A = *spA;
+
+  for (auto k : Range(A.Height()))
+    { RegTM<0,6,6>(A(k,k)); }
+} // RegularizeMatrix
+
+
+template<class ENERGY, class TMESH, class TSPM>
+void
+CheckAuxMatEquivalence (TMESH const &FM,
+                        shared_ptr<BitArray> freeVerts,
+                        TSPM &A,
+                        std::string message)
+{
+  auto Ahat = AssembleAhatSparse<ENERGY, TMESH>(FM, true);
+
+  shared_ptr<BitArray> freeRows = freeVerts;
+
+  // // force-set last row to Dirichlet so we at least have SOMETHING
+  // if (freeRows == nullptr)
+  // {
+
+  // }
+
+  // cout << " CheckAuxMatEquivalence, A = " << endl;
+  // print_tm_spmat(cout, A); cout << endl;
+
+  // cout << " CheckAuxMatEquivalence, Ahat = " << endl;
+  // print_tm_spmat(cout, *Ahat); cout << endl;
+
+  // auto AInv = A.InverseMatrix(freeVerts);
+
+  // RegularizeMatrix(A);
+  if constexpr(std::is_same<typename TSPM::TENTRY, double>::value == false)
+  {
+    RegularizeMatrix(*Ahat);
+  }
+
+  Ahat->SetInverseType(SPARSECHOLESKY);
+
+  auto AhatInv = Ahat->InverseMatrix(freeVerts);
+  // cout << " AhatInv = " << endl << *AhatInv << endl;
+
+  auto comm = FM.GetEQCHierarchy()->GetCommunicator();
+
+  DoTest(A, *AhatInv, comm, message);
+  // DoTest(*Ahat, *AInv, comm, message);
+} // CheckAuxMatEquivalence
 
 
 template<class ENERGY, class TMESH, class TAMAT, class TAPMAT, class UPVALS>
@@ -1108,14 +2076,16 @@ SemiAuxSProlMap (shared_ptr<ProlMap<TM>> pw_step,
       nt++;
       return;
     }
-    // bool const doPrint = (fvnr == 47) && (vmap[fvnr] == 58);
-    constexpr bool doPrint = false;
+    bool const doPrint = (fvnr == 297) && (vmap[fvnr] == 10);
+    // constexpr bool doPrint = false;
 
     nc++;
     rvs = 0;
     auto fmris = fmat->GetRowIndices(fvnr);
     auto fmrvs = fmat->GetRowValues(fvnr);
     d = fmrvs[find_in_sorted_array(fvnr, fmris)];
+
+    if ( doPrint ) { cout << " CLASS. d for row " << fvnr << ": " << endl; print_tm(cout, d); cout << endl; }
 
     if (BS == 1)
       { CalcInverse(d); }
@@ -1128,6 +2098,8 @@ SemiAuxSProlMap (shared_ptr<ProlMap<TM>> pw_step,
       // CalcPseudoInverseTryNormal(d, lh);
       d *= trinv;
     }
+
+    if ( doPrint ) { cout << " d inv row " << fvnr << ": " << endl; print_tm(cout, d); cout << endl; }
 
     TM od_pwp(0);
     for (auto j : Range(fmris))
@@ -1149,6 +2121,16 @@ SemiAuxSProlMap (shared_ptr<ProlMap<TM>> pw_step,
         if (fvj == fvnr)
           { rvs[colind] += pwprol(fvj, col); }
 
+        if ( doPrint )
+        {
+          cout << " od-val for " << fvj << " -> cv " << col << " -> col-idx " << colind << ": " << endl;
+          print_tm(cout, fmrvs[j]); cout << endl;
+          cout << " od_pwp = " << endl;
+          print_tm(cout, od_pwp);cout << endl;
+          TM up = -1 * d * od_pwp;
+          cout << " up = " << endl; print_tm(cout, up); cout << endl;
+        }
+
         od_pwp = fmrvs[j] * pwprol(fvj, col);
 
         rvs[colind] -= omega * d * od_pwp;
@@ -1160,6 +2142,8 @@ SemiAuxSProlMap (shared_ptr<ProlMap<TM>> pw_step,
   TM Qij(0), Qji(0), QM(0);
   auto fill_sprol_aux = [&](auto fvnr)
   {
+    bool const doPrint = (fvnr == 297) && (vmap[fvnr] == 10);
+
     auto ris = CSP.GetRowIndices(fvnr);
     if ( ris.Size() == 0)
       { return; }
@@ -1231,6 +2215,7 @@ SemiAuxSProlMap (shared_ptr<ProlMap<TM>> pw_step,
     }
     // cout << " rmrow: " << endl; print_tm_mat(cout, rmrow); cout << endl;
     TM d = rmrow(0, dcol);
+    if ( doPrint ) { cout << " AUX. d for row " << fvnr << ": " << endl; print_tm(cout, d); cout << endl; }
     // cout << " diag " << endl;
     // print_tm(cout, d);
     if constexpr (BS == 1)
@@ -1247,7 +2232,8 @@ SemiAuxSProlMap (shared_ptr<ProlMap<TM>> pw_step,
       FlatMatrix<double> flatD(BS, BS, &d(0,0));
       CalcPseudoInverseWithTol(flatD, lh);
     }
-    // cout << " diag inv " << endl;
+    if ( doPrint ) { cout << " AUX. inv d for row " << fvnr << ": " << endl; print_tm(cout, d); cout << endl; }
+        // cout << " diag inv " << endl;
     // print_tm(cout, d);
     TM od_pwp(0);
     for (auto j : Range(nufneibs))
@@ -1265,8 +2251,20 @@ SemiAuxSProlMap (shared_ptr<ProlMap<TM>> pw_step,
       {
         rvs[colind] += pwprol(fvj, col);
       }
+
       od_pwp = rmrow(0, j) * pwprol(fvj, col);
       rvs[colind] -= omega * d * od_pwp;
+
+      if ( doPrint )
+      {
+        cout << " od-val for " << fvj << " -> cv " << col << " -> col-idx " << colind << ": " << endl;
+        print_tm(cout, rmrow(0, j)); cout << endl;
+        cout << " od_pwp = " << endl;
+        print_tm(cout, od_pwp);cout << endl;
+        TM up = -1 * d * od_pwp;
+        cout << " up = " << endl; print_tm(cout, up); cout << endl;
+      }
+
     }
 
     // if constexpr(Height<TM>() == 6)
@@ -1344,8 +2342,8 @@ SemiAuxSProlMap (shared_ptr<ProlMap<TM>> pw_step,
     nt = eqc_h.GetCommunicator().Reduce(nt, NG_MPI_SUM);
     if ( eqc_h.GetCommunicator().Rank() == 0 ) {
       size_t FNV = FM.template GetNNGlobal<NT_VERTEX>();
-      cout << "NV,   nc/na/nt " << FNV << ", " << nc << " " << na << " " << nt << endl;
-      cout << "fracs c/a/t    " << double(nc)/FNV << " " << double(na)/FNV << " " << double(nt)/FNV << endl;
+      cout << "NV,   #class/aux/triv " << FNV << ", " << nc << " " << na << " " << nt << endl;
+      cout << "fracs  class/aux/triv    " << double(nc)/FNV << " " << double(na)/FNV << " " << double(nt)/FNV << endl;
     }
   }
 

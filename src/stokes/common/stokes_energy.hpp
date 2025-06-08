@@ -61,6 +61,13 @@ public:
   static INLINE TM GetVMatrix (const TVD & svd)
   { return svd.IsReal() ? ENERGY::GetVMatrix(svd.vd) : TM(0.0); }
 
+  template<class TMU>
+  static INLINE void
+  SetVMatrix (TVD & svd, TMU const &m)
+  {
+    ENERGY::SetVMatrix(svd.vd, m);
+  }
+  
   static INLINE void CalcQij (const TVD & di, const TVD & dj, TM & Qij)
     { ENERGY::CalcQij(di.vd, dj.vd, Qij); }
 

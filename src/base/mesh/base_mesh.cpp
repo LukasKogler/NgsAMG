@@ -359,10 +359,10 @@ void BlockTM :: printTo (std::ostream &os) const
   printTable(eqc_verts, os, "   ", 30);
 
   os << "  eqc_edges: " << endl;
-  printTable(eqc_edges, os, "   ", 15);
+  printTable(eqc_edges, os, "   ", 10);
 
   os << "  cross_edges: " << endl;
-  printTable(cross_edges, os, "   ", 15);
+  printTable(cross_edges, os, "   ", 10);
 
   os << endl << "edge-connectivity matrix: " << endl;
   os << *this->GetEdgeCM() << endl;

@@ -3,6 +3,7 @@
 
 #ifdef SPW_AGG
 
+#include <utils_sparseMM.hpp>
 #include <utils_numeric_types.hpp>
 
 #include "agglomerator.hpp"
@@ -21,23 +22,28 @@ class SPWAggOptions
 {
 public:
   /** SPW-AGG **/
-  SpecOpt<int> spw_rounds = 3;
-  SpecOpt<bool> spw_allrobust = true;
-  SpecOpt<bool> spw_neib_boost = false;
-  SpecOpt<bool> spw_cbs = true;
-  SpecOpt<bool> spw_cbs_bdiag = false;
-  SpecOpt<bool> spw_cbs_robust = true;
-  SpecOpt<bool> spw_cbs_spd_hack = false;
-  SpecOpt<SPW_CW_TYPE> spw_pick_cwt = SPW_CW_TYPE::MINMAX;
-  SpecOpt<AVG_TYPE> spw_pick_mma_scal = AVG_TYPE::GEOM;
-  SpecOpt<AVG_TYPE> spw_pick_mma_mat = AVG_TYPE::GEOM;
-  SpecOpt<SPW_CW_TYPE> spw_check_cwt = SPW_CW_TYPE::HARMONIC;
-  SpecOpt<AVG_TYPE> spw_check_mma_scal = AVG_TYPE::GEOM;
-  SpecOpt<AVG_TYPE> spw_check_mma_mat = AVG_TYPE::GEOM;
-  SpecOpt<bool> spw_print_params = false;
-  SpecOpt<bool> spw_print_summs = false;
-  SpecOpt<bool> spw_wo = false;
-  SpecOpt<bool> spw_cmk = false;
+  SpecOpt<int>      numRounds   = 3;
+  SpecOpt<bool>     robustPick  = true;  // whether picking or just checking with robust SOC
+  SpecOpt<bool>     neibBoost   = true;  // use boost for robust SOC
+  SpecOpt<AVG_TYPE> scalAvg     = GEOM;  // type of avg for scalar neib-filtering
+  SpecOpt<bool>     orphanRound = true;  // probably a good idea generally
+
+  SpecOpt<bool>     checkBigSOC           = false; // disabled by default
+  SpecOpt<bool>     bigSOCBlockDiagSM     = false; // use blk-diag for big-soc check (more permissive)
+  SpecOpt<bool>     bigSOCRobust          = false; // do scalar check only
+  SpecOpt<double>   bigSOCCheckHackThresh = 0.0;   // 0.0 -> hack disabled
+
+  /**
+   *  fraction of base-level in-agg edge-contribs that are removed from coarse diags
+   *  improves stability, but decreases valid matches
+   *   0   .. full remove -> max. matches
+   *   1   .. no remove   -> max. stab
+   */
+  SpecOpt<double> diagStabBoost = 0.5;
+
+
+  SpecOpt<bool> printParams  = false;
+  SpecOpt<bool> printSummary = false;
 
   SPWAggOptions () { ; }
 
@@ -45,91 +51,115 @@ public:
 
   void SetSPWFromFlags (const Flags & flags, string prefix)
   {
-    spw_rounds.SetFromFlags(flags,    prefix + "spw_rounds");
-    spw_allrobust.SetFromFlags(flags, prefix +  "spw_pick_robust");
-    spw_cbs.SetFromFlags(flags,       prefix + "spw_cbs");
-    if ( (flags.GetDefineFlagX(prefix + "spw_bdiag").IsTrue() || flags.GetDefineFlagX(prefix + "spw_bdiag").IsFalse()) ||
-          (flags.GetNumListFlag(prefix + "spw_bdiag_spec").Size() > 0) ) {
-        /** it is set explicitely!**/
-        spw_cbs_bdiag.SetFromFlags(flags, prefix + "spw_bdiag");
-    }
-    else {
-      /** if nothing is given explicitely, try to take a guess on which sm_types are given. default is "gs", so initialize with "false" **/
-      spw_cbs_bdiag = false;
-      spw_cbs_bdiag.SetFromFlagsEnum(flags, prefix+"sm_type", { "gs", "bgs" }, Array<bool>{ false, true });
-    }
-    spw_cbs_robust.SetFromFlags(flags,         prefix + "spw_cbs_robust");
-    spw_cbs_spd_hack.SetFromFlags(flags,       prefix + "spw_cbs_spd_hack");
-    spw_pick_cwt.SetFromFlagsEnum(flags,       prefix + "spw_pcwt", { "harm", "geom", "mmx" }, Array<SPW_CW_TYPE>{ HARMONIC, GEOMETRIC, MINMAX });
-    spw_pick_mma_scal.SetFromFlagsEnum(flags,  prefix + "spw_pmmas", { "min", "geom", "harm", "alg", "max" }, Array<AVG_TYPE>{ MIN, GEOM, HARM, ALG, MAX });
-    spw_pick_mma_mat.SetFromFlagsEnum(flags,   prefix + "spw_pmmam", { "min", "geom", "harm", "alg", "max" }, Array<AVG_TYPE>{ MIN, GEOM, HARM, ALG, MAX });
-    spw_check_cwt.SetFromFlagsEnum(flags,      prefix + "spw_ccwt", { "harm", "geom", "mmx" }, Array<SPW_CW_TYPE>{ HARMONIC, GEOMETRIC, MINMAX });
-    spw_check_mma_scal.SetFromFlagsEnum(flags, prefix + "spw_cmmas", { "min", "geom", "harm", "alg", "max" }, Array<AVG_TYPE>{ MIN, GEOM, HARM, ALG, MAX });
-    spw_check_mma_mat.SetFromFlagsEnum(flags,  prefix + "spw_cmmam", { "min", "geom", "harm", "alg", "max" },  Array<AVG_TYPE>{ MIN, GEOM, HARM, ALG, MAX });
-    spw_print_params.SetFromFlags(flags,       prefix + "spw_print_params");
-    spw_print_summs.SetFromFlags(flags,        prefix + "spw_print_summs");
-    spw_wo.SetFromFlags(flags,                 prefix + "spw_wo");
-    spw_neib_boost.SetFromFlags(flags,         prefix + "spw_neib_boost");
-    spw_cmk.SetFromFlags(flags,                prefix + "spw_cmk");
+    numRounds.SetFromFlags(flags,             prefix + "spw_rounds");
+    robustPick.SetFromFlags(flags,            prefix + "spw_pick_robust");
+    neibBoost.SetFromFlags(flags,             prefix + "spw_neib_boost");
+    checkBigSOC.SetFromFlags(flags,           prefix + "spw_cbs");
+    diagStabBoost.SetFromFlags(flags,         prefix + "spw_diag_stab_boost");
+    bigSOCRobust.SetFromFlags(flags,          prefix + "spw_big_soc_robust");
+    bigSOCCheckHackThresh.SetFromFlags(flags, prefix + "spw_big_soc_hack_thresh");
+    orphanRound.SetFromFlags(flags,           prefix + "spw_orphan_treatment");
+
+    scalAvg.SetFromFlagsEnum(flags,
+                             prefix + "spw_pick_avg",
+                             { "min", "geom", "harm", "alg", "max" },
+                             Array<AVG_TYPE>{ MIN, GEOM, HARM, ALG, MAX });
+
+    bigSOCBlockDiagSM.SetFromFlags(flags, prefix + "spw_big_soc_bdiag");
+
+    printParams.SetFromFlags(flags,  prefix + "spw_print_params");
+    printSummary.SetFromFlags(flags, prefix + "spw_print_summ");
+
+    // if ( (flags.GetDefineFlagX(prefix + "spw_bdiag").IsTrue() || flags.GetDefineFlagX(prefix + "spw_bdiag").IsFalse()) ||
+    //       (flags.GetNumListFlag(prefix + "spw_bdiag_spec").Size() > 0) ) {
+    //     /** it is set explicitely!**/
+    //     checkBigSOCBlockDiagSM.SetFromFlags(flags, prefix + "spw_bdiag");
+    // }
+    // else {
+    //   /** if nothing is given explicitely, try to take a guess on which sm_types are given. default is "gs", so initialize with "false" **/
+    //   spw_cbs_bdiag = false;
+    //   checkBigSOCBlockDiagSM.SetFromFlagsEnum(flags, prefix+"sm_type", { "gs", "bgs" }, Array<bool>{ false, true });
+    // }
   } // SPWAggOptions::SetFromFlags
 
 }; // class SPWAggOptions
 
 
-template<class ATENERGY, class ATMESH, bool AROBUST = true>
-class SPWAgglomerator : public Agglomerator<ATMESH>                        
+// using float here would be nice, but does not work (yet?) for elasicity?
+using TWEIGHT = double;
+
+struct SPWConfig
 {
-  using TMESH = ATMESH;
-  using ENERGY = ATENERGY;
-  using TED = typename ENERGY::TED;
-  using TVD = typename ENERGY::TVD;
-  using TM = typename ENERGY::TM;
+  int  numRounds;
+  bool dropDDVerts; // drop diagonally dominant vertices (that is, large L2-weight)
+  TWEIGHT vertThresh;
+  bool orphanRound;
+  TWEIGHT diagStabBoost;
+
+  /**
+  * Partner identification during neighbor matching has 2 phases:
+  *   a) initial neighbor filtering
+  *   b) picking from viable neigbhors
+  *
+  * (a) is done using an approximate, scalar, weight
+  *     based on max-off-diags.
+  * (b) uses stable harmonic-mean based EVPs to PICK OR CONFIRM
+  */
+
+  // (a)
+  AVG_TYPE avgTypeScal;   // the mean-type used for (a) (I like GEOM here)
+  TWEIGHT  scalRelThresh; // relative threshold for (a)
+  // bool     l2BoostScal;   // boost for connections between vertices with l2-weights
+
+  // (b)
+  bool     robustPick;   // whether (b) uses stable SOC for picking or only checking
+  bool     neibBoost;    // whether we compute neighbor-boost for (b)
+  TWEIGHT  absRobThresh; // absolute threshold for (b)
+  // bool     l2BoostRob;   // boost for connections between vertices with l2-weights
+
+  // (b) bigSOC
+  bool     checkBigSOC;      // whether (b) additionally checks the agg-wise SOCs
+  bool     robBigSOC;        // whether big-SOC is done for full energy or only for scalar
+  bool     bigSOCUseBDG;     // whether agg-wise block-smoother is assumed for big-SOC
+  TWEIGHT  bigSOCHackThresh; // threshold for BIG-SOC hack (potenitally ignores evals smaller than this)
+  TWEIGHT  absBigThresh; // threshold for agg-wise SOC in (b)
+
+  /** misc. **/
+  bool printParams = false;
+  bool printSumms  = false;
+  bool all_cmk = false;
+};
+
+template<class ATENERGY, class ATMESH, bool COMPILE_EV_BASED = true>
+class SPWAgglomerator : public VertexAgglomerator<ATENERGY, ATMESH>
+{
 public:
+
+  using TMESH = typename Agglomerator<ATMESH>::TMESH;
+
+  using ENERGY = typename VertexAgglomerator<ATENERGY, ATMESH>::ENERGY;
+  using TED    = typename VertexAgglomerator<ATENERGY, ATMESH>::TED;
+  using TVD    = typename VertexAgglomerator<ATENERGY, ATMESH>::TVD;
+
+  using TM = StripTM<ENERGY::DPV, ENERGY::DPV, TWEIGHT>;
 
   SPWAgglomerator (shared_ptr<TMESH> mesh);
 
   void Initialize (const SPWAggOptions & opts, int level);
 
-  void FormAgglomerates (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg) override;
+  virtual void FormAgglomerates (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg) override;
 
 protected:
   /** settings **/
   using CW_TYPE = SPW_CW_TYPE;
-  int num_rounds = 3;                            // # of rounds of coarsening
-  /** when picking neib **/
-  SpecOpt<bool> allrobust = false;               // true: EVP to choose neib candidate, otherwise EVP only to confirm
-  SpecOpt<CW_TYPE> pick_cw_type = HARMONIC;      // which kind of SOC to use here
-  SpecOpt<AVG_TYPE> pick_mma_scal = HARM;        // which averaging to use for MINMAX SOC
-  SpecOpt<AVG_TYPE> pick_mma_mat = HARM;         // which averaging to use for MINMAX SOC (only HARM/GEOM are valid)
-  /** when checking neib with small EVP (only relevant for robust && (!allrobust) **/
-  SpecOpt<CW_TYPE> check_cw_type = HARMONIC;     // which kind of SOC to use here
-  SpecOpt<AVG_TYPE> check_mma_scal = HARM;       // which averaging to use for traces in MINMAX SOC
-  SpecOpt<AVG_TYPE> check_mma_mat = HARM;        // which averaging to use for mats in MINMAX SOC
-  /** when checking neib with big EVP **/
-  bool checkbigsoc = true;                       // check big EVP is pos. def for agg-agg merge
-  bool simple_checkbigsoc = false;               // use simplified big EVP based on traces
-  bool bdiag = false;                            // check big EVP correspoding to BGS, or GS smoother?
-  bool cbs_spd_hack = false;                     // regularize robust CBS EVP such that we can use dpotrf instead of dpstrf
-  /** used for EVPs **/
-  SpecOpt<bool> neib_boost = false;              // use connections to common neibs to boost edge matrices
-  /** misc. **/
-  bool print_params = false;                       // output
-  bool print_summs = false;                       // output
-  bool weed_out = false;
-  bool all_cmk = false;
+
+  SPWConfig cfg;
 
 protected:
-  template<class TMU>
-  INLINE void GetEdgeData (FlatArray<TED> in_data, Array<TMU> & out_data);
-  
-  template<class TFULL, class TAPPROX>
-  INLINE void GetApproxEdgeData (FlatArray<TFULL> in_data, Array<TAPPROX> & out_data);
 
   template<class TMU>
   void FormAgglomerates_impl (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg);
-  
-  void CalcCMK (const BitArray & skip, const SparseMatrix<double> & econ, Array<int> & cmk);
-  
+
   void MapVertsTest  (FlatArray<Agglomerate> agglomerates, FlatArray<int> v_to_agg);
 }; // class SPWAgglomerator
 

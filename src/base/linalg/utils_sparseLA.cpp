@@ -1312,4 +1312,74 @@ shared_ptr<BaseMatrix> BaseMatrixToSparse (shared_ptr<BaseMatrix> A)
   }
 } // BaseMatrixToSparse
 
+
+
+void
+DoTest (BaseMatrix const &mat, BaseMatrix const &pc, NgMPI_Comm gcomm, string message)
+{
+  static Timer t("EVTest");
+  RegionTimer rt(t);
+
+  auto i1 = printmessage_importance;
+  auto i2 = netgen::printmessage_importance;
+  printmessage_importance = 1;
+  netgen::printmessage_importance = 1;
+
+  if ( (gcomm.Rank() == 0) && (message.size() > 0) )
+    { cout << IM(1) << message << endl; }
+
+  EigenSystem eigen(mat, pc); // need parallel mat
+  eigen.SetPrecision(1e-12);
+  // eigen.SetMaxSteps(10000);
+
+  int ok = eigen.Calc();
+
+  if (ok == 0) {
+    double minev = 0.0; int nzero = 0;
+    for (int k = 1; k <= eigen.NumEigenValues(); k++)
+      if (eigen.EigenValue(k) > 5e-5)
+        { minev = eigen.EigenValue(k); nzero = k-1; break; }
+    // cout << " all evals " << endl;
+    // for (int k = 1; k <= eigen.NumEigenValues(); k++)
+    //   cout << eigen.EigenValue(k) << " ";
+    // cout << endl;
+    if (gcomm.Rank() == 0) {
+      if (nzero > 0)
+        { cout << " Detected " << nzero << " zero EigenValues " << endl; }
+      cout << " Min Eigenvalue : " << minev << endl;
+      cout << " Max Eigenvalue : " << eigen.MaxEigenValue() << endl;
+      cout << " Condition   " << eigen.MaxEigenValue()/minev << endl;
+    }
+  }
+  else if (gcomm.Rank() == 0)
+    { cout << " EigenSystem Calc failed " << endl; }
+
+  printmessage_importance = i1;
+  netgen::printmessage_importance = i2;
+}
+
+void
+DoTest (BaseMatrix const &mat, BaseMatrix const &pc, std::string const &message)
+{
+  DoTest(mat, pc, MatToUniversalDofs(mat).GetCommunicator(), message);
+}
+
+void
+TestEquivalenceAB(std::string          const &message,
+                  BaseMatrix           const &A,
+                  BaseMatrix           const &B,
+                  shared_ptr<BitArray>        freeDofs)
+{
+  std::cout << " TestEquivalenceAB - Ainv " << std::endl;
+
+  cout << "freeDofs: " << freeDofs << endl;
+  if ( freeDofs  ) 
+  cout << *freeDofs << endl << endl;
+
+  auto Ainv = A.InverseMatrix(freeDofs);
+
+  DoTest(B, *Ainv, message);
+}
+
+
 } // namespace amg

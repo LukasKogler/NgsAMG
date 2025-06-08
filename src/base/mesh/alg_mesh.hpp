@@ -190,7 +190,7 @@ INLINE std::ostream & operator<<(std::ostream &os, AttachedNodeData<NT,T>& nd)
 {
   os << "Data for NT=" << NT;;
   os << ", status: " << nd.GetParallelStatus();
-  os << ", data:" << endl; prow3(nd.Data(), os, "   ", 5); os << endl;
+  os << ", data:" << endl; prow3(nd.Data(), os, "   ", 1); os << endl;
   return os;
 }
 

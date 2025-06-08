@@ -807,10 +807,10 @@ AssembleMatrix (shared_ptr<BaseMatrix> mat) const
 {
   // cout << "prolmap assmat, type " << typeid(*this).name() << endl;
   // cout << "prol type " << typeid(*_prol).name() << endl;
-  // cout << "prol dims " << _prol->Height() << " x " << _prol->Width() << endl;
+  // cout << "prol dims " << _prol->Height() << " x " << _prol->Width() << ", dims " << GetEntryHeight(*_prol) << " x " << GetEntryWidth(*_prol) << endl;
   // cout << "prol, fmat " << _prol << ", " << mat << endl;
   // cout << "fmat type " << typeid(*mat).name() << endl;
-  // cout << "fmat dims " << mat->Height() << " x " << mat->Width() << endl;
+  // cout << "fmat dims " << mat->Height() << " x " << mat->Width() << ", dims " << GetEntryHeight(*mat) << " x " << GetEntryWidth(*mat) << endl;
 
   auto tfmat = my_dynamic_pointer_cast<SPM_TM_F>(mat, "ProlMap::AssembleMatrix - SPM");
 

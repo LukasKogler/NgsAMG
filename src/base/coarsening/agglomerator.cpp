@@ -4,7 +4,9 @@
 namespace amg
 {
 
-void BaseAgglomerator :: InitializeBaseAgg (const AggOptions & opts, int level)
+void
+BaseAgglomerator::
+InitializeBaseAgg (const AggOptions & opts, int level)
 {
   edge_thresh = opts.edge_thresh.GetOpt(level);
   vert_thresh = opts.vert_thresh.GetOpt(level);
@@ -15,7 +17,9 @@ void BaseAgglomerator :: InitializeBaseAgg (const AggOptions & opts, int level)
 } // BaseAgglomerator::Initialize
 
 
-void BaseAgglomerator :: SetFreeVerts (shared_ptr<BitArray> &free_verts)
+void
+BaseAgglomerator::
+SetFreeVerts (shared_ptr<BitArray> &free_verts)
 {
   _free_verts = free_verts;
 
@@ -53,29 +57,36 @@ void BaseAgglomerator :: SetFreeVerts (shared_ptr<BitArray> &free_verts)
       }
     }
 
-    // cout << " Found " << cntIso << " isolated vertices, keeping them out of next level!" << endl;
+    cout << " Found " << cntIso << " isolated vertices, keeping them out of next level!" << endl;
 
-    if ( cntIso > 0 )
-    {
-      _free_verts = freeAndConn;
-    }
+  // disable for debugging!
+    // if ( cntIso > 0 )
+    // {
+    //   _free_verts = freeAndConn;
+    // }
   }
 } // BaseAgglomerator::SetFreeVerts
 
 
-void BaseAgglomerator :: SetSolidVerts (shared_ptr<BitArray> &solid_verts)
+void
+BaseAgglomerator::
+SetSolidVerts (shared_ptr<BitArray> &solid_verts)
 {
   _solid_verts = solid_verts;
 } // BaseAgglomerator::SetSolidVerts
 
 
-void BaseAgglomerator :: SetFixedAggs (Table<int> && fixed_aggs)
+void
+BaseAgglomerator::
+SetFixedAggs (Table<int> && fixed_aggs)
 {
   _fixed_aggs = std::move(fixed_aggs);
 } // BaseAgglomerator::SetFixedAggs
 
 
-void BaseAgglomerator :: SetAllowedEdges (shared_ptr<BitArray> &allowed_edges)
+void
+BaseAgglomerator::
+SetAllowedEdges (shared_ptr<BitArray> &allowed_edges)
 {
   _allowed_edges = allowed_edges;
 } // BaseAgglomerator::SetAllowedEdges

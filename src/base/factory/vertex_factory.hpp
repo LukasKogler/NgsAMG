@@ -3,6 +3,7 @@
 
 #include "nodal_factory.hpp"
 
+#define WITH_GW_PROL
 namespace amg
 {
 
@@ -77,12 +78,24 @@ protected:
                    shared_ptr<LevelCapsule>  fcap,
                    shared_ptr<BaseDOFMapStep>   const &embMap);
 
+  void
+  ImproveCoarseEnergy(LevelCapsule         &fCap,
+                      LevelCapsule         &cCap,
+                      BaseDOFMapStep const &dofStep);
+
+#ifdef WITH_GW_PROL
+
+  Array<int>
+  FindAggRoots(BaseCoarseMap const &cmap,
+               TMESH         const &fmesh,
+               TMESH         const &cmesh,
+               LocalHeap           &lh) const;
   shared_ptr<ProlMap<TM>>
   GroupWiseSProl (BaseCoarseMap &cmap,
                   LevelCapsule  &fcap,
                   LevelCapsule  &ccap);
 
-
+#endif
 }; // VertexAMGFactory
 
 } // namespace amg

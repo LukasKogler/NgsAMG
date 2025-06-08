@@ -4,6 +4,8 @@
 #include "base_mesh.hpp"
 
 #include <SpecOpt.hpp>
+#include <utils_sparseLA.hpp>
+#include <utils_denseLA.hpp>
 
 namespace amg
 {
@@ -92,7 +94,7 @@ public:
   void SetAllowedEdges (shared_ptr<BitArray> &allowed_edges);
 
   void SetFixedAggs (Table<int> && fixed_aggs);
-  
+
   virtual void FormAgglomerates (Array<Agglomerate> & agglomerates, Array<int> & v_to_agg) = 0;
 protected:
 
@@ -119,10 +121,11 @@ protected:
 };
 
 
-template<class TMESH>
+template<class ATMESH>
 class Agglomerator : public BaseAgglomerator
 {
 public:
+  typedef ATMESH TMESH;
 
   Agglomerator(shared_ptr<TMESH> mesh)
     : BaseAgglomerator()
@@ -139,7 +142,125 @@ protected:
   BlockTM const &GetBTM() const override { return GetMesh(); };
 
   shared_ptr<TMESH> _mesh;
-};
+}; // class Agglomerator
+
+
+/**
+* utility data structur to use during coarsening
+*/
+template<class TMESH, class TENERGY, class ATMU, class ATWEIGHT = double>
+class AgglomerationData
+{
+public: // all public, for my sanity
+  /**
+  * Implementation of aggregation-data for full weights
+  */
+  using ENERGY  = TENERGY;
+  using TVD     = typename ENERGY::TVD;
+  using TM      = typename ENERGY::TM;
+  using TMU     = ATMU;
+  using TWEIGHT = ATWEIGHT;
+
+  // static constexpr bool ROBUST = std::is_same<TMU, typename ENERGY::TM>::value;
+
+  static constexpr bool ROBUST = Height<TMU>() > 1;
+
+  static_assert(ROBUST != std::is_same_v<TMU, TWEIGHT>, "TMU/TWEIGHT must coincide for scal-crs");
+
+  AgglomerationData (TMESH const &aMesh)
+    : mesh(aMesh)
+  {}
+
+  virtual ~AgglomerationData () {};
+
+  INLINE TMESH                const& GetMesh ()   const { return mesh; }
+  INLINE SparseMatrix<double> const& GetEdgeCM () const { return *GetMesh().GetEdgeCM(); }
+
+  INLINE TVD const &GetVData      (int const &vertNum) const { return vData[vertNum]; }
+  INLINE TMU const &GetAuxDiag    (int const &vertNum) const { return auxDiags[vertNum]; }
+  INLINE TMU const &GetEdgeMatrix (int const &edgeNum) const { return edgeMats[edgeNum]; }
+
+  INLINE TWEIGHT
+  GetApproxVWeight (int const &vertNum) const
+  {
+    return ENERGY::GetApproxEdgeWeight(GetVData(vertNum));
+  }
+
+  INLINE TWEIGHT
+  GetApproxEdgeWeight (int const &edgeNum) const
+  {
+    if constexpr(Height<TMU>() > 1)
+    {
+      return CalcAvgTrace<TWEIGHT>(GetEdgeMatrix(edgeNum));
+    }
+    else
+    {
+      return GetEdgeMatrix(edgeNum);
+    }
+  }
+
+  INLINE TWEIGHT
+  GetMaxTrOD (int const &vertNum) const
+  {
+    return hasOffProcTrace ? std::max(maxTrOD[vertNum], offProcTrace[vertNum])
+                          : maxTrOD[vertNum];
+  }
+
+  TMESH const &mesh;
+
+  // Note: may or may not own this
+  Array<TVD>     vData;
+  Array<TMU>     auxDiags;
+  Array<TWEIGHT> maxTrOD;    // max trace of off-diag contribs
+
+  Array<TMU>     edgeMats;
+  Array<TWEIGHT> edgeTrace;
+
+  bool hasOffProcTrace;
+  Array<TWEIGHT> offProcTrace;
+}; // class AgglomerationData
+
+/**
+ *  Agglomerators that fit the usual schema (so, currently all) derive from this.
+ *  The class onluy provides some utility for coarsening with approximate or full
+ *  weights, TENERGY must be a usual energy with edge- and vertex-data and eneregy
+ *  contribs from edges.
+ */
+template<class TENERGY, class ATMESH>
+class VertexAgglomerator : public Agglomerator<ATMESH>
+{
+public:
+  using TMESH = typename Agglomerator<ATMESH>::TMESH;
+
+  typedef TENERGY ENERGY;
+
+  using TED = typename ENERGY::TED;
+  using TVD = typename ENERGY::TVD;
+
+  VertexAgglomerator(shared_ptr<TMESH> mesh)
+    : Agglomerator<TMESH>(mesh)
+  { ; }
+
+  virtual ~VertexAgglomerator() = default;
+
+protected:
+
+  template<class TMU, class TWEIGHT>
+  INLINE void
+  InitializeAggData(AgglomerationData<TMESH, TENERGY, TMU, TWEIGHT> &aggData);
+
+  template<class TMU>
+  INLINE void
+  GetEdgeData (FlatArray<TED> in_data, Array<TMU> & out_data);
+
+  template<class TFULL, class TAPPROX>
+  INLINE void
+  GetApproxEdgeData (FlatArray<TFULL>  in_data,
+                    Array<TAPPROX>   &out_data);
+}; //
+
+
+
 
 } // namesapce amg
 

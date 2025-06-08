@@ -5,6 +5,7 @@ endif(NETGEN_USE_PYTHON)
 
 target_sources(NgsAMGlib
 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/aux_mat.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/base_factory.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/base_factory.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/nodal_factory.hpp
