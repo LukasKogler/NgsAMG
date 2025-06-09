@@ -32,6 +32,75 @@ AllocCap () const
   return make_shared<HDivStokesLevelCapsule>();
 } // HDivStokesAMGFactory::AllocCap
 
+template<class TSCAL>
+void
+CheckEvals(FlatMatrix<TSCAL> A, LocalHeap &lh)
+{
+  HeapReset hr(lh);
+
+  int const N = A.Height();
+
+  FlatMatrix<TSCAL> evecs(N, N, lh);
+  FlatVector<TSCAL> evals(N, lh);
+  LapackEigenValuesSymmetric(A, evals, evecs);
+
+  std::cout << " eval-check of " << N << " x " << N << " matrix, evals = " << std::endl;
+
+  for (auto k : Range(N))
+  {
+    cout << k << ": " << evals(k) << std::endl;
+
+    if ( abs(evals(k)) < 1e-14 )
+    {
+      std::cout << "     -> evec = ";
+      for (auto j : Range(N))
+      {
+        cout << evecs(k, j) << " ";
+      }
+      cout << endl;
+    }
+  }
+}
+
+
+INLINE void
+StructuredPrint2(int BS, FlatMatrix<double> A, int const &prec = 8, std::ostream &os = std::cout)
+{
+  auto H = A.Height();
+  auto h = H / BS;
+
+  auto W = A.Width();
+  auto w = W / BS;
+
+  for (auto K : Range(h))
+  {
+    for (auto lK : Range(BS))
+    {
+      auto k = BS * K + lK;
+
+      for (auto J : Range(w))
+      {
+        for (auto lJ : Range(BS))
+        {
+          auto j = BS * J + lJ;
+
+          auto val = A(k, j);
+
+          if ( val > 0 )
+          {
+            os << " ";
+          }
+
+          os << std::scientific << std::setprecision(prec) << setw(prec + 6) << val << " ";
+        }
+        os << " | ";
+      }
+      os << endl;
+    }
+    os << " --------- " << endl;
+  }
+  os << std::defaultfloat;
+}
 
 template<class TMESH, class ENERGY>
 shared_ptr<typename StokesAMGFactory<TMESH, ENERGY>::TSPM>
@@ -587,8 +656,8 @@ BuildPrimarySpaceProlongation (BaseAMGFactory::LevelCapsule const &baseFCap,
     if (agg_vs.Size() <= 1)
       { return; }
 
-    // bool const doco = true;
-    constexpr bool doco = false;
+    // bool doco = ( (agg_vs.Pos(117) != -1) || agg_vs.Contains(243) );
+    static constexpr bool doco = false;
 
     /** If we get here, the agg must be S, so all interior edges are SS **/
 
@@ -596,7 +665,7 @@ BuildPrimarySpaceProlongation (BaseAMGFactory::LevelCapsule const &baseFCap,
     // const bool doco = bdoco && ( (agg_vs.Contains(84) || agg_vs.Contains(96) || agg_vs.Contains(1246) || agg_vs.Contains(1245) || (cv == 146) ) );
     // const bool doco = (cv == 486);
     // const bool doco = bdoco;
-    if constexpr (doco) {
+    if (doco) {
       cout << endl << "FILL AGG FOR CV " << CV << "/" << v_aggs.Size() << endl;
       cout << endl << "FILL AGG FOR CV " << CV << "/" << v_aggs.Size() << endl;
       cout << "fill agg " << agg_nr << ", agg_vs: "; prow(agg_vs); cout << endl;
@@ -1040,6 +1109,16 @@ BuildPrimarySpaceProlongation (BaseAMGFactory::LevelCapsule const &baseFCap,
 
 
     M_IC -= M_IF * P_FC;
+
+    if ( doco )
+    {
+      std::cout << " M_II: " << endl;
+      StructuredPrint2(1, M_II);
+      cout << endl;
+
+      CheckEvals(M_II, lh);
+    }
+
     CalcInverse(M_II);
     P_IC = M_II * M_IC;
 
@@ -1052,6 +1131,7 @@ BuildPrimarySpaceProlongation (BaseAMGFactory::LevelCapsule const &baseFCap,
     if (doco)
     {
       cout << " final M_IC rhs = " << endl << M_IC << endl;
+      CheckEvals(M_II, lh);
       cout << " M_II inv = " << endl << M_II << endl;
       cout <<  " -> PROL-BLOCk P_IC = " << endl << P_IC << endl << endl;
      }

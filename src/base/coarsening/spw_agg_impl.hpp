@@ -344,8 +344,6 @@ public:
       { val = (val == -1) ? val : rvmap[val]; }
 
     /** set up reverse vertex map **/
-    cout << " ConcatenateVMap rev-map " << endl;
-
 
     auto & aggs = rev_node_maps[NT_VERTEX];
 
@@ -1257,9 +1255,8 @@ PairingIteration (TMESH           const &FM,
 
   t.Stop();
 
-  auto t1 = t.GetTime();
-
-  std::cout << " PairingIteration, time = " << t1 - t0 << std::endl;
+  // auto t1 = t.GetTime();
+  // std::cout << " PairingIteration, time = " << t1 - t0 << std::endl;
 
   return cntVerts;
 } // PairingIteration

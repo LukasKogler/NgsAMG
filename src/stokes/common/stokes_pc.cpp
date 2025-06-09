@@ -1239,21 +1239,21 @@ BuildSmoother (BaseAMGFactory::AMGLevel const &aMGLevel,
 
   auto const smType  = SelectSmoother(aMGLevel, smootherCtx);
 
-  std::cout << "  BuildSmoother " << smType << " @" << smootherCtx << ", l = " << aMGLevel.level << endl;
+  // std::cout << "  BuildSmoother " << smType << " @" << smootherCtx << ", l = " << aMGLevel.level << endl;
 
   bool const hiptmair = smType == Options::SM_TYPE::HIPTMAIR;
 
   bool const isFinest = ( level == 0 ) && ( smootherCtx.scope == SmootherContext::PRIMARY );
 
-  cout << " for level " << level << endl;
-  cout << " isFinest = " << isFinest << endl;
+  // cout << " for level " << level << endl;
+  // cout << " isFinest = " << isFinest << endl;
 
   /** Range Smoother */
   auto const smTypeR = hiptmair ?
                           SelectSmoother(aMGLevel, { smootherCtx.scope, SmootherContext::RANGE } ) :
                           smType;
 
-  std::cout << "    BuildSmoother, RAN: " << smTypeR << " @" << smootherCtx << ", l = " << aMGLevel.level << endl;
+  // std::cout << "    BuildSmoother, RAN: " << smTypeR << " @" << smootherCtx << ", l = " << aMGLevel.level << endl;
 
   shared_ptr<BaseMatrix> rangeMat;
   shared_ptr<BitArray>   rangeFreeDOFs;
@@ -1391,8 +1391,6 @@ BuildSmoother (BaseAMGFactory::AMGLevel const &aMGLevel,
                                                    curlTMat,
                                                    cap.AC,   // A * C
                                                    nullptr); // CT * A -> transpose dyn in smoother
-
-    cout << " hSmoother A-matrix type: " << typeid(*hSmoother->GetAMatrix()).name() << endl;
 
     if (O.log_level_pc >= Options::LOG_LEVEL_PC::DBG)
     {

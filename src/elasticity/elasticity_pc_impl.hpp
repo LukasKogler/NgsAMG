@@ -569,8 +569,6 @@ BuildED (size_t height, shared_ptr<TopologicMesh> mesh)
        */
       auto &edgePointParents = this->edgePointParents;
 
-      cout << " height = " << height << endl;
-
       Array<int> perow(height);
       perow = 0;
 

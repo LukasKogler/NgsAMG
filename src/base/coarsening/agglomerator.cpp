@@ -57,7 +57,7 @@ SetFreeVerts (shared_ptr<BitArray> &free_verts)
       }
     }
 
-    cout << " Found " << cntIso << " isolated vertices, keeping them out of next level!" << endl;
+    // cout << " Found " << cntIso << " isolated vertices, keeping them out of next level!" << endl;
 
   // disable for debugging!
     // if ( cntIso > 0 )
