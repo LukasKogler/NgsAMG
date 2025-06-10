@@ -29,7 +29,8 @@ public:
   {
   public:
     HDivHDGEmbedding::AUX_SPACE auxSpace;
-    bool use_dynbs_prols = true;
+    // bool use_dynbs_prols = true;
+    bool use_dynbs_prols = false;
 
     virtual void SetFromFlags (shared_ptr<FESpace> fes,
                                shared_ptr<BaseMatrix> finest_mat,
@@ -58,7 +59,10 @@ public:
         auxSpace = HDivHDGEmbedding::AUX_SPACE::P0;
       }
 
-      use_dynbs_prols = !flags.GetDefineFlagX(prefix + "use_dynbs_prols").IsFalse();
+      // use_dynbs_prols = !flags.GetDefineFlagX(prefix + "use_dynbs_prols").IsFalse();
+
+      // does not fully work in parallel
+      use_dynbs_prols = flags.GetDefineFlagX(prefix + "use_dynbs_prols").IsTrue();
     }
   }; // class BaseStokesAMGPrecond::Options
 
