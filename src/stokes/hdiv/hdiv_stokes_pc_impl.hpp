@@ -1074,7 +1074,10 @@ OptimizeDOFMap (FlatArray<shared_ptr<BaseAMGFactory::AMGLevel>> aMGLevels,
           }
         }
 
-        return make_shared<ConcDMS>(newSteps);
+        auto concStep = make_shared<ConcDMS>(newSteps);
+        concStep->Finalize();
+
+        return concStep;
       }
       else
       {
