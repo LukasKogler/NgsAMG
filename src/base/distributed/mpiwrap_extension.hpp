@@ -16,8 +16,10 @@ class BlockTM;
 
 class NgsAMG_Comm : public NgMPI_Comm
 {
+#ifdef PARALLEL
 protected:
   using NgMPI_Comm::valid_comm;
+#endif
 public:
   NgsAMG_Comm (const NgsAMG_Comm & c) : NgMPI_Comm(c) { ; }
   NgsAMG_Comm (const NgMPI_Comm & c) : NgMPI_Comm(c) { ; }
@@ -32,13 +34,20 @@ public:
   using NgMPI_Comm :: ISend;
   using NgMPI_Comm :: IRecv;
 
+#ifdef PARALLEL
   INLINE bool isValid() const { return valid_comm; }
+#endif
+
+// #ifndef PARALLEL
+//   INLINE int Rank() const { return 0; }
+// #endif
 
 private:
   INLINE Timer<TTracing, TTiming>& thack_send_tab () const { static Timer t("Send Table"); return t; }
 public:
   template<typename T, typename T2 = decltype(GetMPIType<T>())>
   void Send (FlatTable<T> tab, int dest, int tag) const {
+#ifdef PARALLEL
     if (!valid_comm)
       { return; }
     RegionTimer rt(thack_send_tab());
@@ -48,6 +57,7 @@ public:
     Send(tab.IndexArray(), dest, tag);
     Send(tab.AsArray(), dest, tag);
     return;
+#endif
   }
 
 private:
@@ -55,6 +65,7 @@ private:
 public:
   template<typename T, typename T2 = decltype(GetMPIType<T>())>
   void Recv (Table<T> & tab, int src, int tag) const {
+#ifdef PARALLEL
     if (!valid_comm)
       { return; }
     RegionTimer rt(thack_recv_tab());
@@ -71,6 +82,7 @@ return;
 sizes[k] = index[k+1]-index[k];
     tab = Table<T>(sizes);
     Recv(tab.AsArray(), src, tag);
+#endif
   }
 
 private:
@@ -78,11 +90,13 @@ private:
 public:
   template<typename T, typename T2 = decltype(GetMPIType<T>())>
   void Bcast (FlatArray<T> ar, int root) const {
+#ifdef PARALLEL
     if (!valid_comm)
       { return; }
     RegionTimer rt(thack_bcast_fa());
     if (ar.Size() == 0) return;
     NG_MPI_Bcast (ar.Data(), ar.Size(), GetMPIType<T>(), root, comm);
+#endif
   }
 
 private:
@@ -90,6 +104,7 @@ private:
 public:
   template<typename T, typename T2 = decltype(GetMPIType<T>())>
   void Bcast (Table<T> & tab, int root) const {
+#ifdef PARALLEL
     if (!valid_comm)
       { return; }
     RegionTimer rt(thack_bcast_tab());
@@ -105,6 +120,7 @@ tab = Table<T>(perow);
 Bcast(tab.IndexArray(), root);
 Bcast(tab.AsArray(), root);
     }
+#endif
   }
 
 private:
@@ -115,6 +131,7 @@ public:
   { hacky_w_buffer = Array<size_t>(0); }
   template<typename T, typename T2 = decltype(GetMPIType<T>())>
   NG_MPI_Request ISend (const ngla::SparseMatrixTM<T> & spm, int dest, int tag) const {
+#ifdef PARALLEL
     if (!valid_comm)
       { return NG_MPI_REQUEST_NULL; }
     RegionTimer rt(thack_isend_spm());
@@ -137,6 +154,9 @@ FlatArray<T> vals(nzes, vp);
 req = ISend (vals, dest, tag);
     }
     return req;
+#else
+  return 0;
+#endif
   }
 
 private:
@@ -144,11 +164,13 @@ private:
 public:
   template<typename T, typename T2 = decltype(GetMPIType<T>())>
   void Send (const ngla::SparseMatrixTM<T> & spm, int dest, int tag) const {
+#ifdef PARALLEL
     if (!valid_comm)
       { return; }
     RegionTimer rt(thack_send_spm());
     NG_MPI_Request req = ISend(spm, dest, tag); // well this is just lazy ...
     NG_MPI_Wait(&req, NG_MPI_STATUS_IGNORE);
+#endif
   }
 
 private:
@@ -156,6 +178,7 @@ private:
 public:
   template<typename T, typename T2 = decltype(GetMPIType<T>())>
   void Recv (shared_ptr<ngla::SparseMatrixTM<T> >& spm, int src, int tag) const {
+#ifdef PARALLEL
     if (!valid_comm)
       { return; }
     RegionTimer rt(thack_recv_spm());
@@ -177,6 +200,7 @@ public:
     FlatArray<T> vals(nzes, vp);
     Recv (vals, src, tag);
     // cout << "GOT SPM: " << endl << *spm << endl;
+  #endif
   }
 
   void Send (shared_ptr<BlockTM> & mesh, int dest, int tag) const;
@@ -185,6 +209,7 @@ public:
   template<typename T, typename T2 = decltype(GetMPIType<T>())>
   INLINE void Gather(T val, FlatArray<T> mem, int root)
   {
+#ifdef PARALLEL
     if (!valid_comm) {
       val = mem[0];
     }
@@ -193,11 +218,13 @@ public:
         { throw Exception("Not enough memory for NG_MPI_Gather!"); }
       NG_MPI_Gather(&val, 1, GetMPIType<T>(), mem.Data(), 1, GetMPIType<T>(), root, comm);
     }
+#endif
   }
 
   template<typename T>
   inline NG_MPI_Request ISend (const FlatTable<T> tab, int dest, int tag)
   {
+#ifdef PARALLEL
     if (!valid_comm)
       { return NG_MPI_REQUEST_NULL; }
     NG_MPI_Request req;
@@ -209,18 +236,24 @@ public:
     NG_MPI_Request_free(&req);
     req = ISend(tab.AsArray(), dest, tag);
     return req;
+#else
+    return 0;
+#endif
   }
 
   template <typename T, typename T2 = decltype(GetMPIType<T>())>
   void AllReduceFA (FlatArray<T> d, const NG_MPI_Op op = NG_MPI_SUM) const
   {
+#ifdef PARALLEL
     if (!valid_comm)
       { return; }
     NG_MPI_Allreduce ( NG_MPI_IN_PLACE, d.Data(), int(d.Size()), GetMPIType<T>(), op, comm);
+#endif
   }
 
   NgsAMG_Comm CreateSubCommunicatorGlobal (FlatArray<int> procs) const
   {
+#ifdef PARALLEL
     /**
       *  Unlike NgMPI_Comm::SubCommunicator, this uses NG_MPI_Comm_create
       *  instead of NG_MPI_Comm_create_group - i.e., this must be called by ALL
@@ -232,12 +265,25 @@ public:
     NG_MPI_Group_incl(gcomm, procs.Size(), procs.Data(), &gsubcomm);
     NG_MPI_Comm_create(comm, gsubcomm, &subcomm);
     return (subcomm == NG_MPI_COMM_NULL) ? NgsAMG_Comm() : NgsAMG_Comm(subcomm, true);
+#else
+    return NgsAMG_Comm{};
+#endif
   }
+
+#ifndef PARALLEL
+  template<class... Args> inline void Scatter(Args... args){};
+
+  // dumnmy-methods on NGSolve side return size_t here...
+  INLINE int Rank() const { return 0; }
+  INLINE int Size() const { return 1; }
+#endif
+
 }; // class NgsAMG_Comm
 
 template<class T, class TLAM>
 void MyAllReduceDofData (const ParallelDofs & pardofs, FlatArray<T> data, TLAM lam)
 {
+#ifdef PARALLEL
   auto comm = pardofs.GetCommunicator();
   auto ex_procs = pardofs.GetDistantProcs();
   if (!ex_procs.Size())
@@ -285,13 +331,14 @@ if (!loc_done) {
 data[dof_num] = dof_val;
     }
   }
-
+#endif
 } // MyAllReduceDofData
 
 
 template<class TIN, class TOUT>
 INLINE void ExchangePairWise (NgsAMG_Comm comm, FlatArray<int> dps, const TIN& send_data, TOUT & recv_data)
 {
+#ifdef PARALLEL
   if (!comm.isValid())
     { return; }
   Array<NG_MPI_Request> reqs(2 * dps.Size());
@@ -300,6 +347,7 @@ INLINE void ExchangePairWise (NgsAMG_Comm comm, FlatArray<int> dps, const TIN& s
     reqs[2*k + 1] = comm.IRecv(recv_data[k], dps[k], NG_MPI_TAG_AMG);
   }
   MyMPI_WaitAll(reqs);
+#endif
 } // SendRecvData
 
 
@@ -307,6 +355,7 @@ INLINE void ExchangePairWise (NgsAMG_Comm comm, FlatArray<int> dps, const TIN& s
 template<class TIN, class TOUT>
 INLINE void ExchangePairWise2 (NgsAMG_Comm comm, FlatArray<int> dps, const TIN& send_data, TOUT & recv_data)
 {
+#ifdef PARALLEL
   if (!comm.isValid())
     { return; }
   Array<NG_MPI_Request> reqs(dps.Size());
@@ -315,17 +364,22 @@ INLINE void ExchangePairWise2 (NgsAMG_Comm comm, FlatArray<int> dps, const TIN& 
   for (auto k : Range(dps))
     { comm.Recv(recv_data[k], dps[k], NG_MPI_TAG_AMG); }
   MyMPI_WaitAll(reqs);
+#endif
 } // SendRecvData
 
 
 INLINE Table<int> BuildDPTable (const ParallelDofs & pds)
 {
+#ifdef PARALLEL
   TableCreator<int> ct(pds.GetNDofLocal());
   for (; !ct.Done(); ct++) {
     for (auto k : Range(pds.GetNDofLocal()))
       { ct.Add(k, pds.GetDistantProcs(k)); }
   }
   return ct.MoveTable();
+#else
+  return Table<int>{};
+#endif
 }
 
 // // never tested (did not end up needing it)
@@ -362,12 +416,14 @@ INLINE Table<int> BuildDPTable (const ParallelDofs & pds)
 template<class TIN, class TOUT>
 INLINE void ExchangePairWise_norecbuffer (NgsAMG_Comm comm, FlatArray<int> dps, const TIN& send_data, TOUT & recv_data)
 {
+#ifdef PARALLEL
   Array<NG_MPI_Request> reqs(dps.Size());
   for (auto k : Range(dps))
     { reqs[k] = comm.ISend(send_data[k], dps[k], NG_MPI_TAG_AMG); }
   for (auto k : Range(dps))
     { comm.Recv(recv_data[k], dps[k], NG_MPI_TAG_AMG); }
   MyMPI_WaitAll(reqs);
+#endif
 } // SendRecvData
 
 } // namespace amg

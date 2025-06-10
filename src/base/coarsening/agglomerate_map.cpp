@@ -375,7 +375,7 @@ sum += x;
 auto & agg = agglomerates[agg_nr];
 auto cv_eq = agg_eqcs[agg_nr];
 auto cv_eqid = eqc_h.GetEQCID(cv_eq);
-int kp = merge_pos_in_sorted_array(comm.Rank(), eqc_h.GetDistantProcs(cv_eq));
+int kp = merge_pos_in_sorted_array(int(comm.Rank()), eqc_h.GetDistantProcs(cv_eq));
 // cout << " agg " << agg << " -> CVEQ " << cv_eq << ", kp = " << kp << endl;
 // cout << " DPS "; prow(eqc_h.GetDistantProcs(cv_eq)); cout << endl;
 auto cv_locnr = rc2[cv_eq][kp]++; // ! "loc" in eqc/proc block, not in eqc !

@@ -314,6 +314,14 @@ SmoothStageRes (SMOOTH_STAGE        const &stage,
 } // HybridDISmoother::SmoothStageRes
 
 
+template class HybridSmoother<double>;
+template class HybridSmoother<Mat<2,2,double>>;
+template class HybridSmoother<Mat<3,3,double>>;
+#ifdef ELASTICITY
+template class HybridSmoother<Mat<6,6,double>>;
+#endif
+
+
 template class HybridDISmoother<double>;
 template class HybridDISmoother<Mat<2,2,double>>;
 template class HybridDISmoother<Mat<3,3,double>>;

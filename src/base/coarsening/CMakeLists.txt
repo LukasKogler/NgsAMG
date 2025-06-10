@@ -1,10 +1,17 @@
 
-target_include_directories(NgsAMGlib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}; ${METIS_INCLUDE_DIR})
+if (NETGEN_USE_MPI)
+  target_include_directories(NgsAMGlib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}; ${METIS_INCLUDE_DIR})
+else()
+  target_include_directories(NgsAMGlib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR};)
+endif()
+
 if (NETGEN_USE_PYTHON)
   target_include_directories(NgsAMG PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 endif(NETGEN_USE_PYTHON)
 
-target_link_libraries(NgsAMGlib PRIVATE ${METIS_LIBRARY})
+if (NETGEN_USE_MPI)
+  target_link_libraries(NgsAMGlib PRIVATE ${METIS_LIBRARY})
+endif(NETGEN_USE_MPI)
 
 target_sources(NgsAMGlib
   PRIVATE

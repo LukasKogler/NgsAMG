@@ -6,12 +6,16 @@
 
 #include <utils_io.hpp>
 
+#ifdef PARALLEL
 #include <metis.h>
 // #include <parmetis.h>
 typedef idx_t idxtype;   
+#endif
 
 namespace amg
 {
+
+#ifdef PARALLEL
 
 Table<int> PartitionProcsMETIS (BlockTM & mesh, int nparts, bool sep_p0)
 {
@@ -197,6 +201,19 @@ for (; !cgs.Done(); cgs++) {
   return groups;
 }
 
+#else
+
+Table<int> PartitionProcsMETIS (BlockTM & mesh, int nparts, bool sep_p0)
+{
+  TableCreator<int> ct;
+  for(;!ct.Done();ct++)
+  {
+    ct.Add(0,0);
+  }
+  return ct.MoveTable();
+}
+
+#endif
 
 
 GridContractMap :: GridContractMap (Table<int> && _groups, shared_ptr<BlockTM> _mesh, bool oriented)

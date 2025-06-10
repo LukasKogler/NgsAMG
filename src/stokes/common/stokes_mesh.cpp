@@ -369,7 +369,7 @@ BuildStokesMesh(MeshAccess const &MA, FacetAuxiliaryInformation const &auxInfo)
   /** count solid verts **/
   // cout << endl << " eqc_vpcnts: " << endl << eqc_vpcnts << endl;
   for (auto eqc : Range(eqc_vpcnts)) {
-    int lme = merge_pos_in_sorted_array(comm.Rank(), eqc_h.GetDistantProcs(eqc));
+    int lme = merge_pos_in_sorted_array(int(comm.Rank()), eqc_h.GetDistantProcs(eqc));
     // cout << "eqc " << eqc << ", lme " << lme << endl;
     eqc_vpcnts[eqc][lme] = sv_eq_cnt[eqc];
   }
@@ -402,7 +402,7 @@ BuildStokesMesh(MeshAccess const &MA, FacetAuxiliaryInformation const &auxInfo)
       int nvk = std::accumulate(eqc_vpcnts[eqc].begin(), eqc_vpcnts[eqc].end(), double(0.0)); // # of verts in eqc (excluding fict verts)
       // cout << " eqc " << eqc << ", nvk " << nvk << endl;
       disp_eq[1+eqc] = disp_eq[eqc] + nvk;
-      int myl = merge_pos_in_sorted_array(comm.Rank(), eqc_h.GetDistantProcs(eqc));
+      int myl = merge_pos_in_sorted_array(int(comm.Rank()), eqc_h.GetDistantProcs(eqc));
       // cout << " myl " << myl << endl;
       auto lower_range = eqc_vpcnts[eqc].Range(0, myl);
       // cout << "lower_range "; prow(lower_range); cout << endl;

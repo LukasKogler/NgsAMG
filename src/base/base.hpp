@@ -15,6 +15,10 @@
   #define AMG_MAX_SYS_DIM MAX_SYS_DIM
 #endif
 
+#ifndef PARALLEL
+#include <dummy_mpi_wrapper.hpp>
+#endif
+
 /**
  * Compatibility with older NGSolve (delete this code when I pull NGSolve again)
 */
