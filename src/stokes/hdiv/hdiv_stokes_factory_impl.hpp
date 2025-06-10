@@ -1792,6 +1792,8 @@ BuildContractDOFMap (shared_ptr<BaseGridMapStep> baseCMap,
   if (ctrMap->IsMaster())
     { dofCtrMapRange->_comm_keepalive_hack = ctrMap->GetMappedEQCHierarchy()->GetCommunicator(); }
 
+  dofCtrMapRange->SetUpMPIStuff();
+
   // auto pot_fpd = fmesh->GetLoopUDofs().GetParallelDofs();
   // group.SetSize(fg.Size()); group = fg;
   // auto loop_maps = CopyTable(ctrMap->GetLoopMaps());
@@ -2234,11 +2236,11 @@ BuildUDofs (BaseAMGFactory::LevelCapsule const &baseCap) const
       });
     }
 
-    cout << " tot shared: " << endl << totShared << endl;
+    // cout << " tot shared: " << endl << totShared << endl;
 
     auto parDOFs = make_shared<ParallelDofs>(eqc_h.GetCommunicator(), createDPs.MoveTable(), 1, false);
 
-    cout << " -> PDFS " << endl << *parDOFs << endl;
+    // cout << " -> PDFS " << endl << *parDOFs << endl;
 
     return UniversalDofs(parDOFs);
   }

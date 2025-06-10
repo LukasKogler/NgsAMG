@@ -195,12 +195,14 @@ MapLevel (FlatArray<shared_ptr<BaseDOFMapStep>> dof_steps,
     }
 
     final_step = MakeSingleStep2(single_steps);
+    final_step->Finalize();
 
     fcap.savedDOFMaps = std::move(single_steps);
   }
   else
   {
     final_step = MakeSingleStep2(dof_steps);
+    final_step->Finalize();
 
     fcap.savedDOFMaps.SetSize(dof_steps.Size());
     fcap.savedDOFMaps = dof_steps;

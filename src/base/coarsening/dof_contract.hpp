@@ -53,10 +53,10 @@ public:
   // TODO: bad hack because NgsAMG_Comm -> NG_MPI_Comm -> NgMPI_Comm in pardofs constructor (ownership lost!)
   NgsAMG_Comm _comm_keepalive_hack;
 
-protected:
-
   /** Allocates MPI-Buffers and sets up MPI-types **/
   void SetUpMPIStuff ();
+
+protected:
 
   shared_ptr<TSPM> DoAssembleMatrix (shared_ptr<TSPM> mat) const;
   // using BaseDOFMapStep::pardofs, BaseDOFMapStep::mapped_pardofs;

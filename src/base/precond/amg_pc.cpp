@@ -122,9 +122,7 @@ public:
 
   ~SmootherBM()
   {
-    cout << " SM BM DESTR" << endl;
     res = nullptr;
-    cout << " SM BM DESTR II" << endl;
   }
 
   virtual void Mult (const BaseVector & b, BaseVector & x) const override

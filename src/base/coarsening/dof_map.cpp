@@ -217,12 +217,12 @@ DOFMap::
 ConcStep (int la, int lb, bool symbolic) const
 {
   const_cast<DOFMap&>(*this).Finalize();
-  // cout << " concstep " << la << " " << lb << " of " << steps.Size() << ", symbolic = " << symbolic << endl;
+  cout << " concstep " << la << " " << lb << " of " << steps.Size() << ", symbolic = " << symbolic << endl;
   if (la > lb)
     { swap(la, lb); }
   if (la+1 == lb)
     { return steps[la]; }
-  // cout << " R " << la << " " << lb << ", vecs " << la+1 << " " << lb-1 << endl;
+  cout << " R " << la << " " << lb << ", vecs " << la+1 << " " << lb-1 << endl;
   if (symbolic)
   {
     return make_shared<ConcDMS>(steps.Range(la, lb), vecs.Range(la+1, lb));
@@ -318,6 +318,12 @@ ConcDMS (FlatArray<shared_ptr<BaseDOFMapStep>> _sub_steps,
   , spvecs(0)
   , vecs(0)
 {
+  // cout << " ConcDMS " << this << " CREATE, steps: " << endl;
+  // for (auto k : Range(_sub_steps.Size()))
+  // {
+  //   cout << k << ": " << typeid(*_sub_steps[k]).name() << endl;
+  //   cout << "   UDOFS " << endl << _sub_steps[k]->GetUDofs() << endl << " TO " << endl << _sub_steps[k]->GetMappedUDofs() << endl;
+  // }
   sub_steps = _sub_steps;
 
   if( ( sub_steps.Size() > 1 ) &&
@@ -499,6 +505,10 @@ TransferF2C (BaseVector const *x_fine,
   x_fine->Distribute();
   x_coarse->SetParallelStatus(DISTRIBUTED);
 
+  // cout << " BPM F->C, sizes " << x_fine->Size() << " " << x_coarse->Size() << " udofs "
+  //      << GetUDofs() << " " << GetMappedUDofs() << endl;
+  // cout << " prol/T " << GetBaseProl() << " " << GetBaseProlTrans() << endl;
+
   if (auto prolT = GetBaseProlTrans())
   {
     prolT->Mult(*x_fine->GetLocalVector(),
@@ -629,6 +639,10 @@ TransferF2C (BaseVector const *x_fine,
 #ifdef USE_TAU
   TAU_PROFILE("ProlMap::TransferF2C", TAU_CT(*this), TAU_DEFAULT);
 #endif
+
+  // cout << " PROL-MAP F->C, sizes " << x_fine->Size() << " " << x_coarse->Size() << " udofs "
+  //      << GetUDofs() << " " << GetMappedUDofs() << endl;
+  // cout << " prol/T " << _prol << " " << _prolT << endl;
 
   RegionTimer rt(timer_hack_prol_f2c());
 

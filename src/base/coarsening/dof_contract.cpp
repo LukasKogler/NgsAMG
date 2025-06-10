@@ -93,8 +93,17 @@ anyways
   auto loc_map = dof_maps[0];
   int nreq_tot = 0;
   for (size_t kp = 1; kp < group.Size(); kp++)
-    if (dof_maps[kp].Size()>0) { nreq_tot++; reqs[kp] = comm.IRecv(buffers[kp], group[kp], NG_MPI_TAG_AMG); }
-    else reqs[kp] = NG_MPI_REQUEST_NULL;
+  {
+    if ( dof_maps[kp].Size() > 0 )
+    {
+      nreq_tot++;
+      reqs[kp] = comm.IRecv(buffers[kp], group[kp], NG_MPI_TAG_AMG);
+    }
+    else
+    {
+      reqs[kp] = NG_MPI_REQUEST_NULL;
+    }
+  }
   for (auto j : Range(loc_map.Size()))
     fvc(loc_map[j]) += fac * fvf(j);
   NG_MPI_Request* rrptr = &reqs[0]; int nrr = group.Size();
@@ -494,6 +503,13 @@ return Pchunk;
 template<class TV>
 void CtrMap<TV> :: SetUpMPIStuff ()
 {
+  if ( buffers.Size() == group.Size() )
+  {
+    // already done - may have been called explicitly and then again
+    // from AssembleMatrix or something like that
+    return;
+  }
+
   if (is_gm) {
     Array<int> perow(group.Size());
     Array<int> ones;

@@ -183,20 +183,20 @@ makeFacetLoop2D(int const &vnr,
 
   auto dps = ma.GetDistantProcs(NodeId(NT_VERTEX, vnr));
 
-  if (dps.Size()) cout << "  makeFacetLoop2D " << vnr << endl;
+  // if (dps.Size()) cout << "  makeFacetLoop2D " << vnr << endl;
 
   ma.GetVertexSurfaceElements(vnr, scratch);
 
   Array<int> facetEls;
   for (auto vsel : scratch) {
     auto selfacets = ma.GetElFacets(ElementId(BND, vsel));
-    if (dps.Size()) { cout << " sel " << vsel << ", facets: "; prow(selfacets); cout << endl; }
+    // if (dps.Size()) { cout << " sel " << vsel << ", facets: "; prow(selfacets); cout << endl; }
     for (auto selfacet : selfacets)
     {
       if (dps.Size())
       {
         ma.GetFacetElements(selfacet, facetEls);
-        cout << "   sel-facet-els: "; prow(facetEls); cout << endl;
+        // cout << "   sel-facet-els: "; prow(facetEls); cout << endl;
       }
       if (auxInfo.IsFacetRel(selfacet))
       {
@@ -210,12 +210,12 @@ makeFacetLoop2D(int const &vnr,
 
   for (auto elnr : scratch) {
     auto el_facets = ma.GetElFacets(ElementId(VOL, elnr));
-    if (dps.Size())  { cout << " el " << elnr << ", facets: "; prow(el_facets); cout << endl; }
+    // if (dps.Size())  { cout << " el " << elnr << ", facets: "; prow(el_facets); cout << endl; }
     for (auto fnr : el_facets) {
       if (dps.Size())
       {
         ma.GetFacetElements(fnr, facetEls);
-        cout << "   el-facet-els: "; prow(facetEls); cout << endl;
+        // cout << "   el-facet-els: "; prow(facetEls); cout << endl;
       }
       if (auxInfo.IsFacetRel(fnr)) {
         auto everts = ma.GetEdgePNums(fnr);
@@ -947,8 +947,6 @@ BuildSmoothers (FlatArray<shared_ptr<BaseAMGFactory::AMGLevel>> aMGLevels,
   // return BaseAMGPC::BuildSmoothers(amg_levels, dof_map);
   if (gcomm.Rank() == 0 && O.log_level_pc > Options::LOG_LEVEL_PC::NONE)
     { cout << " set up smoothers " << endl; }
-
-  // cout << endl << "BUILD SMOOTHERS!" << endl;
 
   auto const numGlobalLevels = aMGLevels.Size(); // TODO: MPI!
 
